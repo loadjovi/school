@@ -1,5 +1,5 @@
 import { OAuth2Client } from "google-auth-library";
-import { getMappedStudentsByEmail, listStudentMaster, getTeacherProfile, getTeacherDirectory } from "./storage.js";
+import { getMappedStudentsByEmail, listStudentMaster, getTeacherProfile, getTeacherDirectory, listUserStudentMappings } from "./storage.js";
 
 const googleClient = new OAuth2Client();
 let aliasCache=null,aliasCacheAt=0;
@@ -59,11 +59,33 @@ function viewMaster(e,legacyStudentIds=[]){
   return {studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,section:e.section||"待確認",schoolYear:e.schoolYear||"",status:e.status||"active",source:"studentMaster",legacyStudentIds:[...new Set((legacyStudentIds||[]).map(String).filter(x=>x&&x!==String(e.rowKey)))]};
 }
 
-function parentMapEntries(){
+function staticParentMapEntries(){
   const parentMap=parseJsonEnv("STUDENT_MAP_JSON",{}),rows=[];
   for(const value of Object.values(parentMap||{})){
     const list=Array.isArray(value)?value:(Array.isArray(value?.students)?value.students:[]);
     for(const s of list)if(s&&typeof s==="object"&&s.studentId)rows.push(s);
+  }
+  return rows;
+}
+
+async function allLegacyStudentEntries(){
+  const rows=[...staticParentMapEntries()];
+  try{
+    for(const m of await listUserStudentMappings("active")){
+      if(!m?.studentId)continue;
+      rows.push({
+        studentId:m.studentId,
+        name:m.studentName,
+        grade:m.grade,
+        groupName:m.groupName,
+        instrument:m.instrument,
+        section:m.section,
+        schoolYear:m.schoolYear,
+        source:"userStudentMap"
+      });
+    }
+  }catch(err){
+    console.error("Unable to load UserStudentMap aliases:",err?.message||String(err));
   }
   return rows;
 }
@@ -80,11 +102,14 @@ async function buildStudentAliasIndex(){
     byName.get(name).push(m);
   }
   const aliasToCanonical=new Map(),canonicalToAliases=new Map();
-  for(const raw of parentMapEntries()){
+  for(const raw of await allLegacyStudentEntries()){
     const oldId=String(raw.studentId||"").trim(),name=String(raw.name||raw.studentName||"").trim();
     if(!oldId)continue;
     let canonical=byId.has(oldId)?oldId:"";
-    if(!canonical&&name){const matches=byName.get(name)||[];if(matches.length===1)canonical=String(matches[0].rowKey)}
+    if(!canonical&&name){
+      const matches=byName.get(name)||[];
+      if(matches.length===1)canonical=String(matches[0].rowKey);
+    }
     if(!canonical)canonical=oldId;
     aliasToCanonical.set(oldId,canonical);
     if(!canonicalToAliases.has(canonical))canonicalToAliases.set(canonical,new Set([canonical]));
