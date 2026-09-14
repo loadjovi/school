@@ -7,6 +7,22 @@
   <title>聖心弦樂團｜Google Gmail 登入版 v2</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script>
+    // Azure Static Web Apps may process the standard Authorization header.
+    // Mirror Google ID tokens into a dedicated application header before requests are sent.
+    (() => {
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = (input, init = {}) => {
+        const headers = new Headers(init.headers || {});
+        const auth = headers.get('Authorization');
+        if (auth && auth.toLowerCase().startsWith('bearer ')) {
+          headers.set('X-Google-ID-Token', auth.slice(7).trim());
+          headers.delete('Authorization');
+        }
+        return nativeFetch(input, { ...init, headers });
+      };
+    })();
+  </script>
 </head>
 <body>
   <div id="app"><div class="loading">🎻 系統載入中…</div></div>
