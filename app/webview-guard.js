@@ -22,46 +22,29 @@
     u.searchParams.delete("google_redirect");
     return u.toString();
   }
-  function lineExternalUrl(){
-    const u=new URL(cleanUrl());
-    u.searchParams.set("openExternalBrowser","1");
-    return u.toString();
-  }
+  function lineExternalUrl(){const u=new URL(cleanUrl());u.searchParams.set("openExternalBrowser","1");return u.toString()}
   window.copyOrchestraUrl=async()=>{
     const url=cleanUrl();
     try{await navigator.clipboard.writeText(url);alert("網址已複製，請貼到 Safari 或 Chrome 開啟。")}
-    catch{
-      const t=document.createElement("textarea");t.value=url;document.body.appendChild(t);t.select();document.execCommand("copy");t.remove();alert("網址已複製，請貼到 Safari 或 Chrome 開啟。");
-    }
+    catch{const t=document.createElement("textarea");t.value=url;document.body.appendChild(t);t.select();document.execCommand("copy");t.remove();alert("網址已複製，請貼到 Safari 或 Chrome 開啟。");}
   };
 
   if(embedded){
     const platform=isIOS?"Safari":isAndroid?"Chrome":"外部瀏覽器";
-    const action=isLine
-      ?`<a class="primary" style="display:block;text-align:center;text-decoration:none" href="${lineExternalUrl()}">用 ${platform} 開啟</a>`
-      :`<button class="primary" onclick="copyOrchestraUrl()">複製網址，用 ${platform} 開啟</button>`;
-    document.getElementById("app").innerHTML=`
-      <div class="login-wrap"><div class="login-card">
-        <div class="logo">🎻</div>
-        <h1>聖心小學弦樂團</h1>
-        <p>Google Gmail 登入</p>
-        <div class="error" style="margin-top:16px"><b>目前是在 App 內建瀏覽器中開啟</b><br><br>Google 為保護帳號，不支援 Android／iOS WebView 登入，因此可能只看到白畫面。</div>
-        <div class="notice" style="margin-top:12px">請改用 <b>${platform}</b> 開啟本系統，再按「使用 Google 帳戶登入」。${isLine?"<br><br>下方按鈕會要求 LINE 改用外部瀏覽器開啟。":""}</div>
-        ${action}
-        <button class="secondary" style="width:100%;margin-top:10px" onclick="copyOrchestraUrl()">複製網站網址</button>
-      </div></div>`;
+    const action=isLine?`<a class="primary" style="display:block;text-align:center;text-decoration:none" href="${lineExternalUrl()}">用 ${platform} 開啟</a>`:`<button class="primary" onclick="copyOrchestraUrl()">複製網址，用 ${platform} 開啟</button>`;
+    document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>Google Gmail 登入</p><div class="error" style="margin-top:16px"><b>目前是在 App 內建瀏覽器中開啟</b><br><br>Google 為保護帳號，不支援 Android／iOS WebView 登入，因此可能只看到白畫面。</div><div class="notice" style="margin-top:12px">請改用 <b>${platform}</b> 開啟本系統，再按「使用 Google 帳戶登入」。${isLine?"<br><br>下方按鈕會要求 LINE 改用外部瀏覽器開啟。":""}</div>${action}<button class="secondary" style="width:100%;margin-top:10px" onclick="copyOrchestraUrl()">複製網站網址</button></div></div>`;
     return;
   }
 
-  function appendScript(src,onload){
-    const s=document.createElement("script");s.src=src;s.defer=true;if(onload)s.onload=onload;document.body.appendChild(s);
-  }
+  function appendScript(src,onload){const s=document.createElement("script");s.src=src;s.defer=true;if(onload)s.onload=onload;document.body.appendChild(s)}
   function loadApp(){
     appendScript("/app-v3.js",()=>{
       appendScript("/roster-support.js",()=>{
         appendScript("/section-support.js",()=>{
           appendScript("/teacher-support.js",()=>{
-            appendScript("/teacher-settings.js",()=>appendScript("/batch-upgrade.js"));
+            appendScript("/teacher-settings.js",()=>{
+              appendScript("/teacher-admin.js",()=>appendScript("/batch-upgrade.js"));
+            });
           });
         });
       });
@@ -75,24 +58,17 @@
       if(window.google?.accounts?.id?.initialize){
         clearInterval(timer);
         const nativeInitialize=window.google.accounts.id.initialize.bind(window.google.accounts.id);
-        window.google.accounts.id.initialize=(config={})=>{
-          const {callback,...rest}=config;
-          return nativeInitialize({...rest,ux_mode:"redirect",login_uri:`${location.origin}/api/google-login`});
-        };
+        window.google.accounts.id.initialize=(config={})=>{const {callback,...rest}=config;return nativeInitialize({...rest,ux_mode:"redirect",login_uri:`${location.origin}/api/google-login`})};
         loadApp();
-      }else if(tries>120){
-        clearInterval(timer);loadApp();
-      }
+      }else if(tries>120){clearInterval(timer);loadApp()}
     },50);
   }
 
   document.addEventListener("click",async e=>{
-    const btn=e.target.closest?.(".logout");
-    if(!btn)return;
+    const btn=e.target.closest?.(".logout");if(!btn)return;
     e.preventDefault();e.stopImmediatePropagation();
     try{await fetch("/api/google-logout",{method:"POST"})}catch{}
-    sessionStorage.removeItem("google_id_token");
-    location.href="/";
+    sessionStorage.removeItem("google_id_token");location.href="/";
   },true);
 
   if(isIOS)installIOSRedirectMode();else loadApp();
