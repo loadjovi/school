@@ -4,6 +4,7 @@ const conn=()=>process.env.STORAGE_CONNECTION_STRING;
 const names={
   practice:process.env.PRACTICE_TABLE||"PracticeLog",
   section:process.env.SECTION_TABLE||"SectionAttendance",
+  ensemble:process.env.ENSEMBLE_TABLE||"EnsembleAttendance",
   privateLesson:process.env.PRIVATE_TABLE||"PrivateLesson",
   registrations:process.env.STUDENT_REGISTRATION_TABLE||"StudentRegistration",
   userStudentMap:process.env.USER_STUDENT_MAP_TABLE||"UserStudentMap",
