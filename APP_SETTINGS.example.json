@@ -1,13 +1,15 @@
 {
   "GOOGLE_CLIENT_ID": "<Google OAuth 2.0 Web Client ID>",
   "STORAGE_CONNECTION_STRING": "<Azure Storage connection string>",
-  "STUDENT_MAP_JSON": "{\"parent@gmail.com\": [{\"studentId\": \"SH001\", \"name\": \"林心澄\", \"grade\": \"三年級\", \"groupName\": \"A\", \"instrument\": \"小提琴\"}]}",
-  "SECTION_TEACHER_MAP_JSON": "{\"sectionteacher@gmail.com\": {\"section\": \"小提琴\", \"students\": [{\"studentId\": \"SH001\", \"name\": \"林心澄\", \"grade\": \"三年級\", \"groupName\": \"A\", \"instrument\": \"小提琴\"}]}}",
-  "PRIVATE_TEACHER_MAP_JSON": "{\"privateteacher@gmail.com\": {\"students\": [{\"studentId\": \"SH001\", \"name\": \"林心澄\", \"grade\": \"三年級\", \"groupName\": \"A\", \"instrument\": \"小提琴\"}]}}",
+  "STUDENT_MAP_JSON": "{\"parent@gmail.com\": [{\"studentId\": \"SH001\", \"name\": \"林心澄\", \"grade\": \"三年級\", \"groupName\": \"A\", \"instrument\": \"小提琴\", \"section\": \"小提一部\"}]}",
+  "SECTION_TEACHER_MAP_JSON": "{\"teacher@gmail.com\": {\"assignments\": [{\"groupName\": \"A\", \"section\": \"小提一部\"}, {\"groupName\": \"B\", \"section\": \"小提一部\"}]}}",
+  "ENSEMBLE_TEACHER_MAP_JSON": "{\"ensembleteacher@gmail.com\": {\"groups\": [\"A\", \"B\"]}}",
+  "PRIVATE_TEACHER_MAP_JSON": "{\"teacher@gmail.com\": {\"studentIds\": [\"SH001\", \"SH010\", \"SH021\"]}}",
   "ADMIN_EMAILS": "admin@gmail.com",
   "PRACTICE_QUALIFIED_MINUTES": "15",
   "PRACTICE_TARGET_DAYS": "30",
   "PRACTICE_TABLE": "PracticeLog",
   "SECTION_TABLE": "SectionAttendance",
+  "ENSEMBLE_TABLE": "EnsembleAttendance",
   "PRIVATE_TABLE": "PrivateLesson"
 }
