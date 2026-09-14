@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
 import { getAccess, json } from "../lib/auth.js";
-import { ensureTables, table, rowKey, getRegistrationsByEmail, listRegistrations, getStudentMaster } from "../lib/storage.js";
+import { ensureTables, table, rowKey, getRegistrationsByEmail, listRegistrations, getStudentMaster, listStudentMaster } from "../lib/storage.js";
 
 const allowedGroups=new Set(["A","B","C","儲備"]);
 const allowedGrades=new Set(["一年級","二年級","三年級","四年級","五年級","六年級"]);
@@ -84,8 +84,16 @@ app.http("studentRegistration",{
       oldMaster=await getStudentMaster(studentId);
       if(!oldMaster)return json({error:"指定的既有學生不存在"},404);
     }else{
-      const suffix=(Date.now().toString().slice(-7)+Math.random().toString(36).slice(2,5)).toUpperCase();
-      studentId=`SH${suffix}`;
+      const sameName=(await listStudentMaster("active")).filter(x=>clean(x.studentName,40)===studentName);
+      if(sameName.length===1){
+        oldMaster=sameName[0];
+        studentId=String(oldMaster.rowKey);
+      }else if(sameName.length>1){
+        return json({error:"找到多筆同名在團學生，請先在審核畫面指定正確學生再核准",matches:sameName.map(x=>({studentId:x.rowKey,studentName:x.studentName,grade:x.grade,groupName:x.groupName,section:x.section||"待確認",instrument:x.instrument}))},409);
+      }else{
+        const suffix=(Date.now().toString().slice(-7)+Math.random().toString(36).slice(2,5)).toUpperCase();
+        studentId=`SH${suffix}`;
+      }
     }
 
     const now=new Date().toISOString();
@@ -100,10 +108,13 @@ app.http("studentRegistration",{
       newValue:JSON.stringify({studentName,grade,groupName,instrument,schoolYear}),registrationId
     });
 
-    await table("userStudentMap").upsertEntity({partitionKey:String(reg.parentEmail).toLowerCase(),rowKey:studentId,relationship:reg.relationship,status:"active",registrationId,createdAt:now,approvedBy:access.email},"Merge");
+    await table("userStudentMap").upsertEntity({
+      partitionKey:String(reg.parentEmail).toLowerCase(),rowKey:studentId,relationship:reg.relationship,status:"active",registrationId,
+      studentName,grade,groupName,instrument,schoolYear,createdAt:now,approvedBy:access.email
+    },"Merge");
 
     reg.status="approved";reg.studentId=studentId;reg.studentName=studentName;reg.grade=grade;reg.groupName=groupName;reg.instrument=instrument;reg.schoolYear=schoolYear;reg.reviewedAt=now;reg.reviewedBy=access.email;reg.note=note;
     await regClient.updateEntity(reg,"Merge");
-    return json({ok:true,status:"approved",studentId});
+    return json({ok:true,status:"approved",studentId,linkedExisting:!!oldMaster});
   }
 });
