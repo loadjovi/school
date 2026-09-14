@@ -53,6 +53,8 @@
     window.__ensembleGroupIndex=Number(v)||0;
     try{await fetchEnsemble(state.ensembleSessionDate);render()}catch(e){toast("❌ "+e.message);render()}
   };
+  window.setSectionStatus=function(id,v){state.sectionSessionStatuses[String(id)]=String(v||"present")};
+  window.setEnsembleStatus=function(id,v){state.ensembleSessionStatuses[String(id)]=String(v||"present")};
 
   function csvCell(v){const s=String(v??"");return /[",\r\n]/.test(s)?`"${s.replaceAll('"','""')}"`:s}
   function downloadCsv(filename,rows){
@@ -60,10 +62,10 @@
     const blob=new Blob([content],{type:"text/csv;charset=utf-8"});
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   }
-  function followupRows(date,type,groupName,section,students,prefix){
+  function followupRows(date,type,groupName,section,students,statusMap){
     const rows=[["日期","課程類型","團別","分部","學生姓名","年級","樂器","出勤狀態","點名老師"]];
     for(const s of students){
-      const status=$(prefix+s.studentId)?.value||"present";
+      const status=String(statusMap[String(s.studentId)]||"present");
       if(!["leave","absent"].includes(status))continue;
       rows.push([date,type,groupName,section,s.name,s.grade,s.instrument,statusLabels[status]||status,state.me?.displayName||state.me?.email||""]);
     }
@@ -73,14 +75,14 @@
     const c=currentSection();if(!c){toast("尚未設定分部課");return}
     const groupName=String(c.groupName||c.group||""),section=String(c.section||"");
     const students=state.students.filter(s=>String(s.groupName)===groupName&&String(s.section||"待確認")===section);
-    const rows=followupRows(state.sectionSessionDate,"分部課",groupName,section,students,"att_");
+    const rows=followupRows(state.sectionSessionDate,"分部課",groupName,section,students,state.sectionSessionStatuses);
     if(rows.length===1){toast("✅ 本次沒有請假／缺席學生");return}
     downloadCsv(`${state.sectionSessionDate}_${groupName}團_${section}_未到追蹤.csv`,rows);toast(`📥 已匯出 ${rows.length-1} 位未到學生`);
   };
   window.exportEnsembleFollowup=function(){
     const g=currentEnsemble();if(!g){toast("尚未設定團體課");return}
     const students=state.students.filter(s=>String(s.groupName)===g);
-    const rows=followupRows(state.ensembleSessionDate,"團體課",g,"四分部合班",students,"ens_");
+    const rows=followupRows(state.ensembleSessionDate,"團體課",g,"四分部合班",students,state.ensembleSessionStatuses);
     if(rows.length===1){toast("✅ 本次沒有請假／缺席學生");return}
     downloadCsv(`${state.ensembleSessionDate}_${g}團_團體課_未到追蹤.csv`,rows);toast(`📥 已匯出 ${rows.length-1} 位未到學生`);
   };
@@ -95,14 +97,14 @@
     const selector=assignments.length>1?`<label>本次分部課</label><select onchange="changeSectionClass(this.value)">${assignments.map((x,i)=>`<option value="${i}" ${i===idx?"selected":""}>${esc(x.groupName||x.group)}團｜${esc(x.section)}</option>`).join("")}</select>`:`<div class="notice"><b>${esc(groupName)}團｜${esc(section)}</b></div>`;
     const loaded=state.sectionSessionLoaded?`<div class="notice" style="margin-top:10px">✅ 已載入 ${state.sectionSessionLoaded} 筆 ${esc(state.sectionSessionDate)} 的既有點名，可直接修改後重新儲存。</div>`:"";
     return `<div class="card"><h2>分部課點名</h2>${selector}<label>上課日期</label><input id="sDate" type="date" value="${esc(state.sectionSessionDate)}" onchange="changeSectionAttendanceDate(this.value)">${days.length?`<div class="notice" style="margin-top:10px"><b>${esc(groupName)}團固定分部課：</b>${days.map(d=>dayText[d]).join("、")}</div>`:""}${loaded}</div>
-      <div class="card"><h2>${esc(groupName)}團｜${esc(section)}學生名單</h2>${students.length?students.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.grade)}｜${esc(s.instrument)}</small></div><select id="att_${s.studentId}" class="status-select">${statusOptions(state.sectionSessionStatuses[String(s.studentId)]||"present")}</select></div>`).join(""):`<div class="notice">目前沒有符合此團別／分部的學生。</div>`}${students.length?`<button class="primary" onclick="saveSection()">儲存／更新本次點名</button><button class="secondary" style="width:100%;margin-top:10px" onclick="exportSectionFollowup()">📤 一鍵匯出未到學生名單</button>`:""}</div>`;
+      <div class="card"><h2>${esc(groupName)}團｜${esc(section)}學生名單</h2>${students.length?students.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.grade)}｜${esc(s.instrument)}</small></div><select id="att_${s.studentId}" class="status-select" onchange="setSectionStatus('${esc(s.studentId)}',this.value)">${statusOptions(state.sectionSessionStatuses[String(s.studentId)]||"present")}</select></div>`).join(""):`<div class="notice">目前沒有符合此團別／分部的學生。</div>`}${students.length?`<button class="primary" onclick="saveSection()">儲存／更新本次點名</button><button class="secondary" style="width:100%;margin-top:10px" onclick="exportSectionFollowup()">📤 一鍵匯出未到學生名單</button>`:""}</div>`;
   };
 
   window.saveSection=async function(){
     const c=currentSection();if(!c){toast("尚未設定分部課");return}
     const groupName=String(c.groupName||c.group||""),section=String(c.section||"");
     const students=state.students.filter(s=>String(s.groupName)===groupName&&String(s.section||"待確認")===section);
-    const items=students.map(s=>{const status=$(`att_${s.studentId}`).value;return {studentId:s.studentId,status,minutes:["present","late"].includes(status)?45:0}});
+    const items=students.map(s=>{const status=String(state.sectionSessionStatuses[String(s.studentId)]||"present");return {studentId:s.studentId,status,minutes:["present","late"].includes(status)?45:0}});
     try{
       await api("/api/section-attendance",{method:"POST",body:JSON.stringify({sessionDate:state.sectionSessionDate,section,groupName,items})});
       await fetchSection(state.sectionSessionDate);toast(`✅ ${groupName}團｜${section} ${state.sectionSessionDate} 點名已更新`);render();
@@ -117,13 +119,13 @@
     const selector=groups.length>1?`<label>團體課</label><select onchange="changeEnsembleGroup(this.value)">${groups.map((x,i)=>`<option value="${i}" ${i===idx?"selected":""}>${esc(x)}團｜四分部合班</option>`).join("")}</select>`:`<div class="notice"><b>${esc(g)}團｜四分部合班</b></div>`;
     const loaded=state.ensembleSessionLoaded?`<div class="notice" style="margin-top:10px">✅ 已載入 ${state.ensembleSessionLoaded} 筆 ${esc(state.ensembleSessionDate)} 的既有點名，可直接修改後重新儲存。</div>`:"";
     return `<div class="card"><h2>團體課點名</h2>${selector}<label>上課日期</label><input id="eDate" type="date" value="${esc(state.ensembleSessionDate)}" onchange="changeEnsembleAttendanceDate(this.value)"><div class="notice" style="margin-top:10px">${esc(g)}團四個分部一起點名。</div>${loaded}</div>
-      <div class="card"><h2>${esc(g)}團學生名單</h2>${students.length?students.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.section||"待確認")}｜${esc(s.instrument)}｜${esc(s.grade)}</small></div><select id="ens_${s.studentId}" class="status-select">${statusOptions(state.ensembleSessionStatuses[String(s.studentId)]||"present")}</select></div>`).join(""):`<div class="notice">目前此團沒有學生資料。</div>`}${students.length?`<button class="primary" onclick="saveEnsemble()">儲存／更新團體課點名</button><button class="secondary" style="width:100%;margin-top:10px" onclick="exportEnsembleFollowup()">📤 一鍵匯出未到學生名單</button>`:""}</div>`;
+      <div class="card"><h2>${esc(g)}團學生名單</h2>${students.length?students.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.section||"待確認")}｜${esc(s.instrument)}｜${esc(s.grade)}</small></div><select id="ens_${s.studentId}" class="status-select" onchange="setEnsembleStatus('${esc(s.studentId)}',this.value)">${statusOptions(state.ensembleSessionStatuses[String(s.studentId)]||"present")}</select></div>`).join(""):`<div class="notice">目前此團沒有學生資料。</div>`}${students.length?`<button class="primary" onclick="saveEnsemble()">儲存／更新團體課點名</button><button class="secondary" style="width:100%;margin-top:10px" onclick="exportEnsembleFollowup()">📤 一鍵匯出未到學生名單</button>`:""}</div>`;
   };
 
   window.saveEnsemble=async function(){
     const g=currentEnsemble();if(!g){toast("尚未設定團體課");return}
     const students=state.students.filter(s=>String(s.groupName)===g);
-    const items=students.map(s=>{const status=$(`ens_${s.studentId}`).value;return {studentId:s.studentId,status,minutes:["present","late"].includes(status)?50:0}});
+    const items=students.map(s=>{const status=String(state.ensembleSessionStatuses[String(s.studentId)]||"present");return {studentId:s.studentId,status,minutes:["present","late"].includes(status)?50:0}});
     try{
       await api("/api/ensemble-attendance",{method:"POST",body:JSON.stringify({sessionDate:state.ensembleSessionDate,groupName:g,items})});
       await fetchEnsemble(state.ensembleSessionDate);toast(`✅ ${g}團 ${state.ensembleSessionDate} 團體課點名已更新`);render();
