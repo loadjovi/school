@@ -4,7 +4,7 @@ import { ensureTables, table, rowKey, getStudentMaster, listStudentMaster } from
 
 const allowedGroups=new Set(["A","B","C","儲備"]);
 const allowedGrades=new Set(["一年級","二年級","三年級","四年級","五年級","六年級"]);
-const allowedInstruments=new Set(["小提琴","中提琴","大提琴","低音提琴","其他"]);
+const allowedInstruments=new Set(["小提琴","中提琴","大提琴","低音提琴","其他","待確認"]);
 function clean(v,max=100){return String(v||"").trim().slice(0,max)}
 function view(e){return {studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,schoolYear:e.schoolYear||"",status:e.status||"active",updatedAt:e.updatedAt||null,updatedBy:e.updatedBy||null}}
 function validate(x){
