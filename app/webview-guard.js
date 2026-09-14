@@ -49,7 +49,9 @@
                     appendScript("/roster-import.js",()=>{
                       appendScript("/attendance-support.js",()=>{
                         appendScript("/attendance-edit.js",()=>{
-                          appendScript("/teacher-navigation.js",()=>appendScript("/practice-progress.js"));
+                          appendScript("/teacher-navigation.js",()=>{
+                            appendScript("/practice-progress.js",()=>appendScript("/practice-timer.js?v=20260915-0152"));
+                          });
                         });
                       });
                     });
