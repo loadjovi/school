@@ -2,6 +2,7 @@ import { OAuth2Client } from "google-auth-library";
 import { getMappedStudentsByEmail, listStudentMaster, getTeacherProfile, getTeacherDirectory } from "./storage.js";
 
 const googleClient = new OAuth2Client();
+let aliasCache=null,aliasCacheAt=0;
 
 export function parseJsonEnv(name, fallback={}){
   try{return JSON.parse(process.env[name]||JSON.stringify(fallback))}catch{return fallback}
@@ -68,6 +69,7 @@ function parentMapEntries(){
 }
 
 async function buildStudentAliasIndex(){
+  if(aliasCache&&Date.now()-aliasCacheAt<15000)return aliasCache;
   const masters=await listStudentMaster();
   const byId=new Map(masters.map(m=>[String(m.rowKey),m]));
   const byName=new Map();
@@ -89,7 +91,8 @@ async function buildStudentAliasIndex(){
     canonicalToAliases.get(canonical).add(oldId);
   }
   for(const id of byId.keys())if(!canonicalToAliases.has(id))canonicalToAliases.set(id,new Set([id]));
-  return {masters,byId,byName,aliasToCanonical,canonicalToAliases};
+  aliasCache={masters,byId,byName,aliasToCanonical,canonicalToAliases};aliasCacheAt=Date.now();
+  return aliasCache;
 }
 
 async function canonicalizeStudents(list=[]){
@@ -97,7 +100,7 @@ async function canonicalizeStudents(list=[]){
   for(const raw of Array.isArray(list)?list:[]){
     if(typeof raw==="string"){
       const canonical=index.aliasToCanonical.get(raw)||raw,master=index.byId.get(canonical);
-      out.set(canonical,master?viewMaster(master,[...(index.canonicalToAliases.get(canonical)||[]) ]):{studentId:raw,name:raw});
+      out.set(canonical,master?viewMaster(master,[...(index.canonicalToAliases.get(canonical)||[])]):{studentId:raw,name:raw});
       continue;
     }
     if(!raw||typeof raw!=="object")continue;
