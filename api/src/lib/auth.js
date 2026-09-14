@@ -6,14 +6,18 @@ export function parseJsonEnv(name, fallback={}){
   try{return JSON.parse(process.env[name]||JSON.stringify(fallback))}catch{return fallback}
 }
 
-function bearer(request){
+function googleToken(request){
+  // Azure Static Web Apps may process the standard Authorization header.
+  // Prefer a dedicated header for the Google ID token, and keep Bearer as fallback.
+  const custom=String(request.headers.get("x-google-id-token")||"").trim();
+  if(custom)return custom;
   const auth=String(request.headers.get("authorization")||"");
   if(!auth.toLowerCase().startsWith("bearer "))return "";
   return auth.slice(7).trim();
 }
 
 export async function verifyGoogle(request){
-  const token=bearer(request);
+  const token=googleToken(request);
   const audience=String(process.env.GOOGLE_CLIENT_ID||"").trim();
   if(!token||!audience)return null;
   try{
@@ -22,11 +26,14 @@ export async function verifyGoogle(request){
     if(!p?.email||p.email_verified!==true)return null;
     return {
       sub:p.sub,
-      email:String(p.email).toLowerCase(),
+      email:String(p.email).trim().toLowerCase(),
       displayName:p.name||p.email,
       picture:p.picture||null
     };
-  }catch{return null}
+  }catch(err){
+    console.error("Google ID token verification failed:", err?.message||String(err));
+    return null;
+  }
 }
 
 export async function getAccess(request){
