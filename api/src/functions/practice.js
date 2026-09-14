@@ -1,4 +1,3 @@
-
 import { app } from "@azure/functions";
 import { getAccess, ensureStudentAccess, json } from "../lib/auth.js";
 import { ensureTables, table, rowKey, listByStudent } from "../lib/storage.js";
@@ -8,7 +7,7 @@ function minutesBetween(start,end){
   let m=(eh*60+em)-(sh*60+sm);if(m<0)m+=1440;return m;
 }
 app.http("practice",{methods:["GET","POST"],authLevel:"anonymous",route:"practice",handler:async(request)=>{
-  const a=getAccess(request);if(!a.authenticated)return json({error:"Unauthorized"},401);
+  const a=await getAccess(request);if(!a.authenticated)return json({error:"Unauthorized"},401);
   if(request.method==="GET"){
     const studentId=request.query.get("studentId"),month=request.query.get("month");
     if(!studentId||!ensureStudentAccess(a,studentId))return json({error:"Forbidden"},403);

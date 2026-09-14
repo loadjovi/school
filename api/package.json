@@ -1,6 +1,6 @@
 {
   "name": "sh-orchestra-api",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "main": "src/functions/*.js",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@azure/functions": "^4.0.0",
-    "@azure/data-tables": "^13.0.0"
+    "@azure/data-tables": "^13.0.0",
+    "google-auth-library": "^10.3.0"
   }
 }

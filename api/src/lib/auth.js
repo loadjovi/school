@@ -1,29 +1,49 @@
+import { OAuth2Client } from "google-auth-library";
 
-export function getPrincipal(request){
-  const raw=request.headers.get("x-ms-client-principal");
-  if(!raw)return null;
-  try{return JSON.parse(Buffer.from(raw,"base64").toString("utf8"))}catch{return null}
-}
-export function getEmail(principal){
-  return String(principal?.userDetails||"").trim().toLowerCase();
-}
+const googleClient = new OAuth2Client();
+
 export function parseJsonEnv(name, fallback={}){
   try{return JSON.parse(process.env[name]||JSON.stringify(fallback))}catch{return fallback}
 }
-export function getAccess(request){
-  const principal=getPrincipal(request);
-  if(!principal)return {authenticated:false};
-  const email=getEmail(principal);
+
+function bearer(request){
+  const auth=String(request.headers.get("authorization")||"");
+  if(!auth.toLowerCase().startsWith("bearer "))return "";
+  return auth.slice(7).trim();
+}
+
+export async function verifyGoogle(request){
+  const token=bearer(request);
+  const audience=String(process.env.GOOGLE_CLIENT_ID||"").trim();
+  if(!token||!audience)return null;
+  try{
+    const ticket=await googleClient.verifyIdToken({idToken:token,audience});
+    const p=ticket.getPayload();
+    if(!p?.email||p.email_verified!==true)return null;
+    return {
+      sub:p.sub,
+      email:String(p.email).toLowerCase(),
+      displayName:p.name||p.email,
+      picture:p.picture||null
+    };
+  }catch{return null}
+}
+
+export async function getAccess(request){
+  const identity=await verifyGoogle(request);
+  if(!identity)return {authenticated:false};
+  const email=identity.email;
   const parentMap=parseJsonEnv("STUDENT_MAP_JSON",{});
   const sectionMap=parseJsonEnv("SECTION_TEACHER_MAP_JSON",{});
   const privateMap=parseJsonEnv("PRIVATE_TEACHER_MAP_JSON",{});
   const admins=String(process.env.ADMIN_EMAILS||"").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean);
-  if(admins.includes(email)) return {authenticated:true,email,role:"admin",displayName:principal.userDetails};
-  if(sectionMap[email]) return {authenticated:true,email,role:"sectionTeacher",displayName:principal.userDetails,...sectionMap[email]};
-  if(privateMap[email]) return {authenticated:true,email,role:"privateTeacher",displayName:principal.userDetails,...privateMap[email]};
-  if(parentMap[email]) return {authenticated:true,email,role:"parent",displayName:principal.userDetails,students:parentMap[email]};
-  return {authenticated:true,email,role:"unassigned",displayName:principal.userDetails};
+  if(admins.includes(email)) return {authenticated:true,...identity,role:"admin"};
+  if(sectionMap[email]) return {authenticated:true,...identity,role:"sectionTeacher",...sectionMap[email]};
+  if(privateMap[email]) return {authenticated:true,...identity,role:"privateTeacher",...privateMap[email]};
+  if(parentMap[email]) return {authenticated:true,...identity,role:"parent",students:parentMap[email]};
+  return {authenticated:true,...identity,role:"unassigned"};
 }
+
 export function json(body,status=200){return {status,jsonBody:body,headers:{"Content-Type":"application/json; charset=utf-8"}}}
 export function allowedStudentIds(access){
   if(access.role==="admin") return null;
