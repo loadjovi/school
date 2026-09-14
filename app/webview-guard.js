@@ -3,15 +3,23 @@
   const isIOS=/iPhone|iPad|iPod/i.test(ua);
   const isAndroid=/Android/i.test(ua);
   const isLine=/\bLine\//i.test(ua);
-  const isSocial=/FBAN|FBAV|Instagram|MicroMessenger|Twitter|Messenger/i.test(ua);
+  const isSocial=/FBAN|FBAV|Instagram|MicroMessenger|Twitter|Messenger|TikTok|Snapchat|ChatGPT/i.test(ua);
   const isIOSWebView=isIOS&&/AppleWebKit/i.test(ua)&&!/Safari/i.test(ua);
   const isAndroidWebView=isAndroid&&(/;\s*wv\)/i.test(ua)||/\bwv\b/i.test(ua));
   const embedded=isLine||isSocial||isIOSWebView||isAndroidWebView;
+
+  const current=new URL(location.href);
+  if(current.searchParams.get("google_redirect")==="1"){
+    sessionStorage.setItem("google_id_token","cookie-session");
+    current.searchParams.delete("google_redirect");
+    history.replaceState({},"",current.pathname+(current.search?current.search:"")+current.hash);
+  }
 
   function cleanUrl(){
     const u=new URL(location.href);
     u.searchParams.delete("openExternalBrowser");
     u.searchParams.delete("openInAppBrowser");
+    u.searchParams.delete("google_redirect");
     return u.toString();
   }
   function lineExternalUrl(){
@@ -37,7 +45,7 @@
         <div class="logo">🎻</div>
         <h1>聖心小學弦樂團</h1>
         <p>Google Gmail 登入</p>
-        <div class="error" style="margin-top:16px"><b>目前是在 App 內建瀏覽器中開啟</b><br><br>Google 為保護帳號，不支援在 LINE、Facebook、Instagram 等內建 WebView 進行登入，因此可能只看到白畫面。</div>
+        <div class="error" style="margin-top:16px"><b>目前是在 App 內建瀏覽器中開啟</b><br><br>Google 為保護帳號，不支援 Android／iOS WebView 登入，因此可能只看到白畫面。</div>
         <div class="notice" style="margin-top:12px">請改用 <b>${platform}</b> 開啟本系統，再按「使用 Google 帳戶登入」。${isLine?"<br><br>下方按鈕會要求 LINE 改用外部瀏覽器開啟。":""}</div>
         ${action}
         <button class="secondary" style="width:100%;margin-top:10px" onclick="copyOrchestraUrl()">複製網站網址</button>
@@ -45,8 +53,39 @@
     return;
   }
 
-  const app=document.createElement("script");
-  app.src="/app-v3.js";app.defer=true;
-  app.onload=()=>{const b=document.createElement("script");b.src="/batch-upgrade.js";b.defer=true;document.body.appendChild(b)};
-  document.body.appendChild(app);
+  function loadApp(){
+    const app=document.createElement("script");
+    app.src="/app-v3.js";app.defer=true;
+    app.onload=()=>{const b=document.createElement("script");b.src="/batch-upgrade.js";b.defer=true;document.body.appendChild(b)};
+    document.body.appendChild(app);
+  }
+
+  function installIOSRedirectMode(){
+    let tries=0;
+    const timer=setInterval(()=>{
+      tries++;
+      if(window.google?.accounts?.id?.initialize){
+        clearInterval(timer);
+        const nativeInitialize=window.google.accounts.id.initialize.bind(window.google.accounts.id);
+        window.google.accounts.id.initialize=(config={})=>{
+          const {callback,...rest}=config;
+          return nativeInitialize({...rest,ux_mode:"redirect",login_uri:`${location.origin}/api/google-login`});
+        };
+        loadApp();
+      }else if(tries>120){
+        clearInterval(timer);loadApp();
+      }
+    },50);
+  }
+
+  document.addEventListener("click",async e=>{
+    const btn=e.target.closest?.(".logout");
+    if(!btn)return;
+    e.preventDefault();e.stopImmediatePropagation();
+    try{await fetch("/api/google-logout",{method:"POST"})}catch{}
+    sessionStorage.removeItem("google_id_token");
+    location.href="/";
+  },true);
+
+  if(isIOS)installIOSRedirectMode();else loadApp();
 })();
