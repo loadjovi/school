@@ -11,12 +11,13 @@ function studentView(e){
   return {studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,section:e.section||"待確認",schoolYear:e.schoolYear||"",status:e.status||"active"};
 }
 async function listRange(key,start,end,allowedIds){
-  const rows=[];
+  const latest=new Map();
   const filter=`eventDate ge '${start}' and eventDate le '${end}'`;
   for await (const e of table(key).listEntities({queryOptions:{filter}})){
-    if(allowedIds&&!allowedIds.has(String(e.partitionKey)))continue;
-    rows.push({
-      studentId:String(e.partitionKey),
+    const studentId=String(e.partitionKey);
+    if(allowedIds&&!allowedIds.has(studentId))continue;
+    const row={
+      studentId,
       eventDate:String(e.eventDate||""),
       classType:String(e.classType||key),
       groupName:String(e.groupName||""),
@@ -25,9 +26,12 @@ async function listRange(key,start,end,allowedIds){
       minutes:Number(e.minutes||0),
       teacher:String(e.teacher||""),
       createdAt:String(e.createdAt||"")
-    });
+    };
+    const dedupeKey=[row.studentId,row.eventDate,row.classType,row.groupName,row.section].join("|");
+    const old=latest.get(dedupeKey);
+    if(!old||row.createdAt>=old.createdAt)latest.set(dedupeKey,row);
   }
-  return rows;
+  return [...latest.values()];
 }
 function blank(){return {present:0,late:0,leave:0,absent:0,cancelled:0,total:0,attended:0}}
 function add(bucket,status){
