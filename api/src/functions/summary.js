@@ -1,9 +1,8 @@
-
 import { app } from "@azure/functions";
 import { getAccess, ensureStudentAccess, json } from "../lib/auth.js";
 import { listByStudent } from "../lib/storage.js";
 app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handler:async(request)=>{
-  const a=getAccess(request);if(!a.authenticated)return json({error:"Unauthorized"},401);
+  const a=await getAccess(request);if(!a.authenticated)return json({error:"Unauthorized"},401);
   const studentId=request.query.get("studentId"),month=request.query.get("month")||new Date().toISOString().slice(0,7);
   if(!studentId||!ensureStudentAccess(a,studentId))return json({error:"Forbidden"},403);
   const start=`${month}-01`,end=`${month}-31`;
