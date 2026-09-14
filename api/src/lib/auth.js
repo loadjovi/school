@@ -54,8 +54,69 @@ function normalizeProfile(profile){
   return {sectionAssignments,ensembleGroups,privateStudentIds};
 }
 
-function viewMaster(e){
-  return {studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,section:e.section||"待確認",schoolYear:e.schoolYear||"",status:e.status||"active",source:"studentMaster"};
+function viewMaster(e,legacyStudentIds=[]){
+  return {studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,section:e.section||"待確認",schoolYear:e.schoolYear||"",status:e.status||"active",source:"studentMaster",legacyStudentIds:[...new Set((legacyStudentIds||[]).map(String).filter(x=>x&&x!==String(e.rowKey)))]};
+}
+
+function parentMapEntries(){
+  const parentMap=parseJsonEnv("STUDENT_MAP_JSON",{}),rows=[];
+  for(const value of Object.values(parentMap||{})){
+    const list=Array.isArray(value)?value:(Array.isArray(value?.students)?value.students:[]);
+    for(const s of list)if(s&&typeof s==="object"&&s.studentId)rows.push(s);
+  }
+  return rows;
+}
+
+async function buildStudentAliasIndex(){
+  const masters=await listStudentMaster();
+  const byId=new Map(masters.map(m=>[String(m.rowKey),m]));
+  const byName=new Map();
+  for(const m of masters){
+    const name=String(m.studentName||"").trim();
+    if(!name)continue;
+    if(!byName.has(name))byName.set(name,[]);
+    byName.get(name).push(m);
+  }
+  const aliasToCanonical=new Map(),canonicalToAliases=new Map();
+  for(const raw of parentMapEntries()){
+    const oldId=String(raw.studentId||"").trim(),name=String(raw.name||raw.studentName||"").trim();
+    if(!oldId)continue;
+    let canonical=byId.has(oldId)?oldId:"";
+    if(!canonical&&name){const matches=byName.get(name)||[];if(matches.length===1)canonical=String(matches[0].rowKey)}
+    if(!canonical)canonical=oldId;
+    aliasToCanonical.set(oldId,canonical);
+    if(!canonicalToAliases.has(canonical))canonicalToAliases.set(canonical,new Set([canonical]));
+    canonicalToAliases.get(canonical).add(oldId);
+  }
+  for(const id of byId.keys())if(!canonicalToAliases.has(id))canonicalToAliases.set(id,new Set([id]));
+  return {masters,byId,byName,aliasToCanonical,canonicalToAliases};
+}
+
+async function canonicalizeStudents(list=[]){
+  const index=await buildStudentAliasIndex(),out=new Map();
+  for(const raw of Array.isArray(list)?list:[]){
+    if(typeof raw==="string"){
+      const canonical=index.aliasToCanonical.get(raw)||raw,master=index.byId.get(canonical);
+      out.set(canonical,master?viewMaster(master,[...(index.canonicalToAliases.get(canonical)||[]) ]):{studentId:raw,name:raw});
+      continue;
+    }
+    if(!raw||typeof raw!=="object")continue;
+    const rawId=String(raw.studentId||"").trim(),name=String(raw.name||raw.studentName||"").trim();
+    let canonical=index.aliasToCanonical.get(rawId)||rawId;
+    if(!index.byId.has(canonical)&&name){const matches=index.byName.get(name)||[];if(matches.length===1)canonical=String(matches[0].rowKey)}
+    const master=index.byId.get(canonical);
+    const aliases=new Set([rawId,...(index.canonicalToAliases.get(canonical)||[])]);
+    out.set(canonical,master?viewMaster(master,[...aliases]):{...raw,studentId:rawId,legacyStudentIds:[]});
+  }
+  return [...out.values()];
+}
+
+export async function getStudentIdAliases(studentId){
+  const id=String(studentId||"").trim();
+  if(!id)return [];
+  const index=await buildStudentAliasIndex();
+  const canonical=index.aliasToCanonical.get(id)||id;
+  return [...new Set([canonical,id,...(index.canonicalToAliases.get(canonical)||[])])].filter(Boolean);
 }
 
 export async function getAccess(request){
@@ -99,9 +160,9 @@ export async function getAccess(request){
     };
   }
 
-  if(parentMap[email])return {authenticated:true,...identity,role:"parent",students:parentMap[email]};
+  if(parentMap[email])return {authenticated:true,...identity,role:"parent",students:await canonicalizeStudents(parentMap[email])};
   const dynamicStudents=await getMappedStudentsByEmail(email);
-  if(dynamicStudents.length)return {authenticated:true,...identity,role:"parent",students:dynamicStudents};
+  if(dynamicStudents.length)return {authenticated:true,...identity,role:"parent",students:await canonicalizeStudents(dynamicStudents)};
   return {authenticated:true,...identity,role:"unassigned",capabilities:{}};
 }
 
@@ -109,12 +170,17 @@ export function json(body,status=200){return {status,jsonBody:body,headers:{"Con
 
 export function allowedStudentIds(access){
   if(access.role==="admin")return null;
-  return (access.students||[]).map(x=>typeof x==="string"?x:x.studentId);
+  const ids=[];
+  for(const s of access.students||[]){
+    if(typeof s==="string")ids.push(s);
+    else if(s?.studentId){ids.push(String(s.studentId));for(const x of s.legacyStudentIds||[])ids.push(String(x))}
+  }
+  return [...new Set(ids)];
 }
 
 export function ensureStudentAccess(access,studentId){
   if(access.role==="admin")return true;
-  return (allowedStudentIds(access)||[]).includes(studentId);
+  return (allowedStudentIds(access)||[]).includes(String(studentId));
 }
 
 export function ensureSectionAccess(access,student){
