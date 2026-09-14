@@ -5,7 +5,7 @@
   const statusText={present:"出席",late:"遲到",leave:"請假",absent:"缺席",cancelled:"停課"};
   const confirmText={pending:"家長待確認",confirmed:"家長已確認",issue:"家長回報有問題",not_required:"不需確認"};
   const confirmClass={pending:"warn",confirmed:"ok",issue:"bad",not_required:""};
-  const emailText={sent:"Email 已寄送",partial:"Email 部分寄送",failed:"Email 寄送失敗",not_configured:"Email 尚未設定",no_recipients:"尚無家長 Gmail",pending:"Email 準備中",not_required:""};
+  const emailText={sent:"Email 已寄送",partial:"Email 部分寄送",failed:"Email 寄送失敗",not_configured:"Email 尚未設定",no_recipients:"尚無家長 Gmail",disabled:"Email 通知已由後台關閉",pending:"Email 準備中",not_required:""};
 
   function teacherAccount(){return state.me?.role!=="admin"&&!!state.me?.capabilities?.private}
   function teacherLabel(x){
@@ -87,7 +87,7 @@
     const students=(state.students||[]).filter(s=>ids.has(String(s.studentId)));
     if(!students.length)return `<div class="card"><h2>個別課紀錄</h2><div class="notice">目前尚未綁定這位老師的個課學生。請到「⚙️ 我的教學」選擇個別課學生。</div></div>`;
     setTimeout(startTeacherPoll,0);
-    return `<div class="card"><h2>👤 個別課紀錄</h2><div class="notice">老師完成個別課後登記日期與實際時間；出席／遲到紀錄會同步出現在家長端，系統設定寄信服務後也會自動寄 Email 給已綁定的家長 Gmail。</div><label>學生</label><select id="iStudent">${students.map(s=>`<option value="${esc(s.studentId)}">${esc(s.name)}｜${esc(s.groupName)}團｜${esc(s.instrument)}</option>`).join("")}</select><label>上課日期</label><input id="iDate" type="date" value="${today}"><div class="row2"><div><label>開始時間</label><input id="iStart" type="time" value="18:00"></div><div><label>結束時間</label><input id="iEnd" type="time" value="18:50"></div></div><label>狀態</label><select id="iStatus"><option value="present">出席</option><option value="late">遲到</option><option value="leave">請假</option><option value="absent">缺席</option><option value="cancelled">停課</option></select><label>課程內容</label><textarea id="iContent" rows="3" placeholder="例：音階、換把、考試曲第 1～32 小節"></textarea><button class="primary" onclick="savePrivate()">儲存並通知家長確認</button></div><div class="card"><h2>家長確認狀態</h2><div class="notice">家長確認後，這裡最慢約 30 秒會自動更新；也可以手動重新整理。</div><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理確認狀態</button><div id="privateConfirmList">${teacherHistoryHtml()}</div></div>`;
+    return `<div class="card"><h2>👤 個別課紀錄</h2><div class="notice">老師完成個別課後登記日期與實際時間；網站內待確認通知固定保留，Email 是否寄送由管理員後台統一控制。</div><label>學生</label><select id="iStudent">${students.map(s=>`<option value="${esc(s.studentId)}">${esc(s.name)}｜${esc(s.groupName)}團｜${esc(s.instrument)}</option>`).join("")}</select><label>上課日期</label><input id="iDate" type="date" value="${today}"><div class="row2"><div><label>開始時間</label><input id="iStart" type="time" value="18:00"></div><div><label>結束時間</label><input id="iEnd" type="time" value="18:50"></div></div><label>狀態</label><select id="iStatus"><option value="present">出席</option><option value="late">遲到</option><option value="leave">請假</option><option value="absent">缺席</option><option value="cancelled">停課</option></select><label>課程內容</label><textarea id="iContent" rows="3" placeholder="例：音階、換把、考試曲第 1～32 小節"></textarea><button class="primary" onclick="savePrivate()">儲存並通知家長確認</button></div><div class="card"><h2>家長確認狀態</h2><div class="notice">家長確認後，這裡最慢約 30 秒會自動更新；也可以手動重新整理。</div><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理確認狀態</button><div id="privateConfirmList">${teacherHistoryHtml()}</div></div>`;
   };
 
   savePrivate=async function(){
@@ -99,8 +99,9 @@
       if(r.item?.parentConfirmation==="pending"){
         const m=r.emailNotification||{};
         if(m.status==="sent")toast(`✅ 已儲存並寄送 Email 給 ${m.sentCount||m.recipientCount||1} 位家長`);
+        else if(m.status==="disabled")toast("✅ 已儲存；網站內通知已建立，Email 由管理員後台關閉");
         else if(m.status==="no_recipients")toast("✅ 已儲存；此學生尚未綁定家長 Gmail");
-        else if(m.status==="not_configured")toast("✅ 已儲存；家長端有通知，但 Email 寄信服務尚未設定");
+        else if(m.status==="not_configured")toast("✅ 已儲存；家長端有通知，但 Azure Email 尚未設定");
         else if(m.status==="partial")toast("⚠️ 已儲存；部分家長 Email 已寄送");
         else if(m.status==="failed")toast("⚠️ 已儲存；Email 寄送失敗，網站內通知仍有效");
         else toast("✅ 已儲存，家長端將顯示待確認通知");
