@@ -10,6 +10,7 @@ const names={
   userStudentMap:process.env.USER_STUDENT_MAP_TABLE||"UserStudentMap",
   studentMaster:process.env.STUDENT_MASTER_TABLE||"StudentMaster",
   studentHistory:process.env.STUDENT_HISTORY_TABLE||"StudentHistory",
+  teacherProfile:process.env.TEACHER_PROFILE_TABLE||"TeacherProfile",
   academicYearBatch:process.env.ACADEMIC_YEAR_BATCH_TABLE||"AcademicYearBatch"
 };
 
@@ -82,6 +83,39 @@ export async function listStudentsBySectionAssignments(assignments=[]){
   if(!rules.length)return [];
   const masters=await listStudentMaster("active");
   return masters.filter(e=>rules.some(r=>e.groupName===r.groupName&&String(e.section||"待確認")===r.section)).map(masterView);
+}
+
+export async function getTeacherProfile(email){
+  await ensureTables();
+  const key=String(email||"").trim().toLowerCase();
+  if(!key)return null;
+  try{return await table("teacherProfile").getEntity("TEACHER",key)}
+  catch(e){if(e.statusCode===404)return null;throw e}
+}
+
+export async function saveTeacherProfile(email,profile={}){
+  await ensureTables();
+  const key=String(email||"").trim().toLowerCase();
+  const now=new Date().toISOString();
+  const entity={
+    partitionKey:"TEACHER",
+    rowKey:key,
+    displayName:String(profile.displayName||"").slice(0,100),
+    sectionAssignments:JSON.stringify(profile.sectionAssignments||[]),
+    ensembleGroups:JSON.stringify(profile.ensembleGroups||[]),
+    privateStudentIds:JSON.stringify(profile.privateStudentIds||[]),
+    updatedAt:now
+  };
+  try{
+    const old=await table("teacherProfile").getEntity("TEACHER",key);
+    entity.createdAt=old.createdAt||now;
+    await table("teacherProfile").upsertEntity(entity,"Replace");
+  }catch(e){
+    if(e.statusCode!==404)throw e;
+    entity.createdAt=now;
+    await table("teacherProfile").createEntity(entity);
+  }
+  return entity;
 }
 
 export async function getMappedStudentsByEmail(email){
