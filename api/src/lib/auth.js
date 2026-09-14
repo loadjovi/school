@@ -90,6 +90,25 @@ async function allLegacyStudentEntries(){
   return rows;
 }
 
+function same(a,b){return String(a||"").trim()&&String(a||"").trim()===String(b||"").trim()}
+function pickCanonicalMaster(raw,matches=[]){
+  if(!matches.length)return null;
+  let candidates=matches.filter(m=>String(m.status||"active")!=="inactive");
+  if(!candidates.length)candidates=matches;
+  if(candidates.length===1)return candidates[0];
+  const scored=candidates.map(m=>{
+    let score=0;
+    if(same(raw.groupName,m.groupName))score+=8;
+    if(same(raw.section,m.section||"待確認"))score+=6;
+    if(same(raw.instrument,m.instrument))score+=4;
+    if(same(raw.grade,m.grade))score+=3;
+    if(same(raw.schoolYear,m.schoolYear))score+=2;
+    return {m,score};
+  }).sort((a,b)=>b.score-a.score);
+  if(scored[0]?.score>0&&scored[0].score>(scored[1]?.score??-1))return scored[0].m;
+  return null;
+}
+
 async function buildStudentAliasIndex(){
   if(aliasCache&&Date.now()-aliasCacheAt<15000)return aliasCache;
   const masters=await listStudentMaster();
@@ -107,8 +126,8 @@ async function buildStudentAliasIndex(){
     if(!oldId)continue;
     let canonical=byId.has(oldId)?oldId:"";
     if(!canonical&&name){
-      const matches=byName.get(name)||[];
-      if(matches.length===1)canonical=String(matches[0].rowKey);
+      const master=pickCanonicalMaster(raw,byName.get(name)||[]);
+      if(master)canonical=String(master.rowKey);
     }
     if(!canonical)canonical=oldId;
     aliasToCanonical.set(oldId,canonical);
@@ -131,7 +150,10 @@ async function canonicalizeStudents(list=[]){
     if(!raw||typeof raw!=="object")continue;
     const rawId=String(raw.studentId||"").trim(),name=String(raw.name||raw.studentName||"").trim();
     let canonical=index.aliasToCanonical.get(rawId)||rawId;
-    if(!index.byId.has(canonical)&&name){const matches=index.byName.get(name)||[];if(matches.length===1)canonical=String(matches[0].rowKey)}
+    if(!index.byId.has(canonical)&&name){
+      const master=pickCanonicalMaster(raw,index.byName.get(name)||[]);
+      if(master)canonical=String(master.rowKey);
+    }
     const master=index.byId.get(canonical);
     const aliases=new Set([rawId,...(index.canonicalToAliases.get(canonical)||[])]);
     out.set(canonical,master?viewMaster(master,[...aliases]):{...raw,studentId:rawId,legacyStudentIds:[]});
