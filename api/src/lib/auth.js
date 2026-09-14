@@ -111,9 +111,9 @@ export async function getAccess(request){
   const profileEnsemble=profile?parseJsonValue(profile.ensembleGroups,[]):[];
   const profilePrivate=profile?parseJsonValue(profile.privateStudentIds,[]):[];
 
-  const sectionAssignments=mergeSectionAssignments(legacySection,profileSection);
-  const ensembleGroups=[...new Set([...legacyEnsemble,...profileEnsemble].map(String).filter(x=>["A","B"].includes(x)))];
-  const privateStudentIds=[...new Set([...legacyPrivate,...profilePrivate].map(String).filter(Boolean))];
+  const sectionAssignments=profile?mergeSectionAssignments(profileSection):legacySection;
+  const ensembleGroups=profile?[...new Set(profileEnsemble.map(String).filter(x=>["A","B"].includes(x)))]:legacyEnsemble;
+  const privateStudentIds=profile?[...new Set(profilePrivate.map(String).filter(Boolean))]:legacyPrivate;
   const knownTeacher=teacherAllowlist.includes(email)||!!sectionMap[email]||!!ensembleMap[email]||!!privateMap[email]||!!profile;
   const capabilities={section:sectionAssignments.length>0,ensemble:ensembleGroups.length>0,private:privateStudentIds.length>0,teacherSettings:knownTeacher};
 
@@ -127,9 +127,11 @@ export async function getAccess(request){
       const privateMatch=privateStudentIds.includes(v.studentId);
       if(sectionMatch||ensembleMatch||privateMatch)byId.set(v.studentId,v);
     }
-    const legacyPrivateRaw=privateMap[email];
-    const legacyList=Array.isArray(legacyPrivateRaw)?legacyPrivateRaw:(legacyPrivateRaw?.students||[]);
-    for(const s of legacyList){if(typeof s==="object"&&s?.studentId&&!byId.has(String(s.studentId)))byId.set(String(s.studentId),s)}
+    if(!profile){
+      const legacyPrivateRaw=privateMap[email];
+      const legacyList=Array.isArray(legacyPrivateRaw)?legacyPrivateRaw:(legacyPrivateRaw?.students||[]);
+      for(const s of legacyList){if(typeof s==="object"&&s?.studentId&&!byId.has(String(s.studentId)))byId.set(String(s.studentId),s)}
+    }
     const role=capabilities.section?"sectionTeacher":capabilities.ensemble?"ensembleTeacher":capabilities.private?"privateTeacher":"teacher";
     return {authenticated:true,...identity,role,capabilities,sectionAssignments,assignments:sectionAssignments,ensembleGroups,privateStudentIds,students:[...byId.values()]};
   }
