@@ -2,7 +2,11 @@
   const localDate=()=>{const d=new Date(),x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,10)};
   const statusText={leave:"請假",absent:"缺席"};
   const classText={section:"分部課",ensemble:"團體課"};
-  state.adminOps=state.adminOps||{date:localDate(),settings:null,followup:null,loading:false,error:""};
+  state.adminOps=state.adminOps||{
+    date:localDate(),settings:null,followup:null,
+    loadingSettings:false,loadingFollowup:false,
+    settingsError:"",followupError:""
+  };
 
   function csvCell(v){const s=String(v??"");return /[",\r\n]/.test(s)?`"${s.replaceAll('"','""')}"`:s}
   function downloadCsv(filename,rows){
@@ -10,58 +14,93 @@
     const blob=new Blob([content],{type:"text/csv;charset=utf-8"});
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   }
+  function shiftDate(date,days){
+    const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date||""));
+    if(!m)return localDate();
+    const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12,0,0);
+    d.setDate(d.getDate()+Number(days||0));
+    const x=new Date(d.getTime()-d.getTimezoneOffset()*60000);
+    return x.toISOString().slice(0,10);
+  }
 
-  async function loadAdminOps(){
-    if(state.me?.role!=="admin"||state.adminOps.loading)return;
-    state.adminOps.loading=true;state.adminOps.error="";mountAdminOps();
-    try{
-      const [settings,followup]=await Promise.all([
-        api("/api/admin-settings"),
-        api(`/api/daily-followup?date=${encodeURIComponent(state.adminOps.date)}`)
-      ]);
-      state.adminOps.settings=settings;state.adminOps.followup=followup;
-    }catch(e){state.adminOps.error=e.message||String(e)}
-    state.adminOps.loading=false;mountAdminOps();
+  async function loadSettings(){
+    if(state.me?.role!=="admin"||state.adminOps.loadingSettings)return;
+    state.adminOps.loadingSettings=true;state.adminOps.settingsError="";mountAdminOps();
+    try{state.adminOps.settings=await api("/api/admin-settings")}
+    catch(e){state.adminOps.settingsError=e.message||String(e)}
+    state.adminOps.loadingSettings=false;mountAdminOps();
   }
 
   async function loadDaily(){
+    if(state.me?.role!=="admin"||state.adminOps.loadingFollowup)return;
+    state.adminOps.loadingFollowup=true;state.adminOps.followupError="";mountAdminOps();
     try{
       state.adminOps.followup=await api(`/api/daily-followup?date=${encodeURIComponent(state.adminOps.date)}`);
-      state.adminOps.error="";mountAdminOps();
-    }catch(e){toast("❌ "+e.message)}
+      state.adminOps.followupError="";
+    }catch(e){state.adminOps.followupError=e.message||String(e);state.adminOps.followup=null}
+    state.adminOps.loadingFollowup=false;mountAdminOps();
+  }
+
+  function ensureLoads(){
+    if(state.me?.role!=="admin")return;
+    if(!state.adminOps.settings&&!state.adminOps.loadingSettings&&!state.adminOps.settingsError)loadSettings();
+    if(!state.adminOps.followup&&!state.adminOps.loadingFollowup&&!state.adminOps.followupError)loadDaily();
   }
 
   window.toggleAdminEmail=async function(checked){
     try{
       const d=await api("/api/admin-settings",{method:"PATCH",body:JSON.stringify({emailNotificationsEnabled:!!checked})});
-      state.adminOps.settings=d;mountAdminOps();
+      state.adminOps.settings=d;state.adminOps.settingsError="";mountAdminOps();
       if(d.emailNotificationsEnabled&&!d.emailServiceConfigured)toast("⚠️ 已開啟寄信，但 Azure Email 服務尚未完成設定");
       else toast(d.emailNotificationsEnabled?"✅ 個別課 Email 通知已開啟":"✅ 個別課 Email 通知已關閉");
     }catch(e){toast("❌ "+e.message);mountAdminOps()}
   };
-  window.changeAdminFollowupDate=async function(v){state.adminOps.date=String(v||localDate());await loadDaily()};
-  window.refreshAdminFollowup=async function(){await loadDaily();toast("✅ 已重新整理當日未到名單")};
+  window.changeAdminFollowupDate=async function(v){
+    const next=String(v||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(next))return;
+    state.adminOps.date=next;state.adminOps.followup=null;state.adminOps.followupError="";mountAdminOps();await loadDaily();
+  };
+  window.shiftAdminFollowupDate=async function(days){
+    state.adminOps.date=shiftDate(state.adminOps.date,days);state.adminOps.followup=null;state.adminOps.followupError="";mountAdminOps();await loadDaily();
+  };
+  window.todayAdminFollowup=async function(){
+    state.adminOps.date=localDate();state.adminOps.followup=null;state.adminOps.followupError="";mountAdminOps();await loadDaily();
+  };
+  window.refreshAdminFollowup=async function(){state.adminOps.followup=null;state.adminOps.followupError="";mountAdminOps();await loadDaily();if(!state.adminOps.followupError)toast("✅ 已重新整理整日未到名單")};
+  window.retryAdminSettings=async function(){state.adminOps.settingsError="";state.adminOps.settings=null;mountAdminOps();await loadSettings()};
   window.exportAdminDailyFollowup=function(){
+    if(state.adminOps.loadingFollowup){toast("正在彙整整日點名，請稍候");return}
+    if(state.adminOps.followupError){toast("請先重新整理當日資料");return}
     const d=state.adminOps.followup,items=d?.items||[];
-    if(!items.length){toast("✅ 當日沒有請假／缺席學生");return}
+    if(!d){toast("尚未載入當日資料");return}
+    if(!items.length){toast("✅ 這一天沒有請假／缺席學生");return}
     const rows=[["日期","課程類型","團別","分部","學生姓名","年級","樂器","出勤狀態","點名老師"]];
     for(const x of items)rows.push([x.date,classText[x.classType]||x.classType,x.groupName,x.section,x.name,x.grade,x.instrument,statusText[x.status]||x.status,x.teacherName]);
-    downloadCsv(`${d.date}_弦樂團_未到請假追蹤.csv`,rows);toast(`📥 已匯出 ${items.length} 筆行政追蹤資料`);
+    downloadCsv(`${d.date}_弦樂團_整日未到請假追蹤.csv`,rows);toast(`📥 已匯出 ${items.length} 筆整日行政追蹤資料`);
   };
 
   function settingsHtml(){
+    if(state.adminOps.settingsError)return `<div class="card"><h2>⚙️ 系統通知設定</h2><div class="error">讀取失敗：${esc(state.adminOps.settingsError)}</div><button class="secondary" style="width:100%;margin-top:10px" onclick="retryAdminSettings()">🔄 重新讀取設定</button></div>`;
     const s=state.adminOps.settings;
-    if(!s)return `<div class="card"><h2>⚙️ 系統通知設定</h2><div class="notice">正在讀取通知設定…</div></div>`;
+    if(!s)return `<div class="card"><h2>⚙️ 系統通知設定</h2><div class="notice">${state.adminOps.loadingSettings?"正在讀取通知設定…":"準備讀取通知設定…"}</div></div>`;
     const enabled=!!s.emailNotificationsEnabled,configured=!!s.emailServiceConfigured;
     const effective=enabled&&configured;
     return `<div class="card"><h2>⚙️ 系統通知設定</h2><div class="item"><div><b>個別課完成 Email 通知</b><small>老師登記「出席／遲到」個別課後，寄信給該學生所有已綁定的家長 Gmail；網站內待確認通知不受此開關影響。</small></div><label style="display:flex;align-items:center;gap:8px;margin:0"><input type="checkbox" style="width:22px;height:22px" ${enabled?"checked":""} onchange="toggleAdminEmail(this.checked)"><b>${enabled?"開啟":"關閉"}</b></label></div><div class="notice" style="margin-top:10px">Azure Email 服務：<b>${configured?"✅ 已設定":"⚠️ 尚未設定"}</b><br>目前實際寄信：<b>${effective?"✅ 啟用":"⏸️ 停用"}</b><br><small>連線字串與寄件地址仍保存在 Azure 環境變數，不會顯示在後台。</small></div></div>`;
   }
 
+  function dateControls(){
+    return `<label>查詢日期（整日）</label><div style="display:grid;grid-template-columns:48px 1fr 48px;gap:8px;align-items:center"><button class="secondary" style="margin:0;padding:12px 6px" onclick="shiftAdminFollowupDate(-1)" title="前一天">←</button><input id="adminFollowupDate" type="date" value="${esc(state.adminOps.date)}" onchange="changeAdminFollowupDate(this.value)"><button class="secondary" style="margin:0;padding:12px 6px" onclick="shiftAdminFollowupDate(1)" title="後一天">→</button></div><div class="row2" style="margin-top:8px"><button class="secondary" style="margin:0" onclick="todayAdminFollowup()">今天</button><button class="secondary" style="margin:0" onclick="refreshAdminFollowup()">🔄 重新整理</button></div>`;
+  }
+
   function followupHtml(){
     const d=state.adminOps.followup;
-    if(!d)return `<div class="card"><h2>📣 當日未到／請假追蹤</h2><label>日期</label><input type="date" value="${esc(state.adminOps.date)}" onchange="changeAdminFollowupDate(this.value)"><div class="notice" style="margin-top:10px">正在彙整所有老師的分部課與團體課點名…</div></div>`;
-    const c=d.counts||{},items=d.items||[];
-    return `<div class="card"><h2>📣 當日未到／請假追蹤</h2><div class="notice">管理員可跨老師彙整當天所有「分部課＋團體課」的請假與缺席學生，交由學校行政老師聯絡追蹤。</div><div class="row2"><div><label>日期</label><input type="date" value="${esc(d.date)}" onchange="changeAdminFollowupDate(this.value)"></div><div style="display:flex;align-items:end"><button class="secondary" style="width:100%;margin:0" onclick="refreshAdminFollowup()">🔄 重新整理</button></div></div><div class="grid" style="margin-top:12px"><div class="kpi"><b>${c.total||0}</b><span>需追蹤筆數</span></div><div class="kpi"><b>${c.absent||0}</b><span>缺席</span></div><div class="kpi"><b>${c.leave||0}</b><span>請假</span></div><div class="kpi"><b>${(c.section||0)+(c.ensemble||0)}</b><span>分部＋團體</span></div></div><button class="primary" onclick="exportAdminDailyFollowup()">📥 匯出當日未到／請假名單 CSV</button></div><div class="card"><h2>${esc(d.date)} 行政追蹤名單</h2>${items.length?items.map(x=>`<div class="item"><div><b>${esc(x.name)}｜${esc(classText[x.classType]||x.classType)}</b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.grade)}｜${esc(x.instrument)}<br>點名老師：${esc(x.teacherName||"—")}</small></div><span class="badge ${x.status==="leave"?"warn":"bad"}">${esc(statusText[x.status]||x.status)}</span></div>`).join(""):`<div class="notice">✅ 這一天目前沒有分部課／團體課的請假或缺席紀錄。</div>`}</div>`;
+    const loading=state.adminOps.loadingFollowup;
+    const error=state.adminOps.followupError;
+    const items=d?.items||[],c=d?.counts||{};
+    let body="";
+    if(error)body=`<div class="error" style="margin-top:10px">讀取 ${esc(state.adminOps.date)} 整日點名失敗：${esc(error)}</div>`;
+    else if(loading&&!d)body=`<div class="notice" style="margin-top:10px">正在彙整 ${esc(state.adminOps.date)} 所有老師的分部課與團體課點名…</div>`;
+    else if(d)body=`<div class="grid" style="margin-top:12px"><div class="kpi"><b>${c.total||0}</b><span>需追蹤筆數</span></div><div class="kpi"><b>${c.absent||0}</b><span>缺席</span></div><div class="kpi"><b>${c.leave||0}</b><span>請假</span></div><div class="kpi"><b>${(c.section||0)+(c.ensemble||0)}</b><span>分部＋團體</span></div></div>`;
+    return `<div class="card"><h2>📣 當日未到／請假追蹤</h2><div class="notice">選擇任一天，管理員會跨所有老師彙整該日 00:00～23:59 的「分部課＋團體課」請假與缺席學生，供學校行政老師聯絡追蹤。</div>${dateControls()}${body}<button class="primary" style="margin-top:12px" onclick="exportAdminDailyFollowup()" ${loading?"disabled":""}>📥 匯出 ${esc(state.adminOps.date)} 整日未到／請假名單</button></div><div class="card"><h2>${esc(state.adminOps.date)} 行政追蹤名單</h2>${loading?`<div class="notice">正在整理整日點名資料…</div>`:error?`<div class="notice">請修正讀取問題後重新整理。</div>`:items.length?items.map(x=>`<div class="item"><div><b>${esc(x.name)}｜${esc(classText[x.classType]||x.classType)}</b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.grade)}｜${esc(x.instrument)}<br>點名老師：${esc(x.teacherName||"—")}</small></div><span class="badge ${x.status==="leave"?"warn":"bad"}">${esc(statusText[x.status]||x.status)}</span></div>`).join(""):`<div class="notice">✅ 這一天目前沒有分部課／團體課的請假或缺席紀錄。</div>`}</div>`;
   }
 
   function mountAdminOps(){
@@ -69,8 +108,8 @@
     const main=document.querySelector(".main");if(!main)return;
     let root=document.getElementById("adminOperations");
     if(!root){root=document.createElement("div");root.id="adminOperations";main.prepend(root)}
-    root.innerHTML=(state.adminOps.error?`<div class="card"><div class="error">${esc(state.adminOps.error)}</div></div>`:"")+settingsHtml()+followupHtml();
-    if(!state.adminOps.settings&&!state.adminOps.loading)loadAdminOps();
+    root.innerHTML=settingsHtml()+followupHtml();
+    setTimeout(ensureLoads,0);
   }
 
   const baseRender=render;
