@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
 import { getAccess, ensurePrivateAccess, ensureStudentAccess, getStudentAliasInfo, json } from "../lib/auth.js";
-import { ensureTables, table, rowKey, listByStudent } from "../lib/storage.js";
+import { ensureTables, table, rowKey, listByStudent, getTeacherDirectory } from "../lib/storage.js";
 
 const allowedStatuses=new Set(["present","late","leave","absent","cancelled"]);
 function clean(v,max=300){return String(v||"").trim().slice(0,max)}
@@ -9,15 +9,27 @@ function minutesBetween(start,end){
   if([sh,sm,eh,em].some(Number.isNaN))return -1;
   let m=(eh*60+em)-(sh*60+sm);if(m<0)m+=1440;return m;
 }
-function view(e){
+function view(e,teacherNameOverride=""){
   return {
     lessonId:String(e.rowKey||""),studentId:String(e.partitionKey||""),lessonDate:String(e.eventDate||""),
     startTime:String(e.startTime||""),endTime:String(e.endTime||""),minutes:Number(e.minutes||0),status:String(e.status||"present"),
-    lessonContent:String(e.lessonContent||""),teacher:String(e.teacher||""),teacherName:String(e.teacherName||e.teacher||""),
+    lessonContent:String(e.lessonContent||""),teacher:String(e.teacher||""),teacherName:String(teacherNameOverride||e.teacherName||e.teacher||""),
     parentConfirmation:String(e.parentConfirmation||(["present","late"].includes(String(e.status||""))?"pending":"not_required")),
     parentConfirmedAt:String(e.parentConfirmedAt||""),parentConfirmedBy:String(e.parentConfirmedBy||""),parentNote:String(e.parentNote||""),
     createdAt:String(e.createdAt||"")
   };
+}
+async function resolvedTeacherName(email,fallback=""){
+  const key=String(email||"").trim().toLowerCase();
+  if(!key)return clean(fallback,120);
+  try{
+    const d=await getTeacherDirectory(key);
+    const name=clean(d?.teacherName,120);
+    if(name)return name;
+  }catch(e){console.warn("Unable to resolve teacher directory name:",e?.message||String(e))}
+  const stored=clean(fallback,120);
+  if(stored&&stored.toLowerCase()!==key)return stored;
+  return "個別課老師";
 }
 async function rowsForStudent(studentId,start,end){
   const alias=await getStudentAliasInfo(studentId),ids=[...new Set(alias.aliases?.length?alias.aliases:[studentId])];
@@ -55,12 +67,19 @@ app.http("privateLesson",{
       else if(a.capabilities?.private)ids=[...new Set((a.privateStudentIds||[]).map(String).filter(Boolean))];
       else return json({error:"請指定 studentId"},400);
 
-      const records=[];
+      const rows=[];
       for(const id of ids){
         for(const r of await rowsForStudent(id,start,end)){
           if(a.capabilities?.private&&a.role!=="admin"&&String(r.teacher||"").toLowerCase()!==String(a.email||"").toLowerCase())continue;
-          records.push(view(r));
+          rows.push(r);
         }
+      }
+      const nameCache=new Map();
+      const records=[];
+      for(const r of rows){
+        const teacherEmail=String(r.teacher||"").trim().toLowerCase();
+        if(!nameCache.has(teacherEmail))nameCache.set(teacherEmail,await resolvedTeacherName(teacherEmail,r.teacherName));
+        records.push(view(r,nameCache.get(teacherEmail)));
       }
       records.sort((x,y)=>String(y.lessonDate).localeCompare(String(x.lessonDate))||String(y.createdAt).localeCompare(String(x.createdAt)));
       return json({items:records.slice(0,100),pendingCount:records.filter(x=>x.parentConfirmation==="pending").length});
@@ -78,7 +97,8 @@ app.http("privateLesson",{
       entity.parentConfirmedBy=a.email;
       entity.parentNote=clean(body.note,500);
       await table("privateLesson").updateEntity(entity,"Merge");
-      return json({ok:true,item:view(entity)});
+      const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName);
+      return json({ok:true,item:view(entity,teacherName)});
     }
 
     if(!(a.role==="admin"||a.capabilities?.private))return json({error:"Forbidden"},403);
@@ -92,12 +112,13 @@ app.http("privateLesson",{
     if(["present","late"].includes(status)&&minutes<=0)return json({error:"請填寫正確的上課時間"},400);
     const alias=await getStudentAliasInfo(studentId),canonicalStudentId=alias.canonicalStudentId||studentId;
     const now=new Date().toISOString(),confirmation=["present","late"].includes(status)?"pending":"not_required";
+    const teacherName=await resolvedTeacherName(a.email,a.displayName||a.email);
     const entity={
       partitionKey:canonicalStudentId,rowKey:rowKey("i"),eventDate:lessonDate,startTime,endTime,status,minutes,
-      lessonContent:clean(body.lessonContent,500),teacher:a.email,teacherName:clean(a.displayName||a.email,120),
+      lessonContent:clean(body.lessonContent,500),teacher:a.email,teacherName,
       parentConfirmation:confirmation,parentConfirmedAt:"",parentConfirmedBy:"",parentNote:"",createdAt:now,updatedAt:now
     };
     await table("privateLesson").createEntity(entity);
-    return json({ok:true,item:view(entity)},201);
+    return json({ok:true,item:view(entity,teacherName)},201);
   }
 });
