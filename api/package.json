@@ -13,6 +13,7 @@
   "dependencies": {
     "@azure/functions": "^4.0.0",
     "@azure/data-tables": "^13.0.0",
-    "google-auth-library": "^10.3.0"
+    "google-auth-library": "^10.3.0",
+    "xlsx": "^0.18.5"
   }
 }
