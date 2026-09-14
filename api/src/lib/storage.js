@@ -10,6 +10,7 @@ const names={
   userStudentMap:process.env.USER_STUDENT_MAP_TABLE||"UserStudentMap",
   studentMaster:process.env.STUDENT_MASTER_TABLE||"StudentMaster",
   studentHistory:process.env.STUDENT_HISTORY_TABLE||"StudentHistory",
+  teacherDirectory:process.env.TEACHER_DIRECTORY_TABLE||"TeacherDirectory",
   teacherProfile:process.env.TEACHER_PROFILE_TABLE||"TeacherProfile",
   academicYearBatch:process.env.ACADEMIC_YEAR_BATCH_TABLE||"AcademicYearBatch"
 };
@@ -85,9 +86,38 @@ export async function listStudentsBySectionAssignments(assignments=[]){
   return masters.filter(e=>rules.some(r=>e.groupName===r.groupName&&String(e.section||"待確認")===r.section)).map(masterView);
 }
 
+function teacherEmail(email){return String(email||"").trim().toLowerCase()}
+
+export async function getTeacherDirectory(email){
+  await ensureTables();
+  const key=teacherEmail(email);
+  if(!key)return null;
+  try{return await table("teacherDirectory").getEntity("TEACHER",key)}
+  catch(e){if(e.statusCode===404)return null;throw e}
+}
+
+export async function listTeacherDirectory(){
+  await ensureTables();
+  const items=[];
+  for await (const e of table("teacherDirectory").listEntities({queryOptions:{filter:"PartitionKey eq 'TEACHER'"}}))items.push(e);
+  return items.sort((a,b)=>String(a.teacherName||a.rowKey).localeCompare(String(b.teacherName||b.rowKey),"zh-Hant"));
+}
+
+export async function saveTeacherDirectory(email,{teacherName="",status="active",updatedBy=""}={}){
+  await ensureTables();
+  const key=teacherEmail(email);
+  if(!key)throw new Error("老師 Gmail 不可空白");
+  const now=new Date().toISOString();
+  let createdAt=now;
+  try{const old=await table("teacherDirectory").getEntity("TEACHER",key);createdAt=old.createdAt||now}catch(e){if(e.statusCode!==404)throw e}
+  const entity={partitionKey:"TEACHER",rowKey:key,teacherName:String(teacherName||"").trim().slice(0,80),status:status==="inactive"?"inactive":"active",createdAt,updatedAt:now,updatedBy:String(updatedBy||"").slice(0,160)};
+  await table("teacherDirectory").upsertEntity(entity,"Replace");
+  return entity;
+}
+
 export async function getTeacherProfile(email){
   await ensureTables();
-  const key=String(email||"").trim().toLowerCase();
+  const key=teacherEmail(email);
   if(!key)return null;
   try{return await table("teacherProfile").getEntity("TEACHER",key)}
   catch(e){if(e.statusCode===404)return null;throw e}
@@ -95,7 +125,7 @@ export async function getTeacherProfile(email){
 
 export async function saveTeacherProfile(email,profile={}){
   await ensureTables();
-  const key=String(email||"").trim().toLowerCase();
+  const key=teacherEmail(email);
   const now=new Date().toISOString();
   const entity={
     partitionKey:"TEACHER",
