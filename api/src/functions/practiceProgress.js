@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
-import { getAccess, getStudentIdAliases, json } from "../lib/auth.js";
-import { listByStudent, listStudentMaster } from "../lib/storage.js";
+import { getAccess, getStudentAliasInfo, json } from "../lib/auth.js";
+import { ensureTables, table, listStudentMaster } from "../lib/storage.js";
 
 function clean(v,max=20){return String(v||"").trim().slice(0,max)}
 function monthRange(raw){
@@ -30,6 +30,13 @@ function viewPractice(r,qualifiedMinutes){
     createdAt:String(r.createdAt||"")
   };
 }
+async function listMonthPractice(start,end){
+  await ensureTables();
+  const filter=`eventDate ge '${String(start).replaceAll("'","''")}' and eventDate le '${String(end).replaceAll("'","''")}'`;
+  const items=[];
+  for await (const e of table("practice").listEntities({queryOptions:{filter}}))items.push(e);
+  return items;
+}
 
 app.http("practiceProgress",{
   methods:["GET"],authLevel:"anonymous",route:"practice-progress",
@@ -50,9 +57,30 @@ app.http("practiceProgress",{
     const seen=new Set();
     students=students.filter(s=>s.studentId&&!seen.has(s.studentId)&&(seen.add(s.studentId),true));
 
+    // Read this month's PracticeLog once. Besides matching Student ID aliases, we can
+    // safely recover orphaned historical rows by createdBy when that parent Gmail maps
+    // to exactly one canonical student.
+    const monthRows=await listMonthPractice(start,end);
+
     const items=await Promise.all(students.map(async s=>{
-      const aliases=await getStudentIdAliases(s.studentId);
-      const rows=(await Promise.all(aliases.map(id=>listByStudent("practice",id,start,end)))).flat();
+      const aliasInfo=await getStudentAliasInfo(s.studentId);
+      const aliasSet=new Set(aliasInfo.aliases.map(String));
+      const parentSet=new Set(aliasInfo.safeParentEmails.map(x=>String(x).toLowerCase()));
+      const unique=new Map();
+      let matchedByIdCount=0,matchedByParentCount=0;
+      for(const r of monthRows){
+        const partition=String(r.partitionKey||"");
+        const creator=String(r.createdBy||"").trim().toLowerCase();
+        const byId=aliasSet.has(partition);
+        const byParent=!byId&&creator&&parentSet.has(creator);
+        if(!byId&&!byParent)continue;
+        const key=`${partition}|${String(r.rowKey||"")}`;
+        if(!unique.has(key)){
+          unique.set(key,r);
+          if(byId)matchedByIdCount++;else if(byParent)matchedByParentCount++;
+        }
+      }
+      const rows=[...unique.values()];
       const records=rows.map(r=>viewPractice(r,qualifiedMinutes)).sort((a,b)=>
         String(b.practiceDate).localeCompare(String(a.practiceDate))||String(b.createdAt).localeCompare(String(a.createdAt))
       );
@@ -75,7 +103,10 @@ app.http("practiceProgress",{
         practiceScore10:score10,
         lastPracticeDate:records[0]?.practiceDate||"",
         recent:records.slice(0,8),
-        records
+        records,
+        sourceMatchCount:records.length,
+        matchedByIdCount,
+        matchedByParentCount
       };
     }));
 
