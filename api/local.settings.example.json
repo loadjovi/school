@@ -1,0 +1,17 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "STORAGE_CONNECTION_STRING": "<Azure Storage connection string>",
+    "STUDENT_MAP_JSON": "{\"parent@example.com\": [{\"studentId\": \"SH001\", \"name\": \"林心澄\", \"grade\": \"三年級\", \"groupName\": \"A\", \"instrument\": \"小提琴\"}]}",
+    "SECTION_TEACHER_MAP_JSON": "{\"sectionteacher@example.com\": {\"section\": \"小提琴\", \"students\": [{\"studentId\": \"SH001\", \"name\": \"林心澄\", \"grade\": \"三年級\", \"groupName\": \"A\", \"instrument\": \"小提琴\"}, {\"studentId\": \"SH002\", \"name\": \"範例學生02\", \"grade\": \"四年級\", \"groupName\": \"A\", \"instrument\": \"小提琴\"}]}}",
+    "PRIVATE_TEACHER_MAP_JSON": "{\"privateteacher@example.com\": {\"students\": [{\"studentId\": \"SH001\", \"name\": \"林心澄\", \"grade\": \"三年級\", \"groupName\": \"A\", \"instrument\": \"小提琴\"}]}}",
+    "ADMIN_EMAILS": "admin@example.com",
+    "PRACTICE_QUALIFIED_MINUTES": "15",
+    "PRACTICE_TARGET_DAYS": "30",
+    "PRACTICE_TABLE": "PracticeLog",
+    "SECTION_TABLE": "SectionAttendance",
+    "PRIVATE_TABLE": "PrivateLesson"
+  }
+}
