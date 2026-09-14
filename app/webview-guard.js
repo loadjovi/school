@@ -52,7 +52,7 @@
                           appendScript("/teacher-navigation.js",()=>{
                             appendScript("/practice-progress.js",()=>{
                               appendScript("/practice-timer.js?v=20260915-0152",()=>{
-                                appendScript("/private-lesson-confirmation.js?v=20260915-0633",()=>appendScript("/admin-operations.js?v=20260915-0635"));
+                                appendScript("/private-lesson-confirmation.js?v=20260915-0633",()=>appendScript("/admin-operations.js?v=20260915-0640"));
                               });
                             });
                           });
