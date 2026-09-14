@@ -7,16 +7,27 @@ export function parseJsonEnv(name, fallback={}){
   try{return JSON.parse(process.env[name]||JSON.stringify(fallback))}catch{return fallback}
 }
 
+function cookieValue(request,name){
+  const raw=String(request.headers.get("cookie")||"");
+  for(const part of raw.split(";")){
+    const i=part.indexOf("=");
+    if(i<0)continue;
+    if(part.slice(0,i).trim()===name)return decodeURIComponent(part.slice(i+1).trim());
+  }
+  return "";
+}
+
 function googleToken(request){
+  const session=cookieValue(request,"orchestra_google_id_token");
+  if(session)return session;
   const custom=String(request.headers.get("x-google-id-token")||"").trim();
-  if(custom)return custom;
+  if(custom&&custom!=="cookie-session")return custom;
   const auth=String(request.headers.get("authorization")||"");
   if(!auth.toLowerCase().startsWith("bearer "))return "";
   return auth.slice(7).trim();
 }
 
-export async function verifyGoogle(request){
-  const token=googleToken(request);
+export async function verifyGoogleToken(token){
   const audience=String(process.env.GOOGLE_CLIENT_ID||"").trim();
   if(!token||!audience)return null;
   try{
@@ -33,6 +44,10 @@ export async function verifyGoogle(request){
     console.error("Google ID token verification failed:",err?.message||String(err));
     return null;
   }
+}
+
+export async function verifyGoogle(request){
+  return verifyGoogleToken(googleToken(request));
 }
 
 export async function getAccess(request){
