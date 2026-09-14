@@ -56,7 +56,12 @@
   function loadApp(){
     const app=document.createElement("script");
     app.src="/app-v3.js";app.defer=true;
-    app.onload=()=>{const b=document.createElement("script");b.src="/batch-upgrade.js";b.defer=true;document.body.appendChild(b)};
+    app.onload=()=>{
+      const roster=document.createElement("script");
+      roster.src="/roster-support.js";roster.defer=true;
+      roster.onload=()=>{const b=document.createElement("script");b.src="/batch-upgrade.js";b.defer=true;document.body.appendChild(b)};
+      document.body.appendChild(roster);
+    };
     document.body.appendChild(app);
   }
 
