@@ -1,6 +1,8 @@
 import { app } from "@azure/functions";
 import { getAccess, parseJsonEnv, json } from "../lib/auth.js";
-function allStudents(){
+import { listAllMappedStudents } from "../lib/storage.js";
+
+function staticStudents(){
   const parentMap=parseJsonEnv("STUDENT_MAP_JSON",{});
   const sectionMap=parseJsonEnv("SECTION_TEACHER_MAP_JSON",{});
   const privateMap=parseJsonEnv("PRIVATE_TEACHER_MAP_JSON",{});
@@ -11,9 +13,21 @@ function allStudents(){
   }
   return [...m.values()];
 }
-app.http("students",{methods:["GET"],authLevel:"anonymous",route:"students",handler:async(request)=>{
-  const a=await getAccess(request); if(!a.authenticated)return json({error:"Unauthorized"},401);
-  if(a.role==="admin")return json(allStudents());
-  if(a.role==="unassigned")return json([]);
-  return json(a.students||[]);
-}});
+
+app.http("students",{
+  methods:["GET"],
+  authLevel:"anonymous",
+  route:"students",
+  handler:async(request)=>{
+    const a=await getAccess(request);
+    if(!a.authenticated)return json({error:"Unauthorized"},401);
+    if(a.role==="admin"){
+      const m=new Map();
+      for(const s of staticStudents())m.set(s.studentId,s);
+      for(const s of await listAllMappedStudents())m.set(s.studentId,s);
+      return json([...m.values()]);
+    }
+    if(a.role==="unassigned")return json([]);
+    return json(a.students||[]);
+  }
+});
