@@ -17,6 +17,19 @@ function viewStudent(x){
     instrument:String(x.instrument||"待確認")
   };
 }
+function viewPractice(r,qualifiedMinutes){
+  const minutes=Number(r.minutes||0);
+  return {
+    practiceDate:String(r.eventDate||""),
+    startTime:String(r.startTime||""),
+    endTime:String(r.endTime||""),
+    minutes,
+    qualified:r.qualified===true||minutes>=qualifiedMinutes,
+    practiceContent:String(r.practiceContent||""),
+    focus:String(r.focus||""),
+    createdAt:String(r.createdAt||"")
+  };
+}
 
 app.http("practiceProgress",{
   methods:["GET"],authLevel:"anonymous",route:"practice-progress",
@@ -31,30 +44,23 @@ app.http("practiceProgress",{
     const targetDays=Math.max(1,Number(process.env.PRACTICE_TARGET_DAYS||30));
 
     let students=[];
-    if(a.role==="admin"){
-      students=(await listStudentMaster("active")).map(viewStudent);
-    }else{
-      students=(a.students||[]).filter(x=>x?.studentId).map(viewStudent);
-    }
+    if(a.role==="admin")students=(await listStudentMaster("active")).map(viewStudent);
+    else students=(a.students||[]).filter(x=>x?.studentId).map(viewStudent);
 
     const seen=new Set();
     students=students.filter(s=>s.studentId&&!seen.has(s.studentId)&&(seen.add(s.studentId),true));
 
     const items=await Promise.all(students.map(async s=>{
       const rows=await listByStudent("practice",s.studentId,start,end);
-      const qualifiedDates=new Set(rows.filter(r=>r.qualified===true||Number(r.minutes||0)>=qualifiedMinutes).map(r=>String(r.eventDate||"")));
-      const activeDates=new Set(rows.map(r=>String(r.eventDate||"")).filter(Boolean));
-      const totalMinutes=rows.reduce((n,r)=>n+Number(r.minutes||0),0);
-      const sorted=rows.slice().sort((a,b)=>String(b.eventDate||"").localeCompare(String(a.eventDate||""))||String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
-      const recent=sorted.slice(0,8).map(r=>({
-        practiceDate:String(r.eventDate||""),
-        minutes:Number(r.minutes||0),
-        qualified:r.qualified===true||Number(r.minutes||0)>=qualifiedMinutes,
-        practiceContent:String(r.practiceContent||""),
-        focus:String(r.focus||"")
-      }));
+      const records=rows.map(r=>viewPractice(r,qualifiedMinutes)).sort((a,b)=>
+        String(b.practiceDate).localeCompare(String(a.practiceDate))||String(b.createdAt).localeCompare(String(a.createdAt))
+      );
+      const qualifiedDates=new Set(records.filter(r=>r.qualified).map(r=>r.practiceDate).filter(Boolean));
+      const activeDates=new Set(records.map(r=>r.practiceDate).filter(Boolean));
+      const totalMinutes=records.reduce((n,r)=>n+r.minutes,0);
       const qualifiedDays=qualifiedDates.size;
       const rate=Math.min(qualifiedDays/targetDays,1);
+      const score10=Math.round(rate*100)/10;
       return {
         ...s,
         activeDays:activeDates.size,
@@ -65,12 +71,14 @@ app.http("practiceProgress",{
         qualifiedMinutes,
         practiceRate:rate,
         practiceRatePercent:Math.round(rate*1000)/10,
-        lastPracticeDate:sorted[0]?.eventDate||"",
-        recent
+        practiceScore10:score10,
+        lastPracticeDate:records[0]?.practiceDate||"",
+        recent:records.slice(0,8),
+        records
       };
     }));
 
     items.sort((a,b)=>a.practiceRate-b.practiceRate||String(a.groupName).localeCompare(String(b.groupName),"zh-Hant")||String(a.section).localeCompare(String(b.section),"zh-Hant")||String(a.name).localeCompare(String(b.name),"zh-Hant"));
-    return json({month,qualifiedMinutes,targetDays,items});
+    return json({month,qualifiedMinutes,targetDays,scoreWeight:10,items});
   }
 });
