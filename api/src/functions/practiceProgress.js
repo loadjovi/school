@@ -1,5 +1,5 @@
 import { app } from "@azure/functions";
-import { getAccess, getStudentAliasInfo, json } from "../lib/auth.js";
+import { getAccess, getStudentAliasInfo, canonicalizeStudents, json } from "../lib/auth.js";
 import { ensureTables, table, listStudentMaster } from "../lib/storage.js";
 
 function clean(v,max=20){return String(v||"").trim().slice(0,max)}
@@ -51,15 +51,14 @@ app.http("practiceProgress",{
     const targetDays=Math.max(1,Number(process.env.PRACTICE_TARGET_DAYS||30));
 
     let students=[];
-    if(a.role==="admin")students=(await listStudentMaster("active")).map(viewStudent);
-    else students=(a.students||[]).filter(x=>x?.studentId).map(viewStudent);
+    if(a.role==="admin"){
+      const raw=(await listStudentMaster("active")).map(viewStudent);
+      students=(await canonicalizeStudents(raw)).map(viewStudent);
+    }else students=(a.students||[]).filter(x=>x?.studentId).map(viewStudent);
 
     const seen=new Set();
     students=students.filter(s=>s.studentId&&!seen.has(s.studentId)&&(seen.add(s.studentId),true));
 
-    // Read this month's PracticeLog once. Besides matching Student ID aliases, we can
-    // safely recover orphaned historical rows by createdBy when that parent Gmail maps
-    // to exactly one canonical student.
     const monthRows=await listMonthPractice(start,end);
 
     const items=await Promise.all(students.map(async s=>{
