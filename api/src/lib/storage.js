@@ -8,7 +8,8 @@ const names={
   registrations:process.env.STUDENT_REGISTRATION_TABLE||"StudentRegistration",
   userStudentMap:process.env.USER_STUDENT_MAP_TABLE||"UserStudentMap",
   studentMaster:process.env.STUDENT_MASTER_TABLE||"StudentMaster",
-  studentHistory:process.env.STUDENT_HISTORY_TABLE||"StudentHistory"
+  studentHistory:process.env.STUDENT_HISTORY_TABLE||"StudentHistory",
+  academicYearBatch:process.env.ACADEMIC_YEAR_BATCH_TABLE||"AcademicYearBatch"
 };
 
 let initialized=false;
