@@ -1,12 +1,103 @@
 import { app } from "@azure/functions";
-import { getAccess, ensurePrivateAccess, json } from "../lib/auth.js";
-import { ensureTables, table, rowKey } from "../lib/storage.js";
-app.http("privateLesson",{methods:["POST"],authLevel:"anonymous",route:"private-lesson",handler:async(request)=>{
-  const a=await getAccess(request);if(!a.authenticated)return json({error:"Unauthorized"},401);
-  if(!(a.role==="admin"||a.capabilities?.private))return json({error:"Forbidden"},403);
-  const body=await request.json();
-  if(!body.studentId||!ensurePrivateAccess(a,body.studentId))return json({error:"此老師未綁定該學生的個別課權限"},403);
-  await ensureTables();
-  await table("privateLesson").createEntity({partitionKey:body.studentId,rowKey:rowKey("i"),eventDate:body.lessonDate,status:body.status,minutes:Number(body.minutes||0),lessonContent:String(body.lessonContent||"").slice(0,500),teacher:a.email,createdAt:new Date().toISOString()});
-  return json({ok:true},201);
-}});
+import { getAccess, ensurePrivateAccess, ensureStudentAccess, getStudentAliasInfo, json } from "../lib/auth.js";
+import { ensureTables, table, rowKey, listByStudent } from "../lib/storage.js";
+
+const allowedStatuses=new Set(["present","late","leave","absent","cancelled"]);
+function clean(v,max=300){return String(v||"").trim().slice(0,max)}
+function minutesBetween(start,end){
+  const [sh,sm]=String(start||"").split(":").map(Number),[eh,em]=String(end||"").split(":").map(Number);
+  if([sh,sm,eh,em].some(Number.isNaN))return -1;
+  let m=(eh*60+em)-(sh*60+sm);if(m<0)m+=1440;return m;
+}
+function view(e){
+  return {
+    lessonId:String(e.rowKey||""),studentId:String(e.partitionKey||""),lessonDate:String(e.eventDate||""),
+    startTime:String(e.startTime||""),endTime:String(e.endTime||""),minutes:Number(e.minutes||0),status:String(e.status||"present"),
+    lessonContent:String(e.lessonContent||""),teacher:String(e.teacher||""),teacherName:String(e.teacherName||e.teacher||""),
+    parentConfirmation:String(e.parentConfirmation||(["present","late"].includes(String(e.status||""))?"pending":"not_required")),
+    parentConfirmedAt:String(e.parentConfirmedAt||""),parentConfirmedBy:String(e.parentConfirmedBy||""),parentNote:String(e.parentNote||""),
+    createdAt:String(e.createdAt||"")
+  };
+}
+async function rowsForStudent(studentId,start,end){
+  const alias=await getStudentAliasInfo(studentId),ids=[...new Set(alias.aliases?.length?alias.aliases:[studentId])];
+  const rows=(await Promise.all(ids.map(id=>listByStudent("privateLesson",id,start,end)))).flat();
+  const unique=new Map();for(const r of rows)unique.set(`${r.partitionKey}|${r.rowKey}`,r);
+  return [...unique.values()];
+}
+async function findLesson(studentId,lessonId){
+  const alias=await getStudentAliasInfo(studentId),ids=[...new Set(alias.aliases?.length?alias.aliases:[studentId])];
+  for(const id of ids){
+    try{return await table("privateLesson").getEntity(String(id),String(lessonId))}
+    catch(e){if(e.statusCode!==404)throw e}
+  }
+  return null;
+}
+
+app.http("privateLesson",{
+  methods:["GET","POST","PATCH"],authLevel:"anonymous",route:"private-lesson",
+  handler:async(request)=>{
+    const a=await getAccess(request);if(!a.authenticated)return json({error:"Unauthorized"},401);
+    await ensureTables();
+
+    if(request.method==="GET"){
+      const requested=clean(request.query.get("studentId"),120),month=clean(request.query.get("month"),12);
+      const start=/^\d{4}-\d{2}$/.test(month)?`${month}-01`:null,end=/^\d{4}-\d{2}$/.test(month)?`${month}-31`:null;
+      let ids=[];
+      if(requested){
+        if(a.role==="admin")ids=[requested];
+        else if(a.role==="parent"){
+          if(!ensureStudentAccess(a,requested))return json({error:"Forbidden"},403);ids=[requested];
+        }else if(a.capabilities?.private){
+          if(!ensurePrivateAccess(a,requested))return json({error:"此老師未綁定該學生的個別課權限"},403);ids=[requested];
+        }else return json({error:"Forbidden"},403);
+      }else if(a.role==="parent")ids=(a.students||[]).map(x=>String(x.studentId||"")).filter(Boolean);
+      else if(a.capabilities?.private)ids=[...new Set((a.privateStudentIds||[]).map(String).filter(Boolean))];
+      else return json({error:"請指定 studentId"},400);
+
+      const records=[];
+      for(const id of ids){
+        for(const r of await rowsForStudent(id,start,end)){
+          if(a.capabilities?.private&&a.role!=="admin"&&String(r.teacher||"").toLowerCase()!==String(a.email||"").toLowerCase())continue;
+          records.push(view(r));
+        }
+      }
+      records.sort((x,y)=>String(y.lessonDate).localeCompare(String(x.lessonDate))||String(y.createdAt).localeCompare(String(x.createdAt)));
+      return json({items:records.slice(0,100),pendingCount:records.filter(x=>x.parentConfirmation==="pending").length});
+    }
+
+    if(request.method==="PATCH"){
+      if(a.role!=="parent")return json({error:"只有家長可以確認個別課完成狀態"},403);
+      const body=await request.json(),studentId=clean(body.studentId,120),lessonId=clean(body.lessonId,180),action=clean(body.action,30).toLowerCase();
+      if(!studentId||!lessonId||!ensureStudentAccess(a,studentId))return json({error:"Forbidden"},403);
+      if(!["confirmed","issue"].includes(action))return json({error:"action 必須是 confirmed 或 issue"},400);
+      const entity=await findLesson(studentId,lessonId);if(!entity)return json({error:"找不到個別課紀錄"},404);
+      if(String(entity.parentConfirmation||"")==="not_required")return json({error:"此筆紀錄不需要家長確認"},409);
+      entity.parentConfirmation=action;
+      entity.parentConfirmedAt=new Date().toISOString();
+      entity.parentConfirmedBy=a.email;
+      entity.parentNote=clean(body.note,500);
+      await table("privateLesson").updateEntity(entity,"Merge");
+      return json({ok:true,item:view(entity)});
+    }
+
+    if(!(a.role==="admin"||a.capabilities?.private))return json({error:"Forbidden"},403);
+    const body=await request.json(),studentId=clean(body.studentId,120);
+    if(!studentId||!ensurePrivateAccess(a,studentId))return json({error:"此老師未綁定該學生的個別課權限"},403);
+    const lessonDate=clean(body.lessonDate,20),status=clean(body.status||"present",20),startTime=clean(body.startTime,10),endTime=clean(body.endTime,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(lessonDate))return json({error:"上課日期不正確"},400);
+    if(!allowedStatuses.has(status))return json({error:"個別課狀態不正確"},400);
+    let minutes=startTime&&endTime?minutesBetween(startTime,endTime):Number(body.minutes||0);
+    if(!Number.isFinite(minutes)||minutes<0||minutes>240)return json({error:"個別課時間不合法"},400);
+    if(["present","late"].includes(status)&&minutes<=0)return json({error:"請填寫正確的上課時間"},400);
+    const alias=await getStudentAliasInfo(studentId),canonicalStudentId=alias.canonicalStudentId||studentId;
+    const now=new Date().toISOString(),confirmation=["present","late"].includes(status)?"pending":"not_required";
+    const entity={
+      partitionKey:canonicalStudentId,rowKey:rowKey("i"),eventDate:lessonDate,startTime,endTime,status,minutes,
+      lessonContent:clean(body.lessonContent,500),teacher:a.email,teacherName:clean(a.displayName||a.email,120),
+      parentConfirmation:confirmation,parentConfirmedAt:"",parentConfirmedBy:"",parentNote:"",createdAt:now,updatedAt:now
+    };
+    await table("privateLesson").createEntity(entity);
+    return json({ok:true,item:view(entity)},201);
+  }
+});
