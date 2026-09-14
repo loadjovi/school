@@ -66,10 +66,21 @@ function masterView(e){
     grade:e.grade,
     groupName:e.groupName,
     instrument:e.instrument,
+    section:e.section||"待確認",
     schoolYear:e.schoolYear||"",
     status:e.status||"active",
     source:"studentMaster"
   };
+}
+
+export async function listStudentsBySectionAssignments(assignments=[]){
+  const rules=(Array.isArray(assignments)?assignments:[]).map(x=>({
+    groupName:String(x?.groupName||x?.group||"").trim(),
+    section:String(x?.section||"").trim()
+  })).filter(x=>x.groupName&&x.section);
+  if(!rules.length)return [];
+  const masters=await listStudentMaster("active");
+  return masters.filter(e=>rules.some(r=>e.groupName===r.groupName&&String(e.section||"待確認")===r.section)).map(masterView);
 }
 
 export async function getMappedStudentsByEmail(email){
@@ -81,7 +92,7 @@ export async function getMappedStudentsByEmail(email){
     const master=await getStudentMaster(e.rowKey);
     if(master&&master.status!=="inactive")items.push(masterView(master));
     else if(!master){
-      items.push({studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,schoolYear:e.schoolYear||"",source:"legacyMap"});
+      items.push({studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,section:e.section||"待確認",schoolYear:e.schoolYear||"",source:"legacyMap"});
     }
   }
   return items;
@@ -94,7 +105,7 @@ export async function listAllMappedStudents(){
   const client=table("userStudentMap");
   const map=new Map();
   for await (const e of client.listEntities({queryOptions:{filter:"status eq 'active'"}})){
-    if(!map.has(e.rowKey))map.set(e.rowKey,{studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,parentEmail:e.partitionKey,source:"legacyMap"});
+    if(!map.has(e.rowKey))map.set(e.rowKey,{studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,section:e.section||"待確認",parentEmail:e.partitionKey,source:"legacyMap"});
   }
   return [...map.values()];
 }
