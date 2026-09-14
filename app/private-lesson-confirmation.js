@@ -7,6 +7,11 @@
   const confirmClass={pending:"warn",confirmed:"ok",issue:"bad",not_required:""};
 
   function teacherAccount(){return state.me?.role!=="admin"&&!!state.me?.capabilities?.private}
+  function teacherLabel(x){
+    const raw=String(x?.teacherName||"").trim();
+    const name=raw&& !raw.includes("@") ? raw : "個別課老師";
+    return /老師$/.test(name)?name:`${name}老師`;
+  }
   function currentStudentName(id){
     const s=(state.students||[]).find(x=>String(x.studentId)===String(id));
     return s?.name||id;
@@ -59,7 +64,7 @@
     if(state.me?.role!=="parent"||!state.student)return "";
     const pending=(state.privateLessons||[]).filter(x=>x.parentConfirmation==="pending");
     if(!pending.length)return "";
-    return `<div class="card"><h2>🔔 個別課待確認 <span class="badge warn">${pending.length}</span></h2><div class="notice">老師已登記個別課日期與時間，請家長確認學生是否完成本次個別課。</div>${pending.map(x=>`<div class="item" style="display:block"><div><b>${esc(x.lessonDate)}｜${esc(x.startTime||"")}～${esc(x.endTime||"")}</b><small>${esc(x.teacherName||x.teacher)}｜${esc(statusText[x.status]||x.status)}｜${Number(x.minutes||0)} 分鐘${x.lessonContent?`<br>內容：${esc(x.lessonContent)}`:""}</small></div><div class="row2" style="margin-top:10px"><button class="primary" style="margin-top:0" onclick="confirmPrivateLesson('${esc(x.lessonId)}','confirmed')">✅ 已完成</button><button class="secondary" style="margin-top:0" onclick="confirmPrivateLesson('${esc(x.lessonId)}','issue')">⚠️ 有問題</button></div></div>`).join("")}</div>`;
+    return `<div class="card"><h2>🔔 個別課待確認 <span class="badge warn">${pending.length}</span></h2><div class="notice">老師已登記個別課日期與時間，請家長確認學生是否完成本次個別課。</div>${pending.map(x=>`<div class="item" style="display:block"><div><b>${esc(x.lessonDate)}｜${esc(x.startTime||"")}～${esc(x.endTime||"")}</b><small>${esc(teacherLabel(x))}｜${esc(statusText[x.status]||x.status)}｜${Number(x.minutes||0)} 分鐘${x.lessonContent?`<br>內容：${esc(x.lessonContent)}`:""}</small></div><div class="row2" style="margin-top:10px"><button class="primary" style="margin-top:0" onclick="confirmPrivateLesson('${esc(x.lessonId)}','confirmed')">✅ 已完成</button><button class="secondary" style="margin-top:0" onclick="confirmPrivateLesson('${esc(x.lessonId)}','issue')">⚠️ 有問題</button></div></div>`).join("")}</div>`;
   }
 
   const baseHome=home;
@@ -71,7 +76,7 @@
     if(state.me?.role!=="parent")return html;
     const rows=(state.privateLessons||[]).slice(0,12);
     if(!rows.length)return html;
-    const history=`<div class="card"><h2>👤 個別課確認紀錄</h2>${rows.map(x=>`<div class="item"><div><b>${esc(x.lessonDate)}｜${esc(x.startTime||"")}～${esc(x.endTime||"")}</b><small>${esc(x.teacherName||x.teacher)}｜${Number(x.minutes||0)} 分鐘${x.parentNote?`<br>家長備註：${esc(x.parentNote)}`:""}</small></div><span class="badge ${confirmClass[x.parentConfirmation]||""}">${esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>`).join("")}</div>`;
+    const history=`<div class="card"><h2>👤 個別課確認紀錄</h2>${rows.map(x=>`<div class="item"><div><b>${esc(x.lessonDate)}｜${esc(x.startTime||"")}～${esc(x.endTime||"")}</b><small>${esc(teacherLabel(x))}｜${Number(x.minutes||0)} 分鐘${x.parentNote?`<br>家長備註：${esc(x.parentNote)}`:""}</small></div><span class="badge ${confirmClass[x.parentConfirmation]||""}">${esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>`).join("")}</div>`;
     return html+history;
   };
 
