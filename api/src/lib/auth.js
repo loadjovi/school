@@ -93,21 +93,41 @@ async function allLegacyStudentEntries(){
 
 function normName(v){return String(v||"").replace(/\s+/g,"").trim()}
 function same(a,b){return String(a||"").trim()&&String(a||"").trim()===String(b||"").trim()}
+function masterQuality(m){
+  let score=0;
+  if(String(m?.classCode||"").trim())score+=24;
+  if(String(m?.section||"").trim()&&String(m.section)!=="待確認")score+=12;
+  if(String(m?.schoolYear||"").trim())score+=6;
+  if(String(m?.grade||"").trim())score+=3;
+  if(String(m?.instrument||"").trim()&&String(m.instrument)!=="待確認")score+=3;
+  if(/^SH\d+$/.test(String(m?.rowKey||"")))score+=2;
+  return score;
+}
 function pickCanonicalMaster(raw,matches=[]){
   if(!matches.length)return null;
   let candidates=matches.filter(m=>String(m.status||"active")!=="inactive");
   if(!candidates.length)candidates=matches;
   if(candidates.length===1)return candidates[0];
   const scored=candidates.map(m=>{
-    let score=0;
+    let score=masterQuality(m);
     if(same(raw.groupName,m.groupName))score+=8;
-    if(same(raw.section,m.section||"待確認"))score+=6;
+    if(String(raw.section||"").trim()&&String(raw.section)!=="待確認"&&same(raw.section,m.section||"待確認"))score+=6;
     if(same(raw.instrument,m.instrument))score+=4;
     if(same(raw.grade,m.grade))score+=3;
     if(same(raw.schoolYear,m.schoolYear))score+=2;
     return {m,score};
   }).sort((a,b)=>b.score-a.score);
   if(scored[0]?.score>0&&scored[0].score>(scored[1]?.score??-1))return scored[0].m;
+  return null;
+}
+function preferredDuplicateMaster(matches=[]){
+  const active=matches.filter(m=>String(m.status||"active")!=="inactive");
+  const candidates=active.length?active:matches;
+  if(candidates.length<2)return null;
+  const curated=candidates.filter(m=>String(m.classCode||"").trim());
+  if(curated.length===1&&candidates.some(m=>!String(m.classCode||"").trim()))return curated[0];
+  const scored=candidates.map(m=>({m,score:masterQuality(m)})).sort((a,b)=>b.score-a.score);
+  if(scored[0]?.score>=20&&scored[0].score>(scored[1]?.score??-1)+8)return scored[0].m;
   return null;
 }
 
@@ -117,17 +137,15 @@ function resolveCanonicalMaster(raw,oldId,byId,byName){
   const matches=name?(byName.get(name)||[]):[];
   const exactActive=exact&&String(exact.status||"active")!=="inactive";
 
-  // If the exact legacy ID is historical/inactive, prefer the current active master.
+  if(matches.length>1){
+    const curated=preferredDuplicateMaster(matches);
+    if(curated)return curated;
+    const picked=pickCanonicalMaster(raw,matches);
+    if(picked)return picked;
+  }
   if(exact&&!exactActive){
     const picked=pickCanonicalMaster(raw,matches);
     return picked||exact;
-  }
-
-  // When there are duplicate active masters with the same name, use group/section/
-  // instrument/grade/year to identify the current record. Fall back to exact ID on ties.
-  if(matches.length>1){
-    const picked=pickCanonicalMaster(raw,matches);
-    if(picked)return picked;
   }
   if(exact)return exact;
   return pickCanonicalMaster(raw,matches);
@@ -145,11 +163,25 @@ async function buildStudentAliasIndex(){
     byName.get(name).push(m);
   }
   const aliasToCanonical=new Map(),canonicalToAliases=new Map(),canonicalToParentEmails=new Map(),parentToCanonicals=new Map();
+
+  for(const [name,matches] of byName.entries()){
+    const preferred=preferredDuplicateMaster(matches);
+    if(!preferred)continue;
+    const canonical=String(preferred.rowKey);
+    if(!canonicalToAliases.has(canonical))canonicalToAliases.set(canonical,new Set([canonical]));
+    for(const m of matches){
+      const id=String(m.rowKey);
+      if(id===canonical)continue;
+      aliasToCanonical.set(id,canonical);
+      canonicalToAliases.get(canonical).add(id);
+    }
+  }
+
   for(const raw of await allLegacyStudentEntries()){
     const oldId=String(raw.studentId||"").trim();
     if(!oldId)continue;
     const master=resolveCanonicalMaster(raw,oldId,byId,byName);
-    const canonical=master?String(master.rowKey):oldId;
+    const canonical=master?String(master.rowKey):(aliasToCanonical.get(oldId)||oldId);
     aliasToCanonical.set(oldId,canonical);
     if(!canonicalToAliases.has(canonical))canonicalToAliases.set(canonical,new Set([canonical]));
     canonicalToAliases.get(canonical).add(oldId);
@@ -161,12 +193,12 @@ async function buildStudentAliasIndex(){
       parentToCanonicals.get(parentEmail).add(canonical);
     }
   }
-  for(const id of byId.keys())if(!canonicalToAliases.has(id))canonicalToAliases.set(id,new Set([id]));
+  for(const id of byId.keys())if(!canonicalToAliases.has(id)&&!aliasToCanonical.has(id))canonicalToAliases.set(id,new Set([id]));
   aliasCache={masters,byId,byName,aliasToCanonical,canonicalToAliases,canonicalToParentEmails,parentToCanonicals};aliasCacheAt=Date.now();
   return aliasCache;
 }
 
-async function canonicalizeStudents(list=[]){
+export async function canonicalizeStudents(list=[]){
   const index=await buildStudentAliasIndex(),out=new Map();
   for(const raw of Array.isArray(list)?list:[]){
     if(typeof raw==="string"){
@@ -175,7 +207,7 @@ async function canonicalizeStudents(list=[]){
       continue;
     }
     if(!raw||typeof raw!=="object")continue;
-    const rawId=String(raw.studentId||"").trim(),name=normName(raw.name||raw.studentName||"");
+    const rawId=String(raw.studentId||raw.rowKey||"").trim(),name=normName(raw.name||raw.studentName||"");
     let canonical=index.aliasToCanonical.get(rawId)||rawId;
     if(!index.byId.has(canonical)&&name){
       const master=resolveCanonicalMaster(raw,rawId,index.byId,index.byName);
@@ -214,12 +246,16 @@ export async function getAccess(request){
   const directory=await getTeacherDirectory(email);
   if(directory?.status==="active"){
     const profile=await getTeacherProfile(email);
-    const {sectionAssignments,ensembleGroups,privateStudentIds}=normalizeProfile(profile);
+    const {sectionAssignments,ensembleGroups,privateStudentIds:rawPrivateStudentIds}=normalizeProfile(profile);
+    const index=await buildStudentAliasIndex();
+    const privateStudentIds=[...new Set(rawPrivateStudentIds.map(id=>index.aliasToCanonical.get(String(id))||String(id)))];
     const capabilities={section:sectionAssignments.length>0,ensemble:ensembleGroups.length>0,private:privateStudentIds.length>0,teacherSettings:true};
     const masters=await listStudentMaster("active");
     const byId=new Map();
     for(const m of masters){
-      const v=viewMaster(m);
+      const rawId=String(m.rowKey),canonicalId=index.aliasToCanonical.get(rawId)||rawId;
+      const canonicalMaster=index.byId.get(canonicalId)||m;
+      const v=viewMaster(canonicalMaster,[...(index.canonicalToAliases.get(canonicalId)||[])]);
       const sectionMatch=sectionAssignments.some(a=>a.groupName===v.groupName&&a.section===v.section);
       const ensembleMatch=ensembleGroups.includes(v.groupName);
       const privateMatch=privateStudentIds.includes(v.studentId);
