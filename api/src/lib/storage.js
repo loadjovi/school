@@ -6,7 +6,9 @@ const names={
   section:process.env.SECTION_TABLE||"SectionAttendance",
   privateLesson:process.env.PRIVATE_TABLE||"PrivateLesson",
   registrations:process.env.STUDENT_REGISTRATION_TABLE||"StudentRegistration",
-  userStudentMap:process.env.USER_STUDENT_MAP_TABLE||"UserStudentMap"
+  userStudentMap:process.env.USER_STUDENT_MAP_TABLE||"UserStudentMap",
+  studentMaster:process.env.STUDENT_MASTER_TABLE||"StudentMaster",
+  studentHistory:process.env.STUDENT_HISTORY_TABLE||"StudentHistory"
 };
 
 let initialized=false;
@@ -34,12 +36,39 @@ export function rowKey(prefix="r"){
 export async function listByStudent(key, studentId, startDate, endDate){
   await ensureTables();
   const client=table(key);
-  const parts=[`PartitionKey eq '${studentId.replaceAll("'","''")}'`];
+  const parts=[`PartitionKey eq '${String(studentId).replaceAll("'","''")}'`];
   if(startDate)parts.push(`eventDate ge '${startDate}'`);
   if(endDate)parts.push(`eventDate le '${endDate}'`);
   const items=[];
   for await (const e of client.listEntities({queryOptions:{filter:parts.join(" and ")}}))items.push(e);
   return items.sort((a,b)=>String(b.eventDate).localeCompare(String(a.eventDate)));
+}
+
+export async function getStudentMaster(studentId){
+  await ensureTables();
+  try{return await table("studentMaster").getEntity("STUDENT",String(studentId))}
+  catch(e){if(e.statusCode===404)return null;throw e}
+}
+
+export async function listStudentMaster(status=""){
+  await ensureTables();
+  const items=[];
+  const options=status?{queryOptions:{filter:`status eq '${String(status).replaceAll("'","''")}'`}}:undefined;
+  for await (const e of table("studentMaster").listEntities(options))items.push(e);
+  return items.sort((a,b)=>String(a.studentName||"").localeCompare(String(b.studentName||""),"zh-Hant"));
+}
+
+function masterView(e){
+  return {
+    studentId:e.rowKey,
+    name:e.studentName,
+    grade:e.grade,
+    groupName:e.groupName,
+    instrument:e.instrument,
+    schoolYear:e.schoolYear||"",
+    status:e.status||"active",
+    source:"studentMaster"
+  };
 }
 
 export async function getMappedStudentsByEmail(email){
@@ -48,34 +77,23 @@ export async function getMappedStudentsByEmail(email){
   const safe=String(email||"").toLowerCase().replaceAll("'","''");
   const items=[];
   for await (const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${safe}' and status eq 'active'`}})){
-    items.push({
-      studentId:e.rowKey,
-      name:e.studentName,
-      grade:e.grade,
-      groupName:e.groupName,
-      instrument:e.instrument,
-      source:"registration"
-    });
+    const master=await getStudentMaster(e.rowKey);
+    if(master&&master.status!=="inactive")items.push(masterView(master));
+    else if(!master){
+      items.push({studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,schoolYear:e.schoolYear||"",source:"legacyMap"});
+    }
   }
   return items;
 }
 
 export async function listAllMappedStudents(){
   await ensureTables();
+  const masters=await listStudentMaster();
+  if(masters.length)return masters.map(masterView);
   const client=table("userStudentMap");
   const map=new Map();
   for await (const e of client.listEntities({queryOptions:{filter:"status eq 'active'"}})){
-    if(!map.has(e.rowKey)){
-      map.set(e.rowKey,{
-        studentId:e.rowKey,
-        name:e.studentName,
-        grade:e.grade,
-        groupName:e.groupName,
-        instrument:e.instrument,
-        parentEmail:e.partitionKey,
-        source:"registration"
-      });
-    }
+    if(!map.has(e.rowKey))map.set(e.rowKey,{studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,parentEmail:e.partitionKey,source:"legacyMap"});
   }
   return [...map.values()];
 }
