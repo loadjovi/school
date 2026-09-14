@@ -51,7 +51,7 @@
                         appendScript("/attendance-edit.js",()=>{
                           appendScript("/teacher-navigation.js",()=>{
                             appendScript("/practice-progress.js",()=>{
-                              appendScript("/practice-timer.js?v=20260915-0152",()=>appendScript("/private-lesson-confirmation.js?v=20260915-0222"));
+                              appendScript("/practice-timer.js?v=20260915-0152",()=>appendScript("/private-lesson-confirmation.js?v=20260915-0633"));
                             });
                           });
                         });
