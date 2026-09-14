@@ -163,6 +163,26 @@ export async function getMappedStudentsByEmail(email){
   return items;
 }
 
+export async function listUserStudentMappings(status="active"){
+  await ensureTables();
+  const items=[];
+  const options=status?{queryOptions:{filter:`status eq '${String(status).replaceAll("'","''")}'`}}:undefined;
+  for await (const e of table("userStudentMap").listEntities(options)){
+    items.push({
+      parentEmail:String(e.partitionKey||"").toLowerCase(),
+      studentId:String(e.rowKey||""),
+      studentName:String(e.studentName||e.name||""),
+      grade:String(e.grade||""),
+      groupName:String(e.groupName||""),
+      instrument:String(e.instrument||""),
+      section:String(e.section||"待確認"),
+      schoolYear:String(e.schoolYear||""),
+      status:String(e.status||"")
+    });
+  }
+  return items;
+}
+
 export async function listAllMappedStudents(){
   await ensureTables();
   const masters=await listStudentMaster();
