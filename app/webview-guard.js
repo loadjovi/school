@@ -44,7 +44,9 @@
           appendScript("/teacher-support.js",()=>{
             appendScript("/teacher-settings.js",()=>{
               appendScript("/teacher-admin.js",()=>{
-                appendScript("/batch-upgrade.js",()=>appendScript("/roster-import.js"));
+                appendScript("/batch-upgrade.js",()=>{
+                  appendScript("/roster-import.js",()=>appendScript("/attendance-support.js"));
+                });
               });
             });
           });
