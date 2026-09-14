@@ -61,9 +61,9 @@ function viewMaster(e,legacyStudentIds=[]){
 
 function staticParentMapEntries(){
   const parentMap=parseJsonEnv("STUDENT_MAP_JSON",{}),rows=[];
-  for(const value of Object.values(parentMap||{})){
+  for(const [email,value] of Object.entries(parentMap||{})){
     const list=Array.isArray(value)?value:(Array.isArray(value?.students)?value.students:[]);
-    for(const s of list)if(s&&typeof s==="object"&&s.studentId)rows.push(s);
+    for(const s of list)if(s&&typeof s==="object"&&s.studentId)rows.push({...s,parentEmail:String(email||"").trim().toLowerCase(),source:"studentMapJson"});
   }
   return rows;
 }
@@ -81,6 +81,7 @@ async function allLegacyStudentEntries(){
         instrument:m.instrument,
         section:m.section,
         schoolYear:m.schoolYear,
+        parentEmail:String(m.parentEmail||"").trim().toLowerCase(),
         source:"userStudentMap"
       });
     }
@@ -90,6 +91,7 @@ async function allLegacyStudentEntries(){
   return rows;
 }
 
+function normName(v){return String(v||"").replace(/\s+/g,"").trim()}
 function same(a,b){return String(a||"").trim()&&String(a||"").trim()===String(b||"").trim()}
 function pickCanonicalMaster(raw,matches=[]){
   if(!matches.length)return null;
@@ -109,33 +111,58 @@ function pickCanonicalMaster(raw,matches=[]){
   return null;
 }
 
+function resolveCanonicalMaster(raw,oldId,byId,byName){
+  const exact=byId.get(oldId)||null;
+  const name=normName(raw.name||raw.studentName||exact?.studentName||"");
+  const matches=name?(byName.get(name)||[]):[];
+  const exactActive=exact&&String(exact.status||"active")!=="inactive";
+
+  // If the exact legacy ID is historical/inactive, prefer the current active master.
+  if(exact&&!exactActive){
+    const picked=pickCanonicalMaster(raw,matches);
+    return picked||exact;
+  }
+
+  // When there are duplicate active masters with the same name, use group/section/
+  // instrument/grade/year to identify the current record. Fall back to exact ID on ties.
+  if(matches.length>1){
+    const picked=pickCanonicalMaster(raw,matches);
+    if(picked)return picked;
+  }
+  if(exact)return exact;
+  return pickCanonicalMaster(raw,matches);
+}
+
 async function buildStudentAliasIndex(){
   if(aliasCache&&Date.now()-aliasCacheAt<15000)return aliasCache;
   const masters=await listStudentMaster();
   const byId=new Map(masters.map(m=>[String(m.rowKey),m]));
   const byName=new Map();
   for(const m of masters){
-    const name=String(m.studentName||"").trim();
+    const name=normName(m.studentName);
     if(!name)continue;
     if(!byName.has(name))byName.set(name,[]);
     byName.get(name).push(m);
   }
-  const aliasToCanonical=new Map(),canonicalToAliases=new Map();
+  const aliasToCanonical=new Map(),canonicalToAliases=new Map(),canonicalToParentEmails=new Map(),parentToCanonicals=new Map();
   for(const raw of await allLegacyStudentEntries()){
-    const oldId=String(raw.studentId||"").trim(),name=String(raw.name||raw.studentName||"").trim();
+    const oldId=String(raw.studentId||"").trim();
     if(!oldId)continue;
-    let canonical=byId.has(oldId)?oldId:"";
-    if(!canonical&&name){
-      const master=pickCanonicalMaster(raw,byName.get(name)||[]);
-      if(master)canonical=String(master.rowKey);
-    }
-    if(!canonical)canonical=oldId;
+    const master=resolveCanonicalMaster(raw,oldId,byId,byName);
+    const canonical=master?String(master.rowKey):oldId;
     aliasToCanonical.set(oldId,canonical);
     if(!canonicalToAliases.has(canonical))canonicalToAliases.set(canonical,new Set([canonical]));
     canonicalToAliases.get(canonical).add(oldId);
+    const parentEmail=String(raw.parentEmail||"").trim().toLowerCase();
+    if(parentEmail){
+      if(!canonicalToParentEmails.has(canonical))canonicalToParentEmails.set(canonical,new Set());
+      canonicalToParentEmails.get(canonical).add(parentEmail);
+      if(!parentToCanonicals.has(parentEmail))parentToCanonicals.set(parentEmail,new Set());
+      parentToCanonicals.get(parentEmail).add(canonical);
+    }
   }
   for(const id of byId.keys())if(!canonicalToAliases.has(id))canonicalToAliases.set(id,new Set([id]));
-  aliasCache={masters,byId,byName,aliasToCanonical,canonicalToAliases};aliasCacheAt=Date.now();
+  aliasCache={masters,byId,byName,aliasToCanonical,canonicalToAliases,canonicalToParentEmails,parentToCanonicals};aliasCacheAt=Date.now();
   return aliasCache;
 }
 
@@ -148,10 +175,10 @@ async function canonicalizeStudents(list=[]){
       continue;
     }
     if(!raw||typeof raw!=="object")continue;
-    const rawId=String(raw.studentId||"").trim(),name=String(raw.name||raw.studentName||"").trim();
+    const rawId=String(raw.studentId||"").trim(),name=normName(raw.name||raw.studentName||"");
     let canonical=index.aliasToCanonical.get(rawId)||rawId;
     if(!index.byId.has(canonical)&&name){
-      const master=pickCanonicalMaster(raw,index.byName.get(name)||[]);
+      const master=resolveCanonicalMaster(raw,rawId,index.byId,index.byName);
       if(master)canonical=String(master.rowKey);
     }
     const master=index.byId.get(canonical);
@@ -161,12 +188,18 @@ async function canonicalizeStudents(list=[]){
   return [...out.values()];
 }
 
-export async function getStudentIdAliases(studentId){
+export async function getStudentAliasInfo(studentId){
   const id=String(studentId||"").trim();
-  if(!id)return [];
+  if(!id)return {canonicalStudentId:"",aliases:[],safeParentEmails:[]};
   const index=await buildStudentAliasIndex();
   const canonical=index.aliasToCanonical.get(id)||id;
-  return [...new Set([canonical,id,...(index.canonicalToAliases.get(canonical)||[])])].filter(Boolean);
+  const aliases=[...new Set([canonical,id,...(index.canonicalToAliases.get(canonical)||[])])].filter(Boolean);
+  const safeParentEmails=[...(index.canonicalToParentEmails.get(canonical)||[])].filter(email=>(index.parentToCanonicals.get(email)||new Set()).size===1);
+  return {canonicalStudentId:canonical,aliases,safeParentEmails};
+}
+
+export async function getStudentIdAliases(studentId){
+  return (await getStudentAliasInfo(studentId)).aliases;
 }
 
 export async function getAccess(request){
@@ -178,19 +211,11 @@ export async function getAccess(request){
 
   if(admins.includes(email))return {authenticated:true,...identity,role:"admin",capabilities:{admin:true}};
 
-  // Teacher authorization now comes ONLY from the backend TeacherDirectory.
-  // Legacy SECTION_TEACHER_MAP_JSON / ENSEMBLE_TEACHER_MAP_JSON /
-  // PRIVATE_TEACHER_MAP_JSON / TEACHER_EMAILS are intentionally ignored.
   const directory=await getTeacherDirectory(email);
   if(directory?.status==="active"){
     const profile=await getTeacherProfile(email);
     const {sectionAssignments,ensembleGroups,privateStudentIds}=normalizeProfile(profile);
-    const capabilities={
-      section:sectionAssignments.length>0,
-      ensemble:ensembleGroups.length>0,
-      private:privateStudentIds.length>0,
-      teacherSettings:true
-    };
+    const capabilities={section:sectionAssignments.length>0,ensemble:ensembleGroups.length>0,private:privateStudentIds.length>0,teacherSettings:true};
     const masters=await listStudentMaster("active");
     const byId=new Map();
     for(const m of masters){
@@ -201,13 +226,7 @@ export async function getAccess(request){
       if(sectionMatch||ensembleMatch||privateMatch)byId.set(v.studentId,v);
     }
     const role=capabilities.section?"sectionTeacher":capabilities.ensemble?"ensembleTeacher":capabilities.private?"privateTeacher":"teacher";
-    return {
-      authenticated:true,...identity,
-      displayName:directory.teacherName||identity.displayName,
-      role,capabilities,
-      sectionAssignments,assignments:sectionAssignments,
-      ensembleGroups,privateStudentIds,students:[...byId.values()]
-    };
+    return {authenticated:true,...identity,displayName:directory.teacherName||identity.displayName,role,capabilities,sectionAssignments,assignments:sectionAssignments,ensembleGroups,privateStudentIds,students:[...byId.values()]};
   }
 
   if(parentMap[email])return {authenticated:true,...identity,role:"parent",students:await canonicalizeStudents(parentMap[email])};
