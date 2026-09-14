@@ -76,6 +76,28 @@ function masterView(e){
   };
 }
 
+async function getRegistrationById(registrationId){
+  const id=String(registrationId||"").trim();
+  if(!id)return null;
+  try{return await table("registrations").getEntity("REG",id)}
+  catch(e){if(e.statusCode===404)return null;throw e}
+}
+
+function mappingView(e,registration=null){
+  return {
+    parentEmail:String(e.partitionKey||"").toLowerCase(),
+    studentId:String(e.rowKey||""),
+    studentName:String(e.studentName||e.name||registration?.studentName||""),
+    grade:String(e.grade||registration?.grade||""),
+    groupName:String(e.groupName||registration?.groupName||""),
+    instrument:String(e.instrument||registration?.instrument||""),
+    section:String(e.section||registration?.section||"待確認"),
+    schoolYear:String(e.schoolYear||registration?.schoolYear||""),
+    registrationId:String(e.registrationId||""),
+    status:String(e.status||"")
+  };
+}
+
 export async function listStudentsBySectionAssignments(assignments=[]){
   const rules=(Array.isArray(assignments)?assignments:[]).map(x=>({
     groupName:String(x?.groupName||x?.group||"").trim(),
@@ -155,10 +177,22 @@ export async function getMappedStudentsByEmail(email){
   const items=[];
   for await (const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${safe}' and status eq 'active'`}})){
     const master=await getStudentMaster(e.rowKey);
-    if(master&&master.status!=="inactive")items.push(masterView(master));
-    else if(!master){
-      items.push({studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,section:e.section||"待確認",schoolYear:e.schoolYear||"",source:"legacyMap"});
+    if(master&&master.status!=="inactive"){
+      items.push(masterView(master));
+      continue;
     }
+    const registration=await getRegistrationById(e.registrationId);
+    const mapped=mappingView(e,registration);
+    items.push({
+      studentId:mapped.studentId,
+      name:mapped.studentName,
+      grade:mapped.grade,
+      groupName:mapped.groupName,
+      instrument:mapped.instrument,
+      section:mapped.section,
+      schoolYear:mapped.schoolYear,
+      source:"legacyMap"
+    });
   }
   return items;
 }
@@ -168,17 +202,8 @@ export async function listUserStudentMappings(status="active"){
   const items=[];
   const options=status?{queryOptions:{filter:`status eq '${String(status).replaceAll("'","''")}'`}}:undefined;
   for await (const e of table("userStudentMap").listEntities(options)){
-    items.push({
-      parentEmail:String(e.partitionKey||"").toLowerCase(),
-      studentId:String(e.rowKey||""),
-      studentName:String(e.studentName||e.name||""),
-      grade:String(e.grade||""),
-      groupName:String(e.groupName||""),
-      instrument:String(e.instrument||""),
-      section:String(e.section||"待確認"),
-      schoolYear:String(e.schoolYear||""),
-      status:String(e.status||"")
-    });
+    const registration=await getRegistrationById(e.registrationId);
+    items.push(mappingView(e,registration));
   }
   return items;
 }
@@ -190,7 +215,9 @@ export async function listAllMappedStudents(){
   const client=table("userStudentMap");
   const map=new Map();
   for await (const e of client.listEntities({queryOptions:{filter:"status eq 'active'"}})){
-    if(!map.has(e.rowKey))map.set(e.rowKey,{studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,section:e.section||"待確認",parentEmail:e.partitionKey,source:"legacyMap"});
+    const registration=await getRegistrationById(e.registrationId);
+    const mapped=mappingView(e,registration);
+    if(!map.has(mapped.studentId))map.set(mapped.studentId,{studentId:mapped.studentId,name:mapped.studentName,grade:mapped.grade,groupName:mapped.groupName,instrument:mapped.instrument,section:mapped.section,parentEmail:mapped.parentEmail,source:"legacyMap"});
   }
   return [...map.values()];
 }
