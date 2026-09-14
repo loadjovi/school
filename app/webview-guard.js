@@ -41,14 +41,16 @@
     appendScript("/app-v3.js",()=>{
       appendScript("/roster-support.js",()=>{
         appendScript("/section-support.js",()=>{
-          appendScript("/teacher-support.js",()=>{
-            appendScript("/teacher-settings.js",()=>{
-              appendScript("/teacher-admin.js",()=>{
-                appendScript("/batch-upgrade.js",()=>{
-                  appendScript("/roster-import.js",()=>{
-                    appendScript("/attendance-support.js",()=>{
-                      appendScript("/attendance-edit.js",()=>{
-                        appendScript("/teacher-navigation.js",()=>appendScript("/practice-progress.js"));
+          appendScript("/parent-link-admin.js",()=>{
+            appendScript("/teacher-support.js",()=>{
+              appendScript("/teacher-settings.js",()=>{
+                appendScript("/teacher-admin.js",()=>{
+                  appendScript("/batch-upgrade.js",()=>{
+                    appendScript("/roster-import.js",()=>{
+                      appendScript("/attendance-support.js",()=>{
+                        appendScript("/attendance-edit.js",()=>{
+                          appendScript("/teacher-navigation.js",()=>appendScript("/practice-progress.js"));
+                        });
                       });
                     });
                   });
