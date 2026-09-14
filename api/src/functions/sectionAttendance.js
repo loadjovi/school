@@ -1,9 +1,8 @@
-
 import { app } from "@azure/functions";
 import { getAccess, ensureStudentAccess, json } from "../lib/auth.js";
 import { ensureTables, table, rowKey } from "../lib/storage.js";
 app.http("sectionAttendance",{methods:["POST"],authLevel:"anonymous",route:"section-attendance",handler:async(request)=>{
-  const a=getAccess(request);if(!a.authenticated)return json({error:"Unauthorized"},401);
+  const a=await getAccess(request);if(!a.authenticated)return json({error:"Unauthorized"},401);
   if(!["sectionTeacher","admin"].includes(a.role))return json({error:"Forbidden"},403);
   const body=await request.json(); const items=Array.isArray(body.items)?body.items:[];
   if(!body.sessionDate||!items.length)return json({error:"缺少日期或點名資料"},400);
