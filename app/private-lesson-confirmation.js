@@ -1,5 +1,6 @@
 (()=>{
   state.privateLessons=state.privateLessons||[];
+  let teacherPoll=null;
 
   const statusText={present:"出席",late:"遲到",leave:"請假",absent:"缺席",cancelled:"停課"};
   const confirmText={pending:"家長待確認",confirmed:"家長已確認",issue:"家長回報有問題",not_required:"不需確認"};
@@ -22,7 +23,23 @@
     }catch(e){console.warn("load private lesson confirmations failed",e);state.privateLessons=[]}
   }
 
-  window.reloadPrivateLessons=async function(){await loadPrivateLessons();render();toast("已更新個別課確認狀態")};
+  function teacherHistoryHtml(){
+    const recent=(state.privateLessons||[]).slice(0,20);
+    return recent.length?recent.map(x=>`<div class="item"><div><b>${esc(currentStudentName(x.studentId))}｜${esc(x.lessonDate)}</b><small>${esc(x.startTime||"")}～${esc(x.endTime||"")}｜${Number(x.minutes||0)} 分鐘｜${esc(statusText[x.status]||x.status)}${x.parentNote?`<br>家長：${esc(x.parentNote)}`:""}</small></div><span class="badge ${confirmClass[x.parentConfirmation]||""}">${esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>`).join(""):`<div class="notice">目前尚無個別課紀錄。</div>`;
+  }
+
+  function startTeacherPoll(){
+    if(teacherPoll)clearInterval(teacherPoll);
+    if(!teacherAccount())return;
+    teacherPoll=setInterval(async()=>{
+      if(state.page!=="private")return;
+      await loadPrivateLessons();
+      const box=document.getElementById("privateConfirmList");
+      if(box)box.innerHTML=teacherHistoryHtml();
+    },30000);
+  }
+
+  window.reloadPrivateLessons=async function(){await loadPrivateLessons();const box=document.getElementById("privateConfirmList");if(box)box.innerHTML=teacherHistoryHtml();else render();toast("已更新個別課確認狀態")};
 
   window.confirmPrivateLesson=async function(lessonId,action){
     if(state.me?.role!=="parent"||!state.student)return;
@@ -63,8 +80,8 @@
     const ids=new Set((state.me.privateStudentIds||[]).map(String));
     const students=(state.students||[]).filter(s=>ids.has(String(s.studentId)));
     if(!students.length)return `<div class="card"><h2>個別課紀錄</h2><div class="notice">目前尚未綁定這位老師的個課學生。請到「⚙️ 我的教學」選擇個別課學生。</div></div>`;
-    const recent=(state.privateLessons||[]).slice(0,20);
-    return `<div class="card"><h2>👤 個別課紀錄</h2><div class="notice">老師完成個別課後登記日期與實際時間；出席／遲到紀錄會送到家長端等待確認。</div><label>學生</label><select id="iStudent">${students.map(s=>`<option value="${esc(s.studentId)}">${esc(s.name)}｜${esc(s.groupName)}團｜${esc(s.instrument)}</option>`).join("")}</select><label>上課日期</label><input id="iDate" type="date" value="${today}"><div class="row2"><div><label>開始時間</label><input id="iStart" type="time" value="18:00"></div><div><label>結束時間</label><input id="iEnd" type="time" value="18:50"></div></div><label>狀態</label><select id="iStatus"><option value="present">出席</option><option value="late">遲到</option><option value="leave">請假</option><option value="absent">缺席</option><option value="cancelled">停課</option></select><label>課程內容</label><textarea id="iContent" rows="3" placeholder="例：音階、換把、考試曲第 1～32 小節"></textarea><button class="primary" onclick="savePrivate()">儲存並通知家長確認</button></div><div class="card"><h2>家長確認狀態</h2><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理確認狀態</button>${recent.length?recent.map(x=>`<div class="item"><div><b>${esc(currentStudentName(x.studentId))}｜${esc(x.lessonDate)}</b><small>${esc(x.startTime||"")}～${esc(x.endTime||"")}｜${Number(x.minutes||0)} 分鐘｜${esc(statusText[x.status]||x.status)}${x.parentNote?`<br>家長：${esc(x.parentNote)}`:""}</small></div><span class="badge ${confirmClass[x.parentConfirmation]||""}">${esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>`).join(""):`<div class="notice">目前尚無個別課紀錄。</div>`}</div>`;
+    setTimeout(startTeacherPoll,0);
+    return `<div class="card"><h2>👤 個別課紀錄</h2><div class="notice">老師完成個別課後登記日期與實際時間；出席／遲到紀錄會送到家長端等待確認。</div><label>學生</label><select id="iStudent">${students.map(s=>`<option value="${esc(s.studentId)}">${esc(s.name)}｜${esc(s.groupName)}團｜${esc(s.instrument)}</option>`).join("")}</select><label>上課日期</label><input id="iDate" type="date" value="${today}"><div class="row2"><div><label>開始時間</label><input id="iStart" type="time" value="18:00"></div><div><label>結束時間</label><input id="iEnd" type="time" value="18:50"></div></div><label>狀態</label><select id="iStatus"><option value="present">出席</option><option value="late">遲到</option><option value="leave">請假</option><option value="absent">缺席</option><option value="cancelled">停課</option></select><label>課程內容</label><textarea id="iContent" rows="3" placeholder="例：音階、換把、考試曲第 1～32 小節"></textarea><button class="primary" onclick="savePrivate()">儲存並通知家長確認</button></div><div class="card"><h2>家長確認狀態</h2><div class="notice">家長確認後，這裡最慢約 30 秒會自動更新；也可以手動重新整理。</div><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理確認狀態</button><div id="privateConfirmList">${teacherHistoryHtml()}</div></div>`;
   };
 
   savePrivate=async function(){
@@ -88,4 +105,5 @@
   };
 
   if(state.me?.role==="parent"&&state.student){loadPrivateLessons().then(()=>render()).catch(()=>{})}
+  if(teacherAccount())startTeacherPoll();
 })();
