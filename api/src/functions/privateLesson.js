@@ -2,6 +2,7 @@ import { app } from "@azure/functions";
 import { getAccess, ensurePrivateAccess, ensureStudentAccess, getStudentAliasInfo, json } from "../lib/auth.js";
 import { ensureTables, table, rowKey, listByStudent, getTeacherDirectory, listUserStudentMappings, getStudentMaster } from "../lib/storage.js";
 import { sendPrivateLessonParentEmail } from "../lib/email.js";
+import { getSystemSettings } from "../lib/settings.js";
 
 const allowedStatuses=new Set(["present","late","leave","absent","cancelled"]);
 function clean(v,max=300){return String(v||"").trim().slice(0,max)}
@@ -140,14 +141,19 @@ app.http("privateLesson",{
     let emailNotification={status:"not_required",recipientCount:0,sentCount:0,failedCount:0};
     if(confirmation==="pending"){
       try{
-        const recipients=await parentEmailsForStudent(canonicalStudentId);
-        const master=await getStudentMaster(canonicalStudentId);
-        const studentName=clean(master?.studentName||body.studentName||"學生",80);
-        const confirmUrl=new URL("/",request.url).toString();
-        emailNotification=await sendPrivateLessonParentEmail({
-          recipients,studentName,teacherName,lessonDate,startTime,endTime,minutes,
-          lessonContent:entity.lessonContent,confirmUrl
-        });
+        const settings=await getSystemSettings();
+        if(!settings.emailNotificationsEnabled){
+          emailNotification={status:"disabled",recipientCount:0,sentCount:0,failedCount:0};
+        }else{
+          const recipients=await parentEmailsForStudent(canonicalStudentId);
+          const master=await getStudentMaster(canonicalStudentId);
+          const studentName=clean(master?.studentName||body.studentName||"學生",80);
+          const confirmUrl=new URL("/",request.url).toString();
+          emailNotification=await sendPrivateLessonParentEmail({
+            recipients,studentName,teacherName,lessonDate,startTime,endTime,minutes,
+            lessonContent:entity.lessonContent,confirmUrl
+          });
+        }
       }catch(e){
         console.error("Private lesson parent email failed:",e);
         emailNotification={status:"failed",recipientCount:0,sentCount:0,failedCount:1,error:clean(e?.message||e,300)};
