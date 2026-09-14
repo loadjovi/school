@@ -53,16 +53,15 @@
     return;
   }
 
+  function appendScript(src,onload){
+    const s=document.createElement("script");s.src=src;s.defer=true;if(onload)s.onload=onload;document.body.appendChild(s);
+  }
   function loadApp(){
-    const app=document.createElement("script");
-    app.src="/app-v3.js";app.defer=true;
-    app.onload=()=>{
-      const roster=document.createElement("script");
-      roster.src="/roster-support.js";roster.defer=true;
-      roster.onload=()=>{const b=document.createElement("script");b.src="/batch-upgrade.js";b.defer=true;document.body.appendChild(b)};
-      document.body.appendChild(roster);
-    };
-    document.body.appendChild(app);
+    appendScript("/app-v3.js",()=>{
+      appendScript("/roster-support.js",()=>{
+        appendScript("/section-support.js",()=>appendScript("/batch-upgrade.js"));
+      });
+    });
   }
 
   function installIOSRedirectMode(){
