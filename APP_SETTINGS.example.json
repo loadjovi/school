@@ -10,5 +10,7 @@
   "ENSEMBLE_TABLE": "EnsembleAttendance",
   "PRIVATE_TABLE": "PrivateLesson",
   "TEACHER_DIRECTORY_TABLE": "TeacherDirectory",
-  "TEACHER_PROFILE_TABLE": "TeacherProfile"
+  "TEACHER_PROFILE_TABLE": "TeacherProfile",
+  "ACS_EMAIL_CONNECTION_STRING": "<Azure Communication Services connection string>",
+  "ACS_EMAIL_SENDER": "<verified MailFrom address, e.g. DoNotReply@xxxxxxxx.azurecomm.net>"
 }
