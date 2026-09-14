@@ -14,7 +14,7 @@ async function listRange(key,start,end,allowedIds){
   const rows=[];
   const filter=`eventDate ge '${start}' and eventDate le '${end}'`;
   for await (const e of table(key).listEntities({queryOptions:{filter}})){
-    if(allowedIds&& !allowedIds.has(String(e.partitionKey)))continue;
+    if(allowedIds&&!allowedIds.has(String(e.partitionKey)))continue;
     rows.push({
       studentId:String(e.partitionKey),
       eventDate:String(e.eventDate||""),
@@ -63,10 +63,10 @@ app.http("attendanceReport",{
     ]);
     const records=[...sectionRows,...ensembleRows,...privateRows].sort((a,b)=>String(b.eventDate).localeCompare(String(a.eventDate))||String(b.createdAt).localeCompare(String(a.createdAt)));
     const agg=new Map();
-    for(const s of students)agg.set(String(s.studentId),{...s,section:blank(),ensemble:blank(),privateLesson:blank(),overall:blank()});
+    for(const s of students)agg.set(String(s.studentId),{...s,sectionStats:blank(),ensembleStats:blank(),privateStats:blank(),overall:blank()});
     for(const r of records){
       const x=agg.get(String(r.studentId));if(!x)continue;
-      const key=r.classType==="ensemble"?"ensemble":r.classType==="private"||r.classType==="privateLesson"?"privateLesson":"section";
+      const key=r.classType==="ensemble"?"ensembleStats":r.classType==="private"||r.classType==="privateLesson"?"privateStats":"sectionStats";
       add(x[key],r.status);add(x.overall,r.status);
     }
     const items=[...agg.values()].map(x=>({...x,attendanceRate:x.overall.total?Math.round(x.overall.attended/x.overall.total*1000)/10:null})).sort((a,b)=>String(a.groupName).localeCompare(String(b.groupName),"zh-Hant")||String(a.section).localeCompare(String(b.section),"zh-Hant")||String(a.name).localeCompare(String(b.name),"zh-Hant"));
