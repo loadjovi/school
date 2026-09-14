@@ -60,7 +60,9 @@
     appendScript("/app-v3.js",()=>{
       appendScript("/roster-support.js",()=>{
         appendScript("/section-support.js",()=>{
-          appendScript("/teacher-support.js",()=>appendScript("/batch-upgrade.js"));
+          appendScript("/teacher-support.js",()=>{
+            appendScript("/teacher-settings.js",()=>appendScript("/batch-upgrade.js"));
+          });
         });
       });
     });
