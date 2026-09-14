@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getAccess, ensurePrivateAccess, ensureStudentAccess, getStudentAliasInfo, json } from "../lib/auth.js";
-import { ensureTables, table, rowKey, listByStudent, getTeacherDirectory } from "../lib/storage.js";
+import { ensureTables, table, rowKey, listByStudent, getTeacherDirectory, listUserStudentMappings, getStudentMaster } from "../lib/storage.js";
+import { sendPrivateLessonParentEmail } from "../lib/email.js";
 
 const allowedStatuses=new Set(["present","late","leave","absent","cancelled"]);
 function clean(v,max=300){return String(v||"").trim().slice(0,max)}
@@ -16,6 +17,7 @@ function view(e,teacherNameOverride=""){
     lessonContent:String(e.lessonContent||""),teacher:String(e.teacher||""),teacherName:String(teacherNameOverride||e.teacherName||e.teacher||""),
     parentConfirmation:String(e.parentConfirmation||(["present","late"].includes(String(e.status||""))?"pending":"not_required")),
     parentConfirmedAt:String(e.parentConfirmedAt||""),parentConfirmedBy:String(e.parentConfirmedBy||""),parentNote:String(e.parentNote||""),
+    emailNotificationStatus:String(e.emailNotificationStatus||""),emailNotificationAt:String(e.emailNotificationAt||""),emailNotificationRecipients:Number(e.emailNotificationRecipients||0),
     createdAt:String(e.createdAt||"")
   };
 }
@@ -44,6 +46,20 @@ async function findLesson(studentId,lessonId){
     catch(e){if(e.statusCode!==404)throw e}
   }
   return null;
+}
+async function parentEmailsForStudent(canonicalStudentId){
+  const mappings=await listUserStudentMappings("active"),emails=new Set();
+  for(const m of mappings){
+    if(!m.parentEmail||!m.studentId)continue;
+    try{
+      const alias=await getStudentAliasInfo(m.studentId);
+      const canonical=String(alias.canonicalStudentId||m.studentId);
+      if(canonical===String(canonicalStudentId))emails.add(String(m.parentEmail).trim().toLowerCase());
+    }catch(e){
+      if(String(m.studentId)===String(canonicalStudentId))emails.add(String(m.parentEmail).trim().toLowerCase());
+    }
+  }
+  return [...emails].filter(Boolean);
 }
 
 app.http("privateLesson",{
@@ -116,9 +132,34 @@ app.http("privateLesson",{
     const entity={
       partitionKey:canonicalStudentId,rowKey:rowKey("i"),eventDate:lessonDate,startTime,endTime,status,minutes,
       lessonContent:clean(body.lessonContent,500),teacher:a.email,teacherName,
-      parentConfirmation:confirmation,parentConfirmedAt:"",parentConfirmedBy:"",parentNote:"",createdAt:now,updatedAt:now
+      parentConfirmation:confirmation,parentConfirmedAt:"",parentConfirmedBy:"",parentNote:"",createdAt:now,updatedAt:now,
+      emailNotificationStatus:confirmation==="pending"?"pending":"not_required",emailNotificationAt:"",emailNotificationRecipients:0
     };
     await table("privateLesson").createEntity(entity);
-    return json({ok:true,item:view(entity,teacherName)},201);
+
+    let emailNotification={status:"not_required",recipientCount:0,sentCount:0,failedCount:0};
+    if(confirmation==="pending"){
+      try{
+        const recipients=await parentEmailsForStudent(canonicalStudentId);
+        const master=await getStudentMaster(canonicalStudentId);
+        const studentName=clean(master?.studentName||body.studentName||"學生",80);
+        const confirmUrl=new URL("/",request.url).toString();
+        emailNotification=await sendPrivateLessonParentEmail({
+          recipients,studentName,teacherName,lessonDate,startTime,endTime,minutes,
+          lessonContent:entity.lessonContent,confirmUrl
+        });
+      }catch(e){
+        console.error("Private lesson parent email failed:",e);
+        emailNotification={status:"failed",recipientCount:0,sentCount:0,failedCount:1,error:clean(e?.message||e,300)};
+      }
+      entity.emailNotificationStatus=emailNotification.status;
+      entity.emailNotificationAt=new Date().toISOString();
+      entity.emailNotificationRecipients=Number(emailNotification.recipientCount||0);
+      await table("privateLesson").updateEntity(entity,"Merge");
+    }
+    return json({
+      ok:true,item:view(entity,teacherName),
+      emailNotification:{status:emailNotification.status,recipientCount:Number(emailNotification.recipientCount||0),sentCount:Number(emailNotification.sentCount||0),failedCount:Number(emailNotification.failedCount||0)}
+    },201);
   }
 });
