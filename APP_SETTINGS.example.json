@@ -2,10 +2,6 @@
   "GOOGLE_CLIENT_ID": "<Google OAuth 2.0 Web Client ID>",
   "STORAGE_CONNECTION_STRING": "<Azure Storage connection string>",
   "STUDENT_MAP_JSON": "{\"parent@gmail.com\": [{\"studentId\": \"SH001\", \"name\": \"林心澄\", \"grade\": \"三年級\", \"groupName\": \"A\", \"instrument\": \"小提琴\", \"section\": \"小提一部\"}]}",
-  "TEACHER_EMAILS": "teacher1@gmail.com,teacher2@gmail.com",
-  "SECTION_TEACHER_MAP_JSON": "{}",
-  "ENSEMBLE_TEACHER_MAP_JSON": "{}",
-  "PRIVATE_TEACHER_MAP_JSON": "{}",
   "ADMIN_EMAILS": "admin@gmail.com",
   "PRACTICE_QUALIFIED_MINUTES": "15",
   "PRACTICE_TARGET_DAYS": "30",
@@ -13,5 +9,6 @@
   "SECTION_TABLE": "SectionAttendance",
   "ENSEMBLE_TABLE": "EnsembleAttendance",
   "PRIVATE_TABLE": "PrivateLesson",
+  "TEACHER_DIRECTORY_TABLE": "TeacherDirectory",
   "TEACHER_PROFILE_TABLE": "TeacherProfile"
 }
