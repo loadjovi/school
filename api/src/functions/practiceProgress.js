@@ -1,5 +1,5 @@
 import { app } from "@azure/functions";
-import { getAccess, json } from "../lib/auth.js";
+import { getAccess, getStudentIdAliases, json } from "../lib/auth.js";
 import { listByStudent, listStudentMaster } from "../lib/storage.js";
 
 function clean(v,max=20){return String(v||"").trim().slice(0,max)}
@@ -51,7 +51,8 @@ app.http("practiceProgress",{
     students=students.filter(s=>s.studentId&&!seen.has(s.studentId)&&(seen.add(s.studentId),true));
 
     const items=await Promise.all(students.map(async s=>{
-      const rows=await listByStudent("practice",s.studentId,start,end);
+      const aliases=await getStudentIdAliases(s.studentId);
+      const rows=(await Promise.all(aliases.map(id=>listByStudent("practice",id,start,end)))).flat();
       const records=rows.map(r=>viewPractice(r,qualifiedMinutes)).sort((a,b)=>
         String(b.practiceDate).localeCompare(String(a.practiceDate))||String(b.createdAt).localeCompare(String(a.createdAt))
       );
