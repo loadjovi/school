@@ -17,7 +17,7 @@ app.http("teacherProfile",{
   handler:async(request)=>{
     const access=await getAccess(request);
     if(!access.authenticated)return json({error:"Unauthorized"},401);
-    if(access.role!=="admin"&&!access.capabilities?.teacherSettings)return json({error:"此帳號尚未被授權為老師，請管理員先將 Gmail 加入 TEACHER_EMAILS。"},403);
+    if(access.role!=="admin"&&!access.capabilities?.teacherSettings)return json({error:"此 Gmail 尚未由管理員啟用為老師帳號。"},403);
 
     const email=access.email;
     const current=await getTeacherProfile(email);
