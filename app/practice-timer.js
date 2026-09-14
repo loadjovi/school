@@ -57,8 +57,6 @@
   const baseSavePractice=savePractice;
   savePractice=async function(){
     if(timerIsRunning()){toast("請先停止計時，再送出自主練習");return}
-    const timer=readTimer();
     await baseSavePractice();
-    if(timer?.stoppedAt)writeTimer(null);
   };
 })();
