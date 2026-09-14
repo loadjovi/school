@@ -1,5 +1,5 @@
 import { OAuth2Client } from "google-auth-library";
-import { getMappedStudentsByEmail } from "./storage.js";
+import { getMappedStudentsByEmail, listStudentsBySectionAssignments } from "./storage.js";
 
 const googleClient = new OAuth2Client();
 
@@ -60,7 +60,24 @@ export async function getAccess(request){
   const admins=String(process.env.ADMIN_EMAILS||"").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean);
 
   if(admins.includes(email))return {authenticated:true,...identity,role:"admin"};
-  if(sectionMap[email])return {authenticated:true,...identity,role:"sectionTeacher",...sectionMap[email]};
+
+  if(sectionMap[email]){
+    const cfg=sectionMap[email]||{};
+    const assignments=Array.isArray(cfg.assignments)?cfg.assignments:[];
+    if(assignments.length){
+      const students=await listStudentsBySectionAssignments(assignments);
+      const sections=[...new Set(assignments.map(x=>String(x.section||"").trim()).filter(Boolean))];
+      const groups=[...new Set(assignments.map(x=>String(x.groupName||x.group||"").trim()).filter(Boolean))];
+      return {
+        authenticated:true,...identity,role:"sectionTeacher",
+        assignments,students,
+        section:sections.length===1?sections[0]:"多聲部",
+        groupName:groups.length===1?groups[0]:"多團"
+      };
+    }
+    return {authenticated:true,...identity,role:"sectionTeacher",...cfg};
+  }
+
   if(privateMap[email])return {authenticated:true,...identity,role:"privateTeacher",...privateMap[email]};
   if(parentMap[email])return {authenticated:true,...identity,role:"parent",students:parentMap[email]};
 
