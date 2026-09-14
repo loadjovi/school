@@ -1,0 +1,70 @@
+import { EmailClient } from "@azure/communication-email";
+
+function clean(v,max=500){return String(v||"").trim().slice(0,max)}
+function esc(v){return clean(v,2000).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]))}
+
+function config(){
+  return {
+    connectionString:clean(process.env.ACS_EMAIL_CONNECTION_STRING,2000),
+    senderAddress:clean(process.env.ACS_EMAIL_SENDER,320)
+  };
+}
+
+export function emailConfigured(){
+  const c=config();
+  return !!(c.connectionString&&c.senderAddress);
+}
+
+async function sendOne(client,senderAddress,address,message){
+  const poller=await client.beginSend({
+    senderAddress,
+    content:{
+      subject:message.subject,
+      plainText:message.plainText,
+      html:message.html
+    },
+    recipients:{to:[{address}]}
+  });
+  const result=await poller.pollUntilDone();
+  return {address,status:String(result?.status||"unknown"),id:String(result?.id||"")};
+}
+
+export async function sendPrivateLessonParentEmail({recipients=[],studentName="",teacherName="",lessonDate="",startTime="",endTime="",minutes=0,lessonContent="",confirmUrl=""}={}){
+  const emails=[...new Set((Array.isArray(recipients)?recipients:[]).map(x=>clean(x,320).toLowerCase()).filter(Boolean))];
+  if(!emails.length)return {status:"no_recipients",recipientCount:0,sentCount:0,failedCount:0};
+  const c=config();
+  if(!c.connectionString||!c.senderAddress)return {status:"not_configured",recipientCount:emails.length,sentCount:0,failedCount:0};
+
+  const subject=`【聖心小學弦樂團】${clean(studentName,80)||"學生"} 個別課完成確認`;
+  const teacher=clean(teacherName,100)||"個別課老師";
+  const date=clean(lessonDate,20),timeText=[clean(startTime,10),clean(endTime,10)].filter(Boolean).join("～");
+  const content=clean(lessonContent,500);
+  const link=clean(confirmUrl,1000);
+  const plainText=[
+    "聖心小學弦樂團｜個別課完成確認",
+    "",
+    `學生：${clean(studentName,80)}`,
+    `老師：${teacher}`,
+    `日期：${date}`,
+    `時間：${timeText}`,
+    `課程分鐘：${Number(minutes||0)} 分鐘`,
+    content?`課程內容：${content}`:"",
+    "",
+    "老師已完成本次個別課紀錄，請登入弦樂團系統確認學生已完成上課。",
+    link?`確認連結：${link}`:""
+  ].filter(Boolean).join("\n");
+  const html=`<div style="font-family:Arial,'Noto Sans TC',sans-serif;line-height:1.7;color:#173d31"><h2 style="color:#1f5a46">🎻 聖心小學弦樂團｜個別課完成確認</h2><p>老師已完成本次個別課紀錄，請家長登入系統確認。</p><table style="border-collapse:collapse"><tr><td style="padding:4px 12px 4px 0"><b>學生</b></td><td>${esc(studentName)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>老師</b></td><td>${esc(teacher)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>日期</b></td><td>${esc(date)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>時間</b></td><td>${esc(timeText)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>分鐘</b></td><td>${Number(minutes||0)} 分鐘</td></tr>${content?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>課程內容</b></td><td>${esc(content)}</td></tr>`:""}</table>${link?`<p style="margin-top:20px"><a href="${esc(link)}" style="display:inline-block;background:#1f5a46;color:white;text-decoration:none;padding:10px 18px;border-radius:8px">登入系統確認個別課</a></p>`:""}<p style="font-size:12px;color:#6c7f77">此信由聖心小學弦樂團系統自動寄出，請勿直接回覆。</p></div>`;
+
+  const client=new EmailClient(c.connectionString);
+  const results=await Promise.allSettled(emails.map(address=>sendOne(client,c.senderAddress,address,{subject,plainText,html})));
+  const sent=results.filter(r=>r.status==="fulfilled"&&String(r.value?.status).toLowerCase()==="succeeded").length;
+  const accepted=results.filter(r=>r.status==="fulfilled").length;
+  const failed=results.length-accepted;
+  return {
+    status:failed===0&&sent===emails.length?"sent":accepted>0?"partial":"failed",
+    recipientCount:emails.length,
+    sentCount:sent||accepted,
+    failedCount:failed,
+    results:results.map(r=>r.status==="fulfilled"?{status:r.value.status,id:r.value.id}:{status:"failed",error:clean(r.reason?.message||r.reason,300)})
+  };
+}
