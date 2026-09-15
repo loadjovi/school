@@ -1,52 +1,115 @@
 (()=>{
-  const MAX_TRIES=120;
-  let tries=0,running=false,finished=false;
+  const MAX_DENIED_CHECKS=3;
+  const MAX_ERROR_RETRIES=8;
+  let deniedChecks=0,errorRetries=0,running=false,resolved=false;
+
+  function retry(delay){
+    if(!resolved)setTimeout(enforceSchoolRole,delay);
+  }
 
   async function enforceSchoolRole(){
-    if(finished||running)return;
-    tries++;
+    if(resolved||running)return;
+    if(typeof state==="undefined"||!state.me)return;
 
-    // On a hard refresh app-v3 starts loading the profile before this support
-    // module is appended. Wait until the authenticated shell has rendered so
-    // the base loadProfile flow cannot overwrite the school role afterwards.
-    if(typeof state==="undefined"||!state.me||!document.querySelector(".shell")){
-      if(tries<MAX_TRIES)setTimeout(enforceSchoolRole,100);
-      return;
-    }
-
-    if(state.me.role==="admin"){
-      finished=true;
+    if(state.me.role==="admin"||state.me.role==="school"){
+      resolved=true;
       return;
     }
 
     running=true;
     try{
-      const d=await api("/api/school-access-self");
-      if(d?.allowed){
-        state.schoolViewer=state.schoolViewer||{};
-        state.schoolViewer.checked=true;
-        state.schoolViewer.allowed=true;
-        state.me.role="school";
-        state.me.capabilities={...(state.me.capabilities||{}),schoolAttendance:true,readOnly:true};
-        state.students=[];
-        state.student=null;
-        state.page="school";
-        finished=true;
-        render();
-      }else{
-        finished=true;
+      // A hard refresh may finish /api/me much later than the support scripts
+      // (for example after an Azure Functions cold start). Check as soon as
+      // state.me exists; do not wait for the first shell render or a short
+      // fixed polling window.
+      const d=await api(`/api/school-access-self?_=${Date.now()}`,{
+        cache:"no-store",
+        headers:{"Cache-Control":"no-cache","Pragma":"no-cache"}
+      });
+
+      if(!d?.allowed){
+        deniedChecks++;
+        if(deniedChecks<MAX_DENIED_CHECKS)retry(750);
+        else resolved=true;
+        return;
+      }
+
+      state.schoolViewer=state.schoolViewer||{};
+      state.schoolViewer.checked=true;
+      state.schoolViewer.allowed=true;
+      state.me.role="school";
+      state.me.capabilities={
+        ...(state.me.capabilities||{}),
+        schoolAttendance:true,
+        readOnly:true
+      };
+      state.students=[];
+      state.student=null;
+      state.page="school";
+      resolved=true;
+      render();
+
+      if(typeof loadSchoolFollowup==="function"){
+        try{
+          await loadSchoolFollowup(true);
+          render();
+        }catch(e){
+          console.warn("school follow-up preload failed",e?.message||e);
+        }
       }
     }catch(e){
       console.warn("school access refresh check failed",e?.message||e);
-      if(tries<MAX_TRIES)setTimeout(enforceSchoolRole,250);
-      else finished=true;
+      errorRetries++;
+      if(errorRetries<MAX_ERROR_RETRIES)retry(Math.min(500*errorRetries,2500));
+      else resolved=true;
     }finally{
       running=false;
     }
   }
 
-  // The first check handles normal navigation; retries cover hard refreshes
-  // where /api/me and /api/students are still in flight.
-  setTimeout(enforceSchoolRole,100);
-  window.addEventListener("pageshow",()=>{if(!finished)setTimeout(enforceSchoolRole,50)});
+  function scheduleCheck(){
+    if(!resolved)setTimeout(enforceSchoolRole,0);
+  }
+
+  // loadProfile may already be in flight when this file is loaded. Wrapping
+  // render catches that in-flight refresh; wrapping loadProfile covers every
+  // later Google sign-in without relying on timing.
+  if(typeof render==="function"){
+    const renderBeforeSchoolRefreshFix=render;
+    render=function(...args){
+      const result=renderBeforeSchoolRefreshFix.apply(this,args);
+      scheduleCheck();
+      return result;
+    };
+  }
+
+  if(typeof loadProfile==="function"){
+    const loadProfileBeforeSchoolRefreshFix=loadProfile;
+    loadProfile=async function(...args){
+      const result=await loadProfileBeforeSchoolRefreshFix.apply(this,args);
+      await enforceSchoolRole();
+      return result;
+    };
+  }
+
+  // Immediate refreshes can be delayed by a cold API. Keep watching for the
+  // authenticated profile instead of giving up after a few seconds.
+  let waitTicks=0;
+  const readyTimer=setInterval(()=>{
+    if(resolved){clearInterval(readyTimer);return}
+    if(typeof state!=="undefined"&&state.me){
+      clearInterval(readyTimer);
+      scheduleCheck();
+    }else if(++waitTicks>=2400){
+      // The loadProfile wrapper still covers a sign-in after this ten-minute
+      // safety stop.
+      clearInterval(readyTimer);
+    }
+  },250);
+
+  window.addEventListener("pageshow",scheduleCheck);
+  window.addEventListener("online",scheduleCheck);
+  document.addEventListener("visibilitychange",()=>{
+    if(document.visibilityState==="visible")scheduleCheck();
+  });
 })();
