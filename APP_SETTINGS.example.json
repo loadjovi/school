@@ -8,6 +8,7 @@
   "PRACTICE_TABLE": "PracticeLog",
   "SECTION_TABLE": "SectionAttendance",
   "ENSEMBLE_TABLE": "EnsembleAttendance",
+  "COMPREHENSIVE_TABLE": "ComprehensiveAttendance",
   "PRIVATE_TABLE": "PrivateLesson",
   "TEACHER_DIRECTORY_TABLE": "TeacherDirectory",
   "TEACHER_PROFILE_TABLE": "TeacherProfile",
