@@ -49,7 +49,9 @@
                                         appendScript("/admin-operations.js?v=20260915-0915",()=>
                                           appendScript("/system-backup.js?v=20260915-1225",()=>
                                             appendScript("/parent-semester-attendance.js?v=20260915-1440",()=>
-                                              appendScript("/parent-home-summary.js?v=20260915-1510")
+                                              appendScript("/parent-home-summary.js?v=20260915-1510",()=>
+                                                appendScript("/school-access.js?v=20260915-1915")
+                                              )
                                             )
                                           )
                                         )
