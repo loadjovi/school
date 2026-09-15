@@ -50,8 +50,9 @@
   practicePage=function(){
     const html=basePracticePage(),timer=readTimer(),running=!!(timer?.startedAt&&!timer?.stoppedAt);
     const timerPanel=`<div class="card"><h2>⏱️ 練習計時器</h2><div class="notice">可以直接計時，也可以繼續使用下方的「開始時間／結束時間」手動登記。停止計時後仍可手動微調時間再送出。</div><div style="text-align:center;padding:14px 0 8px"><div id="practiceTimerValue" style="font-size:34px;font-weight:900;letter-spacing:2px">${durationText(elapsedSeconds(timer))}</div><div id="practiceTimerStatus" class="muted" style="margin-top:5px">${running?"計時中…":"可使用計時或手動輸入"}</div></div><div class="row2"><button id="practiceTimerStart" class="primary" style="margin-top:0" onclick="startPracticeTimer()" ${running?"disabled":""}>▶️ 開始練習</button><button id="practiceTimerStop" class="secondary" style="margin-top:0" onclick="stopPracticeTimer()" ${running?"":"disabled"}>⏹ 停止</button></div>${timer?`<button class="secondary" style="width:100%;margin-top:10px" onclick="resetPracticeTimer()">清除計時／改用手動時間</button>`:""}</div>`;
+    const reminderPanel=state.me?.role==="parent"?`<div class="card"><h2>📌 自主練習登記提醒</h2><div class="notice">為避免自主練習紀錄遺漏，影響後續成績統計與學生權益，請家長務必確認每次練習完成後已成功送出紀錄。<br><br>若主要登記之家長因出差、工作或其他因素無法操作，請由另一位已綁定之監護人登入系統完成自主練習登記。<br><br><b>系統以「學生」為統計單位</b>，不同監護人所填寫的自主練習紀錄會累計於同一位學生名下，不會分開計算。</div></div>`:"";
     const marker='<div class="card"><h2>自主練習打卡</h2>',out=html.includes(marker)?html.replace(marker,timerPanel+marker):timerPanel+html;
-    setTimeout(()=>{refreshTimerUi();if(running)ensureTicker()},0);return out;
+    setTimeout(()=>{refreshTimerUi();if(running)ensureTicker()},0);return out+reminderPanel;
   };
 
   const baseSavePractice=savePractice;
