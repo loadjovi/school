@@ -2,6 +2,7 @@
   const localDate=()=>{const d=new Date(),x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,10)};
   const statusText={leave:"請假",absent:"缺席"};
   const classText={section:"分部課",ensemble:"團體課"};
+  const SETTINGS_URL="/api/daily-followup?mode=settings";
   state.adminOps=state.adminOps||{
     date:localDate(),settings:null,followup:null,
     loadingSettings:false,loadingFollowup:false,
@@ -26,7 +27,7 @@
   async function loadSettings(){
     if(state.me?.role!=="admin"||state.adminOps.loadingSettings)return;
     state.adminOps.loadingSettings=true;state.adminOps.settingsError="";mountAdminOps();
-    try{state.adminOps.settings=await api("/api/admin-settings")}
+    try{state.adminOps.settings=await api(SETTINGS_URL)}
     catch(e){state.adminOps.settingsError=e.message||String(e)}
     state.adminOps.loadingSettings=false;mountAdminOps();
   }
@@ -49,7 +50,7 @@
 
   window.toggleAdminEmail=async function(checked){
     try{
-      const d=await api("/api/admin-settings",{method:"PATCH",body:JSON.stringify({emailNotificationsEnabled:!!checked})});
+      const d=await api(SETTINGS_URL,{method:"PATCH",body:JSON.stringify({emailNotificationsEnabled:!!checked})});
       state.adminOps.settings=d;state.adminOps.settingsError="";mountAdminOps();
       if(d.emailNotificationsEnabled&&!d.emailServiceConfigured)toast("⚠️ 已開啟寄信，但 Azure Email 服務尚未完成設定");
       else toast(d.emailNotificationsEnabled?"✅ 個別課 Email 通知已開啟":"✅ 個別課 Email 通知已關閉");
