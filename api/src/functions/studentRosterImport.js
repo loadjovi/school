@@ -60,6 +60,13 @@ function normalizeRows(input,schoolYear){
   if(!rows.length)throw new Error("沒有可匯入的學生資料");
   return {rows,warnings};
 }
+function compatibleLegacy(e,r){
+  const conflicts=[];
+  if(clean(e.grade,20)&&clean(e.grade,20)!==r.grade)conflicts.push("年級");
+  if(clean(e.groupName,20)&&!["待確認"].includes(clean(e.groupName,20))&&clean(e.groupName,20)!==r.groupName)conflicts.push("團別");
+  if(clean(e.classCode,20)&&r.classCode&&clean(e.classCode,20)!==r.classCode)conflicts.push("班級");
+  return conflicts.length===0;
+}
 function stripMeta(e){const x={...e};delete x.etag;delete x.timestamp;return x}
 async function migratePartitionRows(key,oldId,newId){
   if(!oldId||oldId===newId)return 0;
@@ -139,15 +146,17 @@ app.http("studentRosterImport",{
     for(const r of parsed.rows){
       const exact=byId.get(r.studentNo)||null;
       if(exact){updateCount++;previewRows.push({...r,action:"update",studentId:String(exact.rowKey),old:studentView(exact)});continue}
-      const matches=(byName.get(r.name)||[]).filter(x=>String(x.status||"active")!=="inactive"||!x.replacedByStudentId);
-      if(matches.length===0){createCount++;previewRows.push({...r,action:"create",studentId:r.studentNo})}
-      else if(matches.length===1){migrateCount++;previewRows.push({...r,action:"migrate",studentId:r.studentNo,oldStudentId:String(matches[0].rowKey),old:studentView(matches[0])})}
-      else{conflictCount++;previewRows.push({...r,action:"conflict",studentId:r.studentNo,message:"同名歷史主檔超過 1 筆，無法安全自動轉成學號"})}
+      const matches=(byName.get(r.name)||[]).filter(x=>!x.replacedByStudentId);
+      if(matches.length===0){createCount++;previewRows.push({...r,action:"create",studentId:r.studentNo});continue}
+      if(matches.every(x=>compatibleLegacy(x,r))){
+        migrateCount++;previewRows.push({...r,action:"migrate",studentId:r.studentNo,oldStudentId:String(matches[0].rowKey),oldStudentIds:matches.map(x=>String(x.rowKey)),old:studentView(matches[0])});continue
+      }
+      conflictCount++;previewRows.push({...r,action:"conflict",studentId:r.studentNo,message:"找到同名但年級／班級／團別不一致的歷史主檔，為避免誤合併請先人工確認"});
     }
     const summary={total:parsed.rows.length,create:createCount,update:updateCount,migrate:migrateCount,conflict:conflictCount,warnings:parsed.warnings.length};
     if(action==="preview")return json({summary,items:previewRows,warnings:parsed.warnings,uniqueKey:"studentNo"});
     if(!body.confirmApply)return json({error:"正式匯入需要 confirmApply=true"},400);
-    if(conflictCount)return json({error:`有 ${conflictCount} 筆歷史同名衝突，請先處理後再匯入`,summary,items:previewRows},409);
+    if(conflictCount)return json({error:`有 ${conflictCount} 筆歷史資料衝突，請先處理後再匯入`,summary,items:previewRows},409);
 
     const now=new Date().toISOString(),results=[];
     for(const r of parsed.rows){
@@ -156,22 +165,23 @@ app.http("studentRosterImport",{
         const entity={...exact,studentNo:r.studentNo,studentName:r.name,classCode:r.classCode,grade:r.grade,groupName:r.groupName,section:r.section,instrument:r.instrument,schoolYear:r.schoolYear,semester:r.semester,seatNo:r.seatNo,status:"active",updatedAt:now,updatedBy:access.email};
         await table("studentMaster").updateEntity(entity,"Merge");
         await table("studentHistory").createEntity({partitionKey:String(exact.rowKey),rowKey:rowKey("hist"),changeType:"roster_import_update_by_student_no",changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(exact)),newValue:JSON.stringify(studentView(entity))});
-        results.push({studentId:String(exact.rowKey),studentNo:r.studentNo,name:r.name,action:"update"});
-        continue;
+        results.push({studentId:String(exact.rowKey),studentNo:r.studentNo,name:r.name,action:"update"});continue
       }
 
-      const matches=(byName.get(r.name)||[]).filter(x=>String(x.status||"active")!=="inactive"||!x.replacedByStudentId);
-      const old=matches.length===1?matches[0]:null;
-      const entity={partitionKey:"STUDENT",rowKey:r.studentNo,studentNo:r.studentNo,studentName:r.name,classCode:r.classCode,grade:r.grade,groupName:r.groupName,section:r.section,instrument:r.instrument,schoolYear:r.schoolYear,semester:r.semester,seatNo:r.seatNo,status:"active",createdAt:old?.createdAt||now,updatedAt:now,updatedBy:access.email};
+      const matches=(byName.get(r.name)||[]).filter(x=>!x.replacedByStudentId);
+      const entity={partitionKey:"STUDENT",rowKey:r.studentNo,studentNo:r.studentNo,studentName:r.name,classCode:r.classCode,grade:r.grade,groupName:r.groupName,section:r.section,instrument:r.instrument,schoolYear:r.schoolYear,semester:r.semester,seatNo:r.seatNo,status:"active",createdAt:matches[0]?.createdAt||now,updatedAt:now,updatedBy:access.email};
       await table("studentMaster").createEntity(entity);
 
-      if(old){
-        const migration=await migrateHistoricalReferences(String(old.rowKey),r.studentNo,r,access.email);
-        const retired={...old,status:"inactive",replacedByStudentId:r.studentNo,updatedAt:now,updatedBy:access.email};
-        await table("studentMaster").updateEntity(retired,"Merge");
-        await table("studentHistory").createEntity({partitionKey:String(old.rowKey),rowKey:rowKey("hist"),changeType:"student_number_replaced",changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(old)),newValue:JSON.stringify({replacedByStudentId:r.studentNo,status:"inactive",migration})});
-        await table("studentHistory").createEntity({partitionKey:r.studentNo,rowKey:rowKey("hist"),changeType:"student_number_migration",changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(old)),newValue:JSON.stringify(studentView(entity)),legacyStudentId:String(old.rowKey),migration:JSON.stringify(migration)});
-        results.push({studentId:r.studentNo,studentNo:r.studentNo,name:r.name,action:"migrate",oldStudentId:String(old.rowKey),migration});
+      if(matches.length){
+        const migrations=[];
+        for(const old of matches){
+          const migration=await migrateHistoricalReferences(String(old.rowKey),r.studentNo,r,access.email);migrations.push({oldStudentId:String(old.rowKey),...migration});
+          const retired={...old,status:"inactive",replacedByStudentId:r.studentNo,updatedAt:now,updatedBy:access.email};
+          await table("studentMaster").updateEntity(retired,"Merge");
+          await table("studentHistory").createEntity({partitionKey:String(old.rowKey),rowKey:rowKey("hist"),changeType:"student_number_replaced",changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(old)),newValue:JSON.stringify({replacedByStudentId:r.studentNo,status:"inactive",migration})});
+        }
+        await table("studentHistory").createEntity({partitionKey:r.studentNo,rowKey:rowKey("hist"),changeType:"student_number_migration",changedAt:now,changedBy:access.email,oldValue:JSON.stringify(matches.map(studentView)),newValue:JSON.stringify(studentView(entity)),legacyStudentIds:JSON.stringify(matches.map(x=>String(x.rowKey))),migration:JSON.stringify(migrations)});
+        results.push({studentId:r.studentNo,studentNo:r.studentNo,name:r.name,action:"migrate",oldStudentIds:matches.map(x=>String(x.rowKey)),migration:migrations});
       }else{
         await table("studentHistory").createEntity({partitionKey:r.studentNo,rowKey:rowKey("hist"),changeType:"roster_import_create_by_student_no",changedAt:now,changedBy:access.email,oldValue:"",newValue:JSON.stringify(studentView(entity))});
         results.push({studentId:r.studentNo,studentNo:r.studentNo,name:r.name,action:"create"});
