@@ -15,19 +15,9 @@
     history.replaceState({},"",current.pathname+(current.search?current.search:"")+current.hash);
   }
 
-  function cleanUrl(){
-    const u=new URL(location.href);
-    u.searchParams.delete("openExternalBrowser");
-    u.searchParams.delete("openInAppBrowser");
-    u.searchParams.delete("google_redirect");
-    return u.toString();
-  }
+  function cleanUrl(){const u=new URL(location.href);u.searchParams.delete("openExternalBrowser");u.searchParams.delete("openInAppBrowser");u.searchParams.delete("google_redirect");return u.toString()}
   function lineExternalUrl(){const u=new URL(cleanUrl());u.searchParams.set("openExternalBrowser","1");return u.toString()}
-  window.copyOrchestraUrl=async()=>{
-    const url=cleanUrl();
-    try{await navigator.clipboard.writeText(url);alert("網址已複製，請貼到 Safari 或 Chrome 開啟。")}
-    catch{const t=document.createElement("textarea");t.value=url;document.body.appendChild(t);t.select();document.execCommand("copy");t.remove();alert("網址已複製，請貼到 Safari 或 Chrome 開啟。");}
-  };
+  window.copyOrchestraUrl=async()=>{const url=cleanUrl();try{await navigator.clipboard.writeText(url);alert("網址已複製，請貼到 Safari 或 Chrome 開啟。")}catch{const t=document.createElement("textarea");t.value=url;document.body.appendChild(t);t.select();document.execCommand("copy");t.remove();alert("網址已複製，請貼到 Safari 或 Chrome 開啟。")}};
 
   if(embedded){
     const platform=isIOS?"Safari":isAndroid?"Chrome":"外部瀏覽器";
@@ -41,13 +31,13 @@
     appendScript("/app-v3.js",()=>{
       appendScript("/roster-support.js",()=>{
         appendScript("/section-support.js",()=>{
-          appendScript("/student-number-support.js?v=20260915-1005",()=>{
+          appendScript("/student-number-support.js?v=20260915-1135",()=>{
             appendScript("/parent-link-admin.js",()=>{
               appendScript("/teacher-support.js?v=20260915-0915",()=>{
                 appendScript("/teacher-settings.js?v=20260915-0915",()=>{
                   appendScript("/teacher-admin.js?v=20260915-0915",()=>{
                     appendScript("/batch-upgrade.js",()=>{
-                      appendScript("/roster-import.js?v=20260915-1108",()=>{
+                      appendScript("/roster-import.js?v=20260915-1135",()=>{
                         appendScript("/attendance-support.js?v=20260915-0915",()=>{
                           appendScript("/attendance-edit.js",()=>{
                             appendScript("/teacher-navigation.js?v=20260915-0915",()=>{
@@ -86,12 +76,7 @@
     },50);
   }
 
-  document.addEventListener("click",async e=>{
-    const btn=e.target.closest?.(".logout");if(!btn)return;
-    e.preventDefault();e.stopImmediatePropagation();
-    try{await fetch("/api/google-logout",{method:"POST"})}catch{}
-    sessionStorage.removeItem("google_id_token");location.href="/";
-  },true);
+  document.addEventListener("click",async e=>{const btn=e.target.closest?.(".logout");if(!btn)return;e.preventDefault();e.stopImmediatePropagation();try{await fetch("/api/google-logout",{method:"POST"})}catch{}sessionStorage.removeItem("google_id_token");location.href="/"},true);
 
   if(isIOS)installIOSRedirectMode();else loadApp();
 })();
