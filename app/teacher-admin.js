@@ -14,7 +14,8 @@
     const ens=(t.ensembleGroups||[]).length;
     const pri=(t.privateStudentIds||[]).length;
     if(sec)parts.push(`分部課 ${sec} 組`);
-    if(ens)parts.push(`團體課 ${(t.ensembleGroups||[]).join("、")}團`);
+    if(ens)parts.push(`合奏課 ${(t.ensembleGroups||[]).join("、")}團`);
+    if(t.comprehensiveEnabled)parts.push("綜合課");
     if(pri)parts.push(`個課 ${pri} 人`);
     return parts.length?parts.join("｜"):"尚未設定教學範圍";
   }
@@ -33,7 +34,7 @@
 
   function teacherAdminPanel(){
     const active=state.teachers.filter(t=>t.status!=="inactive").length;
-    return `<div class="card hero" id="teacherAdmin"><h2>👩‍🏫 老師帳號管理</h2><div class="notice">老師權限只以此後台名單為準。舊的 SECTION_TEACHER_MAP_JSON、ENSEMBLE_TEACHER_MAP_JSON、PRIVATE_TEACHER_MAP_JSON 與 TEACHER_EMAILS 已停用，不再參與登入判斷。</div><div class="grid" style="margin-top:12px"><div class="kpi"><b>${state.teachers.length}</b><span>老師帳號</span></div><div class="kpi"><b>${active}</b><span>目前啟用</span></div></div></div>
+    return `<div class="card hero" id="teacherAdmin"><h2>👩‍🏫 老師帳號管理</h2><div class="notice">老師權限只以此後台名單為準。老師登入後可在「我的教學」自行勾選分部課、合奏課、綜合課與個別課學生。</div><div class="grid" style="margin-top:12px"><div class="kpi"><b>${state.teachers.length}</b><span>老師帳號</span></div><div class="kpi"><b>${active}</b><span>目前啟用</span></div></div></div>
       <div class="card"><h2>新增老師</h2><label>老師姓名</label><input id="newTeacherName" placeholder="例：陳宣文"><label>Google Gmail</label><input id="newTeacherEmail" type="email" placeholder="teacher@gmail.com"><button class="primary" onclick="addTeacherAdmin()">新增並啟用老師</button></div>
       <div class="card"><h2>老師清單</h2>${state.teachers.length?state.teachers.map(teacherCard).join(""):'<div class="notice">目前尚未建立老師帳號。</div>'}</div>`;
   }
