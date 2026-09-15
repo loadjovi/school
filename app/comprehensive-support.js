@@ -3,7 +3,7 @@
   const statusText={present:"出席",late:"遲到",leave:"請假",absent:"缺席",cancelled:"停課"};
   const groups=["A","B","儲備"];
   const teacherAccount=()=>state.me?.role!=="admin"&&(state.me?.role==="teacher"||state.me?.capabilities?.teacherSettings);
-  const enabled=()=>!!state.teacherSetup?.profile?.comprehensiveEnabled;
+  const enabled=()=>!!(state.me?.capabilities?.comprehensive||state.teacherSetup?.profile?.comprehensiveEnabled);
   const localDate=()=>{const d=new Date(),x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,10)};
   const defaultDate=()=>SCHEDULE_DATES.find(x=>x>=localDate())||localDate();
   state.comprehensiveDate=state.comprehensiveDate||defaultDate();
@@ -11,7 +11,8 @@
   state.comprehensiveLoading=false;
 
   function students(){
-    return (state.teacherSetup?.students||[]).filter(s=>groups.includes(String(s.groupName))&&String(s.status||"active")!=="inactive").slice().sort((a,b)=>groups.indexOf(a.groupName)-groups.indexOf(b.groupName)||String(a.section||"").localeCompare(String(b.section||""),"zh-Hant")||String(a.name||"").localeCompare(String(b.name||""),"zh-Hant"));
+    const source=state.teacherSetup?.students?.length?state.teacherSetup.students:(state.students||[]);
+    return source.filter(s=>groups.includes(String(s.groupName))&&String(s.status||"active")!=="inactive").slice().sort((a,b)=>groups.indexOf(a.groupName)-groups.indexOf(b.groupName)||String(a.section||"").localeCompare(String(b.section||""),"zh-Hant")||String(a.name||"").localeCompare(String(b.name||""),"zh-Hant"));
   }
   function existingMap(){return new Map((state.comprehensiveExisting?.items||[]).map(x=>[String(x.studentId),String(x.status||"present")]))}
   function statusSelect(s,map){const v=map.get(String(s.studentId))||"present";return `<select id="cmp_${esc(s.studentId)}" class="status-select">${Object.entries(statusText).map(([k,t])=>`<option value="${k}" ${v===k?"selected":""}>${t}</option>`).join("")}</select>`}
@@ -53,6 +54,15 @@
     if(rows.length===1){toast("✅ 本次沒有請假／缺席學生");return}
     downloadCsv(`${state.comprehensiveDate}_綜合課_未到請假追蹤.csv`,rows);toast(`📥 已匯出 ${rows.length-1} 位未到學生`);
   };
+
+  if(typeof recordPage==="function"){
+    const baseRecordPage=recordPage;
+    recordPage=function(){
+      const html=baseRecordPage(),s=state.summary||{};
+      if(s.comprehensiveTotal===undefined)return html;
+      return html+`<div class="card"><h2>綜合課紀錄</h2>${scoreItem("弦樂團體課（綜合課）","A／B／儲備團共同參加",`${s.comprehensivePresent||0} / ${s.comprehensiveTotal||0}`)}</div>`;
+    };
+  }
 
   const baseGo=go;
   go=async function(p){
