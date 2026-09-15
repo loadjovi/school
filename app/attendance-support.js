@@ -1,6 +1,6 @@
 (()=>{
   const statusText={present:"出席",late:"遲到",leave:"請假",absent:"缺席",cancelled:"停課"};
-  const classText={section:"分部課",ensemble:"團體課",private:"個別課",privateLesson:"個別課"};
+  const classText={section:"分部課",ensemble:"合奏課",comprehensive:"綜合課",private:"個別課",privateLesson:"個別課"};
   const isTeacher=()=>!!state.me?.capabilities?.teacherSettings;
   const canView=()=>state.me?.role==="admin"||isTeacher();
   state.attendanceMonth=state.attendanceMonth||new Date().toISOString().slice(0,7);
@@ -38,12 +38,12 @@
   window.exportEnsembleFollowup=function(){
     const groups=Array.isArray(state.me.ensembleGroups)?state.me.ensembleGroups.filter(x=>["A","B"].includes(x)):[];
     const g=groups[Math.min(window.__ensembleGroupIndex||0,Math.max(groups.length-1,0))];
-    if(!g){toast("尚未設定團體課");return}
+    if(!g){toast("尚未設定合奏課");return}
     const students=state.students.filter(s=>String(s.groupName)===g);
     const date=$("eDate")?.value||new Date().toISOString().slice(0,10);
     const rows=followRows({date,classType:"ensemble",groupName:g,section:"四分部合班",students,prefix:"ens_"});
     if(rows.length===1){toast("✅ 本次沒有請假／缺席學生");return}
-    downloadCsv(`${date}_${g}團_團體課_未到追蹤.csv`,rows);toast(`📥 已匯出 ${rows.length-1} 位未到學生`);
+    downloadCsv(`${date}_${g}團_合奏課_未到追蹤.csv`,rows);toast(`📥 已匯出 ${rows.length-1} 位未到學生`);
   };
 
   const baseSectionPage=sectionPage;
@@ -83,8 +83,8 @@
   window.exportAttendanceReport=function(){
     const items=filteredItems();
     if(!items.length){toast("目前沒有可匯出的學生出勤資料");return}
-    const rows=[["月份","學生姓名","年級","團別","分部","樂器","分部課出席","分部課應到","團體課出席","團體課應到","個別課出席","個別課應到","遲到","請假","缺席","總出勤率"]];
-    for(const x of items)rows.push([state.attendanceMonth,x.name,x.grade,x.groupName,x.section,x.instrument,x.sectionStats.attended,x.sectionStats.total,x.ensembleStats.attended,x.ensembleStats.total,x.privateStats.attended,x.privateStats.total,x.overall.late,x.overall.leave,x.overall.absent,x.attendanceRate==null?"":`${x.attendanceRate}%`]);
+    const rows=[["月份","學生姓名","年級","團別","分部","樂器","分部課出席","分部課應到","合奏課出席","合奏課應到","綜合課出席","綜合課應到","個別課出席","個別課應到","遲到","請假","缺席","總出勤率"]];
+    for(const x of items)rows.push([state.attendanceMonth,x.name,x.grade,x.groupName,x.section,x.instrument,x.sectionStats.attended,x.sectionStats.total,x.ensembleStats.attended,x.ensembleStats.total,x.comprehensiveStats?.attended||0,x.comprehensiveStats?.total||0,x.privateStats.attended,x.privateStats.total,x.overall.late,x.overall.leave,x.overall.absent,x.attendanceRate==null?"":`${x.attendanceRate}%`]);
     downloadCsv(`${state.attendanceMonth}_弦樂團學生出勤表.csv`,rows);toast("📥 已匯出學生出勤表");
   };
   function attendancePage(){
@@ -95,8 +95,8 @@
     const total=items.reduce((n,x)=>n+x.overall.total,0),attended=items.reduce((n,x)=>n+x.overall.attended,0),absent=items.reduce((n,x)=>n+x.overall.absent,0),leave=items.reduce((n,x)=>n+x.overall.leave,0);
     const rate=total?Math.round(attended/total*1000)/10:null;
     return `<div class="card hero"><h2>📋 學生出勤表</h2><div class="row2"><div><label>月份</label><input type="month" value="${esc(state.attendanceMonth)}" onchange="changeAttendanceMonth(this.value)"></div><div><label>團別</label><select onchange="changeAttendanceGroup(this.value)">${groups.map(g=>`<option value="${esc(g)}" ${g===state.attendanceGroup?"selected":""}>${esc(g==="全部"?"全部團別":g+"團")}</option>`).join("")}</select></div></div><div class="grid"><div class="kpi"><b>${items.length}</b><span>學生</span></div><div class="kpi"><b>${rate==null?"—":rate+"%"}</b><span>整體出勤率</span></div><div class="kpi"><b>${absent}</b><span>缺席</span></div><div class="kpi"><b>${leave}</b><span>請假</span></div></div><button class="secondary" style="width:100%;margin-top:12px" onclick="exportAttendanceReport()">匯出本月出勤表 CSV</button></div>
-      <div class="card"><h2>${esc(state.attendanceMonth)} 出勤概況</h2><div class="notice">出席率計算：出席＋遲到視為到課；停課不列入應到次數。分部課、團體課、個別課分開統計。</div></div>
-      ${items.map(x=>`<div class="card"><div class="student"><div class="studentleft"><div class="avatar">${esc(x.name?.[0]||"學")}</div><div><div class="name">${esc(x.name)}</div><div class="muted">${esc(x.groupName)}團｜${esc(x.section||"待確認")}｜${esc(x.instrument)}｜${esc(x.grade)}</div></div></div>${rateBadge(x.attendanceRate)}</div><div class="notice" style="margin-top:12px">${esc(statLine("分部課",x.sectionStats))}　｜　${esc(statLine("團體課",x.ensembleStats))}<br>${esc(statLine("個別課",x.privateStats))}　｜　遲到 ${x.overall.late||0}　請假 ${x.overall.leave||0}　缺席 ${x.overall.absent||0}</div><button class="secondary" style="width:100%;margin-top:10px" onclick="showAttendanceDetail('${esc(x.studentId)}')">${state.attendanceSelected===String(x.studentId)?"收合明細":"查看點名明細"}</button>${detailHtml(x.studentId)}</div>`).join("")||`<div class="card"><div class="notice">本月沒有可查看的學生資料。</div></div>`}`;
+      <div class="card"><h2>${esc(state.attendanceMonth)} 出勤概況</h2><div class="notice">出席率計算：出席＋遲到視為到課；停課不列入應到次數。分部課、合奏課、綜合課、個別課分開統計。</div></div>
+      ${items.map(x=>`<div class="card"><div class="student"><div class="studentleft"><div class="avatar">${esc(x.name?.[0]||"學")}</div><div><div class="name">${esc(x.name)}</div><div class="muted">${esc(x.groupName)}團｜${esc(x.section||"待確認")}｜${esc(x.instrument)}｜${esc(x.grade)}</div></div></div>${rateBadge(x.attendanceRate)}</div><div class="notice" style="margin-top:12px">${esc(statLine("分部課",x.sectionStats))}　｜　${esc(statLine("合奏課",x.ensembleStats))}<br>${esc(statLine("綜合課",x.comprehensiveStats))}　｜　${esc(statLine("個別課",x.privateStats))}<br>遲到 ${x.overall.late||0}　請假 ${x.overall.leave||0}　缺席 ${x.overall.absent||0}</div><button class="secondary" style="width:100%;margin-top:10px" onclick="showAttendanceDetail('${esc(x.studentId)}')">${state.attendanceSelected===String(x.studentId)?"收合明細":"查看點名明細"}</button>${detailHtml(x.studentId)}</div>`).join("")||`<div class="card"><div class="notice">本月沒有可查看的學生資料。</div></div>`}`;
   }
 
   const baseNav=nav;
@@ -105,7 +105,7 @@
     if(isTeacher()){
       const c=state.me.capabilities||{},items=[];
       if(c.section)items.push(navBtn("section","🎼","分部課"));
-      if(c.ensemble)items.push(navBtn("ensemble","🎻","團體課"));
+      if(c.ensemble)items.push(navBtn("ensemble","🎻","合奏課"));
       if(c.private)items.push(navBtn("private","👤","個別課"));
       items.push(navBtn("attendance","📋","出勤"));
       if(items.length<4)items.push(navBtn("help","ℹ️","說明"));
