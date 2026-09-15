@@ -45,18 +45,27 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
 .toast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%) translateY(15px);opacity:0;background:#17352b;color:#fff;padding:10px 14px;border-radius:999px;font-size:12px;z-index:100;transition:.2s}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .error{color:#991b1b;background:#fee2e2;padding:12px;border-radius:12px;font-size:12px;line-height:1.6}
 
-/* 登入後品牌頁首：Logo 放大滿版，標題／學校／使用者資訊全部右移對齊 */
-.top .brand{position:relative;padding-left:88px;min-height:28px;display:flex!important;align-items:center!important;gap:0!important}
+/* 登入後品牌頁首：Logo 放大滿版；網站資訊靠左，使用者資訊置於右側登出按鈕上方 */
+.top{min-height:112px}
+.top .brand{position:relative;padding-left:88px;padding-right:116px;min-height:28px;display:flex!important;align-items:center!important;gap:0!important}
 .top .brand>span:first-child{position:absolute!important;left:0;top:0;width:76px!important;height:76px!important;min-width:76px!important;flex:0 0 76px!important;border-radius:14px!important;background:#fff!important;overflow:hidden!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:0!important}
 .top .brand>span:first-child img{width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;object-fit:contain!important;display:block!important}
 .top .brand>span:last-child{display:block;min-width:0;line-height:1.25}
-.top>.sub{margin-left:88px!important;min-height:15px}
-.top>.userrow>div:first-child{margin-left:88px;min-width:0;flex:1}
-.top>.userrow>.logout{flex:0 0 auto}
+.top>.sub{margin-left:88px!important;margin-right:116px!important;min-height:15px}
+.top>.userrow{position:absolute;right:18px;top:14px;margin:0!important;display:flex!important;flex-direction:column!important;align-items:flex-end!important;justify-content:flex-start!important;gap:6px!important;min-width:94px}
+.top>.userrow>div:first-child{margin-left:0!important;min-width:0!important;display:flex;flex-direction:column;align-items:flex-end}
+.top>.userrow small{max-width:120px;text-align:right;font-weight:700;line-height:1.25;white-space:nowrap}
+.top>.userrow .role{margin-top:4px}
+.top>.userrow>.logout{flex:0 0 auto;margin-top:2px}
 
 @media(max-width:390px){
-  .top .brand{padding-left:80px}
+  .top{min-height:108px;padding-left:14px;padding-right:14px}
+  .top .brand{padding-left:80px;padding-right:102px}
   .top .brand>span:first-child{width:68px!important;height:68px!important;min-width:68px!important;flex-basis:68px!important}
-  .top>.sub,.top>.userrow>div:first-child{margin-left:80px!important}
+  .top>.sub{margin-left:80px!important;margin-right:102px!important}
+  .top>.userrow{right:14px;top:12px;min-width:88px}
+  .top>.userrow small{max-width:104px;font-size:11px}
+  .top>.userrow .role{font-size:10px;padding:3px 7px}
+  .top>.userrow>.logout{padding:6px 9px}
 }
 @media(min-width:700px){body{padding:20px 0}.shell{border-radius:24px;overflow:hidden;min-height:calc(100vh - 40px)}}
