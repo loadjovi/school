@@ -1,10 +1,11 @@
 import { app } from "@azure/functions";
 import { getAccess, json } from "../lib/auth.js";
-import { ensureTables, table, rowKey, listStudentMaster } from "../lib/storage.js";
+import { ensureTables, table, rowKey, listStudentMaster, semesterKey, semesterLabel } from "../lib/storage.js";
 
 const gradeMap={1:"一年級",2:"二年級",3:"三年級",4:"四年級",5:"五年級",6:"六年級"};
 function clean(v,max=100){return String(v??"").trim().slice(0,max)}
 function normalizeStudentNo(v){return clean(v,20).replace(/\.0$/,"").replace(/\s+/g,"")}
+function normalizeSemester(v){const x=clean(v,10);return x==="1"||x==="2"?x:""}
 function normalizeGroup(v){
   const x=clean(v,20);
   if(x==="A"||x==="A團")return "A";
@@ -40,25 +41,32 @@ function parseGrade(value,classCode){
   const m=clean(classCode,20).match(/^([1-6])/);
   return m?gradeMap[Number(m[1])]:"";
 }
-function studentView(e){return {studentId:e.rowKey,studentNo:e.studentNo||(/^[0-9]{6}$/.test(String(e.rowKey))?e.rowKey:""),name:e.studentName,classCode:e.classCode||"",grade:e.grade,groupName:e.groupName,instrument:e.instrument,section:e.section||"待確認",schoolYear:e.schoolYear||"",semester:e.semester||"",seatNo:e.seatNo||"",status:e.status||"active"}}
-function normalizeRows(input,schoolYear){
-  const rows=[],warnings=[],seen=new Set();
+function studentView(e){return {studentId:e.rowKey,studentNo:e.studentNo||(/^\d{6}$/.test(String(e.rowKey))?e.rowKey:""),name:e.studentName,classCode:e.classCode||"",grade:e.grade,groupName:e.groupName,instrument:e.instrument,section:e.section||"待確認",schoolYear:e.schoolYear||"",semester:e.semester||"",semesterName:e.semesterName||semesterLabel(e.semester),seatNo:e.seatNo||"",status:e.status||"active"}}
+function normalizeRows(input,schoolYear,semester){
+  const rows=[],warnings=[],excluded=[],seen=new Set();
   for(let i=0;i<(Array.isArray(input)?input:[]).length;i++){
     const src=input[i]||{};
+    const enrollmentStatus=clean(src.enrollmentStatus||src.termStatus||src.status||"正式上課",20);
+    if(["不參加","退團","停用","inactive"].includes(enrollmentStatus)){excluded.push({row:i+1,name:clean(src.name||src.studentName,40),studentNo:normalizeStudentNo(src.studentNo||src.studentId),reason:enrollmentStatus});continue}
+    if(enrollmentStatus==="待確認"){warnings.push(`第 ${i+1} 筆：${clean(src.name||src.studentName,40)||"未命名"} 本學期狀態仍為「待確認」`);continue}
     const studentNo=normalizeStudentNo(src.studentNo||src.studentId),name=clean(src.name||src.studentName,40),groupName=normalizeGroup(src.groupName);
     if(!name&&!studentNo)continue;
     if(!/^\d{6}$/.test(studentNo)){warnings.push(`第 ${i+1} 筆：${name||"未命名"} 學號「${studentNo||"空白"}」不是 6 碼，已略過`);continue}
     if(seen.has(studentNo))throw new Error(`學號 ${studentNo} 在匯入檔中重複；學號必須是唯一值`);
     seen.add(studentNo);
+    const rowYear=clean(src.schoolYear||schoolYear,12),rowSemester=normalizeSemester(src.semester||src.term||semester);
+    if(rowYear!==schoolYear){warnings.push(`學號 ${studentNo} ${name}：Excel 學年度 ${rowYear||"空白"} 與目前選擇 ${schoolYear} 不一致`);continue}
+    if(rowSemester!==semester){warnings.push(`學號 ${studentNo} ${name}：Excel 學期 ${rowSemester||"空白"} 與目前選擇第 ${semester} 學期不一致`);continue}
     const classCode=clean(src.classCode||`${clean(src.grade,10)}${clean(src.className||src.class,10)}`,20);
     const grade=parseGrade(src.grade,classCode),section=normalizeSection(src.section),instrument=normalizeInstrument(src.instrument,section);
     if(!name){warnings.push(`學號 ${studentNo}：學生姓名空白，已略過`);continue}
     if(!groupName){warnings.push(`學號 ${studentNo} ${name}：團別尚未確認，已略過；請填 A／B／儲備後再匯入`);continue}
     if(!grade){warnings.push(`學號 ${studentNo} ${name}：無法判斷年級，已略過`);continue}
-    rows.push({studentNo,name,classCode,grade,groupName,section,instrument,schoolYear,semester:clean(src.semester||src.term,10),seatNo:clean(src.seatNo||src.seat,10),status:"active"});
+    if(section==="待確認"||instrument==="待確認"){warnings.push(`學號 ${studentNo} ${name}：分部或樂器仍為待確認`);continue}
+    rows.push({studentNo,name,classCode,grade,groupName,section,instrument,schoolYear:rowYear,semester:rowSemester,semesterName:semesterLabel(rowSemester),seatNo:clean(src.seatNo||src.seat,10),status:"active",enrollmentStatus:"enrolled"});
   }
-  if(!rows.length)throw new Error("沒有可匯入的學生資料");
-  return {rows,warnings};
+  if(!rows.length)throw new Error("沒有可匯入的正式上課學生資料");
+  return {rows,warnings,excluded};
 }
 function compatibleLegacy(e,r){
   const conflicts=[];
@@ -85,7 +93,7 @@ async function migrateParentMappings(oldId,newId,student,accessEmail){
   for await (const e of client.listEntities({queryOptions:{filter:`RowKey eq '${String(oldId).replaceAll("'","''")}'`}}))matches.push(e);
   let count=0;
   for(const old of matches){
-    const next={...stripMeta(old),rowKey:newId,studentNo:newId,studentName:student.name,grade:student.grade,groupName:student.groupName,instrument:student.instrument,schoolYear:student.schoolYear,status:old.status||"active",legacyStudentId:oldId,migratedAt:new Date().toISOString(),migratedBy:accessEmail};
+    const next={...stripMeta(old),rowKey:newId,studentNo:newId,studentName:student.name,grade:student.grade,groupName:student.groupName,instrument:student.instrument,schoolYear:student.schoolYear,semester:student.semester,status:"active",legacyStudentId:oldId,migratedAt:new Date().toISOString(),migratedBy:accessEmail};
     await client.upsertEntity(next,"Merge");
     try{await client.deleteEntity(String(old.partitionKey),String(old.rowKey))}catch{}
     count++;
@@ -123,6 +131,10 @@ async function migrateHistoricalReferences(oldId,newId,student,accessEmail){
   counts.registrations=await migrateRegistrationReferences(oldId,newId);
   return counts;
 }
+async function saveEnrollment(r,accessEmail,now){
+  const entity={partitionKey:semesterKey(r.schoolYear,r.semester),rowKey:r.studentNo,studentNo:r.studentNo,studentName:r.name,classCode:r.classCode,grade:r.grade,groupName:r.groupName,section:r.section,instrument:r.instrument,seatNo:r.seatNo,schoolYear:r.schoolYear,semester:r.semester,semesterName:r.semesterName,status:"enrolled",confirmedAt:now,confirmedBy:accessEmail,updatedAt:now};
+  await table("semesterEnrollment").upsertEntity(entity,"Replace");
+}
 
 app.http("studentRosterImport",{
   methods:["POST"],authLevel:"anonymous",route:"student-roster-import",
@@ -131,10 +143,11 @@ app.http("studentRosterImport",{
     if(!access.authenticated)return json({error:"Unauthorized"},401);
     if(access.role!=="admin")return json({error:"Forbidden"},403);
     const body=await request.json();
-    const action=clean(body.action||"preview",20).toLowerCase(),schoolYear=clean(body.schoolYear||"115",12);
+    const action=clean(body.action||"preview",20).toLowerCase(),schoolYear=clean(body.schoolYear||"115",12),semester=normalizeSemester(body.semester||"1");
     if(!/^[0-9]{2,4}$/.test(schoolYear))return json({error:"學年度格式不正確"},400);
+    if(!semester)return json({error:"學期只能是 1（上學期）或 2（下學期）"},400);
     if(!["preview","apply"].includes(action))return json({error:"action 必須為 preview 或 apply"},400);
-    let parsed;try{parsed=normalizeRows(body.items,schoolYear)}catch(e){return json({error:e.message||"名單解析失敗"},400)}
+    let parsed;try{parsed=normalizeRows(body.items,schoolYear,semester)}catch(e){return json({error:e.message||"名單解析失敗"},400)}
     await ensureTables();
     const existing=await listStudentMaster(),byId=new Map(),byName=new Map();
     for(const e of existing){
@@ -148,29 +161,30 @@ app.http("studentRosterImport",{
       if(exact){updateCount++;previewRows.push({...r,action:"update",studentId:String(exact.rowKey),old:studentView(exact)});continue}
       const matches=(byName.get(r.name)||[]).filter(x=>!x.replacedByStudentId);
       if(matches.length===0){createCount++;previewRows.push({...r,action:"create",studentId:r.studentNo});continue}
-      if(matches.every(x=>compatibleLegacy(x,r))){
-        migrateCount++;previewRows.push({...r,action:"migrate",studentId:r.studentNo,oldStudentId:String(matches[0].rowKey),oldStudentIds:matches.map(x=>String(x.rowKey)),old:studentView(matches[0])});continue
-      }
+      if(matches.every(x=>compatibleLegacy(x,r))){migrateCount++;previewRows.push({...r,action:"migrate",studentId:r.studentNo,oldStudentId:String(matches[0].rowKey),oldStudentIds:matches.map(x=>String(x.rowKey)),old:studentView(matches[0])});continue}
       conflictCount++;previewRows.push({...r,action:"conflict",studentId:r.studentNo,message:"找到同名但年級／班級／團別不一致的歷史主檔，為避免誤合併請先人工確認"});
     }
-    const summary={total:parsed.rows.length,create:createCount,update:updateCount,migrate:migrateCount,conflict:conflictCount,warnings:parsed.warnings.length};
-    if(action==="preview")return json({summary,items:previewRows,warnings:parsed.warnings,uniqueKey:"studentNo"});
+    const summary={total:parsed.rows.length,create:createCount,update:updateCount,migrate:migrateCount,conflict:conflictCount,warnings:parsed.warnings.length,excluded:parsed.excluded.length,schoolYear,semester,semesterName:semesterLabel(semester),termKey:semesterKey(schoolYear,semester)};
+    if(action==="preview")return json({summary,items:previewRows,warnings:parsed.warnings,excluded:parsed.excluded,uniqueKey:"studentNo"});
     if(!body.confirmApply)return json({error:"正式匯入需要 confirmApply=true"},400);
     if(conflictCount)return json({error:`有 ${conflictCount} 筆歷史資料衝突，請先處理後再匯入`,summary,items:previewRows},409);
+    if(parsed.warnings.length)return json({error:`有 ${parsed.warnings.length} 筆資料尚未完成，請先修正再定案`,summary,warnings:parsed.warnings},409);
 
     const now=new Date().toISOString(),results=[];
     for(const r of parsed.rows){
       const exact=byId.get(r.studentNo)||null;
       if(exact){
-        const entity={...exact,studentNo:r.studentNo,studentName:r.name,classCode:r.classCode,grade:r.grade,groupName:r.groupName,section:r.section,instrument:r.instrument,schoolYear:r.schoolYear,semester:r.semester,seatNo:r.seatNo,status:"active",updatedAt:now,updatedBy:access.email};
+        const entity={...exact,studentNo:r.studentNo,studentName:r.name,classCode:r.classCode,grade:r.grade,groupName:r.groupName,section:r.section,instrument:r.instrument,schoolYear:r.schoolYear,semester:r.semester,semesterName:r.semesterName,seatNo:r.seatNo,status:"active",inactiveReason:"",updatedAt:now,updatedBy:access.email};
         await table("studentMaster").updateEntity(entity,"Merge");
-        await table("studentHistory").createEntity({partitionKey:String(exact.rowKey),rowKey:rowKey("hist"),changeType:"roster_import_update_by_student_no",changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(exact)),newValue:JSON.stringify(studentView(entity))});
+        await saveEnrollment(r,access.email,now);
+        await table("studentHistory").createEntity({partitionKey:String(exact.rowKey),rowKey:rowKey("hist"),changeType:"semester_roster_update",schoolYear:r.schoolYear,semester:r.semester,changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(exact)),newValue:JSON.stringify(studentView(entity))});
         results.push({studentId:String(exact.rowKey),studentNo:r.studentNo,name:r.name,action:"update"});continue
       }
 
       const matches=(byName.get(r.name)||[]).filter(x=>!x.replacedByStudentId);
-      const entity={partitionKey:"STUDENT",rowKey:r.studentNo,studentNo:r.studentNo,studentName:r.name,classCode:r.classCode,grade:r.grade,groupName:r.groupName,section:r.section,instrument:r.instrument,schoolYear:r.schoolYear,semester:r.semester,seatNo:r.seatNo,status:"active",createdAt:matches[0]?.createdAt||now,updatedAt:now,updatedBy:access.email};
+      const entity={partitionKey:"STUDENT",rowKey:r.studentNo,studentNo:r.studentNo,studentName:r.name,classCode:r.classCode,grade:r.grade,groupName:r.groupName,section:r.section,instrument:r.instrument,schoolYear:r.schoolYear,semester:r.semester,semesterName:r.semesterName,seatNo:r.seatNo,status:"active",createdAt:matches[0]?.createdAt||now,updatedAt:now,updatedBy:access.email};
       await table("studentMaster").createEntity(entity);
+      await saveEnrollment(r,access.email,now);
 
       if(matches.length){
         const migrations=[];
@@ -178,16 +192,16 @@ app.http("studentRosterImport",{
           const migration=await migrateHistoricalReferences(String(old.rowKey),r.studentNo,r,access.email);migrations.push({oldStudentId:String(old.rowKey),...migration});
           const retired={...old,status:"inactive",replacedByStudentId:r.studentNo,updatedAt:now,updatedBy:access.email};
           await table("studentMaster").updateEntity(retired,"Merge");
-          await table("studentHistory").createEntity({partitionKey:String(old.rowKey),rowKey:rowKey("hist"),changeType:"student_number_replaced",changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(old)),newValue:JSON.stringify({replacedByStudentId:r.studentNo,status:"inactive",migration})});
+          await table("studentHistory").createEntity({partitionKey:String(old.rowKey),rowKey:rowKey("hist"),changeType:"student_number_replaced",schoolYear:r.schoolYear,semester:r.semester,changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(old)),newValue:JSON.stringify({replacedByStudentId:r.studentNo,status:"inactive",migration})});
         }
-        await table("studentHistory").createEntity({partitionKey:r.studentNo,rowKey:rowKey("hist"),changeType:"student_number_migration",changedAt:now,changedBy:access.email,oldValue:JSON.stringify(matches.map(studentView)),newValue:JSON.stringify(studentView(entity)),legacyStudentIds:JSON.stringify(matches.map(x=>String(x.rowKey))),migration:JSON.stringify(migrations)});
+        await table("studentHistory").createEntity({partitionKey:r.studentNo,rowKey:rowKey("hist"),changeType:"semester_roster_student_number_migration",schoolYear:r.schoolYear,semester:r.semester,changedAt:now,changedBy:access.email,oldValue:JSON.stringify(matches.map(studentView)),newValue:JSON.stringify(studentView(entity)),legacyStudentIds:JSON.stringify(matches.map(x=>String(x.rowKey))),migration:JSON.stringify(migrations)});
         results.push({studentId:r.studentNo,studentNo:r.studentNo,name:r.name,action:"migrate",oldStudentIds:matches.map(x=>String(x.rowKey)),migration:migrations});
       }else{
-        await table("studentHistory").createEntity({partitionKey:r.studentNo,rowKey:rowKey("hist"),changeType:"roster_import_create_by_student_no",changedAt:now,changedBy:access.email,oldValue:"",newValue:JSON.stringify(studentView(entity))});
+        await table("studentHistory").createEntity({partitionKey:r.studentNo,rowKey:rowKey("hist"),changeType:"semester_roster_create",schoolYear:r.schoolYear,semester:r.semester,changedAt:now,changedBy:access.email,oldValue:"",newValue:JSON.stringify(studentView(entity))});
         results.push({studentId:r.studentNo,studentNo:r.studentNo,name:r.name,action:"create"});
       }
       byId.set(r.studentNo,entity);byName.set(r.name,[entity]);
     }
-    return json({ok:true,summary:{...summary,imported:results.length},items:results,warnings:parsed.warnings,uniqueKey:"studentNo"});
+    return json({ok:true,summary:{...summary,imported:results.length},items:results,warnings:parsed.warnings,excluded:parsed.excluded,uniqueKey:"studentNo"});
   }
 });
