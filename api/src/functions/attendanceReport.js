@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
 import { getAccess, getStudentAliasInfo, json } from "../lib/auth.js";
-import { ensureTables, table, listStudentMaster, getTeacherDirectory } from "../lib/storage.js";
+import { ensureTables, table, listStudentMaster, getTeacherDirectory, getTeacherProfile } from "../lib/storage.js";
 import { getSystemSettings, saveSystemSettings } from "../lib/settings.js";
 
 function clean(v,max=80){return String(v||"").trim().slice(0,max)}
@@ -55,23 +55,29 @@ app.http("attendanceReport",{
     if(a.role==="admin"){
       students=(await listStudentMaster("active")).map(studentView);
     }else{
-      students=(a.students||[]).filter(x=>x?.studentId).map(x=>({
+      const map=new Map((a.students||[]).filter(x=>x?.studentId).map(x=>[String(x.studentId),{
         studentId:String(x.studentId),name:x.name,grade:x.grade,groupName:x.groupName,instrument:x.instrument,section:x.section||"待確認",schoolYear:x.schoolYear||"",status:x.status||"active"
-      }));
+      }]));
+      const profile=await getTeacherProfile(a.email);
+      if(profile?.comprehensiveEnabled===true){
+        for(const s of (await listStudentMaster("active")).map(studentView))map.set(String(s.studentId),s);
+      }
+      students=[...map.values()];
     }
     const byId=new Map(students.map(s=>[String(s.studentId),s]));
     const allowedIds=new Set(byId.keys());
-    const [sectionRows,ensembleRows,privateRows]=await Promise.all([
+    const [sectionRows,ensembleRows,comprehensiveRows,privateRows]=await Promise.all([
       listRange("section",start,end,allowedIds),
       listRange("ensemble",start,end,allowedIds),
+      listRange("comprehensive",start,end,allowedIds),
       listRange("privateLesson",start,end,allowedIds)
     ]);
-    const records=[...sectionRows,...ensembleRows,...privateRows].sort((a,b)=>String(b.eventDate).localeCompare(String(a.eventDate))||String(b.createdAt).localeCompare(String(a.createdAt)));
+    const records=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows].sort((a,b)=>String(b.eventDate).localeCompare(String(a.eventDate))||String(b.createdAt).localeCompare(String(a.createdAt)));
     const agg=new Map();
-    for(const s of students)agg.set(String(s.studentId),{...s,sectionStats:blank(),ensembleStats:blank(),privateStats:blank(),overall:blank()});
+    for(const s of students)agg.set(String(s.studentId),{...s,sectionStats:blank(),ensembleStats:blank(),comprehensiveStats:blank(),privateStats:blank(),overall:blank()});
     for(const r of records){
       const x=agg.get(String(r.studentId));if(!x)continue;
-      const key=r.classType==="ensemble"?"ensembleStats":r.classType==="private"||r.classType==="privateLesson"?"privateStats":"sectionStats";
+      const key=r.classType==="ensemble"?"ensembleStats":r.classType==="comprehensive"?"comprehensiveStats":r.classType==="private"||r.classType==="privateLesson"?"privateStats":"sectionStats";
       add(x[key],r.status);add(x.overall,r.status);
     }
     const items=[...agg.values()].map(x=>({...x,attendanceRate:x.overall.total?Math.round(x.overall.attended/x.overall.total*1000)/10:null})).sort((a,b)=>String(a.groupName).localeCompare(String(b.groupName),"zh-Hant")||String(a.section).localeCompare(String(b.section),"zh-Hant")||String(a.name).localeCompare(String(b.name),"zh-Hant"));
@@ -107,7 +113,8 @@ async function collectDaily(key,date){
   const latest=new Map();
   for await (const e of table(key).listEntities({queryOptions:{filter:`eventDate eq '${date.replaceAll("'","''")}'`}})){
     const rawStudentId=String(e.partitionKey||"");
-    const row={rawStudentId,eventDate:String(e.eventDate||date),classType:key==="ensemble"?"ensemble":"section",groupName:String(e.groupName||""),section:String(e.section||""),status:String(e.status||""),teacher:String(e.teacher||""),createdAt:String(e.createdAt||""),rowKey:String(e.rowKey||"")};
+    const classType=key==="ensemble"?"ensemble":key==="comprehensive"?"comprehensive":"section";
+    const row={rawStudentId,eventDate:String(e.eventDate||date),classType,groupName:String(e.groupName||""),section:String(e.section||""),status:String(e.status||""),teacher:String(e.teacher||""),createdAt:String(e.createdAt||""),rowKey:String(e.rowKey||"")};
     const d=[rawStudentId,row.eventDate,row.classType,row.groupName,row.section].join("|");
     const old=latest.get(d),stamp=`${row.createdAt}|${row.rowKey}`,oldStamp=old?`${old.createdAt}|${old.rowKey}`:"";
     if(!old||stamp>=oldStamp)latest.set(d,row);
@@ -132,8 +139,8 @@ app.http("dailyFollowup",{
     const masters=await listStudentMaster();
     const students=new Map(masters.map(e=>[String(e.rowKey),studentView(e)]));
     const canonicalCache=new Map(),teacherCache=new Map();
-    const [sectionRows,ensembleRows]=await Promise.all([collectDaily("section",date),collectDaily("ensemble",date)]);
-    const raw=[...sectionRows,...ensembleRows].filter(x=>["leave","absent"].includes(x.status));
+    const [sectionRows,ensembleRows,comprehensiveRows]=await Promise.all([collectDaily("section",date),collectDaily("ensemble",date),collectDaily("comprehensive",date)]);
+    const raw=[...sectionRows,...ensembleRows,...comprehensiveRows].filter(x=>["leave","absent"].includes(x.status));
     const latest=new Map();
     for(const r of raw){
       const studentId=await canonicalDailyId(r.rawStudentId,students,canonicalCache),row={...r,studentId};
@@ -148,7 +155,7 @@ app.http("dailyFollowup",{
       items.push({date:r.eventDate,classType:r.classType,studentId:r.studentId,name:s.name,grade:s.grade,groupName:r.groupName||s.groupName,section:r.classType==="ensemble"?"四分部合班":r.section||s.section||"待確認",instrument:s.instrument,status:r.status,teacherName:await dailyTeacherName(r.teacher,teacherCache),teacherEmail:r.teacher});
     }
     items.sort((x,y)=>String(x.classType).localeCompare(String(y.classType))||String(x.groupName).localeCompare(String(y.groupName),"zh-Hant")||String(x.section).localeCompare(String(y.section),"zh-Hant")||String(x.name).localeCompare(String(y.name),"zh-Hant"));
-    return json({date,scope:"00:00-23:59",items,counts:{total:items.length,leave:items.filter(x=>x.status==="leave").length,absent:items.filter(x=>x.status==="absent").length,section:items.filter(x=>x.classType==="section").length,ensemble:items.filter(x=>x.classType==="ensemble").length}});
+    return json({date,scope:"00:00-23:59",items,counts:{total:items.length,leave:items.filter(x=>x.status==="leave").length,absent:items.filter(x=>x.status==="absent").length,section:items.filter(x=>x.classType==="section").length,ensemble:items.filter(x=>x.classType==="ensemble").length,comprehensive:items.filter(x=>x.classType==="comprehensive").length}});
   }
 });
 
