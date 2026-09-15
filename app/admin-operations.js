@@ -1,7 +1,7 @@
 (()=>{
   const localDate=()=>{const d=new Date(),x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,10)};
   const statusText={leave:"請假",absent:"缺席"};
-  const classText={section:"分部課",ensemble:"團體課"};
+  const classText={section:"分部課",ensemble:"合奏課",comprehensive:"綜合課"};
   const SETTINGS_URL="/api/daily-followup?mode=settings";
   state.adminOps=state.adminOps||{
     date:localDate(),settings:null,followup:null,
@@ -85,7 +85,7 @@
     if(!s)return `<div class="card"><h2>⚙️ 系統通知設定</h2><div class="notice">${state.adminOps.loadingSettings?"正在讀取通知設定…":"準備讀取通知設定…"}</div></div>`;
     const enabled=!!s.emailNotificationsEnabled,configured=!!s.emailServiceConfigured;
     const effective=enabled&&configured;
-    return `<div class="card"><h2>⚙️ 系統通知設定</h2><div class="item"><div><b>個別課完成 Email 通知</b><small>老師登記「出席／遲到」個別課後，寄信給該學生所有已綁定的家長 Gmail；網站內待確認通知不受此開關影響。</small></div><label style="display:flex;align-items:center;gap:8px;margin:0"><input type="checkbox" style="width:22px;height:22px" ${enabled?"checked":""} onchange="toggleAdminEmail(this.checked)"><b>${enabled?"開啟":"關閉"}</b></label></div><div class="notice" style="margin-top:10px">Azure Email 服務：<b>${configured?"✅ 已設定":"⚠️ 尚未設定"}</b><br>目前實際寄信：<b>${effective?"✅ 啟用":"⏸️ 停用"}</b><br><small>連線字串與寄件地址仍保存在 Azure 環境變數，不會顯示在後台。</small></div></div>`;
+    return `<div class="card"><h2>⚙️ 系統通知設定</h2><div class="item"><div><b>個別課完成 Email 通知</b><small>老師登記「出席／遲到」個別課後，寄信給該學生所有已綁定的家長 Gmail；網站內待確認通知不受此開關影響。</small></div><label style="display:flex;align-items:center;gap:8px;margin:0;white-space:nowrap"><input type="checkbox" style="width:22px;height:22px" ${enabled?"checked":""} onchange="toggleAdminEmail(this.checked)"><b>${enabled?"開啟":"關閉"}</b></label></div><div class="notice" style="margin-top:10px">Azure Email 服務：<b>${configured?"✅ 已設定":"⚠️ 尚未設定"}</b><br>目前實際寄信：<b>${effective?"✅ 啟用":"⏸️ 停用"}</b><br><small>連線字串與寄件地址仍保存在 Azure 環境變數，不會顯示在後台。</small></div></div>`;
   }
 
   function dateControls(){
@@ -99,9 +99,9 @@
     const items=d?.items||[],c=d?.counts||{};
     let body="";
     if(error)body=`<div class="error" style="margin-top:10px">讀取 ${esc(state.adminOps.date)} 整日點名失敗：${esc(error)}</div>`;
-    else if(loading&&!d)body=`<div class="notice" style="margin-top:10px">正在彙整 ${esc(state.adminOps.date)} 所有老師的分部課與團體課點名…</div>`;
-    else if(d)body=`<div class="grid" style="margin-top:12px"><div class="kpi"><b>${c.total||0}</b><span>需追蹤筆數</span></div><div class="kpi"><b>${c.absent||0}</b><span>缺席</span></div><div class="kpi"><b>${c.leave||0}</b><span>請假</span></div><div class="kpi"><b>${(c.section||0)+(c.ensemble||0)}</b><span>分部＋團體</span></div></div>`;
-    return `<div class="card"><h2>📣 當日未到／請假追蹤</h2><div class="notice">選擇任一天，管理員會跨所有老師彙整該日 00:00～23:59 的「分部課＋團體課」請假與缺席學生，供學校行政老師聯絡追蹤。</div>${dateControls()}${body}<button class="primary" style="margin-top:12px" onclick="exportAdminDailyFollowup()" ${loading?"disabled":""}>📥 匯出 ${esc(state.adminOps.date)} 整日未到／請假名單</button></div><div class="card"><h2>${esc(state.adminOps.date)} 行政追蹤名單</h2>${loading?`<div class="notice">正在整理整日點名資料…</div>`:error?`<div class="notice">請修正讀取問題後重新整理。</div>`:items.length?items.map(x=>`<div class="item"><div><b>${esc(x.name)}｜${esc(classText[x.classType]||x.classType)}</b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.grade)}｜${esc(x.instrument)}<br>點名老師：${esc(x.teacherName||"—")}</small></div><span class="badge ${x.status==="leave"?"warn":"bad"}">${esc(statusText[x.status]||x.status)}</span></div>`).join(""):`<div class="notice">✅ 這一天目前沒有分部課／團體課的請假或缺席紀錄。</div>`}</div>`;
+    else if(loading&&!d)body=`<div class="notice" style="margin-top:10px">正在彙整 ${esc(state.adminOps.date)} 所有老師的分部課、合奏課與綜合課點名…</div>`;
+    else if(d)body=`<div class="grid" style="margin-top:12px"><div class="kpi"><b>${c.total||0}</b><span>需追蹤筆數</span></div><div class="kpi"><b>${c.absent||0}</b><span>缺席</span></div><div class="kpi"><b>${c.leave||0}</b><span>請假</span></div><div class="kpi"><b>${(c.section||0)+(c.ensemble||0)+(c.comprehensive||0)}</b><span>分部＋合奏＋綜合</span></div></div>`;
+    return `<div class="card"><h2>📣 當日未到／請假追蹤</h2><div class="notice">選擇任一天，管理員會跨所有老師彙整該日 00:00～23:59 的「分部課＋合奏課＋綜合課」請假與缺席學生，供學校行政老師聯絡追蹤。</div>${dateControls()}${body}<button class="primary" style="margin-top:12px" onclick="exportAdminDailyFollowup()" ${loading?"disabled":""}>📥 匯出 ${esc(state.adminOps.date)} 整日未到／請假名單</button></div><div class="card"><h2>${esc(state.adminOps.date)} 行政追蹤名單</h2>${loading?`<div class="notice">正在整理整日點名資料…</div>`:error?`<div class="notice">請修正讀取問題後重新整理。</div>`:items.length?items.map(x=>`<div class="item"><div><b>${esc(x.name)}｜${esc(classText[x.classType]||x.classType)}</b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.grade)}｜${esc(x.instrument)}<br>點名老師：${esc(x.teacherName||"—")}</small></div><span class="badge ${x.status==="leave"?"warn":"bad"}">${esc(statusText[x.status]||x.status)}</span></div>`).join(""):`<div class="notice">✅ 這一天目前沒有分部課／合奏課／綜合課的請假或缺席紀錄。</div>`}</div>`;
   }
 
   function mountAdminOps(){
