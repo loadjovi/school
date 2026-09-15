@@ -5,6 +5,7 @@ const names={
   practice:process.env.PRACTICE_TABLE||"PracticeLog",
   section:process.env.SECTION_TABLE||"SectionAttendance",
   ensemble:process.env.ENSEMBLE_TABLE||"EnsembleAttendance",
+  comprehensive:process.env.COMPREHENSIVE_TABLE||"ComprehensiveAttendance",
   privateLesson:process.env.PRIVATE_TABLE||"PrivateLesson",
   registrations:process.env.STUDENT_REGISTRATION_TABLE||"StudentRegistration",
   userStudentMap:process.env.USER_STUDENT_MAP_TABLE||"UserStudentMap",
@@ -155,6 +156,7 @@ export async function saveTeacherProfile(email,profile={}){
     displayName:String(profile.displayName||"").slice(0,100),
     sectionAssignments:JSON.stringify(profile.sectionAssignments||[]),
     ensembleGroups:JSON.stringify(profile.ensembleGroups||[]),
+    comprehensiveEnabled:profile.comprehensiveEnabled===true,
     privateStudentIds:JSON.stringify(profile.privateStudentIds||[]),
     updatedAt:now
   };
