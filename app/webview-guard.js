@@ -34,7 +34,7 @@
           appendScript("/student-number-support.js?v=20260915-1135",()=>{
             appendScript("/parent-link-admin.js",()=>{
               appendScript("/teacher-support.js?v=20260915-0915",()=>{
-                appendScript("/teacher-settings.js?v=20260915-0915",()=>{
+                appendScript("/teacher-settings.js?v=20260915-1415",()=>{
                   appendScript("/teacher-admin.js?v=20260915-0915",()=>{
                     appendScript("/batch-upgrade.js",()=>{
                       appendScript("/roster-import.js?v=20260915-1135",()=>{
