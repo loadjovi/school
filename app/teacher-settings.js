@@ -10,7 +10,8 @@
     if(!teacherAccount())return originalNav();
     const c=state.me?.capabilities||{},items=[];
     if(c.section)items.push(navBtn("section","🎼","分部課"));
-    if(c.ensemble)items.push(navBtn("ensemble","🎻","團體課"));
+    if(c.ensemble)items.push(navBtn("ensemble","🎻","合奏課"));
+    if(state.teacherSetup?.profile?.comprehensiveEnabled)items.push(navBtn("comprehensive","🎶","綜合課"));
     if(c.private)items.push(navBtn("private","👤","個別課"));
     items.push(navBtn("teacherSettings","⚙️","我的教學"));
     while(items.length<4)items.push("<button></button>");
@@ -26,13 +27,14 @@
     const privateSet=new Set((p.privateStudentIds||[]).map(String));
     const groups=d.choices?.groups||["A","B","儲備"],sections=d.choices?.sections||["小提一部","小提二部","中提","大提"];
     const schedule=d.schedule||{};
-    const sectionRows=groups.map(g=>`<div class="item" style="display:block"><b>${esc(g)}團分部課</b><small>${esc((schedule[g]||[]).join("、"))}</small><div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:9px">${sections.map(sec=>`<label class="check" style="margin:0"><input class="teacherSectionPick" type="checkbox" data-group="${esc(g)}" data-section="${esc(sec)}" ${checked(sectionSet.has(`${g}|${sec}`))}><div>${esc(sec)}</div></label>`).join("")}</div></div>`).join("");
-    const ensembleRows=["A","B"].map(g=>`<label class="check"><input class="teacherEnsemblePick" type="checkbox" value="${g}" ${checked(ensembleSet.has(g))}><div><b>${g}團團體課</b><br><small>四個分部一起上課，點名時自動帶入 ${g} 團全部學生</small></div></label>`).join("");
+    const sectionRows=groups.map(g=>`<div class="item" style="display:block"><b>${esc(g)}團分部課</b><small>${(schedule[g]||[]).length?esc((schedule[g]||[]).join("、")):"依實際課表"}</small><div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:9px">${sections.map(sec=>`<label class="check" style="margin:0"><input class="teacherSectionPick" type="checkbox" data-group="${esc(g)}" data-section="${esc(sec)}" ${checked(sectionSet.has(`${g}|${sec}`))}><div>${esc(sec)}</div></label>`).join("")}</div></div>`).join("");
+    const ensembleRows=["A","B"].map(g=>`<label class="check"><input class="teacherEnsemblePick" type="checkbox" value="${g}" ${checked(ensembleSet.has(g))}><div><b>${g}團合奏課</b><br><small>四個分部一起上課，點名時自動帶入 ${g} 團全部學生</small></div></label>`).join("");
     const students=(d.students||[]).slice().sort((a,b)=>`${a.groupName}${a.section}${a.name}`.localeCompare(`${b.groupName}${b.section}${b.name}`,"zh-Hant"));
     const privateRows=students.map(s=>`<label class="check teacherStudentRow" data-search="${esc(`${s.name} ${s.groupName} ${s.section} ${s.instrument} ${s.grade}`.toLowerCase())}"><input class="teacherPrivatePick" type="checkbox" value="${esc(s.studentId)}" ${checked(privateSet.has(String(s.studentId)))}><div><b>${esc(s.name)}</b><br><small>${esc(s.groupName)}團｜${esc(s.section||"待確認")}｜${esc(s.instrument)}｜${esc(s.grade)}</small></div></label>`).join("");
-    return `<div class="card hero"><h2>⚙️ 我的教學設定</h2><div class="notice">老師可自行選擇授課範圍。分部課／團體課名單會依 StudentMaster 自動更新；個別課則由老師自行勾選學生，可跨團、跨小提／中提／大提。</div></div>
-      <div class="card"><h2>🎼 分部課</h2><div class="notice">A團固定週一、週三；B團週二、週四；儲備團週五。勾選「團別＋分部」後，點名頁會自動帶入符合的學生。</div>${sectionRows}</div>
-      <div class="card"><h2>🎻 團體課</h2><div class="notice">目前只有 A、B 團設團體課；勾選後會自動帶入該團所有分部學生。</div>${ensembleRows}</div>
+    return `<div class="card hero"><h2>⚙️ 我的教學設定</h2><div class="notice">老師可自行選擇授課範圍。分部課／合奏課／綜合課名單會依 StudentMaster 自動更新；個別課則由老師自行勾選學生。</div></div>
+      <div class="card"><h2>🎼 分部課</h2><div class="notice">A團固定週一、週三；B團週二、週四。勾選「團別＋分部」後，點名頁會自動帶入符合的學生。</div>${sectionRows}</div>
+      <div class="card"><h2>🎻 合奏課</h2><div class="notice">A、B團合奏課：每週二 12:30–13:20。勾選後會自動帶入該團所有分部學生。</div>${ensembleRows}</div>
+      <div class="card"><h2>🎶 弦樂團體課（綜合課）</h2><div class="notice">A團、B團、儲備團都參加。週五 08:45–10:15；本學期共 7 次：9/18、10/2、10/16、10/30、11/20、11/27、12/4。</div><label class="check"><input id="teacherComprehensivePick" type="checkbox" ${checked(p.comprehensiveEnabled===true)}><div><b>我要負責綜合課點名</b><br><small>開啟後會自動帶入 A／B／儲備團全部在團學生。</small></div></label></div>
       <div class="card"><h2>👤 個別課學生</h2><div class="notice">個課老師可跨樂器與團別選學生。學生轉團或換分部不會取消個課綁定。</div><input id="teacherStudentSearch" placeholder="搜尋學生姓名／團別／分部／樂器" oninput="filterTeacherStudents()" style="margin-top:10px">${privateRows||'<div class="notice">目前沒有在團學生。</div>'}</div>
       <div class="card"><button class="primary" onclick="saveTeacherSettings()">儲存我的教學設定</button></div>`;
   }
@@ -50,15 +52,17 @@
   window.saveTeacherSettings=async function(){
     const sectionAssignments=[...document.querySelectorAll(".teacherSectionPick:checked")].map(x=>({groupName:x.dataset.group,section:x.dataset.section}));
     const ensembleGroups=[...document.querySelectorAll(".teacherEnsemblePick:checked")].map(x=>x.value);
+    const comprehensiveEnabled=!!$("teacherComprehensivePick")?.checked;
     const privateStudentIds=[...document.querySelectorAll(".teacherPrivatePick:checked")].map(x=>x.value);
     try{
-      await api("/api/teacher-profile",{method:"PATCH",body:JSON.stringify({sectionAssignments,ensembleGroups,privateStudentIds})});
+      await api("/api/teacher-profile",{method:"PATCH",body:JSON.stringify({sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds})});
       toast("✅ 教學設定已儲存");
       state.teacherSetup=await api("/api/teacher-profile");
       state.me=await api("/api/me");
       state.students=await api("/api/students");
       if(state.me.capabilities?.section)state.page="section";
       else if(state.me.capabilities?.ensemble)state.page="ensemble";
+      else if(state.teacherSetup?.profile?.comprehensiveEnabled)state.page="comprehensive";
       else if(state.me.capabilities?.private)state.page="private";
       else state.page="teacherSettings";
       render();
@@ -87,7 +91,7 @@
   if(teacherAccount()){
     loadTeacherSettings().then(()=>{
       const c=state.me?.capabilities||{};
-      if(!c.section&&!c.ensemble&&!c.private)state.page="teacherSettings";
+      if(!c.section&&!c.ensemble&&!c.private&&!state.teacherSetup?.profile?.comprehensiveEnabled)state.page="teacherSettings";
       render();
     });
   }
