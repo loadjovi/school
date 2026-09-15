@@ -34,7 +34,7 @@ app.http("teacherProfile",{
         },
         students:all,
         choices:{groups:["A","B","儲備"],sections:["小提一部","小提二部","中提","大提","低音提"],ensembleGroups:["A","B"],comprehensiveGroups:["A","B","儲備"]},
-        schedule:{A:["週一","週三"],B:["週二","週四"],"儲備":[]},
+        schedule:{A:["週一","週三"],B:["週二","週四"],"儲備":["週五"]},
         ensembleSchedule:{groups:["A","B"],day:"週二",time:"12:30–13:20"},
         comprehensiveSchedule:{groups:["A","B","儲備"],day:"週五",time:"08:45–10:15",dates:["2026-09-18","2026-10-02","2026-10-16","2026-10-30","2026-11-20","2026-11-27","2026-12-04"]}
       });
