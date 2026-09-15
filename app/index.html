@@ -7,7 +7,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>聖心弦樂團｜Google Gmail 登入版 v3</title>
+  <title>聖心小學弦樂團</title>
   <link rel="stylesheet" href="/styles.css?v=20260915-0915">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -15,6 +15,20 @@
   <div id="app"><div class="loading">🎻 系統載入中…</div></div>
   <div id="toast" class="toast"></div>
   <script src="/webview-guard.js?v=20260915-1225" defer></script>
+  <script>
+    (()=>{
+      let tries=0;
+      const timer=setInterval(()=>{
+        tries++;
+        try{
+          if(typeof state!=="undefined"&&typeof renderLogin==="function"&&typeof render==="function"){
+            clearInterval(timer);
+            const s=document.createElement("script");s.src="/branding-support.js?v=20260915-1327";document.body.appendChild(s);
+          }else if(tries>400)clearInterval(timer);
+        }catch(e){if(tries>400)clearInterval(timer)}
+      },25);
+    })();
+  </script>
   <script src="/roster-cleanup-safety.js?v=20260915-1110" defer></script>
 </body>
 </html>
