@@ -29,11 +29,14 @@ app.http("teacherProfile",{
         profile:{
           sectionAssignments:current?parse(current.sectionAssignments,[]):access.sectionAssignments||[],
           ensembleGroups:current?parse(current.ensembleGroups,[]):access.ensembleGroups||[],
+          comprehensiveEnabled:current?.comprehensiveEnabled===true,
           privateStudentIds:current?parse(current.privateStudentIds,[]):access.privateStudentIds||[]
         },
         students:all,
-        choices:{groups:["A","B","儲備"],sections:["小提一部","小提二部","中提","大提","低音提"],ensembleGroups:["A","B"]},
-        schedule:{A:["週一","週三"],B:["週二","週四"],"儲備":["週五"]}
+        choices:{groups:["A","B","儲備"],sections:["小提一部","小提二部","中提","大提","低音提"],ensembleGroups:["A","B"],comprehensiveGroups:["A","B","儲備"]},
+        schedule:{A:["週一","週三"],B:["週二","週四"],"儲備":[]},
+        ensembleSchedule:{groups:["A","B"],day:"週二",time:"12:30–13:20"},
+        comprehensiveSchedule:{groups:["A","B","儲備"],day:"週五",time:"08:45–10:15",dates:["2026-09-18","2026-10-02","2026-10-16","2026-10-30","2026-11-20","2026-11-27","2026-12-04"]}
       });
     }
 
@@ -49,14 +52,15 @@ app.http("teacherProfile",{
     }
 
     const eGroups=uniq((Array.isArray(body.ensembleGroups)?body.ensembleGroups:[]).map(String).map(x=>x.trim()).filter(Boolean));
-    if(eGroups.some(x=>!ensembleGroups.has(x)))return json({error:"團體課僅可選 A 團或 B 團"},400);
+    if(eGroups.some(x=>!ensembleGroups.has(x)))return json({error:"合奏課僅可選 A 團或 B 團"},400);
 
+    const comprehensiveEnabled=body.comprehensiveEnabled===true;
     const privateStudentIds=uniq((Array.isArray(body.privateStudentIds)?body.privateStudentIds:[]).map(String).map(x=>x.trim()).filter(Boolean));
     const activeIds=new Set(all.map(x=>String(x.studentId)));
     const invalid=privateStudentIds.filter(x=>!activeIds.has(x));
     if(invalid.length)return json({error:`個課學生不存在或已離團：${invalid.join(", ")}`},400);
 
-    await saveTeacherProfile(email,{displayName:access.displayName,sectionAssignments,ensembleGroups:eGroups,privateStudentIds});
-    return json({ok:true,profile:{sectionAssignments,ensembleGroups:eGroups,privateStudentIds}});
+    await saveTeacherProfile(email,{displayName:access.displayName,sectionAssignments,ensembleGroups:eGroups,comprehensiveEnabled,privateStudentIds});
+    return json({ok:true,profile:{sectionAssignments,ensembleGroups:eGroups,comprehensiveEnabled,privateStudentIds}});
   }
 });
