@@ -40,14 +40,14 @@
   function loadApp(){
     appendScript("/app-v3.js",()=>{
       appendScript("/roster-support.js",()=>{
-        appendScript("/student-number-support.js?v=20260915-0945",()=>{
-          appendScript("/section-support.js",()=>{
+        appendScript("/section-support.js",()=>{
+          appendScript("/student-number-support.js?v=20260915-1005",()=>{
             appendScript("/parent-link-admin.js",()=>{
               appendScript("/teacher-support.js?v=20260915-0915",()=>{
                 appendScript("/teacher-settings.js?v=20260915-0915",()=>{
                   appendScript("/teacher-admin.js?v=20260915-0915",()=>{
                     appendScript("/batch-upgrade.js",()=>{
-                      appendScript("/roster-import.js?v=20260915-0945",()=>{
+                      appendScript("/roster-import.js?v=20260915-1005",()=>{
                         appendScript("/attendance-support.js?v=20260915-0915",()=>{
                           appendScript("/attendance-edit.js",()=>{
                             appendScript("/teacher-navigation.js?v=20260915-0915",()=>{
