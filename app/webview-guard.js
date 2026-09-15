@@ -47,7 +47,7 @@
                 appendScript("/teacher-settings.js?v=20260915-0915",()=>{
                   appendScript("/teacher-admin.js?v=20260915-0915",()=>{
                     appendScript("/batch-upgrade.js",()=>{
-                      appendScript("/roster-import.js?v=20260915-1005",()=>{
+                      appendScript("/roster-import.js?v=20260915-1108",()=>{
                         appendScript("/attendance-support.js?v=20260915-0915",()=>{
                           appendScript("/attendance-edit.js",()=>{
                             appendScript("/teacher-navigation.js?v=20260915-0915",()=>{
