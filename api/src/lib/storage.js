@@ -11,6 +11,7 @@ const names={
   userStudentMap:process.env.USER_STUDENT_MAP_TABLE||"UserStudentMap",
   studentMaster:process.env.STUDENT_MASTER_TABLE||"StudentMaster",
   studentHistory:process.env.STUDENT_HISTORY_TABLE||"StudentHistory",
+  semesterEnrollment:process.env.SEMESTER_ENROLLMENT_TABLE||"SemesterEnrollment",
   teacherDirectory:process.env.TEACHER_DIRECTORY_TABLE||"TeacherDirectory",
   teacherProfile:process.env.TEACHER_PROFILE_TABLE||"TeacherProfile",
   academicYearBatch:process.env.ACADEMIC_YEAR_BATCH_TABLE||"AcademicYearBatch"
@@ -38,6 +39,15 @@ export function rowKey(prefix="r"){
   return `${prefix}_${iso}_${rand}`;
 }
 
+export function semesterLabel(semester){
+  const s=String(semester||"").trim();
+  return s==="1"?"上學期":s==="2"?"下學期":"";
+}
+
+export function semesterKey(schoolYear,semester){
+  return `${String(schoolYear||"").trim()}-${String(semester||"").trim()}`;
+}
+
 export async function listByStudent(key, studentId, startDate, endDate){
   await ensureTables();
   const client=table(key);
@@ -63,6 +73,16 @@ export async function listStudentMaster(status=""){
   return items.sort((a,b)=>String(a.studentName||"").localeCompare(String(b.studentName||""),"zh-Hant"));
 }
 
+export async function listSemesterEnrollment(schoolYear,semester,status="enrolled"){
+  await ensureTables();
+  const key=semesterKey(schoolYear,semester).replaceAll("'","''");
+  const parts=[`PartitionKey eq '${key}'`];
+  if(status)parts.push(`status eq '${String(status).replaceAll("'","''")}'`);
+  const items=[];
+  for await (const e of table("semesterEnrollment").listEntities({queryOptions:{filter:parts.join(" and ")}}))items.push(e);
+  return items.sort((a,b)=>String(a.studentName||"").localeCompare(String(b.studentName||""),"zh-Hant"));
+}
+
 function masterView(e){
   return {
     studentId:e.rowKey,
@@ -72,6 +92,8 @@ function masterView(e){
     instrument:e.instrument,
     section:e.section||"待確認",
     schoolYear:e.schoolYear||"",
+    semester:e.semester||"",
+    semesterName:e.semesterName||semesterLabel(e.semester),
     status:e.status||"active",
     source:"studentMaster"
   };
@@ -94,6 +116,7 @@ function mappingView(e,registration=null){
     instrument:String(e.instrument||registration?.instrument||""),
     section:String(e.section||registration?.section||"待確認"),
     schoolYear:String(e.schoolYear||registration?.schoolYear||""),
+    semester:String(e.semester||registration?.semester||""),
     registrationId:String(e.registrationId||""),
     status:String(e.status||"")
   };
@@ -179,8 +202,8 @@ export async function getMappedStudentsByEmail(email){
   const items=[];
   for await (const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${safe}' and status eq 'active'`}})){
     const master=await getStudentMaster(e.rowKey);
-    if(master&&master.status!=="inactive"){
-      items.push(masterView(master));
+    if(master){
+      if(master.status!=="inactive")items.push(masterView(master));
       continue;
     }
     const registration=await getRegistrationById(e.registrationId);
@@ -193,6 +216,7 @@ export async function getMappedStudentsByEmail(email){
       instrument:mapped.instrument,
       section:mapped.section,
       schoolYear:mapped.schoolYear,
+      semester:mapped.semester,
       source:"legacyMap"
     });
   }
