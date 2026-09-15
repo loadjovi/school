@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getAccess, getStudentAliasInfo, json } from "../lib/auth.js";
 import { ensureTables, table, listStudentMaster, getTeacherDirectory } from "../lib/storage.js";
+import { getSystemSettings, saveSystemSettings } from "../lib/settings.js";
 
 function clean(v,max=80){return String(v||"").trim().slice(0,max)}
 function monthRange(month){
@@ -79,6 +80,7 @@ app.http("attendanceReport",{
 });
 
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
+function emailConfigured(){return !!(String(process.env.ACS_EMAIL_CONNECTION_STRING||"").trim()&&String(process.env.ACS_EMAIL_SENDER||"").trim())}
 async function canonicalDailyId(id,students,cache){
   const key=String(id||"");
   if(students.has(key))return key;
@@ -104,11 +106,24 @@ async function collectDaily(key,date){
 }
 
 app.http("dailyFollowup",{
-  methods:["GET"],authLevel:"anonymous",route:"daily-followup",
+  methods:["GET","PATCH"],authLevel:"anonymous",route:"daily-followup",
   handler:async(request)=>{
     const a=await getAccess(request);
     if(!a.authenticated)return json({error:"Unauthorized"},401);
     if(a.role!=="admin")return json({error:"Forbidden"},403);
+
+    if(String(request.query.get("mode")||"")==="settings"){
+      if(request.method==="PATCH"){
+        const body=await request.json();
+        if(typeof body.emailNotificationsEnabled!=="boolean")return json({error:"emailNotificationsEnabled 必須為布林值"},400);
+        const saved=await saveSystemSettings({emailNotificationsEnabled:body.emailNotificationsEnabled,updatedBy:a.email});
+        return json({...saved,emailServiceConfigured:emailConfigured(),effectiveEmailEnabled:saved.emailNotificationsEnabled&&emailConfigured()});
+      }
+      const settings=await getSystemSettings();
+      return json({...settings,emailServiceConfigured:emailConfigured(),effectiveEmailEnabled:settings.emailNotificationsEnabled&&emailConfigured()});
+    }
+
+    if(request.method!=="GET")return json({error:"Method not allowed"},405);
     const date=clean(request.query.get("date")||taipeiDate(),20);
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"日期格式不正確"},400);
     await ensureTables();
