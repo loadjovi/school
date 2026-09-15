@@ -42,17 +42,19 @@
       appendScript("/roster-support.js",()=>{
         appendScript("/section-support.js",()=>{
           appendScript("/parent-link-admin.js",()=>{
-            appendScript("/teacher-support.js",()=>{
-              appendScript("/teacher-settings.js",()=>{
-                appendScript("/teacher-admin.js",()=>{
+            appendScript("/teacher-support.js?v=20260915-0915",()=>{
+              appendScript("/teacher-settings.js?v=20260915-0915",()=>{
+                appendScript("/teacher-admin.js?v=20260915-0915",()=>{
                   appendScript("/batch-upgrade.js",()=>{
                     appendScript("/roster-import.js",()=>{
-                      appendScript("/attendance-support.js",()=>{
+                      appendScript("/attendance-support.js?v=20260915-0915",()=>{
                         appendScript("/attendance-edit.js",()=>{
-                          appendScript("/teacher-navigation.js",()=>{
-                            appendScript("/practice-progress.js",()=>{
-                              appendScript("/practice-timer.js?v=20260915-0152",()=>{
-                                appendScript("/private-lesson-confirmation.js?v=20260915-0633",()=>appendScript("/admin-operations.js?v=20260915-0838"));
+                          appendScript("/teacher-navigation.js?v=20260915-0915",()=>{
+                            appendScript("/comprehensive-support.js?v=20260915-0915",()=>{
+                              appendScript("/practice-progress.js",()=>{
+                                appendScript("/practice-timer.js?v=20260915-0152",()=>{
+                                  appendScript("/private-lesson-confirmation.js?v=20260915-0633",()=>appendScript("/admin-operations.js?v=20260915-0915"));
+                                });
                               });
                             });
                           });
