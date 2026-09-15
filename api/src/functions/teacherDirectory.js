@@ -27,6 +27,7 @@ app.http("teacherDirectory",{
           updatedAt:t.updatedAt||null,
           sectionAssignments:p?parse(p.sectionAssignments,[]):[],
           ensembleGroups:p?parse(p.ensembleGroups,[]):[],
+          comprehensiveEnabled:p?.comprehensiveEnabled===true,
           privateStudentIds:p?parse(p.privateStudentIds,[]):[]
         });
       }
