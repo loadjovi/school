@@ -35,16 +35,18 @@
             appendScript("/parent-link-admin.js",()=>{
               appendScript("/teacher-support.js?v=20260915-0915",()=>{
                 appendScript("/teacher-settings.js?v=20260915-1415",()=>{
-                  appendScript("/teacher-admin.js?v=20260915-0915",()=>{
-                    appendScript("/batch-upgrade.js",()=>{
-                      appendScript("/roster-import.js?v=20260915-1135",()=>{
-                        appendScript("/attendance-support.js?v=20260915-0915",()=>{
-                          appendScript("/attendance-edit.js",()=>{
-                            appendScript("/teacher-navigation.js?v=20260915-0915",()=>{
-                              appendScript("/comprehensive-support.js?v=20260915-0915",()=>{
-                                appendScript("/practice-progress.js",()=>{
-                                  appendScript("/practice-timer.js?v=20260915-0152",()=>{
-                                    appendScript("/private-lesson-confirmation.js?v=20260915-0633",()=>appendScript("/admin-operations.js?v=20260915-0915",()=>appendScript("/system-backup.js?v=20260915-1225")));
+                  appendScript("/private-student-bottom-back.js?v=20260915-1432",()=>{
+                    appendScript("/teacher-admin.js?v=20260915-0915",()=>{
+                      appendScript("/batch-upgrade.js",()=>{
+                        appendScript("/roster-import.js?v=20260915-1135",()=>{
+                          appendScript("/attendance-support.js?v=20260915-0915",()=>{
+                            appendScript("/attendance-edit.js",()=>{
+                              appendScript("/teacher-navigation.js?v=20260915-0915",()=>{
+                                appendScript("/comprehensive-support.js?v=20260915-0915",()=>{
+                                  appendScript("/practice-progress.js",()=>{
+                                    appendScript("/practice-timer.js?v=20260915-0152",()=>{
+                                      appendScript("/private-lesson-confirmation.js?v=20260915-0633",()=>appendScript("/admin-operations.js?v=20260915-0915",()=>appendScript("/system-backup.js?v=20260915-1225")));
+                                    });
                                   });
                                 });
                               });
