@@ -60,19 +60,61 @@ function normalizeRows(input,schoolYear){
   if(!rows.length)throw new Error("沒有可匯入的學生資料");
   return {rows,warnings};
 }
+function stripMeta(e){const x={...e};delete x.etag;delete x.timestamp;return x}
+async function migratePartitionRows(key,oldId,newId){
+  if(!oldId||oldId===newId)return 0;
+  const client=table(key),rows=[];
+  for await (const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${String(oldId).replaceAll("'","''")}'`}}))rows.push(e);
+  for(const old of rows){
+    const next=stripMeta(old);next.partitionKey=newId;next.legacyStudentId=oldId;
+    await client.upsertEntity(next,"Replace");
+    try{await client.deleteEntity(String(old.partitionKey),String(old.rowKey))}catch{}
+  }
+  return rows.length;
+}
 async function migrateParentMappings(oldId,newId,student,accessEmail){
   if(!oldId||oldId===newId)return 0;
   const client=table("userStudentMap"),matches=[];
   for await (const e of client.listEntities({queryOptions:{filter:`RowKey eq '${String(oldId).replaceAll("'","''")}'`}}))matches.push(e);
   let count=0;
   for(const old of matches){
-    const next={...old,rowKey:newId,studentName:student.name,grade:student.grade,groupName:student.groupName,instrument:student.instrument,schoolYear:student.schoolYear,status:old.status||"active",legacyStudentId:oldId,migratedAt:new Date().toISOString(),migratedBy:accessEmail};
-    delete next.etag;delete next.timestamp;
+    const next={...stripMeta(old),rowKey:newId,studentNo:newId,studentName:student.name,grade:student.grade,groupName:student.groupName,instrument:student.instrument,schoolYear:student.schoolYear,status:old.status||"active",legacyStudentId:oldId,migratedAt:new Date().toISOString(),migratedBy:accessEmail};
     await client.upsertEntity(next,"Merge");
     try{await client.deleteEntity(String(old.partitionKey),String(old.rowKey))}catch{}
     count++;
   }
   return count;
+}
+async function migrateTeacherPrivateAssignments(oldId,newId){
+  if(!oldId||oldId===newId)return 0;
+  const client=table("teacherProfile");let count=0;
+  for await (const e of client.listEntities()){
+    let ids=[];try{ids=JSON.parse(String(e.privateStudentIds||"[]"))}catch{ids=[]}
+    if(!Array.isArray(ids)||!ids.map(String).includes(String(oldId)))continue;
+    const replaced=[...new Set(ids.map(String).map(x=>x===String(oldId)?String(newId):x))];
+    const next=stripMeta(e);next.privateStudentIds=JSON.stringify(replaced);next.updatedAt=new Date().toISOString();
+    await client.upsertEntity(next,"Merge");count++;
+  }
+  return count;
+}
+async function migrateRegistrationReferences(oldId,newId){
+  if(!oldId||oldId===newId)return 0;
+  const client=table("registrations"),rows=[];
+  for await (const e of client.listEntities({queryOptions:{filter:`studentId eq '${String(oldId).replaceAll("'","''")}'`}}))rows.push(e);
+  for(const e of rows){const next=stripMeta(e);next.studentId=newId;next.legacyStudentId=oldId;await client.upsertEntity(next,"Merge")}
+  return rows.length;
+}
+async function migrateHistoricalReferences(oldId,newId,student,accessEmail){
+  const counts={};
+  counts.practice=await migratePartitionRows("practice",oldId,newId);
+  counts.section=await migratePartitionRows("section",oldId,newId);
+  counts.ensemble=await migratePartitionRows("ensemble",oldId,newId);
+  counts.comprehensive=await migratePartitionRows("comprehensive",oldId,newId);
+  counts.privateLesson=await migratePartitionRows("privateLesson",oldId,newId);
+  counts.parentMappings=await migrateParentMappings(oldId,newId,student,accessEmail);
+  counts.teacherProfiles=await migrateTeacherPrivateAssignments(oldId,newId);
+  counts.registrations=await migrateRegistrationReferences(oldId,newId);
+  return counts;
 }
 
 app.http("studentRosterImport",{
@@ -124,12 +166,12 @@ app.http("studentRosterImport",{
       await table("studentMaster").createEntity(entity);
 
       if(old){
+        const migration=await migrateHistoricalReferences(String(old.rowKey),r.studentNo,r,access.email);
         const retired={...old,status:"inactive",replacedByStudentId:r.studentNo,updatedAt:now,updatedBy:access.email};
         await table("studentMaster").updateEntity(retired,"Merge");
-        await migrateParentMappings(String(old.rowKey),r.studentNo,r,access.email);
-        await table("studentHistory").createEntity({partitionKey:String(old.rowKey),rowKey:rowKey("hist"),changeType:"student_number_replaced",changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(old)),newValue:JSON.stringify({replacedByStudentId:r.studentNo,status:"inactive"})});
-        await table("studentHistory").createEntity({partitionKey:r.studentNo,rowKey:rowKey("hist"),changeType:"student_number_migration",changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(old)),newValue:JSON.stringify(studentView(entity)),legacyStudentId:String(old.rowKey)});
-        results.push({studentId:r.studentNo,studentNo:r.studentNo,name:r.name,action:"migrate",oldStudentId:String(old.rowKey)});
+        await table("studentHistory").createEntity({partitionKey:String(old.rowKey),rowKey:rowKey("hist"),changeType:"student_number_replaced",changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(old)),newValue:JSON.stringify({replacedByStudentId:r.studentNo,status:"inactive",migration})});
+        await table("studentHistory").createEntity({partitionKey:r.studentNo,rowKey:rowKey("hist"),changeType:"student_number_migration",changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(old)),newValue:JSON.stringify(studentView(entity)),legacyStudentId:String(old.rowKey),migration:JSON.stringify(migration)});
+        results.push({studentId:r.studentNo,studentNo:r.studentNo,name:r.name,action:"migrate",oldStudentId:String(old.rowKey),migration});
       }else{
         await table("studentHistory").createEntity({partitionKey:r.studentNo,rowKey:rowKey("hist"),changeType:"roster_import_create_by_student_no",changedAt:now,changedBy:access.email,oldValue:"",newValue:JSON.stringify(studentView(entity))});
         results.push({studentId:r.studentNo,studentNo:r.studentNo,name:r.name,action:"create"});
