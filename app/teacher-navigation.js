@@ -8,14 +8,15 @@
   }
 
   function teacherHomePage(){
-    const c=cap();
+    const c=cap(),comprehensive=!!state.teacherSetup?.profile?.comprehensiveEnabled;
     const teachingCards=[
-      courseCard("section","🎼","分部課","依團別＋分部帶入學生，進行點名與未到名單匯出",c.section),
-      courseCard("ensemble","🎻","團體課","A／B 團四個分部合班點名",c.ensemble),
+      courseCard("section","🎼","分部課","A團週一、週三；B團週二、週四；儲備團週五。依團別＋分部帶入學生點名",c.section),
+      courseCard("ensemble","🎻","合奏課","A／B團每週二 12:30–13:20，依團別帶入全部分部學生",c.ensemble),
+      courseCard("comprehensive","🎶","綜合課","A／B／儲備團共同參加；本學期 7 次，整團點名",comprehensive),
       courseCard("private","👤","個別課","查看自己綁定的個課學生並記錄課程",c.private)
     ].filter(Boolean).join("");
     const progressCard=courseCard("practiceProgress","📚","自主練習進度","查看家長回填的練習天數、分鐘、內容與最近練習紀錄",true);
-    return `<div class="card hero"><h2>🎓 我的教學</h2><div class="notice">請選擇本次要進行的課程。授課範圍由「⚙️ 我的教學」設定，可同時擁有分部課、團體課與個別課。</div></div>
+    return `<div class="card hero"><h2>🎓 我的教學</h2><div class="notice">請選擇本次要進行的課程。授課範圍由「⚙️ 我的教學」設定，可同時擁有分部課、合奏課、綜合課與個別課。</div></div>
       <div class="card"><h2>教學區域</h2>${teachingCards||'<div class="notice">目前尚未設定任何教學區域。請先到「我的教學」勾選授課範圍。</div>'}${!teachingCards?'<button class="primary" onclick="go(\'teacherSettings\')">前往設定我的教學</button>':''}</div>
       <div class="card"><h2>學生學習狀況</h2>${progressCard}</div>`;
   }
@@ -45,7 +46,7 @@
     return previousRender();
   };
 
-  if(teacherAccount()&&!["section","ensemble","private","attendance","practiceProgress","teacherSettings","help","teacherHome"].includes(state.page)){
+  if(teacherAccount()&&!["section","ensemble","comprehensive","private","attendance","practiceProgress","teacherSettings","help","teacherHome"].includes(state.page)){
     state.page="teacherHome";
     render();
   }
