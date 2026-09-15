@@ -51,8 +51,9 @@ export async function verifyGoogle(request){return verifyGoogleToken(googleToken
 function normalizeProfile(profile){
   const sectionAssignments=(parseJsonValue(profile?.sectionAssignments,[])||[]).map(x=>({groupName:String(x?.groupName||"").trim(),section:String(x?.section||"").trim()})).filter(x=>x.groupName&&x.section);
   const ensembleGroups=[...new Set((parseJsonValue(profile?.ensembleGroups,[])||[]).map(String).filter(x=>["A","B"].includes(x)))];
+  const comprehensiveEnabled=profile?.comprehensiveEnabled===true;
   const privateStudentIds=[...new Set((parseJsonValue(profile?.privateStudentIds,[])||[]).map(String).filter(Boolean))];
-  return {sectionAssignments,ensembleGroups,privateStudentIds};
+  return {sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds};
 }
 
 function viewMaster(e,legacyStudentIds=[]){
@@ -246,10 +247,10 @@ export async function getAccess(request){
   const directory=await getTeacherDirectory(email);
   if(directory?.status==="active"){
     const profile=await getTeacherProfile(email);
-    const {sectionAssignments,ensembleGroups,privateStudentIds:rawPrivateStudentIds}=normalizeProfile(profile);
+    const {sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds:rawPrivateStudentIds}=normalizeProfile(profile);
     const index=await buildStudentAliasIndex();
     const privateStudentIds=[...new Set(rawPrivateStudentIds.map(id=>index.aliasToCanonical.get(String(id))||String(id)))];
-    const capabilities={section:sectionAssignments.length>0,ensemble:ensembleGroups.length>0,private:privateStudentIds.length>0,teacherSettings:true};
+    const capabilities={section:sectionAssignments.length>0,ensemble:ensembleGroups.length>0,comprehensive:comprehensiveEnabled,private:privateStudentIds.length>0,teacherSettings:true};
     const masters=await listStudentMaster("active");
     const byId=new Map();
     for(const m of masters){
@@ -258,11 +259,12 @@ export async function getAccess(request){
       const v=viewMaster(canonicalMaster,[...(index.canonicalToAliases.get(canonicalId)||[])]);
       const sectionMatch=sectionAssignments.some(a=>a.groupName===v.groupName&&a.section===v.section);
       const ensembleMatch=ensembleGroups.includes(v.groupName);
+      const comprehensiveMatch=comprehensiveEnabled&&["A","B","儲備"].includes(v.groupName);
       const privateMatch=privateStudentIds.includes(v.studentId);
-      if(sectionMatch||ensembleMatch||privateMatch)byId.set(v.studentId,v);
+      if(sectionMatch||ensembleMatch||comprehensiveMatch||privateMatch)byId.set(v.studentId,v);
     }
-    const role=capabilities.section?"sectionTeacher":capabilities.ensemble?"ensembleTeacher":capabilities.private?"privateTeacher":"teacher";
-    return {authenticated:true,...identity,displayName:directory.teacherName||identity.displayName,role,capabilities,sectionAssignments,assignments:sectionAssignments,ensembleGroups,privateStudentIds,students:[...byId.values()]};
+    const role=capabilities.section?"sectionTeacher":capabilities.ensemble?"ensembleTeacher":capabilities.comprehensive?"comprehensiveTeacher":capabilities.private?"privateTeacher":"teacher";
+    return {authenticated:true,...identity,displayName:directory.teacherName||identity.displayName,role,capabilities,sectionAssignments,assignments:sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,students:[...byId.values()]};
   }
 
   if(parentMap[email])return {authenticated:true,...identity,role:"parent",students:await canonicalizeStudents(parentMap[email])};
@@ -297,6 +299,11 @@ export function ensureSectionAccess(access,student){
 export function ensureEnsembleAccess(access,student){
   if(access.role==="admin")return true;
   return !!access.capabilities?.ensemble&&(access.ensembleGroups||[]).includes(student.groupName);
+}
+
+export function ensureComprehensiveAccess(access,student){
+  if(access.role==="admin")return true;
+  return !!access.capabilities?.comprehensive&&["A","B","儲備"].includes(String(student?.groupName||""));
 }
 
 export function ensurePrivateAccess(access,studentId){
