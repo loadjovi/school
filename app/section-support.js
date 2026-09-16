@@ -18,7 +18,11 @@
   };
 
   window.__sectionClassIndex=0;
-  window.changeSectionClass=function(v){window.__sectionClassIndex=Number(v)||0;render()};
+  window.changeSectionClass=function(v){window.__sectionClassIndex=Number(v)||0;state.sectionExisting=null;state.sectionExistingKey="";render();setTimeout(()=>loadSectionExisting(),0)};
+  state.sectionExisting=state.sectionExisting||null; state.sectionExistingKey=state.sectionExistingKey||""; state.sectionLoading=false;
+  function sectionContext(){const a=Array.isArray(state.me.assignments)?state.me.assignments:[],c=a[Math.min(window.__sectionClassIndex,Math.max(a.length-1,0))]||a[0];return c?{groupName:String(c.groupName||c.group||""),section:String(c.section||"")}:null}
+  window.loadSectionExisting=async function(){const c=sectionContext(),date=$("sDate")?.value;if(!c||!date)return;state.sectionLoading=true;state.sectionExistingKey=[date,c.groupName,c.section].join("|");render();try{state.sectionExisting=await api(`/api/section-attendance?sessionDate=${encodeURIComponent(date)}&groupName=${encodeURIComponent(c.groupName)}&section=${encodeURIComponent(c.section)}`)}catch(e){state.sectionExisting={items:[]};toast("❌ "+e.message)}state.sectionLoading=false;render()};
+  window.changeSectionDate=function(){state.sectionExisting=null;state.sectionExistingKey="";setTimeout(()=>loadSectionExisting(),0)};
 
   sectionPage=function(){
     const today=new Date().toISOString().slice(0,10);
@@ -31,9 +35,13 @@
     const groupName=String(current.groupName||current.group||"");
     const section=String(current.section||"");
     const students=state.students.filter(s=>String(s.groupName)===groupName&&String(s.section||"待確認")===section);
+    const loaded=state.sectionExistingKey===[today,groupName,section].join("|")?state.sectionExisting:null;
+    const saved=new Map((loaded?.items||[]).map(x=>[String(x.studentId),String(x.status||"present")]));
+    const savedCount=saved.size,missing=Math.max(students.length-savedCount,0);
+    const statusBox=state.sectionLoading?'<div class="notice" style="margin-top:10px">⏳ 正在確認點名紀錄…</div>':loaded?(savedCount?`<div class="notice" style="margin-top:10px">✅ <b>已點名</b>｜已儲存 ${savedCount}/${students.length} 人${missing?`，⚠️ 尚有 ${missing} 人未有紀錄`:""}。可直接修改後重新儲存。</div>`:'<div class="notice" style="margin-top:10px">⚠️ <b>尚未點名</b>｜此日期尚無儲存紀錄。</div>'):'<div class="notice" style="margin-top:10px">ℹ️ 正在確認是否已有點名紀錄。</div>';
     const selector=assignments.length>1?`<label>本次分部課</label><select onchange="changeSectionClass(this.value)">${assignments.map((x,i)=>`<option value="${i}" ${i===idx?"selected":""}>${esc(x.groupName||x.group)}團｜${esc(x.section)}</option>`).join("")}</select>`:`<div class="notice"><b>${esc(groupName)}團｜${esc(section)}</b></div>`;
-    return `<div class="card"><h2>分部團練點名</h2>${selector}<label>上課日期</label><input id="sDate" type="date" value="${today}"><input id="sSection" type="hidden" value="${esc(section)}"><input id="sGroup" type="hidden" value="${esc(groupName)}"></div>
-      <div class="card"><h2>${esc(groupName)}團｜${esc(section)}學生名單</h2>${students.length?students.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.grade)}｜${esc(s.instrument)}</small></div><select id="att_${s.studentId}" class="status-select"><option value="present">出席</option><option value="late">遲到</option><option value="leave">請假</option><option value="absent">缺席</option><option value="cancelled">停課</option></select></div>`).join(""):`<div class="notice">目前沒有符合此團別／分部的學生。請確認學生主檔中的「團別」與「分部」。</div>`}${students.length?`<button class="primary" onclick="saveSection()">儲存本次點名</button>`:""}</div>`;
+    return `<div class="card"><h2>分部團練點名</h2>${selector}<label>上課日期</label><input id="sDate" type="date" value="${today}" onchange="changeSectionDate(this.value)">${statusBox}<input id="sSection" type="hidden" value="${esc(section)}"><input id="sGroup" type="hidden" value="${esc(groupName)}"></div>
+      <div class="card"><h2>${esc(groupName)}團｜${esc(section)}學生名單</h2>${students.length?students.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.grade)}｜${esc(s.instrument)}</small></div><select id="att_${s.studentId}" class="status-select"><option value="present" ${saved.get(String(s.studentId))==="present"?"selected":""}>出席</option><option value="late" ${saved.get(String(s.studentId))==="late"?"selected":""}>遲到</option><option value="leave" ${saved.get(String(s.studentId))==="leave"?"selected":""}>請假</option><option value="absent" ${saved.get(String(s.studentId))==="absent"?"selected":""}>缺席</option><option value="cancelled" ${saved.get(String(s.studentId))==="cancelled"?"selected":""}>停課</option></select></div>`).join(""):`<div class="notice">目前沒有符合此團別／分部的學生。請確認學生主檔中的「團別」與「分部」。</div>`}${students.length?`<button class="primary" onclick="saveSection()">儲存本次點名</button>`:""}</div>`;
   };
 
   saveSection=async function(){
@@ -44,6 +52,6 @@
     const section=String(current.section||"");
     const students=state.students.filter(s=>String(s.groupName)===groupName&&String(s.section||"待確認")===section);
     const items=students.map(s=>({studentId:s.studentId,status:$(`att_${s.studentId}`).value,minutes:$(`att_${s.studentId}`).value==="absent"?0:45}));
-    try{await api("/api/section-attendance",{method:"POST",body:JSON.stringify({sessionDate:$("sDate").value,section,groupName,items})});toast(`✅ ${groupName}團｜${section} 點名已儲存`)}catch(e){toast("❌ "+e.message)}
+    try{await api("/api/section-attendance",{method:"POST",body:JSON.stringify({sessionDate:$("sDate").value,section,groupName,items})});toast(`✅ ${groupName}團｜${section} 點名已儲存`);await loadSectionExisting()}catch(e){toast("❌ "+e.message)}
   };
 })();
