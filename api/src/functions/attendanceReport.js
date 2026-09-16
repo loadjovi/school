@@ -139,8 +139,43 @@ app.http("dailyFollowup",{
     const masters=await listStudentMaster();
     const students=new Map(masters.map(e=>[String(e.rowKey),studentView(e)]));
     const canonicalCache=new Map(),teacherCache=new Map();
-    const [sectionRows,ensembleRows,comprehensiveRows]=await Promise.all([collectDaily("section",date),collectDaily("ensemble",date),collectDaily("comprehensive",date)]);
-    const allDailyRows=[...sectionRows,...ensembleRows,...comprehensiveRows];
+    const [sectionRows,ensembleRows,comprehensiveRows,privateRows]=await Promise.all([collectDaily("section",date),collectDaily("ensemble",date),collectDaily("comprehensive",date),collectDaily("privateLesson",date)]);
+    const allDailyRows=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows];
+    const activeMasters=masters.filter(e=>String(e.status||"active")!=="inactive");
+    const activeByGroup=g=>activeMasters.filter(e=>String(e.groupName||"")===g).length;
+    const attendedCount=rows=>rows.filter(x=>x.status==="present"||x.status==="late").length;
+    const statusCount=(rows,status)=>rows.filter(x=>x.status===status).length;
+    const weekday=new Date(date+"T12:00:00Z").getUTCDay();
+    const comprehensiveDates=new Set(["2026-09-18","2026-10-02","2026-10-16","2026-10-30","2026-11-20","2026-11-27","2026-12-04"]);
+    const courseSummary=[];
+    const pushCourse=(key,label,groups,expected,rows,time="")=>{
+      const attended=attendedCount(rows);
+      courseSummary.push({key,label,groups,time,expected,attended,leave:statusCount(rows,"leave"),absent:statusCount(rows,"absent"),late:statusCount(rows,"late"),recorded:rows.filter(x=>x.status!=="cancelled").length,attendanceRate:expected?Math.round(attended/expected*1000)/10:null});
+    };
+    if(weekday===1||weekday===3){
+      const rows=sectionRows.filter(x=>String(x.groupName)==="A");
+      pushCourse("section-A","A團分部課",["A"],activeByGroup("A"),rows,"每週一、週三");
+    }
+    if(weekday===2||weekday===4){
+      const rows=sectionRows.filter(x=>String(x.groupName)==="B");
+      pushCourse("section-B","B團分部課",["B"],activeByGroup("B"),rows,"每週二、週四");
+    }
+    if(weekday===5){
+      const rows=sectionRows.filter(x=>String(x.groupName)==="儲備");
+      pushCourse("section-reserve","儲備團分部課",["儲備"],activeByGroup("儲備"),rows,"每週五");
+    }
+    if(weekday===2){
+      const rows=ensembleRows.filter(x=>["A","B"].includes(String(x.groupName)));
+      pushCourse("ensemble-AB","A、B團合奏課",["A","B"],activeByGroup("A")+activeByGroup("B"),rows,"12:30–13:20");
+    }
+    if(comprehensiveDates.has(date)){
+      const rows=comprehensiveRows.filter(x=>["A","B","儲備"].includes(String(x.groupName)));
+      pushCourse("comprehensive","弦樂團體課（綜合課）",["A","B","儲備"],activeByGroup("A")+activeByGroup("B")+activeByGroup("儲備"),rows,"08:45–10:15");
+    }
+    if(privateRows.length){
+      const expected=privateRows.filter(x=>x.status!=="cancelled").length;
+      pushCourse("private","個別課",[],expected,privateRows,"依個別課紀錄");
+    }
     const attendanceCounts={
       expected:allDailyRows.filter(x=>x.status!=="cancelled").length,
       attended:allDailyRows.filter(x=>x.status==="present"||x.status==="late").length,
@@ -166,7 +201,7 @@ app.http("dailyFollowup",{
       items.push({date:r.eventDate,classType:r.classType,studentId:r.studentId,name:s.name,grade:s.grade,groupName:r.groupName||s.groupName,section:r.classType==="ensemble"?"四分部合班":r.section||s.section||"待確認",instrument:s.instrument,status:r.status,teacherName:await dailyTeacherName(r.teacher,teacherCache),teacherEmail:r.teacher});
     }
     items.sort((x,y)=>String(x.classType).localeCompare(String(y.classType))||String(x.groupName).localeCompare(String(y.groupName),"zh-Hant")||String(x.section).localeCompare(String(y.section),"zh-Hant")||String(x.name).localeCompare(String(y.name),"zh-Hant"));
-    return json({date,scope:"00:00-23:59",items,attendanceCounts,counts:{total:items.length,leave:items.filter(x=>x.status==="leave").length,absent:items.filter(x=>x.status==="absent").length,section:items.filter(x=>x.classType==="section").length,ensemble:items.filter(x=>x.classType==="ensemble").length,comprehensive:items.filter(x=>x.classType==="comprehensive").length}});
+    return json({date,scope:"00:00-23:59",items,attendanceCounts,courseSummary,counts:{total:items.length,leave:items.filter(x=>x.status==="leave").length,absent:items.filter(x=>x.status==="absent").length,section:items.filter(x=>x.classType==="section").length,ensemble:items.filter(x=>x.classType==="ensemble").length,comprehensive:items.filter(x=>x.classType==="comprehensive").length}});
   }
 });
 
