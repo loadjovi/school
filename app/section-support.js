@@ -31,7 +31,7 @@
   }
   function assignmentIndexForDate(date){
     const target=sectionGroupForDate(date),a=Array.isArray(state.me.assignments)?state.me.assignments:[];
-    return target?a.findIndex(x=>String(x.groupName||x.group||"")===target):-1;
+    return target?a.findIndex(x=>{const g=String(x.groupName||x.group||"").trim();return g===target||g===target+"團"}):-1;
   }
   window.changeSectionDate=function(v){
     const date=String(v||$("sDate")?.value||""),next=assignmentIndexForDate(date);
@@ -49,7 +49,7 @@
     const autoIdx=assignmentIndexForDate(today);if(autoIdx>=0&&state.sectionSelectedDate)window.__sectionClassIndex=autoIdx;
     const idx=Math.min(window.__sectionClassIndex,assignments.length-1);
     const current=assignments[idx]||assignments[0];
-    const groupName=String(current.groupName||current.group||"");
+    const groupName=String(current.groupName||current.group||"").trim().replace(/團$/,"");
     const section=String(current.section||"");
     const students=state.students.filter(s=>String(s.groupName)===groupName&&String(s.section||"待確認")===section);
     const loaded=state.sectionExistingKey===[today,groupName,section].join("|")?state.sectionExisting:null;
@@ -68,7 +68,7 @@
     const assignments=Array.isArray(state.me.assignments)?state.me.assignments:[];
     const current=assignments[Math.min(window.__sectionClassIndex,assignments.length-1)]||assignments[0];
     if(!current){toast("尚未設定分部課權限");return}
-    const groupName=String(current.groupName||current.group||"");
+    const groupName=String(current.groupName||current.group||"").trim().replace(/團$/,"");
     const section=String(current.section||"");
     const students=state.students.filter(s=>String(s.groupName)===groupName&&String(s.section||"待確認")===section);
     const items=students.map(s=>({studentId:s.studentId,status:$(`att_${s.studentId}`).value,minutes:$(`att_${s.studentId}`).value==="absent"?0:45}));
