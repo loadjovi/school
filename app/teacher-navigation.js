@@ -1,5 +1,5 @@
 (()=>{
-  const teacherAccount=()=>state.me?.role!=="admin"&&(state.me?.role==="teacher"||state.me?.capabilities?.teacherSettings);
+  const teacherAccount=()=>state.me?.role!=="admin"&&["teacher","sectionTeacher","privateTeacher"].includes(state.me?.role)||state.me?.role!=="admin"&&!!state.me?.capabilities?.teacherSettings;
   const cap=()=>state.me?.capabilities||{};
 
   function courseCard(page,icon,title,desc,enabled){
