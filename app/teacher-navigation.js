@@ -1,6 +1,9 @@
 (()=>{
   const teacherAccount=()=>state.me?.role!=="admin"&&["teacher","sectionTeacher","privateTeacher"].includes(state.me?.role)||state.me?.role!=="admin"&&!!state.me?.capabilities?.teacherSettings;
   const cap=()=>state.me?.capabilities||{};
+  state.teacherTodayStatus=state.teacherTodayStatus||null;
+  state.teacherTodayStatusDate=state.teacherTodayStatusDate||"";
+  async function loadTeacherTodayStatus(date){try{state.teacherTodayStatus=await api(`/api/attendance-report?month=${encodeURIComponent(date.slice(0,7))}`);state.teacherTodayStatusDate=date;render()}catch{state.teacherTodayStatus=null;state.teacherTodayStatusDate=date}}
   const detailPages=new Set(["section","ensemble","comprehensive","private","practiceProgress"]);
   function mountTeacherBack(){
     if(!teacherAccount()||!detailPages.has(state.page)||document.getElementById("teacherHomeBack"))return;
@@ -14,9 +17,10 @@
     main.prepend(btn);
   }
 
-  function courseCard(page,icon,title,desc,enabled){
+  function courseCard(page,icon,title,desc,enabled,status=""){
     if(!enabled)return "";
-    return `<button class="item" style="width:100%;text-align:left;background:#fff;cursor:pointer" onclick="go('${page}')"><div><b>${icon} ${esc(title)}</b><small>${esc(desc)}</small></div><span style="font-size:22px">›</span></button>`;
+    const badge=status?'<span class="badge '+(status==="已完成"?'good':'bad')+'" style="margin-left:8px">'+(status==="已完成"?'✅ 已完成':'🔴 尚未點名')+'</span>':"";
+    return `<button class="item" style="width:100%;text-align:left;background:#fff;cursor:pointer" onclick="go('${page}')"><div><b>${icon} ${esc(title)}${badge}</b><small>${esc(desc)}</small></div><span style="font-size:22px">›</span></button>`;
   }
 
   function teacherHomePage(){
@@ -30,11 +34,14 @@
     const hasTodayEnsemble=weekday===2&&ensembleGroups.some(x=>["A","B"].includes(String(x)));
     const comprehensiveDates=new Set(["2026-09-18","2026-10-02","2026-10-16","2026-10-30","2026-11-20","2026-11-27","2026-12-04"]);
     const hasTodayComprehensive=comprehensive&&comprehensiveDates.has(date);
+    if(state.teacherTodayStatusDate!==date)setTimeout(()=>loadTeacherTodayStatus(date),0);
+    const todayRecords=(state.teacherTodayStatus?.records||[]).filter(x=>String(x.eventDate)===date);
+    const hasRecord=(type,group)=>todayRecords.some(x=>(type==="private"?["private","privateLesson"].includes(String(x.classType)):String(x.classType)===type)&&(!group||String(x.groupName)===group));
     const teachingCards=[
-      courseCard("section","🎼",sectionGroup?sectionGroup+"團分部課":"分部課",sectionGroup?todayName+"｜依老師設定的團別＋分部帶入學生點名":"",c.section&&hasTodaySection),
-      courseCard("ensemble","🎻","A／B團合奏課","今天 12:30–13:20｜依老師設定的 A／B 團帶入學生",c.ensemble&&hasTodayEnsemble),
-      courseCard("comprehensive","🎶","弦樂團體課（綜合課）","今天 08:45–10:15｜A／B／儲備團共同參加",hasTodayComprehensive),
-      courseCard("private","👤","個別課","依老師綁定的個課學生與實際排課進行紀錄",c.private)
+      courseCard("section","🎼",sectionGroup?sectionGroup+"團分部課":"分部課",sectionGroup?todayName+"｜依老師設定的團別＋分部帶入學生點名":"",c.section&&hasTodaySection,hasTodaySection?(hasRecord("section",sectionGroup)?"已完成":"尚未點名"):""),
+      courseCard("ensemble","🎻","A／B團合奏課","今天 12:30–13:20｜依老師設定的 A／B 團帶入學生",c.ensemble&&hasTodayEnsemble,hasTodayEnsemble?(hasRecord("ensemble")?"已完成":"尚未點名"):""),
+      courseCard("comprehensive","🎶","弦樂團體課（綜合課）","今天 08:45–10:15｜A／B／儲備團共同參加",hasTodayComprehensive,hasTodayComprehensive?(hasRecord("comprehensive")?"已完成":"尚未點名"):""),
+      courseCard("private","👤","個別課","依老師綁定的個課學生與實際排課進行紀錄",c.private,hasRecord("private")?"已完成":"尚未點名")
     ].filter(Boolean).join("");
     const groupSchedule=weekday===1||weekday===3?"A團分部課":weekday===2?"B團分部課＋A／B團合奏課":weekday===4?"B團分部課":weekday===5?"儲備團分部課":"無固定團體課";
     const progressCard=courseCard("practiceProgress","📚","自主練習進度","查看家長回填的練習天數、分鐘、內容與最近練習紀錄",true);
