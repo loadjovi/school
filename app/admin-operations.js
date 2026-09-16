@@ -96,11 +96,11 @@
     const d=state.adminOps.followup;
     const loading=state.adminOps.loadingFollowup;
     const error=state.adminOps.followupError;
-    const items=d?.items||[],c=d?.counts||{};
+    const items=d?.items||[],c=d?.counts||{},a=d?.attendanceCounts||{};
     let body="";
     if(error)body=`<div class="error" style="margin-top:10px">讀取 ${esc(state.adminOps.date)} 整日點名失敗：${esc(error)}</div>`;
     else if(loading&&!d)body=`<div class="notice" style="margin-top:10px">正在彙整 ${esc(state.adminOps.date)} 所有老師的分部課、合奏課與綜合課點名…</div>`;
-    else if(d)body=`<div class="grid" style="margin-top:12px"><div class="kpi"><b>${c.total||0}</b><span>需追蹤筆數</span></div><div class="kpi"><b>${c.absent||0}</b><span>缺席</span></div><div class="kpi"><b>${c.leave||0}</b><span>請假</span></div><div class="kpi"><b>${(c.section||0)+(c.ensemble||0)+(c.comprehensive||0)}</b><span>分部＋合奏＋綜合</span></div></div>`;
+    else if(d)body=`<div class="grid" style="margin-top:12px"><div class="kpi"><b>${a.expected??0}</b><span>應到人次</span></div><div class="kpi"><b>${a.attended??0}</b><span>實到人次</span></div><div class="kpi"><b>${a.attendanceRate==null?"—":a.attendanceRate+"%"}</b><span>出席率</span></div><div class="kpi"><b>${c.total||0}</b><span>需追蹤筆數</span></div><div class="kpi"><b>${c.absent||0}</b><span>缺席</span></div><div class="kpi"><b>${c.leave||0}</b><span>請假</span></div><div class="kpi"><b>${a.late??0}</b><span>遲到</span></div><div class="kpi"><b>${(c.section||0)+(c.ensemble||0)+(c.comprehensive||0)}</b><span>已點名課程紀錄</span></div></div><div class="notice" style="margin-top:10px">應到＝當日已完成點名且非停課的人次；實到＝出席＋遲到。若同一學生當天有不同課程，會依各課程分別計算人次。</div>`;
     return `<div class="card"><h2>📣 當日未到／請假追蹤</h2><div class="notice">選擇任一天，管理員會跨所有老師彙整該日 00:00～23:59 的「分部課＋合奏課＋綜合課」請假與缺席學生，供學校行政老師聯絡追蹤。</div>${dateControls()}${body}<button class="primary" style="margin-top:12px" onclick="exportAdminDailyFollowup()" ${loading?"disabled":""}>📥 匯出 ${esc(state.adminOps.date)} 整日未到／請假名單</button></div><div class="card"><h2>${esc(state.adminOps.date)} 行政追蹤名單</h2>${loading?`<div class="notice">正在整理整日點名資料…</div>`:error?`<div class="notice">請修正讀取問題後重新整理。</div>`:items.length?items.map(x=>`<div class="item"><div><b>${esc(x.name)}｜${esc(classText[x.classType]||x.classType)}</b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.grade)}｜${esc(x.instrument)}<br>點名老師：${esc(x.teacherName||"—")}</small></div><span class="badge ${x.status==="leave"?"warn":"bad"}">${esc(statusText[x.status]||x.status)}</span></div>`).join(""):`<div class="notice">✅ 這一天目前沒有分部課／合奏課／綜合課的請假或缺席紀錄。</div>`}</div>`;
   }
 
