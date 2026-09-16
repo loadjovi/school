@@ -41,7 +41,7 @@
                         appendScript("/roster-import.js?v=20260915-1135",()=>{
                           appendScript("/attendance-support.js?v=20260915-0915",()=>{
                             appendScript("/attendance-edit.js",()=>{
-                              appendScript("/teacher-navigation.js?v=20260916-2305",()=>{
+                              appendScript("/teacher-navigation.js?v=20260917-0025",()=>{
                                 appendScript("/comprehensive-support.js?v=20260915-0915",()=>{
                                   appendScript("/practice-progress.js?v=20260917-0010",()=>{
                                     appendScript("/practice-timer.js?v=20260915-1500",()=>{
