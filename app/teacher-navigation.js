@@ -45,7 +45,7 @@
     const todayRecords=(state.teacherTodayStatus?.records||[]).filter(x=>String(x.eventDate)===date);
     const scoped=(type,group)=>todayRecords.filter(x=>(type==="private"?["private","privateLesson"].includes(String(x.classType)):String(x.classType)===type)&&(!group||String(x.groupName)===group));
     const assignmentStudents=(group)=>{const ids=new Set();for(const a of sectionAssignments){if(String(a.groupName||a.group||"")!==group)continue;for(const st of (state.teacherTodayStatus?.items||[])){if(String(st.groupName)===group&&String(st.section)===String(a.section||""))ids.add(String(st.studentId))}}return ids.size};
-    const progress=(type,group,expected)=>{const rows=scoped(type,group).filter(x=>x.status!=="cancelled");return {expected:Number(expected||0),recorded:rows.length}};
+    const progress=(type,group,expected)=>{const rows=scoped(type,group).filter(x=>x.status!=="cancelled");const ids=new Set(rows.map(x=>String(x.studentId||"")).filter(Boolean));return {expected:Number(expected||0),recorded:ids.size}};
     const sectionExpected=hasTodaySection?assignmentStudents(sectionGroup):0;
     const ensembleExpected=hasTodayEnsemble?(state.teacherTodayStatus?.items||[]).filter(x=>ensembleGroups.includes(String(x.groupName))).length:0;
     const comprehensiveExpected=hasTodayComprehensive?(state.teacherTodayStatus?.items||[]).length:0;
