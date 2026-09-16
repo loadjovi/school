@@ -9,15 +9,25 @@
 
   function teacherHomePage(){
     const c=cap(),comprehensive=!!state.teacherSetup?.profile?.comprehensiveEnabled;
+    const now=new Date(),weekday=now.getDay(),date=now.toLocaleDateString("sv-SE");
+    const dayNames=["週日","週一","週二","週三","週四","週五","週六"],todayName=dayNames[weekday];
+    const sectionGroup=(weekday===1||weekday===3)?"A":(weekday===2||weekday===4)?"B":weekday===5?"儲備":"";
+    const sectionAssignments=Array.isArray(state.me?.assignments)?state.me.assignments:[];
+    const hasTodaySection=!!sectionGroup&&sectionAssignments.some(x=>String(x.groupName||x.group||"")===sectionGroup);
+    const ensembleGroups=Array.isArray(state.me?.ensembleGroups)?state.me.ensembleGroups:[];
+    const hasTodayEnsemble=weekday===2&&ensembleGroups.some(x=>["A","B"].includes(String(x)));
+    const comprehensiveDates=new Set(["2026-09-18","2026-10-02","2026-10-16","2026-10-30","2026-11-20","2026-11-27","2026-12-04"]);
+    const hasTodayComprehensive=comprehensive&&comprehensiveDates.has(date);
     const teachingCards=[
-      courseCard("section","🎼","分部課","A團週一、週三；B團週二、週四；儲備團週五。依團別＋分部帶入學生點名",c.section),
-      courseCard("ensemble","🎻","合奏課","A／B團每週二 12:30–13:20，依團別帶入全部分部學生",c.ensemble),
-      courseCard("comprehensive","🎶","綜合課","A／B／儲備團共同參加；本學期 7 次，整團點名",comprehensive),
-      courseCard("private","👤","個別課","查看自己綁定的個課學生並記錄課程",c.private)
+      courseCard("section","🎼",sectionGroup?sectionGroup+"團分部課":"分部課",sectionGroup?todayName+"｜依老師設定的團別＋分部帶入學生點名":"",c.section&&hasTodaySection),
+      courseCard("ensemble","🎻","A／B團合奏課","今天 12:30–13:20｜依老師設定的 A／B 團帶入學生",c.ensemble&&hasTodayEnsemble),
+      courseCard("comprehensive","🎶","弦樂團體課（綜合課）","今天 08:45–10:15｜A／B／儲備團共同參加",hasTodayComprehensive),
+      courseCard("private","👤","個別課","依老師綁定的個課學生與實際排課進行紀錄",c.private)
     ].filter(Boolean).join("");
+    const groupSchedule=weekday===1||weekday===3?"A團分部課":weekday===2?"B團分部課＋A／B團合奏課":weekday===4?"B團分部課":weekday===5?"儲備團分部課":"無固定團體課";
     const progressCard=courseCard("practiceProgress","📚","自主練習進度","查看家長回填的練習天數、分鐘、內容與最近練習紀錄",true);
-    return `<div class="card hero"><h2>🎓 我的教學</h2><div class="notice">請選擇本次要進行的課程。授課範圍由「⚙️ 我的教學」設定，可同時擁有分部課、合奏課、綜合課與個別課。</div></div>
-      <div class="card"><h2>教學區域</h2>${teachingCards||'<div class="notice">目前尚未設定任何教學區域。請先到「我的教學」勾選授課範圍。</div>'}${!teachingCards?'<button class="primary" onclick="go(\'teacherSettings\')">前往設定我的教學</button>':''}</div>
+    return `<div class="card hero"><h2>🎓 今日教學</h2><div class="notice"><b>${esc(date)}｜${esc(todayName)}</b><br>今日固定課程：${esc(groupSchedule)}。首頁只顯示今天符合老師授課權限的課程。</div></div>
+      <div class="card"><h2>今日課程</h2>${teachingCards||'<div class="notice">今天沒有符合您授課權限的固定課程。</div>'}</div>
       <div class="card"><h2>學生學習狀況</h2>${progressCard}</div>`;
   }
 
