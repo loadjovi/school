@@ -46,8 +46,11 @@
     return previousRender();
   };
 
-  if(teacherAccount()&&!["section","ensemble","comprehensive","private","attendance","practiceProgress","teacherSettings","help","teacherHome"].includes(state.page)){
+  if(teacherAccount()){
+    // 登入／重新整理後固定回到「教學」首頁，避免直接落在某一種課程。
     state.page="teacherHome";
-    render();
+    if(!state.teacherSetup&&typeof loadTeacherSettings==="function"){
+      loadTeacherSettings().finally(()=>render());
+    }else render();
   }
 })();
