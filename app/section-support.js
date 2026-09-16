@@ -18,7 +18,8 @@
   };
 
   window.__sectionClassIndex=0;
-  window.changeSectionClass=function(v){window.__sectionClassIndex=Number(v)||0;state.sectionExisting=null;state.sectionExistingKey="";render();setTimeout(()=>loadSectionExisting(),0)};
+  state.sectionManualOverride=false;
+  window.changeSectionClass=function(v){window.__sectionClassIndex=Number(v)||0;state.sectionManualOverride=true;state.sectionExisting=null;state.sectionExistingKey="";render();setTimeout(()=>loadSectionExisting(),0)};
   state.sectionExisting=state.sectionExisting||null; state.sectionExistingKey=state.sectionExistingKey||""; state.sectionLoading=false;
   function sectionContext(){const a=Array.isArray(state.me.assignments)?state.me.assignments:[],c=a[Math.min(window.__sectionClassIndex,Math.max(a.length-1,0))]||a[0];return c?{groupName:String(c.groupName||c.group||""),section:String(c.section||"")}:null}
   window.loadSectionExisting=async function(){const c=sectionContext(),date=$("sDate")?.value;if(!c||!date)return;state.sectionLoading=true;state.sectionExistingKey=[date,c.groupName,c.section].join("|");render();try{state.sectionExisting=await api(`/api/section-attendance?sessionDate=${encodeURIComponent(date)}&groupName=${encodeURIComponent(c.groupName)}&section=${encodeURIComponent(c.section)}`)}catch(e){state.sectionExisting={items:[]};toast("❌ "+e.message)}state.sectionLoading=false;render()};
@@ -43,6 +44,7 @@
   }
   window.changeSectionDate=function(v){
     const date=String(v||$("sDate")?.value||""),next=assignmentIndexForDate(date);
+    state.sectionManualOverride=false;
     if(next>=0)window.__sectionClassIndex=next;
     state.sectionSelectedDate=date;state.sectionExisting=null;state.sectionExistingKey="";
     render();setTimeout(()=>loadSectionExisting(),0);
@@ -54,7 +56,7 @@
     if(!assignments.length){
       return `<div class="card"><h2>分部團練點名</h2><div class="notice">此老師尚未設定「團別＋分部」權限，請管理員設定 SECTION_TEACHER_MAP_JSON。</div></div>`;
     }
-    const autoIdx=assignmentIndexForDate(today); if(autoIdx>=0) window.__sectionClassIndex=autoIdx;
+    const autoIdx=assignmentIndexForDate(today); if(autoIdx>=0 && !state.sectionManualOverride) window.__sectionClassIndex=autoIdx;
     const idx=Math.min(window.__sectionClassIndex,assignments.length-1);
     const current=assignments[idx]||assignments[0];
     const groupName=String(current.groupName||current.group||"").trim().replace(/團$/,"");
