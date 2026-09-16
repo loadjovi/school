@@ -82,12 +82,28 @@
   };
 
   privatePage=function(){
-    const today=new Date().toISOString().slice(0,10);
+    const today=new Date().toLocaleDateString("sv-SE");
     const ids=new Set((state.me.privateStudentIds||[]).map(String));
     const students=(state.students||[]).filter(s=>ids.has(String(s.studentId)));
     if(!students.length)return `<div class="card"><h2>個別課紀錄</h2><div class="notice">目前尚未綁定這位老師的個課學生。請到「⚙️ 我的教學」選擇個別課學生。</div></div>`;
     setTimeout(startTeacherPoll,0);
-    return `<div class="card"><h2>👤 個別課紀錄</h2><div class="notice">老師完成個別課後登記日期與實際時間；網站內待確認通知固定保留，Email 是否寄送由管理員後台統一控制。</div><label>學生</label><select id="iStudent">${students.map(s=>`<option value="${esc(s.studentId)}">${esc(s.name)}｜${esc(s.groupName)}團｜${esc(s.instrument)}</option>`).join("")}</select><label>上課日期</label><input id="iDate" type="date" value="${today}"><div class="row2"><div><label>開始時間</label><input id="iStart" type="time" value="18:00"></div><div><label>結束時間</label><input id="iEnd" type="time" value="18:50"></div></div><label>狀態</label><select id="iStatus"><option value="present">出席</option><option value="late">遲到</option><option value="leave">請假</option><option value="absent">缺席</option><option value="cancelled">停課</option></select><label>課程內容</label><textarea id="iContent" rows="3" placeholder="例：音階、換把、考試曲第 1～32 小節"></textarea><button class="primary" onclick="savePrivate()">儲存並通知家長確認</button></div><div class="card"><h2>家長確認狀態</h2><div class="notice">家長確認後，這裡最慢約 30 秒會自動更新；也可以手動重新整理。</div><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理確認狀態</button><div id="privateConfirmList">${teacherHistoryHtml()}</div></div>`;
+    const month=today.slice(0,7),monthRows=(state.privateLessons||[]).filter(x=>String(x.lessonDate||"").startsWith(month)&&["present","late"].includes(String(x.status)));
+    const todayRows=monthRows.filter(x=>String(x.lessonDate)===today);
+    const taughtIds=new Set(monthRows.map(x=>String(x.studentId)));
+    const totalMinutes=monthRows.reduce((n,x)=>n+Number(x.minutes||0),0);
+    const latest=new Map();for(const x of (state.privateLessons||[])){const k=String(x.studentId);if(!latest.has(k)||String(x.lessonDate)>String(latest.get(k).lessonDate))latest.set(k,x)}
+    const daysSince=d=>d?Math.floor((new Date(today+"T12:00:00")-new Date(d+"T12:00:00"))/86400000):999;
+    const sorted=[...students].sort((a,b)=>daysSince(latest.get(String(b.studentId))?.lessonDate)-daysSince(latest.get(String(a.studentId))?.lessonDate));
+    const quick=sorted.map(st=>{const last=latest.get(String(st.studentId)),days=daysSince(last?.lessonDate),warn=!last?"🔴 尚無紀錄":days>=30?`🔴 ${days} 天未上課`:days>=14?`🟡 ${days} 天未上課`:`最近：${esc(last.lessonDate)}`;return `<button class="item" style="width:100%;text-align:left;background:#fff;cursor:pointer" onclick="quickPrivateStudent('${esc(st.studentId)}')"><div><b>${esc(st.name)}</b><small>${esc(st.groupName)}團｜${esc(st.instrument)}｜${warn}</small></div><span>＋ 記錄</span></button>`}).join("");
+    return `<div class="card"><h2>👤 個別課快速紀錄</h2><div class="notice">個別課不以固定課表判定缺席；實際上完課再登記。臨時調課不會影響統計。</div><div class="grid"><div class="kpi"><b>${todayRows.length}</b><span>今日已上堂數</span></div><div class="kpi"><b>${monthRows.length}</b><span>本月授課堂數</span></div><div class="kpi"><b>${taughtIds.size} / ${students.length}</b><span>本月授課學生</span></div><div class="kpi"><b>${totalMinutes}</b><span>本月授課分鐘</span></div></div></div>
+    <div class="card"><h2>快速選擇學生</h2><div class="notice">依「距離最近一次上課時間」排序，久未上課的學生會優先提醒。</div>${quick}</div>
+    <div class="card"><h2>✍️ 本次個別課</h2><label>學生</label><select id="iStudent">${students.map(st=>`<option value="${esc(st.studentId)}">${esc(st.name)}｜${esc(st.groupName)}團｜${esc(st.instrument)}</option>`).join("")}</select><label>上課日期</label><input id="iDate" type="date" value="${today}"><div class="row2"><div><label>開始時間</label><input id="iStart" type="time" value="18:00"></div><div><label>結束時間</label><input id="iEnd" type="time" value="18:50"></div></div><label>狀態</label><select id="iStatus"><option value="present">完成上課</option><option value="late">遲到後完成</option><option value="leave">請假</option><option value="cancelled">停課／改期</option></select><label>課程內容（選填）</label><textarea id="iContent" rows="3" placeholder="例：音階、換把、考試曲第 1～32 小節"></textarea><button class="primary" onclick="savePrivate()">✅ 完成本次上課紀錄</button></div>
+    <div class="card"><h2>家長確認／最近紀錄</h2><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理</button><div id="privateConfirmList">${teacherHistoryHtml()}</div></div>`;
+  };
+
+  window.quickPrivateStudent=function(studentId){
+    const sel=document.getElementById("iStudent");if(sel)sel.value=String(studentId);
+    const card=sel?.closest(".card");if(card)card.scrollIntoView({behavior:"smooth",block:"start"});
   };
 
   savePrivate=async function(){
