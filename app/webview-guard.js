@@ -28,7 +28,7 @@
 
   function appendScript(src,onload){const s=document.createElement("script");s.src=src;s.defer=true;if(onload)s.onload=onload;document.body.appendChild(s)}
   function loadApp(){
-    appendScript("/app-v3.js?v=20260916-1325",()=>{
+    appendScript("/app-v3.js?v=20260916-2145",()=>{
       appendScript("/roster-support.js",()=>{
         appendScript("/section-support.js",()=>{
           appendScript("/student-number-support.js?v=20260915-1135",()=>{
