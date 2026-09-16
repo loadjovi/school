@@ -65,7 +65,10 @@
       courseCard("private","👤","個別課","彈性授課｜上完即記錄，本月堂數與久未授課提醒",c.private,null)
     ].filter(Boolean).join("");
     const groupSchedule=weekday===1||weekday===3?"A團分部課":weekday===2?"B團分部課＋A／B團合奏課":weekday===4?"B團分部課":weekday===5?"儲備團分部課":"無固定團體課";
-    const practiceAll=(state.teacherAttention?.items||[]).map(x=>{const gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),rate=Number(x.practiceRatePercent||0),active=Number(x.activeDays||0);return {...x,_gap:gap,_rate:rate,_active:active}});\n    const practiceAttentionAll=practiceAll.filter(x=>x._gap>=3||x._rate<80).sort((a,b)=>b._gap-a._gap||a._rate-b._rate);\n    const practiceAttention=practiceAttentionAll.slice(0,5);\n    const stablePractice=practiceAll.filter(x=>x._gap<3&&x._rate>=80).length;
+    const practiceAll=(state.teacherAttention?.items||[]).map(x=>{const gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),rate=Number(x.practiceRatePercent||0),active=Number(x.activeDays||0);return {...x,_gap:gap,_rate:rate,_active:active}});
+    const practiceAttentionAll=practiceAll.filter(x=>x._gap>=3||x._rate<80).sort((a,b)=>b._gap-a._gap||a._rate-b._rate);
+    const practiceAttention=practiceAttentionAll.slice(0,5);
+    const stablePractice=practiceAll.filter(x=>x._gap<3&&x._rate>=80).length;
     const privateIds=new Set((state.me?.privateStudentIds||[]).map(String)),latestPrivate=new Map();for(const r of todayRecords.filter(x=>["private","privateLesson"].includes(String(x.classType))))latestPrivate.set(String(r.studentId),r);
     const attentionHtml=practiceAttention.length?practiceAttention.map(x=>`<div class="item" style="padding:10px 12px"><div><b>${x._gap>=7?"🔴":x._gap>=3?"🟡":"⚠️"} ${esc(x.name)}</b><small>${x._gap===999?"本月尚無自主練習":x._gap>=3?`${x._gap} 天未練習`:`目前達標率 ${x._rate}%`}｜本月 ${x._active} 天｜${esc(x.groupName)}團 ${esc(x.section)}</small></div></div>`).join(""):`<div class="notice">目前沒有明顯需要關注的自主練習紀錄。</div>`;
     const progressCard=courseCard("practiceProgress","📚","查看全部自主練習","查看完整練習進度、近期未練習與學生明細",true);
