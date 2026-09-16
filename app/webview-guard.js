@@ -30,7 +30,7 @@
   function loadApp(){
     appendScript("/app-v3.js?v=20260916-2145",()=>{
       appendScript("/roster-support.js",()=>{
-        appendScript("/section-support.js?v=20260916-2325fix",()=>{
+        appendScript("/section-support.js?v=20260916-2334",()=>{
           appendScript("/student-number-support.js?v=20260915-1135",()=>{
             appendScript("/parent-link-admin.js",()=>{
               appendScript("/teacher-support.js?v=20260916-2245",()=>{
