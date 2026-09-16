@@ -73,7 +73,7 @@
     const notice=isAdmin()
       ?`管理員可查看全團每位學生整月自主練習，作為後續「自主練習 10%」成績統計依據。每日達 ${d.qualifiedMinutes} 分鐘視為達標，目前目標為每月 ${d.targetDays} 天。`
       :`資料來自家長回填的自主練習。每次達 ${d.qualifiedMinutes} 分鐘視為當日達標；老師只會看到自己目前有授課關係的學生。`;
-    return `<div class="card hero"><h2>📚 自主練習${isAdmin()?'月報':'進度'}</h2><div class="notice">${esc(notice)}</div>
+    return `${!isAdmin()?`<button class="secondary" style="width:auto;margin:0 0 12px 0;padding:9px 14px;border-radius:999px;font-weight:800" onclick="go('teacherHome')">← 返回今日教學</button>`:''}<div class="card hero"><h2>📚 自主練習${isAdmin()?'月報':'進度'}</h2><div class="notice">${esc(notice)}</div>
       <label>月份</label><input type="month" value="${esc(state.practiceProgressMonth)}" onchange="changePracticeProgressMonth(this.value)">
       <div class="row2"><div><label>團別</label><select onchange="changePracticeProgressGroup(this.value)">${groups.map(g=>`<option value="${esc(g)}" ${g===state.practiceProgressGroup?'selected':''}>${esc(g==='全部'?'全部團別':g+'團')}</option>`).join('')}</select></div><div><label>分部</label><select onchange="changePracticeProgressSection(this.value)">${sections.map(s=>`<option value="${esc(s)}" ${s===state.practiceProgressSection?'selected':''}>${esc(s)}</option>`).join('')}</select></div></div>
       <label>搜尋學生</label><input value="${esc(state.practiceProgressSearch)}" placeholder="姓名／團別／分部／樂器" oninput="changePracticeProgressSearch(this.value)">
