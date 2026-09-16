@@ -1,6 +1,18 @@
 (()=>{
   const teacherAccount=()=>state.me?.role!=="admin"&&["teacher","sectionTeacher","privateTeacher"].includes(state.me?.role)||state.me?.role!=="admin"&&!!state.me?.capabilities?.teacherSettings;
   const cap=()=>state.me?.capabilities||{};
+  const detailPages=new Set(["section","ensemble","comprehensive","private","practiceProgress"]);
+  function mountTeacherBack(){
+    if(!teacherAccount()||!detailPages.has(state.page)||document.getElementById("teacherHomeBack"))return;
+    const main=document.querySelector(".main");if(!main)return;
+    const btn=document.createElement("button");
+    btn.id="teacherHomeBack";btn.className="secondary";
+    btn.setAttribute("aria-label","返回今日教學");
+    btn.style.cssText="width:auto;margin:0 0 12px 0;padding:9px 14px;border-radius:999px;font-weight:800;display:inline-flex;align-items:center;gap:6px";
+    btn.innerHTML="← 返回今日教學";
+    btn.onclick=()=>go("teacherHome");
+    main.prepend(btn);
+  }
 
   function courseCard(page,icon,title,desc,enabled){
     if(!enabled)return "";
@@ -53,7 +65,9 @@
       document.getElementById("app").innerHTML=shell(teacherHomePage());
       return;
     }
-    return previousRender();
+    const result=previousRender();
+    setTimeout(mountTeacherBack,0);
+    return result;
   };
 
   if(teacherAccount()){
