@@ -21,7 +21,7 @@
     return (state.practiceProgressData?.items||[]).filter(x=>{
       if(state.practiceProgressGroup!=="全部"&&String(x.groupName)!==state.practiceProgressGroup)return false;
       if(state.practiceProgressSection!=="全部"&&String(x.section)!==state.practiceProgressSection)return false;
-      if(q&&!\`${x.name} ${x.groupName} ${x.section} ${x.instrument} ${x.grade}\`.toLowerCase().includes(q))return false;
+      if(q&&!`${x.name} ${x.groupName} ${x.section} ${x.instrument} ${x.grade}`.toLowerCase().includes(q))return false;
       const active=Number(x.activeDays||0),rate=Number(x.practiceRatePercent||0);
       if(status==="尚未練習"&&active!==0)return false;
       if(status==="未達標"&&!(active>0&&rate<80))return false;
@@ -74,24 +74,24 @@
 
   function practiceProgressPage(){
     const d=state.practiceProgressData;
-    if(!d)return \`<div class="card"><h2>📚 自主練習${isAdmin()?'月報':'進度'}</h2><div class="notice">正在讀取學生練習資料…</div></div>\`;
+    if(!d)return `<div class="card"><h2>📚 自主練習${isAdmin()?'月報':'進度'}</h2><div class="notice">正在讀取學生練習資料…</div></div>`;
     const groups=["全部",...new Set((d.items||[]).map(x=>String(x.groupName)).filter(Boolean))];
     const sections=["全部",...new Set((d.items||[]).map(x=>String(x.section)).filter(Boolean))];
     const all=(d.items||[]),items=filteredItems();
     const counts={none:all.filter(x=>Number(x.activeDays||0)===0).length,below:all.filter(x=>Number(x.activeDays||0)>0&&Number(x.practiceRatePercent||0)<80).length,ok:all.filter(x=>Number(x.practiceRatePercent||0)>=80).length};
-    const filterBtn=(key,label,count)=>\`<button class="secondary" style="width:auto;padding:8px 11px;margin:3px;font-weight:800;${state.practiceProgressStatus===key?'background:#eef2ff;border-width:2px':''}" onclick="changePracticeProgressStatus('${key}')">${label}${count==null?'':' '+count}</button>\`;
-    const rows=items.map(x=>{const active=Number(x.activeDays||0),rate=Number(x.practiceRatePercent||0),gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),status=active===0?'🔴 尚未練習':gap>=7?`🔴 ${gap}天未練習`:gap>=3?`🟡 ${gap}天未練習`:rate<80?'🟡 未達標':'🟢 已達標';return \`<div class="item" style="align-items:center"><div style="min-width:0"><b>${esc(x.name)} <span style="font-size:13px">${status}</span></b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.instrument)}<br>${active} 天｜${Number(x.totalMinutes||0)} 分鐘｜截至目前目標 ${Number(x.effectiveTargetDays||x.targetDays||0)} 天｜最近 ${esc(x.lastPracticeDate||'尚無紀錄')}</small></div><button class="secondary" style="width:auto;padding:7px 10px;margin:0" onclick="togglePracticeProgressDetail('${esc(x.studentId)}')">›</button></div>${detailHtml(x)}\`}).join("");
-    return \`${!isAdmin()?'<button class="secondary" style="width:auto;margin:0 0 12px;padding:9px 14px;border-radius:999px;font-weight:800" onclick="go(\\'teacherHome\\')">← 返回今日教學</button>':''}
+    const filterBtn=(key,label,count)=>`<button class="secondary" style="width:auto;padding:8px 11px;margin:3px;font-weight:800;${state.practiceProgressStatus===key?'background:#eef2ff;border-width:2px':''}" onclick="changePracticeProgressStatus('${key}')">${label}${count==null?'':' '+count}</button>`;
+    const rows=items.map(x=>{const active=Number(x.activeDays||0),rate=Number(x.practiceRatePercent||0),gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),status=active===0?'🔴 尚未練習':gap>=7?`🔴 ${gap}天未練習`:gap>=3?`🟡 ${gap}天未練習`:rate<80?'🟡 未達標':'🟢 已達標';return `<div class="item" style="align-items:center"><div style="min-width:0"><b>${esc(x.name)} <span style="font-size:13px">${status}</span></b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.instrument)}<br>${active} 天｜${Number(x.totalMinutes||0)} 分鐘｜截至目前目標 ${Number(x.effectiveTargetDays||x.targetDays||0)} 天｜最近 ${esc(x.lastPracticeDate||'尚無紀錄')}</small></div><button class="secondary" style="width:auto;padding:7px 10px;margin:0" onclick="togglePracticeProgressDetail('${esc(x.studentId)}')">›</button></div>${detailHtml(x)}`}).join("");
+    return `${!isAdmin()?'<button class="secondary" style="width:auto;margin:0 0 12px;padding:9px 14px;border-radius:999px;font-weight:800" onclick="go(\'teacherHome\')">← 返回今日教學</button>':''}
     <div class="card hero"><h2>📚 自主練習${isAdmin()?'月報':'進度'}</h2>
       <div class="notice">達標率依「截至目前日期」動態計算；並優先顯示尚無紀錄、7 天以上未練習及未達標學生。</div>
       <label>月份</label><input type="month" value="${esc(state.practiceProgressMonth)}" onchange="changePracticeProgressMonth(this.value)">
       <div class="grid"><div class="kpi"><b>${all.length}</b><span>授課學生</span></div><div class="kpi"><b>${all.length-counts.none}</b><span>已有練習</span></div><div class="kpi"><b>${counts.none}</b><span>尚未練習</span></div><div class="kpi"><b>${counts.ok}</b><span>已達標</span></div></div>
       <div style="margin-top:10px">${filterBtn('全部','全部',all.length)}${filterBtn('尚未練習','🔴 尚未練習',counts.none)}${filterBtn('未達標','🟡 未達標',counts.below)}${filterBtn('已達標','🟢 已達標',counts.ok)}</div>
-      <div class="row2"><div><label>團別</label><select onchange="changePracticeProgressGroup(this.value)">${groups.map(g=>\`<option value="${esc(g)}" ${g===state.practiceProgressGroup?'selected':''}>${esc(g==='全部'?'全部團別':g+'團')}</option>\`).join('')}</select></div><div><label>分部</label><select onchange="changePracticeProgressSection(this.value)">${sections.map(v=>\`<option value="${esc(v)}" ${v===state.practiceProgressSection?'selected':''}>${esc(v)}</option>\`).join('')}</select></div></div>
+      <div class="row2"><div><label>團別</label><select onchange="changePracticeProgressGroup(this.value)">${groups.map(g=>`<option value="${esc(g)}" ${g===state.practiceProgressGroup?'selected':''}>${esc(g==='全部'?'全部團別':g+'團')}</option>`).join('')}</select></div><div><label>分部</label><select onchange="changePracticeProgressSection(this.value)">${sections.map(v=>`<option value="${esc(v)}" ${v===state.practiceProgressSection?'selected':''}>${esc(v)}</option>`).join('')}</select></div></div>
       <label>搜尋學生</label><input value="${esc(state.practiceProgressSearch)}" placeholder="姓名／團別／分部／樂器" oninput="changePracticeProgressSearch(this.value)">
       ${isAdmin()?'<button class="secondary" style="width:100%;margin-top:10px" onclick="exportPracticeMonthlySummary()">📥 匯出月統計 CSV</button>':''}
     </div>
-    <div class="card"><h2>學生列表 <span class="muted" style="font-size:14px">${items.length} 人</span></h2>${rows||'<div class="notice">目前沒有符合條件的學生。</div>'}</div>\`;
+    <div class="card"><h2>學生列表 <span class="muted" style="font-size:14px">${items.length} 人</span></h2>${rows||'<div class="notice">目前沒有符合條件的學生。</div>'}</div>`;
   }
 
   window.changePracticeProgressStatus=function(v){state.practiceProgressStatus=String(v||"全部");state.practiceProgressSelected="";render()};
