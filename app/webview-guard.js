@@ -50,7 +50,7 @@
                                           appendScript("/system-backup.js?v=20260915-1225",()=>
                                             appendScript("/parent-semester-attendance.js?v=20260917-0300",()=>
                                               appendScript("/parent-home-summary.js?v=20260917-0105",()=>
-                                                appendScript("/school-access.js?v=20260915-1915",()=>
+                                                appendScript("/school-access.js?v=20260917-0330",()=>
                                                   appendScript("/school-access-refresh-fix.js?v=20260915-2340")
                                                 )
                                               )
