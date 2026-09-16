@@ -29,7 +29,8 @@
     return note+originalSectionPage();
   };
 
-  state.ensembleExisting=state.ensembleExisting||null; state.ensembleExistingKey=state.ensembleExistingKey||""; state.ensembleLoading=false;\n  window.__ensembleGroupIndex=0;
+  state.ensembleExisting=state.ensembleExisting||null; state.ensembleExistingKey=state.ensembleExistingKey||""; state.ensembleLoading=false;
+  window.__ensembleGroupIndex=0;
   window.changeEnsembleGroup=function(v){window.__ensembleGroupIndex=Number(v)||0;state.ensembleExisting=null;state.ensembleExistingKey="";render();setTimeout(()=>loadEnsembleExisting(),0)};
   window.loadEnsembleExisting=async function(){const groups=Array.isArray(state.me.ensembleGroups)?state.me.ensembleGroups.filter(x=>["A","B"].includes(x)):[],g=groups[Math.min(window.__ensembleGroupIndex,Math.max(groups.length-1,0))],date=$("eDate")?.value;if(!g||!date)return;state.ensembleLoading=true;state.ensembleExistingKey=[date,g].join("|");render();try{state.ensembleExisting=await api(`/api/ensemble-attendance?sessionDate=${encodeURIComponent(date)}&groupName=${encodeURIComponent(g)}`)}catch(e){state.ensembleExisting={items:[]};toast("❌ "+e.message)}state.ensembleLoading=false;render()};
   window.changeEnsembleDate=function(){state.ensembleExisting=null;state.ensembleExistingKey="";setTimeout(()=>loadEnsembleExisting(),0)};
