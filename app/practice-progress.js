@@ -21,7 +21,7 @@
       if(state.practiceProgressSection!=="全部"&&String(x.section)!==state.practiceProgressSection)return false;
       if(q&&!`${x.name} ${x.groupName} ${x.section} ${x.instrument} ${x.grade}`.toLowerCase().includes(q))return false;
       return true;
-    });
+    }).sort((a,b)=>{const bm=Number(b.totalMinutes||0),am=Number(a.totalMinutes||0);if(bm!==am)return bm-am;const bd=Number(b.qualifiedDays||0),ad=Number(a.qualifiedDays||0);if(bd!==ad)return bd-ad;return String(a.name||"").localeCompare(String(b.name||""),"zh-Hant")});
   }
 
   function progressBadge(x){
