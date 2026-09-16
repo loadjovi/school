@@ -49,6 +49,11 @@ app.http("practiceProgress",{
     const {month,start,end}=monthRange(clean(request.query.get("month"),12));
     const qualifiedMinutes=Math.max(1,Number(process.env.PRACTICE_QUALIFIED_MINUTES||15));
     const targetDays=Math.max(1,Number(process.env.PRACTICE_TARGET_DAYS||30));
+    const now=new Date(),taipeiToday=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(now);
+    const currentMonth=taipeiToday.slice(0,7),dayOfMonth=Number(taipeiToday.slice(8,10));
+    const daysInMonth=new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).getDate();
+    const elapsedDays=month<currentMonth?daysInMonth:month===currentMonth?dayOfMonth:0;
+    const effectiveTargetDays=Math.max(1,Math.min(targetDays,elapsedDays||targetDays));
 
     let students=[];
     if(a.role==="admin"){
@@ -87,7 +92,7 @@ app.http("practiceProgress",{
       const activeDates=new Set(records.map(r=>r.practiceDate).filter(Boolean));
       const totalMinutes=records.reduce((n,r)=>n+r.minutes,0);
       const qualifiedDays=qualifiedDates.size;
-      const rate=Math.min(qualifiedDays/targetDays,1);
+      const rate=Math.min(qualifiedDays/effectiveTargetDays,1);
       const score10=Math.round(rate*100)/10;
       return {
         ...s,
@@ -96,11 +101,13 @@ app.http("practiceProgress",{
         totalMinutes,
         averageMinutes:activeDates.size?Math.round(totalMinutes/activeDates.size):0,
         targetDays,
+        effectiveTargetDays,
         qualifiedMinutes,
         practiceRate:rate,
         practiceRatePercent:Math.round(rate*1000)/10,
         practiceScore10:score10,
         lastPracticeDate:records[0]?.practiceDate||"",
+        daysSincePractice:records[0]?.practiceDate?Math.max(0,Math.floor((new Date(taipeiToday+"T12:00:00Z")-new Date(records[0].practiceDate+"T12:00:00Z"))/86400000)):null,
         recent:records.slice(0,8),
         records,
         sourceMatchCount:records.length,
@@ -110,6 +117,6 @@ app.http("practiceProgress",{
     }));
 
     items.sort((a,b)=>a.practiceRate-b.practiceRate||String(a.groupName).localeCompare(String(b.groupName),"zh-Hant")||String(a.section).localeCompare(String(b.section),"zh-Hant")||String(a.name).localeCompare(String(b.name),"zh-Hant"));
-    return json({month,qualifiedMinutes,targetDays,scoreWeight:10,items});
+    return json({month,qualifiedMinutes,targetDays,effectiveTargetDays,taipeiToday,scoreWeight:10,items});
   }
 });
