@@ -111,6 +111,7 @@
   const previousGo=go;
   go=async function(p){
     if(p==='practiceProgress'&&canView()){
+      state.practiceProgressStatus='全部';state.practiceProgressGroup='全部';state.practiceProgressSection='全部';state.practiceProgressSearch='';state.practiceProgressSelected='';
       state.page='practiceProgress';
       try{await loadPracticeProgress()}catch(e){toast('❌ '+e.message)}
       render();return;
