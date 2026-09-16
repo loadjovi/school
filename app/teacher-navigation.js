@@ -66,7 +66,10 @@
     ].filter(Boolean).join("");
     const groupSchedule=weekday===1||weekday===3?"A團分部課":weekday===2?"B團分部課＋A／B團合奏課":weekday===4?"B團分部課":weekday===5?"儲備團分部課":"無固定團體課";
     const practiceAll=(state.teacherAttention?.items||[]).map(x=>{const gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),rate=Number(x.practiceRatePercent||0),active=Number(x.activeDays||0);return {...x,_gap:gap,_rate:rate,_active:active}});
-    const practiceAttentionAll=practiceAll.filter(x=>x._gap>=3||x._rate<80).sort((a,b)=>b._gap-a._gap||a._rate-b._rate);
+    // 關注排序：優先抓出「原本有練習、但近期中斷」的學生，避免本月從未練習者長期佔滿首頁。
+    // 權重：有練習且 >=7 天未練 > 有練習且 3–6 天未練 > 本月尚未練習 > 其他未達標。
+    const attentionRank=x=>x._active>0&&x._gap>=7?0:x._active>0&&x._gap>=3?1:x._active===0?2:3;
+    const practiceAttentionAll=practiceAll.filter(x=>x._gap>=3||x._rate<80).sort((a,b)=>attentionRank(a)-attentionRank(b)||b._gap-a._gap||b._active-a._active||a._rate-b._rate);
     const practiceAttention=practiceAttentionAll.slice(0,5);
     const stablePractice=practiceAll.filter(x=>x._gap<3&&x._rate>=80).length;
     const privateIds=new Set((state.me?.privateStudentIds||[]).map(String)),latestPrivate=new Map();for(const r of todayRecords.filter(x=>["private","privateLesson"].includes(String(x.classType))))latestPrivate.set(String(r.studentId),r);
@@ -75,7 +78,7 @@
     return `<div class="card hero"><h2>🎓 今日教學</h2><div class="notice"><b>${esc(date)}｜${esc(todayName)}</b><br>今日固定課程：${esc(groupSchedule)}。首頁只顯示今天符合老師授課權限的課程。</div></div>
       <div class="card"><h2>今日點名完成度 <span style="font-size:15px">${completedTasks}/${totalTasks||0}</span></h2><div style="height:10px;background:#eef1f4;border-radius:999px;overflow:hidden;margin:8px 0 12px"><div style="height:100%;width:${pct}%;background:#4662b5;border-radius:999px"></div></div>${taskHtml}</div>
       <div class="card"><h2>今日課程</h2>${teachingCards||'<div class="notice">今天沒有符合您授課權限的固定課程。</div>'}</div>
-      <div class="card"><h2>需要關注 <span class="badge warn">${practiceAttentionAll.length}</span></h2><div class="notice">依最近練習狀態判斷：連續 3 天以上未練習或目前進度未達標會列入。${stablePractice?`另有 ${stablePractice} 位學生近期穩定練習。`:""}</div>${attentionHtml}${practiceAttentionAll.length>5?`<small style="margin:8px 2px;display:block">目前先顯示最需關注的 5 人，完整名單請進入下方查看。</small>`:""}${progressCard}</div>`;
+      <div class="card"><h2>需要關注 <span class="badge warn">${practiceAttentionAll.length}</span></h2><div class="notice">優先顯示原本有自主練習、但近期中斷的學生：7 天以上未練優先，其次為 3–6 天未練，再顯示本月尚未開始與其他未達標學生。${stablePractice?`另有 ${stablePractice} 位學生近期穩定練習。`:""}</div>${attentionHtml}${practiceAttentionAll.length>5?`<small style="margin:8px 2px;display:block">目前先顯示最需關注的 5 人，完整名單請進入下方查看。</small>`:""}${progressCard}</div>`;
   }
 
   const previousNav=nav;
