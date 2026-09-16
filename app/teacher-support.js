@@ -29,23 +29,27 @@
     return note+originalSectionPage();
   };
 
-  window.__ensembleGroupIndex=0;
-  window.changeEnsembleGroup=function(v){window.__ensembleGroupIndex=Number(v)||0;render()};
+  state.ensembleExisting=state.ensembleExisting||null; state.ensembleExistingKey=state.ensembleExistingKey||""; state.ensembleLoading=false;\n  window.__ensembleGroupIndex=0;
+  window.changeEnsembleGroup=function(v){window.__ensembleGroupIndex=Number(v)||0;state.ensembleExisting=null;state.ensembleExistingKey="";render();setTimeout(()=>loadEnsembleExisting(),0)};
+  window.loadEnsembleExisting=async function(){const groups=Array.isArray(state.me.ensembleGroups)?state.me.ensembleGroups.filter(x=>["A","B"].includes(x)):[],g=groups[Math.min(window.__ensembleGroupIndex,Math.max(groups.length-1,0))],date=$("eDate")?.value;if(!g||!date)return;state.ensembleLoading=true;state.ensembleExistingKey=[date,g].join("|");render();try{state.ensembleExisting=await api(`/api/ensemble-attendance?sessionDate=${encodeURIComponent(date)}&groupName=${encodeURIComponent(g)}`)}catch(e){state.ensembleExisting={items:[]};toast("❌ "+e.message)}state.ensembleLoading=false;render()};
+  window.changeEnsembleDate=function(){state.ensembleExisting=null;state.ensembleExistingKey="";setTimeout(()=>loadEnsembleExisting(),0)};
   window.ensemblePage=function(){
     const groups=Array.isArray(state.me.ensembleGroups)?state.me.ensembleGroups.filter(x=>["A","B"].includes(x)):[];
     const today=new Date().toISOString().slice(0,10);
     if(!groups.length)return `<div class="card"><h2>合奏課點名</h2><div class="notice">此老師尚未設定 A／B 團合奏課權限。</div></div>`;
     const idx=Math.min(window.__ensembleGroupIndex,groups.length-1),g=groups[idx];
     const students=state.students.filter(s=>String(s.groupName)===g);
+    const loaded=state.ensembleExistingKey===[today,g].join("|")?state.ensembleExisting:null,saved=new Map((loaded?.items||[]).map(x=>[String(x.studentId),String(x.status||"present")])),count=saved.size,missing=Math.max(students.length-count,0);
+    const statusBox=state.ensembleLoading?'<div class="notice" style="margin-top:10px">⏳ 正在確認點名紀錄…</div>':loaded?(count?`<div class="notice" style="margin-top:10px">✅ <b>已點名</b>｜已儲存 ${count}/${students.length} 人${missing?`，⚠️ 尚有 ${missing} 人未有紀錄`:""}。</div>`:'<div class="notice" style="margin-top:10px">⚠️ <b>尚未點名</b>｜此日期尚無儲存紀錄。</div>'):'<div class="notice" style="margin-top:10px">ℹ️ 正在確認是否已有點名紀錄。</div>';
     const selector=groups.length>1?`<label>合奏課</label><select onchange="changeEnsembleGroup(this.value)">${groups.map((x,i)=>`<option value="${i}" ${i===idx?"selected":""}>${esc(x)}團｜四分部合班</option>`).join("")}</select>`:`<div class="notice"><b>${esc(g)}團｜四分部合班</b></div>`;
-    return `<div class="card"><h2>合奏課點名</h2>${selector}<label>上課日期</label><input id="eDate" type="date" value="${today}"><div class="notice" style="margin-top:10px">合奏課會列出 ${esc(g)} 團小提一、小提二、中提、大提等全部在團學生；固定週二 12:30–13:20，如補課仍可照實選日期。</div></div><div class="card"><h2>${esc(g)}團學生名單</h2>${students.length?students.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.section||"待確認")}｜${esc(s.instrument)}｜${esc(s.grade)}</small></div><select id="ens_${s.studentId}" class="status-select"><option value="present">出席</option><option value="late">遲到</option><option value="leave">請假</option><option value="absent">缺席</option><option value="cancelled">停課</option></select></div>`).join(""):`<div class="notice">目前此團沒有學生資料。</div>`}${students.length?`<button class="primary" onclick="saveEnsemble()">儲存合奏課點名</button>`:""}</div>`;
+    return `<div class="card"><h2>合奏課點名</h2>${selector}<label>上課日期</label><input id="eDate" type="date" value="${today}" onchange="changeEnsembleDate(this.value)">${statusBox}<div class="notice" style="margin-top:10px">合奏課會列出 ${esc(g)} 團小提一、小提二、中提、大提等全部在團學生；固定週二 12:30–13:20，如補課仍可照實選日期。</div></div><div class="card"><h2>${esc(g)}團學生名單</h2>${students.length?students.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.section||"待確認")}｜${esc(s.instrument)}｜${esc(s.grade)}</small></div><select id="ens_${s.studentId}" class="status-select"><option value="present" ${saved.get(String(s.studentId))==="present"?"selected":""}>出席</option><option value="late" ${saved.get(String(s.studentId))==="late"?"selected":""}>遲到</option><option value="leave" ${saved.get(String(s.studentId))==="leave"?"selected":""}>請假</option><option value="absent" ${saved.get(String(s.studentId))==="absent"?"selected":""}>缺席</option><option value="cancelled" ${saved.get(String(s.studentId))==="cancelled"?"selected":""}>停課</option></select></div>`).join(""):`<div class="notice">目前此團沒有學生資料。</div>`}${students.length?`<button class="primary" onclick="saveEnsemble()">儲存合奏課點名</button>`:""}</div>`;
   };
   window.saveEnsemble=async function(){
     const groups=Array.isArray(state.me.ensembleGroups)?state.me.ensembleGroups.filter(x=>["A","B"].includes(x)):[];
     const g=groups[Math.min(window.__ensembleGroupIndex,groups.length-1)];
     const students=state.students.filter(s=>String(s.groupName)===g);
     const items=students.map(s=>({studentId:s.studentId,status:$(`ens_${s.studentId}`).value,minutes:$(`ens_${s.studentId}`).value==="absent"?0:50}));
-    try{await api("/api/ensemble-attendance",{method:"POST",body:JSON.stringify({sessionDate:$("eDate").value,groupName:g,items})});toast(`✅ ${g}團合奏課點名已儲存`)}catch(e){toast("❌ "+e.message)}
+    try{await api("/api/ensemble-attendance",{method:"POST",body:JSON.stringify({sessionDate:$("eDate").value,groupName:g,items})});toast(`✅ ${g}團合奏課點名已儲存`);await loadEnsembleExisting()}catch(e){toast("❌ "+e.message)}
   };
 
   privatePage=function(){
