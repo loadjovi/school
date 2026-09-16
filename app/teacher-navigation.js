@@ -3,7 +3,8 @@
   const cap=()=>state.me?.capabilities||{};
   state.teacherTodayStatus=state.teacherTodayStatus||null;
   state.teacherTodayStatusDate=state.teacherTodayStatusDate||"";
-  async function loadTeacherTodayStatus(date){try{state.teacherTodayStatus=await api(`/api/attendance-report?month=${encodeURIComponent(date.slice(0,7))}`);state.teacherTodayStatusDate=date;render()}catch{state.teacherTodayStatus=null;state.teacherTodayStatusDate=date}}
+  state.teacherAttention=state.teacherAttention||null;
+  async function loadTeacherTodayStatus(date){try{const [att,practice]=await Promise.all([api(`/api/attendance-report?month=${encodeURIComponent(date.slice(0,7))}`),api(`/api/practice-progress?month=${encodeURIComponent(date.slice(0,7))}`)]);state.teacherTodayStatus=att;state.teacherAttention=practice;state.teacherTodayStatusDate=date;render()}catch{state.teacherTodayStatus=null;state.teacherAttention=null;state.teacherTodayStatusDate=date}}
   const detailPages=new Set(["section","ensemble","comprehensive","private","practiceProgress"]);
   function mountTeacherBack(){
     if(!teacherAccount()||!detailPages.has(state.page)||document.getElementById("teacherHomeBack"))return;
@@ -64,11 +65,14 @@
       courseCard("private","👤","個別課","彈性授課｜上完即記錄，本月堂數與久未授課提醒",c.private,null)
     ].filter(Boolean).join("");
     const groupSchedule=weekday===1||weekday===3?"A團分部課":weekday===2?"B團分部課＋A／B團合奏課":weekday===4?"B團分部課":weekday===5?"儲備團分部課":"無固定團體課";
-    const progressCard=courseCard("practiceProgress","📚","自主練習進度","查看家長回填的練習天數、分鐘、內容與最近練習紀錄",true);
+    const practiceAttention=(state.teacherAttention?.items||[]).map(x=>{const gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),rate=Number(x.practiceRatePercent||0);return {...x,_gap:gap,_rate:rate}}).filter(x=>x._gap>=3||x._rate<80).sort((a,b)=>b._gap-a._gap||a._rate-b._rate).slice(0,5);
+    const privateIds=new Set((state.me?.privateStudentIds||[]).map(String)),latestPrivate=new Map();for(const r of todayRecords.filter(x=>["private","privateLesson"].includes(String(x.classType))))latestPrivate.set(String(r.studentId),r);
+    const attentionHtml=practiceAttention.length?practiceAttention.map(x=>`<div class="item" style="padding:10px 12px"><div><b>${x._gap>=7?"🔴":x._gap>=3?"🟡":"⚠️"} ${esc(x.name)}</b><small>${x._gap===999?"本月尚無自主練習":x._gap>=3?`${x._gap} 天未練習`:`目前達標率 ${x._rate}%`}｜${esc(x.groupName)}團 ${esc(x.section)}</small></div></div>`).join(""):`<div class="notice">目前沒有明顯需要關注的自主練習紀錄。</div>`;
+    const progressCard=courseCard("practiceProgress","📚","查看全部自主練習","查看完整練習進度、近期未練習與學生明細",true);
     return `<div class="card hero"><h2>🎓 今日教學</h2><div class="notice"><b>${esc(date)}｜${esc(todayName)}</b><br>今日固定課程：${esc(groupSchedule)}。首頁只顯示今天符合老師授課權限的課程。</div></div>
-      <div class="card"><h2>今日完成度 <span style="font-size:15px">${completedTasks}/${totalTasks||0}</span></h2><div style="height:10px;background:#eef1f4;border-radius:999px;overflow:hidden;margin:8px 0 12px"><div style="height:100%;width:${pct}%;background:#4662b5;border-radius:999px"></div></div>${taskHtml}</div>
+      <div class="card"><h2>今日點名完成度 <span style="font-size:15px">${completedTasks}/${totalTasks||0}</span></h2><div style="height:10px;background:#eef1f4;border-radius:999px;overflow:hidden;margin:8px 0 12px"><div style="height:100%;width:${pct}%;background:#4662b5;border-radius:999px"></div></div>${taskHtml}</div>
       <div class="card"><h2>今日課程</h2>${teachingCards||'<div class="notice">今天沒有符合您授課權限的固定課程。</div>'}</div>
-      <div class="card"><h2>需要關注</h2><div class="notice">自主練習頁已依「尚未練習 → 未達標 → 已達標」排序，優先查看需要關注的學生。</div>${progressCard}</div>`;
+      <div class="card"><h2>需要關注 <span class="badge warn">${practiceAttention.length}</span></h2>${attentionHtml}${progressCard}</div>`;
   }
 
   const previousNav=nav;
