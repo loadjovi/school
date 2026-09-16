@@ -54,7 +54,7 @@
     if(!assignments.length){
       return `<div class="card"><h2>分部團練點名</h2><div class="notice">此老師尚未設定「團別＋分部」權限，請管理員設定 SECTION_TEACHER_MAP_JSON。</div></div>`;
     }
-    const autoIdx=assignmentIndexForDate(today);
+    const autoIdx=assignmentIndexForDate(today); if(autoIdx>=0 && autoIdx!==window.__sectionClassIndex) window.__sectionClassIndex=autoIdx;
     const idx=Math.min(window.__sectionClassIndex,assignments.length-1);
     const current=assignments[idx]||assignments[0];
     const groupName=String(current.groupName||current.group||"").trim().replace(/團$/,"");
