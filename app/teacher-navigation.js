@@ -50,6 +50,13 @@
     const ensembleExpected=hasTodayEnsemble?(state.teacherTodayStatus?.items||[]).filter(x=>ensembleGroups.includes(String(x.groupName))).length:0;
     const comprehensiveExpected=hasTodayComprehensive?(state.teacherTodayStatus?.items||[]).length:0;
     const privateExpected=c.private?(state.me?.privateStudents||state.me?.privateStudentIds||[]).length:0;
+    const taskRows=[];
+    const addTask=(title,p)=>{if(!p||!p.expected)return;const left=Math.max(0,p.expected-p.recorded);taskRows.push({title,done:left===0,text:left===0?`已完成 ${p.recorded}/${p.expected}`:p.recorded?`尚有 ${left} 人未完成 (${p.recorded}/${p.expected})`:`尚未點名 0/${p.expected}`})};
+    if(c.section&&hasTodaySection)addTask(sectionGroup+"團分部課",progress("section",sectionGroup,sectionExpected));
+    if(c.ensemble&&hasTodayEnsemble)addTask("A／B團合奏課",progress("ensemble","",ensembleExpected));
+    if(hasTodayComprehensive)addTask("弦樂團體課",progress("comprehensive","",comprehensiveExpected));
+    const completedTasks=taskRows.filter(x=>x.done).length,totalTasks=taskRows.length,pct=totalTasks?Math.round(completedTasks/totalTasks*100):100;
+    const taskHtml=taskRows.length?taskRows.map(x=>`<div class="item" style="padding:10px 12px"><div><b>${x.done?"✅":"🔴"} ${esc(x.title)}</b><small>${esc(x.text)}</small></div></div>`).join(""):`<div class="notice">今天沒有需要固定點名的團體課；個別課採實際授課後登記。</div>`;
     const teachingCards=[
       courseCard("section","🎼",sectionGroup?sectionGroup+"團分部課":"分部課",sectionGroup?todayName+"｜依老師設定的團別＋分部帶入學生點名":"",c.section&&hasTodaySection,progress("section",sectionGroup,sectionExpected)),
       courseCard("ensemble","🎻","A／B團合奏課","今天 12:30–13:20｜依老師設定的 A／B 團帶入學生",c.ensemble&&hasTodayEnsemble,progress("ensemble","",ensembleExpected)),
@@ -59,8 +66,9 @@
     const groupSchedule=weekday===1||weekday===3?"A團分部課":weekday===2?"B團分部課＋A／B團合奏課":weekday===4?"B團分部課":weekday===5?"儲備團分部課":"無固定團體課";
     const progressCard=courseCard("practiceProgress","📚","自主練習進度","查看家長回填的練習天數、分鐘、內容與最近練習紀錄",true);
     return `<div class="card hero"><h2>🎓 今日教學</h2><div class="notice"><b>${esc(date)}｜${esc(todayName)}</b><br>今日固定課程：${esc(groupSchedule)}。首頁只顯示今天符合老師授課權限的課程。</div></div>
+      <div class="card"><h2>今日完成度 <span style="font-size:15px">${completedTasks}/${totalTasks||0}</span></h2><div style="height:10px;background:#eef1f4;border-radius:999px;overflow:hidden;margin:8px 0 12px"><div style="height:100%;width:${pct}%;background:#4662b5;border-radius:999px"></div></div>${taskHtml}</div>
       <div class="card"><h2>今日課程</h2>${teachingCards||'<div class="notice">今天沒有符合您授課權限的固定課程。</div>'}</div>
-      <div class="card"><h2>學生學習狀況</h2>${progressCard}</div>`;
+      <div class="card"><h2>需要關注</h2><div class="notice">自主練習頁已依「尚未練習 → 未達標 → 已達標」排序，優先查看需要關注的學生。</div>${progressCard}</div>`;
   }
 
   const previousNav=nav;
