@@ -48,7 +48,7 @@
                                       appendScript("/private-lesson-confirmation.js?v=20260917-0215",()=>
                                         appendScript("/admin-operations.js?v=20260915-0915",()=>
                                           appendScript("/system-backup.js?v=20260915-1225",()=>
-                                            appendScript("/parent-semester-attendance.js?v=20260917-0245",()=>
+                                            appendScript("/parent-semester-attendance.js?v=20260917-0300",()=>
                                               appendScript("/parent-home-summary.js?v=20260917-0105",()=>
                                                 appendScript("/school-access.js?v=20260915-1915",()=>
                                                   appendScript("/school-access-refresh-fix.js?v=20260915-2340")
