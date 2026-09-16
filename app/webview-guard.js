@@ -43,7 +43,7 @@
                             appendScript("/attendance-edit.js",()=>{
                               appendScript("/teacher-navigation.js?v=20260916-2305",()=>{
                                 appendScript("/comprehensive-support.js?v=20260915-0915",()=>{
-                                  appendScript("/practice-progress.js?v=20260916-2305",()=>{
+                                  appendScript("/practice-progress.js?v=20260916-2335",()=>{
                                     appendScript("/practice-timer.js?v=20260915-1500",()=>{
                                       appendScript("/private-lesson-confirmation.js?v=20260915-0633",()=>
                                         appendScript("/admin-operations.js?v=20260915-0915",()=>
