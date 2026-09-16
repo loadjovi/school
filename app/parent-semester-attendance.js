@@ -41,7 +41,7 @@
   }
   function classCard(type,label,icon,d){
     const x=d.stats?.[type]||{};
-    return `<div class="card"><div class="section-title"><h2>${icon} ${label}</h2><span class="badge ${!Number(x.total||0)?"":(Number(x.absent||0)||Number(x.leave||0)||Number(x.late||0))?"warn":"ok"}">${!Number(x.total||0)?"尚無課程":Number(x.absent||0)||Number(x.leave||0)||Number(x.late||0)?"有異常紀錄":"全勤"}</span></div><div class="notice">${esc(statsLine(x))}</div><button class="secondary" style="width:100%;margin-top:10px" onclick="toggleParentSemesterClass('${type}')">${state.parentSemesterExpanded===type?"收合日期明細":"查看整學期日期明細"}</button>${detailRows(type,d)}</div>`;
+    return `<div class="card"><div class="section-title"><h2>${icon} ${label}</h2><span class="badge ${!Number(x.total||0)?"":(Number(x.absent||0)||Number(x.leave||0)||Number(x.late||0))?"warn":"ok"}">${!Number(x.total||0)?"尚無課程":Number(x.absent||0)||Number(x.leave||0)||Number(x.late||0)?"非全勤":"全勤"}</span></div><div class="notice">${esc(statsLine(x))}</div><button class="secondary" style="width:100%;margin-top:10px" onclick="toggleParentSemesterClass('${type}')">${state.parentSemesterExpanded===type?"收合日期明細":"查看整學期日期明細"}</button>${detailRows(type,d)}</div>`;
   }
   function semesterAttendanceHtml(){
     if(!state.student)return "";
@@ -53,7 +53,7 @@
       return `<div class="card"><h2>📅 整學期上課紀錄</h2><div class="notice">正在整理本學期出勤資料…</div></div>`;
     }
     const o=d.stats?.overall||{};
-    return `<div class="card hero"><div class="section-title"><h2>📅 整學期上課紀錄</h2><span class="badge ${Number(o.absent||0)||Number(o.leave||0)||Number(o.late||0)?"warn":"ok"}">${Number(o.absent||0)||Number(o.leave||0)||Number(o.late||0)?"有異常紀錄":"紀錄正常"}</span></div><div class="notice"><b>${semesterTitle(d)}</b><br>統計至 ${esc(d.asOf)}<br>${esc(statsLine(o))}<br><br>以下為實際點名紀錄；遲到、請假與缺席會分開標示，不以百分比作為成績判定。</div><div class="muted" style="margin-top:10px;text-align:right">最近更新：${esc(d.asOf)}　<button class="secondary" style="padding:6px 10px;margin:0" onclick="reloadParentSemesterAttendance()">↻ 重新整理</button></div></div>
+    return `<div class="card hero"><div class="section-title"><h2>📅 整學期上課紀錄</h2><span class="badge ${Number(o.absent||0)||Number(o.leave||0)||Number(o.late||0)?"warn":"ok"}">${Number(o.absent||0)||Number(o.leave||0)||Number(o.late||0)?"非全勤":"紀錄正常"}</span></div><div class="notice"><b>${semesterTitle(d)}</b><br>統計至 ${esc(d.asOf)}<br>${esc(statsLine(o))}<br><br>以下為實際點名紀錄；遲到、請假與缺席會分開標示，不以百分比作為成績判定。</div><div class="muted" style="margin-top:10px;text-align:right">最近更新：${esc(d.asOf)}　<button class="secondary" style="padding:6px 10px;margin:0" onclick="reloadParentSemesterAttendance()">↻ 重新整理</button></div></div>
       <div class="card"><h2>🎼 本學期上課紀錄</h2></div>${classCard("section","分部課","🎼",d)}
       ${classCard("ensemble","合奏課","🎻",d)}
       ${classCard("comprehensive","綜合課（團體課）","🎶",d)}
