@@ -9,10 +9,10 @@
 
   function classKey(type){return type==="private"||type==="privateLesson"?"privateLesson":type}
   function badgeClass(status){return ["present","late"].includes(status)?"ok":status==="leave"||status==="cancelled"?"warn":"bad"}
-  function rateText(x){return x?.rate==null?"—":`${x.rate}%`}
+  function rateText(x){return !Number(x?.total||0)?"尚無課程":x?.rate==null?"—":`${x.rate}%`}
   function statsLine(x){
     x=x||{};
-    return `應到 ${x.total||0}｜到課 ${x.attended||0}｜遲到 ${x.late||0}｜請假 ${x.leave||0}｜缺席 ${x.absent||0}`;
+    if(!Number(x.total||0))return "尚無課程"; const arrived=Math.min(Number(x.total||0),Number(x.attended||0)+Number(x.late||0)); return `到課 ${arrived} / ${x.total||0}${x.late?`｜遲到 ${x.late}`:""}${x.leave?`｜請假 ${x.leave}`:""}${x.absent?`｜缺席 ${x.absent}`:""}`;
   }
   function semesterTitle(d){return `${esc(d.schoolYear||"")}學年度第${esc(d.semester||"")}學期（${esc(d.semesterName||"")}）`}
 
@@ -41,11 +41,11 @@
   }
   function classCard(type,label,icon,d){
     const x=d.stats?.[type]||{};
-    return `<div class="card"><div class="section-title"><h2>${icon} ${label}</h2><span class="badge ${x.rate==null?"warn":x.rate>=90?"ok":x.rate>=75?"warn":"bad"}">${rateText(x)}</span></div><div class="notice">${esc(statsLine(x))}</div><button class="secondary" style="width:100%;margin-top:10px" onclick="toggleParentSemesterClass('${type}')">${state.parentSemesterExpanded===type?"收合日期明細":"查看整學期日期明細"}</button>${detailRows(type,d)}</div>`;
+    return `<div class="card"><div class="section-title"><h2>${icon} ${label}</h2><span class="badge ${!Number(x.total||0)?"":x.absent?"bad":x.leave||x.late?"warn":"ok"}">${!Number(x.total||0)?"尚無課程":x.absent?`缺席 ${x.absent}`:x.leave?`請假 ${x.leave}`:x.late?`遲到 ${x.late}`:"全勤"}</span></div><div class="notice">${esc(statsLine(x))}</div><button class="secondary" style="width:100%;margin-top:10px" onclick="toggleParentSemesterClass('${type}')">${state.parentSemesterExpanded===type?"收合日期明細":"查看整學期日期明細"}</button>${detailRows(type,d)}</div>`;
   }
   function semesterAttendanceHtml(){
     if(!state.student)return "";
-    if(state.parentSemesterLoading)return `<div class="card"><h2>📅 整學期上課紀錄</h2><div class="notice">正在整理本學期出勤資料…</div></div>`;
+    if(state.parentSemesterLoading)return `<div class="card"><h2>📅 本學期上課摘要</h2><div class="notice">正在整理本學期出勤資料…</div></div>`;
     if(state.parentSemesterError)return `<div class="card"><h2>📅 整學期上課紀錄</h2><div class="error">${esc(state.parentSemesterError)}</div><button class="secondary" style="width:100%;margin-top:10px" onclick="reloadParentSemesterAttendance()">重新讀取</button></div>`;
     const d=state.parentSemesterAttendance;
     if(!d||String(d.studentId)!==String(state.student.studentId)){
@@ -53,8 +53,8 @@
       return `<div class="card"><h2>📅 整學期上課紀錄</h2><div class="notice">正在整理本學期出勤資料…</div></div>`;
     }
     const o=d.stats?.overall||{};
-    return `<div class="card hero"><div class="section-title"><h2>📅 整學期上課紀錄</h2><span class="badge ${o.rate==null?"warn":o.rate>=90?"ok":o.rate>=75?"warn":"bad"}">${rateText(o)}</span></div><div class="notice"><b>${semesterTitle(d)}</b><br>統計期間：${esc(d.start)} ～ ${esc(d.end)}（截至 ${esc(d.asOf)}）<br>${esc(statsLine(o))}<br><br>「綜合課」即本學期的「弦樂團體課」，系統只計算一次，不重複列入。</div><button class="secondary" style="width:100%;margin-top:10px" onclick="reloadParentSemesterAttendance()">🔄 更新學期紀錄</button></div>
-      ${classCard("section","分部課","🎼",d)}
+    return `<div class="card hero"><div class="section-title"><h2>📅 整學期上課紀錄</h2><span class="badge ${o.absent?"bad":o.leave||o.late?"warn":"ok"}">${o.absent?`缺席 ${o.absent}`:o.leave?`請假 ${o.leave}`:o.late?`遲到 ${o.late}`:"紀錄正常"}</span></div><div class="notice"><b>${semesterTitle(d)}</b><br>統計至 ${esc(d.asOf)}<br>${esc(statsLine(o))}<br><br>以下為實際點名紀錄；遲到、請假與缺席會分開標示，不以百分比作為成績判定。</div><div class="muted" style="margin-top:10px;text-align:right">最近更新：${esc(d.asOf)}　<button class="secondary" style="padding:6px 10px;margin:0" onclick="reloadParentSemesterAttendance()">↻ 重新整理</button></div></div>
+      <div class="card"><h2>🎼 本學期上課紀錄</h2></div>${classCard("section","分部課","🎼",d)}
       ${classCard("ensemble","合奏課","🎻",d)}
       ${classCard("comprehensive","綜合課（團體課）","🎶",d)}
       ${classCard("privateLesson","個別課","👤",d)}`;
