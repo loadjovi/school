@@ -28,7 +28,7 @@
 
   function appendScript(src,onload){const s=document.createElement("script");s.src=src;s.defer=true;if(onload)s.onload=onload;document.body.appendChild(s)}
   function loadApp(){
-    appendScript("/app-v3.js?v=20260916-2145",()=>{
+    appendScript("/app-v3.js?v=20260917-0215",()=>{
       appendScript("/roster-support.js",()=>{
         appendScript("/section-support.js?v=20260917-1205",()=>{
           appendScript("/student-number-support.js?v=20260915-1135",()=>{
@@ -45,10 +45,10 @@
                                 appendScript("/comprehensive-support.js?v=20260915-0915",()=>{
                                   appendScript("/practice-progress.js?v=20260917-0040",()=>{
                                     appendScript("/practice-timer.js?v=20260917-0105",()=>{
-                                      appendScript("/private-lesson-confirmation.js?v=20260915-0633",()=>
+                                      appendScript("/private-lesson-confirmation.js?v=20260917-0215",()=>
                                         appendScript("/admin-operations.js?v=20260915-0915",()=>
                                           appendScript("/system-backup.js?v=20260915-1225",()=>
-                                            appendScript("/parent-semester-attendance.js?v=20260915-1440",()=>
+                                            appendScript("/parent-semester-attendance.js?v=20260917-0215",()=>
                                               appendScript("/parent-home-summary.js?v=20260917-0105",()=>
                                                 appendScript("/school-access.js?v=20260915-1915",()=>
                                                   appendScript("/school-access-refresh-fix.js?v=20260915-2340")
