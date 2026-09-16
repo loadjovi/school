@@ -77,7 +77,7 @@
     if(state.me?.role!=="parent")return html;
     const rows=(state.privateLessons||[]).slice(0,12);
     if(!rows.length)return html;
-    const history=`<div class="card"><h2>👤 個別課確認紀錄</h2>${rows.map(x=>`<div class="item"><div><b>${esc(x.lessonDate)}｜${esc(x.startTime||"")}～${esc(x.endTime||"")}</b><small>${esc(teacherLabel(x))}｜${Number(x.minutes||0)} 分鐘${x.parentNote?`<br>家長備註：${esc(x.parentNote)}`:""}</small></div><span class="badge ${confirmClass[x.parentConfirmation]||""}">${esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>`).join("")}</div>`;
+    const latest=rows[0];const history=`<div class="card"><h2>👤 個別課最近紀錄</h2><div class="item"><div><b>${esc(latest.lessonDate)}｜${esc(latest.startTime||"")}～${esc(latest.endTime||"")}</b><small>${esc(teacherLabel(latest))}｜${Number(latest.minutes||0)} 分鐘${latest.parentNote?`<br>家長備註：${esc(latest.parentNote)}`:""}</small></div><span class="badge ${confirmClass[latest.parentConfirmation]||""}">${esc(confirmText[latest.parentConfirmation]||latest.parentConfirmation)}</span></div>${rows.length>1?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800">查看其他 ${rows.length-1} 筆個別課紀錄</summary><div style="margin-top:10px">${rows.slice(1).map(x=>`<div class="item"><div><b>${esc(x.lessonDate)}｜${esc(x.startTime||"")}～${esc(x.endTime||"")}</b><small>${esc(teacherLabel(x))}｜${Number(x.minutes||0)} 分鐘</small></div><span class="badge ${confirmClass[x.parentConfirmation]||""}">${esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>`).join("")}</div></details>`:""}</div>`;
     return html+history;
   };
 
