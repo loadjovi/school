@@ -140,7 +140,18 @@ app.http("dailyFollowup",{
     const students=new Map(masters.map(e=>[String(e.rowKey),studentView(e)]));
     const canonicalCache=new Map(),teacherCache=new Map();
     const [sectionRows,ensembleRows,comprehensiveRows]=await Promise.all([collectDaily("section",date),collectDaily("ensemble",date),collectDaily("comprehensive",date)]);
-    const raw=[...sectionRows,...ensembleRows,...comprehensiveRows].filter(x=>["leave","absent"].includes(x.status));
+    const allDailyRows=[...sectionRows,...ensembleRows,...comprehensiveRows];
+    const attendanceCounts={
+      expected:allDailyRows.filter(x=>x.status!=="cancelled").length,
+      attended:allDailyRows.filter(x=>x.status==="present"||x.status==="late").length,
+      present:allDailyRows.filter(x=>x.status==="present").length,
+      late:allDailyRows.filter(x=>x.status==="late").length,
+      leave:allDailyRows.filter(x=>x.status==="leave").length,
+      absent:allDailyRows.filter(x=>x.status==="absent").length,
+      cancelled:allDailyRows.filter(x=>x.status==="cancelled").length
+    };
+    attendanceCounts.attendanceRate=attendanceCounts.expected?Math.round(attendanceCounts.attended/attendanceCounts.expected*1000)/10:null;
+    const raw=allDailyRows.filter(x=>["leave","absent"].includes(x.status));
     const latest=new Map();
     for(const r of raw){
       const studentId=await canonicalDailyId(r.rawStudentId,students,canonicalCache),row={...r,studentId};
@@ -155,7 +166,7 @@ app.http("dailyFollowup",{
       items.push({date:r.eventDate,classType:r.classType,studentId:r.studentId,name:s.name,grade:s.grade,groupName:r.groupName||s.groupName,section:r.classType==="ensemble"?"四分部合班":r.section||s.section||"待確認",instrument:s.instrument,status:r.status,teacherName:await dailyTeacherName(r.teacher,teacherCache),teacherEmail:r.teacher});
     }
     items.sort((x,y)=>String(x.classType).localeCompare(String(y.classType))||String(x.groupName).localeCompare(String(y.groupName),"zh-Hant")||String(x.section).localeCompare(String(y.section),"zh-Hant")||String(x.name).localeCompare(String(y.name),"zh-Hant"));
-    return json({date,scope:"00:00-23:59",items,counts:{total:items.length,leave:items.filter(x=>x.status==="leave").length,absent:items.filter(x=>x.status==="absent").length,section:items.filter(x=>x.classType==="section").length,ensemble:items.filter(x=>x.classType==="ensemble").length,comprehensive:items.filter(x=>x.classType==="comprehensive").length}});
+    return json({date,scope:"00:00-23:59",items,attendanceCounts,counts:{total:items.length,leave:items.filter(x=>x.status==="leave").length,absent:items.filter(x=>x.status==="absent").length,section:items.filter(x=>x.classType==="section").length,ensemble:items.filter(x=>x.classType==="ensemble").length,comprehensive:items.filter(x=>x.classType==="comprehensive").length}});
   }
 });
 
