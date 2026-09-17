@@ -51,8 +51,10 @@
                                             appendScript("/system-backup.js?v=20260915-1225",()=>
                                               appendScript("/parent-semester-attendance.js?v=20260917-0300",()=>
                                                 appendScript("/parent-home-summary.js?v=20260917-0105",()=>
-                                                  appendScript("/school-access.js?v=20260917-0330",()=>
-                                                    appendScript("/school-access-refresh-fix.js?v=20260915-2340")
+                                                  appendScript("/school-access.js?v=20260918-0005",()=>
+                                                    appendScript("/school-access-audit-admin.js?v=20260918-0005",()=>
+                                                      appendScript("/school-access-refresh-fix.js?v=20260915-2340")
+                                                    )
                                                   )
                                                 )
                                               )
@@ -79,20 +81,7 @@
     });
   }
 
-  function installIOSRedirectMode(){
-    let tries=0;
-    const timer=setInterval(()=>{
-      tries++;
-      if(window.google?.accounts?.id?.initialize){
-        clearInterval(timer);
-        const nativeInitialize=window.google.accounts.id.initialize.bind(window.google.accounts.id);
-        window.google.accounts.id.initialize=(config={})=>{const {callback,...rest}=config;return nativeInitialize({...rest,ux_mode:"redirect",login_uri:`${location.origin}/api/google-login`})};
-        loadApp();
-      }else if(tries>120){clearInterval(timer);loadApp()}
-    },50);
-  }
-
+  function installIOSRedirectMode(){let tries=0;const timer=setInterval(()=>{tries++;if(window.google?.accounts?.id?.initialize){clearInterval(timer);const nativeInitialize=window.google.accounts.id.initialize.bind(window.google.accounts.id);window.google.accounts.id.initialize=(config={})=>{const {callback,...rest}=config;return nativeInitialize({...rest,ux_mode:"redirect",login_uri:`${location.origin}/api/google-login`})};loadApp()}else if(tries>120){clearInterval(timer);loadApp()}},50)}
   document.addEventListener("click",async e=>{const btn=e.target.closest?.(".logout");if(!btn)return;e.preventDefault();e.stopImmediatePropagation();try{await fetch("/api/google-logout",{method:"POST"})}catch{}sessionStorage.removeItem("google_id_token");location.href="/"},true);
-
   if(isIOS)installIOSRedirectMode();else loadApp();
 })();
