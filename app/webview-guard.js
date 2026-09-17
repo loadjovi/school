@@ -36,7 +36,7 @@
               appendScript("/teacher-support.js?v=20260916-2245",()=>{
                 appendScript("/teacher-settings.js?v=20260915-1415",()=>{
                   appendScript("/private-student-bottom-back.js?v=20260915-1432",()=>{
-                    appendScript("/teacher-admin.js?v=20260915-0915",()=>{
+                    appendScript("/teacher-admin.js?v=20260918-0125",()=>{
                       appendScript("/batch-upgrade.js",()=>{
                         appendScript("/roster-import.js?v=20260915-1135",()=>{
                           appendScript("/attendance-support.js?v=20260915-0915",()=>{
