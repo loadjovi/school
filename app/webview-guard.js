@@ -47,11 +47,13 @@
                                     appendScript("/practice-timer.js?v=20260917-0105",()=>{
                                       appendScript("/private-lesson-confirmation.js?v=20260917-0215",()=>
                                         appendScript("/admin-operations.js?v=20260915-0915",()=>
-                                          appendScript("/system-backup.js?v=20260915-1225",()=>
-                                            appendScript("/parent-semester-attendance.js?v=20260917-0300",()=>
-                                              appendScript("/parent-home-summary.js?v=20260917-0105",()=>
-                                                appendScript("/school-access.js?v=20260917-0330",()=>
-                                                  appendScript("/school-access-refresh-fix.js?v=20260915-2340")
+                                          appendScript("/admin-followup-summary-fix.js?v=20260917-1320",()=>
+                                            appendScript("/system-backup.js?v=20260915-1225",()=>
+                                              appendScript("/parent-semester-attendance.js?v=20260917-0300",()=>
+                                                appendScript("/parent-home-summary.js?v=20260917-0105",()=>
+                                                  appendScript("/school-access.js?v=20260917-0330",()=>
+                                                    appendScript("/school-access-refresh-fix.js?v=20260915-2340")
+                                                  )
                                                 )
                                               )
                                             )
