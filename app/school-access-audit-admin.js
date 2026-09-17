@@ -7,6 +7,8 @@
   function html(){const s=state.schoolAccessAudit;if(s.error)return `<div class="card"><h2>📊 校方系統使用月報</h2><div class="error">讀取失敗：${esc(s.error)}</div></div>`;if(s.loading&&!s.loaded)return `<div class="card"><h2>📊 校方系統使用月報</h2><div class="notice">正在讀取使用紀錄…</div></div>`;return `<div class="card"><div class="section-title"><h2>📊 校方系統使用月報</h2><button class="secondary" style="margin:0;width:auto" onclick="refreshSchoolAccessAudit()">重新整理</button></div><div class="notice">登入代表校方帳號成功進入系統；「匯出」僅在校方實際點選匯出當日出缺勤 CSV 時記錄。</div>${rows()}</div>`}
   function mountAudit(){if(state.me?.role!=="admin"||state.page!=="admin")return;const host=document.getElementById("schoolAccessAdmin")||document.querySelector(".main");if(!host)return;let root=document.getElementById("schoolAccessAudit");if(!root){root=document.createElement("div");root.id="schoolAccessAudit";host.insertAdjacentElement("afterend",root)}root.innerHTML=html()}
   window.refreshSchoolAccessAudit=async()=>{state.schoolAccessAudit.loaded=false;await loadAudit(true)};
+  const originalExport=window.exportSchoolFollowup;
+  if(typeof originalExport==="function")window.exportSchoolFollowup=function(){const d=state.schoolViewer?.data;originalExport();if(state.me?.role==="school"&&d?.date)api("/api/school-attendance-export-audit",{method:"POST",body:JSON.stringify({date:d.date})}).catch(e=>console.warn("school export audit failed",e?.message||e))};
   const baseRender=render;render=function(){const r=baseRender();if(state.me?.role==="admin"&&state.page==="admin")setTimeout(()=>{mountAudit();loadAudit()},0);return r};
   if(state.me?.role==="admin")setTimeout(()=>loadAudit(),0);
 })();
