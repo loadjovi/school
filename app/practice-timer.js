@@ -1,5 +1,5 @@
 (()=>{
-  const TIMER_KEY="orchestra_practice_timer_v2";
+  const TIMER_KEY="orchestra_practice_timers_v3";
   let intervalId=null;
 
   function pad(n){return String(n).padStart(2,"0")}
@@ -9,7 +9,7 @@
   function writeTimer(v){if(v)localStorage.setItem(TIMER_KEY,JSON.stringify(v));else localStorage.removeItem(TIMER_KEY)}
   function elapsedSeconds(t){if(!t?.startedAt)return 0;return Math.max(0,Math.floor(((t.stoppedAt||Date.now())-Number(t.startedAt))/1000))}
   function durationText(sec){const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;return `${pad(h)}:${pad(m)}:${pad(s)}`}
-  function timerIsRunning(){const t=readTimer();return !!(t?.startedAt&&!t?.stoppedAt)}
+  function timerIsRunning(){return !!readTimer()?.runningSince}
   function mode(){return document.querySelector('input[name="practiceMode"]:checked')?.value||"timer"}
 
   function achievement(minutes){
@@ -32,7 +32,7 @@
         const s=document.getElementById("pStart"),e=document.getElementById("pEnd"),d=document.getElementById("pDate");
         if(d)d.value=t.practiceDate||localDate(new Date(Number(t.startedAt)));
         if(s)s.value=localTime(new Date(Number(t.startedAt)));
-        if(e)e.value=localTime(new Date(t.stoppedAt||Date.now()));
+        if(e)e.value=localTime(new Date(t.lastPausedAt||Date.now()));
         if(typeof updateMinutes==="function")updateMinutes();
       }
     }
@@ -42,10 +42,10 @@
 
   function refreshTimerUi(){
     const box=document.getElementById("practiceTimerValue");if(!box)return;
-    const t=readTimer(),running=!!(t?.startedAt&&!t?.stoppedAt);
+    const t=readTimer(),running=!!t?.runningSince;
     box.textContent=durationText(elapsedSeconds(t));
     const status=document.getElementById("practiceTimerStatus");
-    if(status)status.textContent=running?"🎻 練習計時中，可切換 App 或鎖定畫面":"按「開始練習」後會自動記錄時間";
+    if(status)status.textContent=running?"🎻 練習計時中，可切換頁面、App 或鎖定畫面":t?.startedAt?"⏸️ 已暫停，可稍後繼續練習":"按「開始練習」後會自動記錄時間";
     const start=document.getElementById("practiceTimerStart"),stop=document.getElementById("practiceTimerStop");
     if(start){start.disabled=running;start.textContent=running?"▶️ 練習進行中":"▶️ 開始練習"}
     if(stop)stop.disabled=!running;
@@ -61,18 +61,23 @@
   }
   window.startPracticeTimer=function(){
     if(timerIsRunning()){toast("計時器已在進行中");return}
-    const now=new Date(),t={startedAt:Date.now(),stoppedAt:null,studentId:String(state.student?.studentId||""),practiceDate:localDate(now)};
+    const now=new Date(),existing=readTimer();
+    const t=existing?.startedAt
+      ?{...existing,runningSince:Date.now(),lastPausedAt:null}
+      :{startedAt:Date.now(),runningSince:Date.now(),lastPausedAt:null,accumulatedSeconds:0,studentId:String(state.student?.studentId||""),practiceDate:localDate(now)};
     writeTimer(t);
     const d=document.getElementById("pDate"),s=document.getElementById("pStart"),e=document.getElementById("pEnd");
-    if(d)d.value=t.practiceDate;if(s)s.value=localTime(now);if(e)e.value=localTime(now);
-    refreshTimerUi();ensureTicker();toast("▶️ 已開始自主練習計時");
+    if(d)d.value=t.practiceDate;if(s)s.value=localTime(new Date(Number(t.startedAt)));if(e)e.value=localTime(now);
+    refreshTimerUi();ensureTicker();toast(existing?.startedAt?"▶️ 已繼續自主練習計時":"▶️ 已開始自主練習計時");
   };
   window.stopPracticeTimer=function(){
-    const t=readTimer();if(!t?.startedAt||t.stoppedAt){toast("目前沒有進行中的計時");return}
-    t.stoppedAt=Date.now();writeTimer(t);
-    const e=document.getElementById("pEnd");if(e)e.value=localTime(new Date(t.stoppedAt));
+    const t=readTimer();if(!t?.runningSince){toast("目前沒有進行中的計時");return}
+    const now=Date.now();
+    t.accumulatedSeconds=Math.max(0,Number(t.accumulatedSeconds||0))+Math.max(0,Math.floor((now-Number(t.runningSince))/1000));
+    t.runningSince=null;t.lastPausedAt=now;writeTimer(t);
+    const e=document.getElementById("pEnd");if(e)e.value=localTime(new Date(now));
     refreshTimerUi();if(typeof updateMinutes==="function")updateMinutes();updateAchievement();
-    toast(`⏹ 練習完成，共 ${Math.max(1,Math.round(elapsedSeconds(t)/60))} 分鐘`);
+    toast(`⏸️ 已暫停，目前累計 ${Math.max(1,Math.round(elapsedSeconds(t)/60))} 分鐘`);
   };
   window.resetPracticeTimer=function(){writeTimer(null);if(intervalId){clearInterval(intervalId);intervalId=null}refreshTimerUi();toast("已清除本次計時")};
 
@@ -81,7 +86,7 @@
 
   const basePracticePage=practicePage;
   practicePage=function(){
-    let html=basePracticePage(),t=readTimer(),running=!!(t?.startedAt&&!t?.stoppedAt);
+    let html=basePracticePage(),t=readTimer(),running=!!t?.runningSince;
     html=html.replace('<div class="row2"><div><label>開始時間</label>','<div id="practiceManualTimes" class="row2" style="display:none"><div><label>開始時間</label>');
     html=html.replace('<label>練習內容／曲目</label>','<div style="margin-top:14px;font-weight:900">記錄方式</div><div class="row2" style="margin-top:8px"><label class="check" style="margin:0"><input type="radio" name="practiceMode" value="timer" checked onchange="setPracticeMode(\'timer\')"><div>⏱️ 即時計時</div></label><label class="check" style="margin:0"><input type="radio" name="practiceMode" value="manual" onchange="setPracticeMode(\'manual\')"><div>✏️ 手動登記</div></label></div><label>今天練什麼？</label>');
     html=html.replace('<label>練習重點</label>','<label>練習類型</label>');
@@ -90,8 +95,8 @@
     html=html.replace('<h2>最近打卡</h2>','<h2>最近練習</h2>');
 
     const panel=`<div class="card"><h2>⏱️ 今天開始練習</h2>
-      <div id="practiceTimerControls"><div style="text-align:center;padding:10px 0 12px"><div id="practiceTimerValue" style="font-size:36px;font-weight:900;letter-spacing:2px">${durationText(elapsedSeconds(t))}</div><div id="practiceTimerStatus" class="muted" style="margin-top:6px">${running?"🎻 練習計時中，可切換 App 或鎖定畫面":"按「開始練習」後會自動記錄時間"}</div></div>
-      <div class="row2"><button id="practiceTimerStart" class="primary" style="margin-top:0" onclick="startPracticeTimer()" ${running?"disabled":""}>${running?"▶️ 練習進行中":"▶️ 開始練習"}</button><button id="practiceTimerStop" class="secondary" style="margin-top:0" onclick="stopPracticeTimer()" ${running?"":"disabled"}>⏹ 停止</button></div>
+      <div id="practiceTimerControls"><div style="text-align:center;padding:10px 0 12px"><div id="practiceTimerValue" style="font-size:36px;font-weight:900;letter-spacing:2px">${durationText(elapsedSeconds(t))}</div><div id="practiceTimerStatus" class="muted" style="margin-top:6px">${running?"🎻 練習計時中，可切換頁面、App 或鎖定畫面":t?.startedAt?"⏸️ 已暫停，可稍後繼續練習":"按「開始練習」後會自動記錄時間"}</div></div>
+      <div class="row2"><button id="practiceTimerStart" class="primary" style="margin-top:0" onclick="startPracticeTimer()" ${running?"disabled":""}>${running?"▶️ 練習進行中":t?.startedAt?"▶️ 繼續練習":"▶️ 開始練習"}</button><button id="practiceTimerStop" class="secondary" style="margin-top:0" onclick="stopPracticeTimer()" ${running?"":"disabled"}>⏸️ 暫停</button></div>
       ${t?'<button class="secondary" style="width:100%;margin-top:10px" onclick="resetPracticeTimer()">清除本次計時</button>':""}</div></div>`;
     const marker='<div class="card"><h2>自主練習打卡</h2>';
     const out=html.includes(marker)?html.replace(marker,panel+marker):panel+html;
@@ -105,7 +110,20 @@
     const confirmBox=document.getElementById("pConfirm");
     if(confirmBox&&!confirmBox.checked){toast("請先確認本次練習紀錄正確");return}
     await baseSavePractice();
-    if(readTimer()?.stoppedAt)writeTimer(null);
+    if(readTimer()?.startedAt&&!timerIsRunning())writeTimer(null);
+  };
+
+  const baseShell=typeof shell==="function"?shell:null;
+  if(baseShell)shell=function(content){
+    if(state.me?.role==="parent"&&state.student){
+      const t=readTimer();
+      if(t?.startedAt){
+        const running=!!t.runningSince,mins=Math.floor(elapsedSeconds(t)/60);
+        const banner=`<div class="card" style="margin-bottom:12px"><div class="student"><div><b>⏱️ ${esc(state.student.name)} 練習計時</b><div class="muted" style="margin-top:4px">${running?"計時中":"已暫停"}｜目前累計 ${mins} 分鐘</div></div><button class="secondary" style="margin-top:0" onclick="go('practice')">${running?"查看計時":"繼續練習"}</button></div></div>`;
+        content=banner+content;
+      }
+    }
+    return baseShell(content);
   };
 
   document.addEventListener("visibilitychange",()=>{if(!document.hidden&&timerIsRunning()){refreshTimerUi();ensureTicker()}});
