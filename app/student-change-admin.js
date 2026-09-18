@@ -38,7 +38,7 @@
   }
   window.createSingleStudent=async function(){
     const no=$("newStudentNo")?.value.trim(),name=$("newStudentName")?.value.trim();
-    if(!/^\\d{6}$/.test(no)){toast("請輸入 6 碼學號");return}
+    if(!/^\d{6}$/.test(no)){toast("請輸入 6 碼學號");return}
     if(!name){toast("請輸入學生姓名");return}
     const existing=(state.master||[]).find(s=>String(s.studentId)===no);
     if(existing){toast(existing.status==="inactive"?`此學號已存在：${existing.name}，請使用「重新加入」功能`:`此學號已存在：${existing.name}`);return}
