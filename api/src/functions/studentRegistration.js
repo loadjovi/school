@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getAccess, json } from "../lib/auth.js";
 import { ensureTables, table, rowKey, getRegistrationsByEmail, listRegistrations, getStudentMaster, listStudentMaster } from "../lib/storage.js";
+import { sendParentApprovalEmail } from "../lib/email.js";
 
 const allowedGroups=new Set(["A","B","C","儲備"]);
 const allowedGrades=new Set(["一年級","二年級","三年級","四年級","五年級","六年級"]);
@@ -19,7 +20,8 @@ function view(e){
     registrationId:e.rowKey,parentEmail:e.parentEmail,parentName:e.parentName,relationship:e.relationship,
     studentName:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,
     schoolYear:e.schoolYear||"",status:e.status,studentId:e.studentId||null,createdAt:e.createdAt,
-    reviewedAt:e.reviewedAt||null,reviewedBy:e.reviewedBy||null,note:e.note||""
+    reviewedAt:e.reviewedAt||null,reviewedBy:e.reviewedBy||null,note:e.note||"",
+    notificationStatus:e.notificationStatus||"",notificationSentAt:e.notificationSentAt||null,notificationError:e.notificationError||""
   };
 }
 
@@ -111,8 +113,26 @@ app.http("studentRegistration",{
       studentName,grade,groupName,instrument,schoolYear,studentNo:studentId,createdAt:now,approvedBy:access.email
     },"Merge");
 
-    reg.status="approved";reg.studentId=studentId;reg.studentName=studentName;reg.grade=grade;reg.groupName=groupName;reg.instrument=instrument;reg.schoolYear=schoolYear;reg.reviewedAt=now;reg.reviewedBy=access.email;reg.note=note;
+    reg.status="approved";reg.studentId=studentId;reg.studentName=studentName;reg.grade=grade;reg.groupName=groupName;reg.instrument=instrument;reg.schoolYear=schoolYear;reg.reviewedAt=now;reg.reviewedBy=access.email;reg.note=note;reg.notificationStatus="pending";reg.notificationError="";
     await regClient.updateEntity(reg,"Merge");
-    return json({ok:true,status:"approved",studentId,linkedExisting:true});
+
+    let notification;
+    try{
+      notification=await sendParentApprovalEmail({
+        recipient:reg.parentEmail,parentName:reg.parentName,studentName,grade,groupName,instrument
+      });
+    }catch(e){
+      notification={status:"failed",error:String(e?.message||e||"email_send_failed").slice(0,500)};
+    }
+    const notificationNow=new Date().toISOString();
+    reg.notificationStatus=notification?.status||"failed";
+    reg.notificationSentAt=notification?.status==="sent"?notificationNow:"";
+    reg.notificationError=notification?.status==="failed"?String(notification?.error||notification?.rawStatus||"寄送失敗").slice(0,500):notification?.status==="not_configured"?"Email 環境變數未設定":"";
+    reg.notificationMessageId=String(notification?.messageId||"").slice(0,200);
+    await regClient.updateEntity(reg,"Merge");
+
+    return json({ok:true,status:"approved",studentId,linkedExisting:true,notification:{
+      status:reg.notificationStatus,sentAt:reg.notificationSentAt||null,error:reg.notificationError||"",messageId:reg.notificationMessageId||""
+    }});
   }
 });
