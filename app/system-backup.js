@@ -22,8 +22,8 @@
     state.systemBackup.loading=true;state.systemBackup.error="";mountSystemBackup();
     try{
       const d=await api("/api/system-backup");state.systemBackup.backup=d;
-      downloadJson(`聖心弦樂團_完整系統備份_${filenameStamp()}.json`,d);
-      toast(`✅ 完整備份完成，共 ${d.stats?.total||0} 筆資料`);
+      downloadJson(`聖心弦樂團_完整系統資料備份_${filenameStamp()}.json`,d);
+      toast(`✅ 完整系統資料備份完成，共 ${d.stats?.total||0} 筆資料`);
     }catch(e){state.systemBackup.error=e.message||String(e);toast("❌ 備份失敗："+(e.message||e))}
     state.systemBackup.loading=false;mountSystemBackup();
   };
@@ -59,11 +59,11 @@
   };
   function exportHtml(){
     const b=state.systemBackup.backup;
-    return `<div class="item"><div><b>下載完整系統備份</b><small>備份學生、每學期名單、家長 Gmail、老師權限、自主練習、所有課程出勤、個別課、歷史異動與系統設定。</small></div></div><button class="primary" onclick="downloadFullSystemBackup()" ${state.systemBackup.loading?"disabled":""}>${state.systemBackup.loading?"正在處理…":"💾 下載完整備份 JSON"}</button>${b?`<div class="notice" style="margin-top:10px">最近一次備份：${esc(String(b.exportedAt||""))}<br>SHA-256：<small>${esc(String(b.checksum||""))}</small></div>${countsHtml(b.stats)}`:""}`;
+    return `<div class="item"><div><b>下載完整系統資料備份</b><small>備份學生、每學期名單、家長 Gmail、老師權限、自主練習、所有課程出勤、個別課、歷史異動與系統設定。</small></div></div><div class="notice" style="margin-top:10px"><b>可還原的是「營運資料」</b><br>此 JSON 可用於 Azure Table 資料誤刪、Storage Account 更換或新環境資料移轉。<br><br><b>若要從零重建整個網站，仍需另外保留：</b><br>GitHub 原始程式、Azure Static Web Apps、Google 登入設定及各項環境變數。</div><button class="primary" onclick="downloadFullSystemBackup()" ${state.systemBackup.loading?"disabled":""}>${state.systemBackup.loading?"正在處理…":"💾 下載完整系統資料備份 JSON"}</button>${b?`<div class="notice" style="margin-top:10px">最近一次備份：${esc(String(b.exportedAt||""))}<br>SHA-256：<small>${esc(String(b.checksum||""))}</small></div>${countsHtml(b.stats)}`:""}`;
   }
   function restoreHtml(){
     const p=state.systemBackup.preview;
-    return `<div class="notice" style="margin-top:14px"><b>資料移轉／災難復原</b><br>在新 Azure 環境先完成環境變數與管理員 Gmail 設定，登入後上傳此 JSON，即可把資料還原到新的 Storage Account。</div><label>備份 JSON 檔</label><input type="file" accept=".json,application/json" onchange="selectSystemBackupFile(this)" ${state.systemBackup.loading?"disabled":""}>${p?`<div class="notice" style="margin-top:10px">✅ 備份檔驗證成功<br>備份時間：${esc(p.exportedAt||"—")}<br>格式版本：${esc(String(p.schemaVersion||""))}<br>檢查碼：<small>${esc(p.checksum||"—")}</small></div>${countsHtml(p.stats)}<div class="row2" style="margin-top:12px"><button class="secondary" onclick="restoreSystemBackup('merge')" ${state.systemBackup.loading?"disabled":""}>↗️ 合併還原</button><button class="primary" onclick="restoreSystemBackup('replace')" ${state.systemBackup.loading?"disabled":""}>🚚 完整移轉還原</button></div>`:""}`;
+    return `<div class="notice" style="margin-top:14px"><b>資料移轉／災難復原</b><br>適用於資料誤刪、Storage Account 損壞／更換，或搬移到新的 Azure 環境。<br><br>若原網站程式仍可運作：設定新的 Storage Connection String 後，上傳此 JSON 即可還原營運資料。<br><br>若整個 Static Web App 也需重建：請先由 GitHub 重新部署網站、完成環境變數與管理員 Gmail 設定，再登入後台上傳此 JSON。</div><label>備份 JSON 檔</label><input type="file" accept=".json,application/json" onchange="selectSystemBackupFile(this)" ${state.systemBackup.loading?"disabled":""}>${p?`<div class="notice" style="margin-top:10px">✅ 備份檔驗證成功<br>備份時間：${esc(p.exportedAt||"—")}<br>格式版本：${esc(String(p.schemaVersion||""))}<br>檢查碼：<small>${esc(p.checksum||"—")}</small></div>${countsHtml(p.stats)}<div class="row2" style="margin-top:12px"><button class="secondary" onclick="restoreSystemBackup('merge')" ${state.systemBackup.loading?"disabled":""}>↗️ 合併還原</button><button class="primary" onclick="restoreSystemBackup('replace')" ${state.systemBackup.loading?"disabled":""}>🚚 完整移轉還原</button></div>`:""}`;
   }
   function environmentHtml(){return `<details style="margin-top:14px"><summary><b>🔐 新環境仍需另外設定的項目</b></summary><div class="notice" style="margin-top:8px">備份檔<b>不包含祕密值</b>。搬到新 Azure 時仍需重新設定：<br><br>• STORAGE_CONNECTION_STRING<br>• ADMIN_EMAILS<br>• GOOGLE_CLIENT_ID<br>• ACS_EMAIL_CONNECTION_STRING／ACS_EMAIL_SENDER（如使用 Email）<br>• PRACTICE_QUALIFIED_MINUTES／PRACTICE_TARGET_DAYS<br><br>這樣即使備份檔外流，也不會把 Azure Storage 金鑰或 Google/Email 憑證一起洩漏。</div></details>`}
   function mountSystemBackup(){
@@ -71,7 +71,7 @@
     const main=document.querySelector(".main");if(!main)return;
     let root=document.getElementById("systemBackupPanel");
     if(!root){root=document.createElement("div");root.id="systemBackupPanel";main.appendChild(root)}
-    root.innerHTML=`<div class="card"><h2>💾 系統完整備份／資料移轉</h2><div class="notice"><b>這不是一般 Excel 名單備份。</b><br>此功能會備份 Azure Table 中整個弦樂團系統的資料，供系統異常復原或更換 Azure Storage 時移轉使用。</div>${state.systemBackup.error?`<div class="error" style="margin-top:10px">${esc(state.systemBackup.error)}</div>`:""}${exportHtml()}${restoreHtml()}${environmentHtml()}</div>`;
+    root.innerHTML=`<div class="card"><h2>💾 系統資料備份／資料移轉</h2><div class="notice"><b>這不是整個網站的映像備份，也不是一般 Excel 名單備份。</b><br>此功能會備份 Azure Table 中的弦樂團營運資料與品牌 Logo，可供資料誤刪、系統異常復原或更換 Azure Storage 時移轉使用。<br><br><b>JSON 本身不能單獨重建整個網站。</b>若要完整恢復網站營運，仍需搭配 GitHub 原始程式、Azure Static Web Apps 與必要環境變數。</div>${state.systemBackup.error?`<div class="error" style="margin-top:10px">${esc(state.systemBackup.error)}</div>`:""}${exportHtml()}${restoreHtml()}${environmentHtml()}</div>`;
   }
   const baseRender=render;
   render=function(){const r=baseRender();if(state.me?.role==="admin"&&state.page==="admin")setTimeout(mountSystemBackup,0);return r};
