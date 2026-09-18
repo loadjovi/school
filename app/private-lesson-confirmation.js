@@ -6,6 +6,18 @@
   const confirmText={pending:"家長待確認",confirmed:"家長已確認",issue:"家長回報有問題",not_required:"不需確認"};
   const confirmClass={pending:"warn",confirmed:"ok",issue:"bad",not_required:""};
   const emailText={sent:"Email 已寄送",partial:"Email 部分寄送",failed:"Email 寄送失敗",not_configured:"Email 尚未設定",no_recipients:"尚無家長 Gmail",disabled:"Email 通知已由後台關閉",pending:"Email 準備中",not_required:""};
+  function fmtEmailAt(v){
+    if(!v)return "";
+    try{return new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(v))}
+    catch{return ""}
+  }
+  function emailStatusLine(x){
+    const label=emailText[x?.emailNotificationStatus]||"";
+    if(!label)return "";
+    const total=Number(x?.emailNotificationRecipients||0),sent=Number(x?.emailNotificationSentCount||0),failed=Number(x?.emailNotificationFailedCount||0),at=fmtEmailAt(x?.emailNotificationAt);
+    const counts=total?(`｜家長 ${sent||0}/${total} 位${failed?`（失敗 ${failed}）`:""}`):"";
+    return `📩 ${label}${counts}${at?`｜${at}`:""}`;
+  }
 
   function teacherAccount(){return state.me?.role!=="admin"&&!!state.me?.capabilities?.private}
   function teacherLabel(x){
@@ -31,7 +43,7 @@
 
   function teacherHistoryHtml(){
     const recent=(state.privateLessons||[]).slice(0,20);
-    return recent.length?recent.map(x=>`<div class="item"><div><b>${esc(currentStudentName(x.studentId))}｜${esc(x.lessonDate)}</b><small>${esc(x.startTime||"")}～${esc(x.endTime||"")}｜${Number(x.minutes||0)} 分鐘｜${esc(statusText[x.status]||x.status)}${emailText[x.emailNotificationStatus]?`<br>📩 ${esc(emailText[x.emailNotificationStatus])}`:""}${x.parentNote?`<br>家長：${esc(x.parentNote)}`:""}</small></div><span class="badge ${confirmClass[x.parentConfirmation]||""}">${esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>`).join(""):`<div class="notice">目前尚無個別課紀錄。</div>`;
+    return recent.length?recent.map(x=>`<div class="item"><div><b>${esc(currentStudentName(x.studentId))}｜${esc(x.lessonDate)}</b><small>${esc(x.startTime||"")}～${esc(x.endTime||"")}｜${Number(x.minutes||0)} 分鐘｜${esc(statusText[x.status]||x.status)}${emailStatusLine(x)?`<br>${esc(emailStatusLine(x))}`:""}${x.parentNote?`<br>家長：${esc(x.parentNote)}`:""}</small></div><span class="badge ${confirmClass[x.parentConfirmation]||""}">${esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>`).join(""):`<div class="notice">目前尚無個別課紀錄。</div>`;
   }
 
   function startTeacherPoll(){
