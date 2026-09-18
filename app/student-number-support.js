@@ -15,4 +15,19 @@
       return html.replace('<label>姓名</label>',badge+'<label>姓名</label>');
     };
   }
+
+  if(typeof approveReg==="function"){
+    approveReg=async function(id){
+      const body={registrationId:id,action:"approve",studentName:$(`rn_${id}`).value,grade:$(`rg_${id}`).value,groupName:$(`rgrp_${id}`).value,instrument:$(`ri_${id}`).value,schoolYear:$(`ry_${id}`).value,studentId:$(`rm_${id}`).value};
+      try{
+        const d=await api("/api/student-registration",{method:"PATCH",body:JSON.stringify(body)});
+        const ns=d?.notification?.status;
+        if(ns==="sent")toast("✅ 已核准並綁定，認證通知信已寄出");
+        else if(ns==="not_configured")toast("✅ 已核准並綁定；Email 尚未完成設定");
+        else if(ns==="failed")toast("✅ 已核准並綁定；但通知信寄送失敗");
+        else toast("✅ 已核准並綁定");
+        await loadAdmin();render();
+      }catch(e){toast("❌ "+e.message)}
+    };
+  }
 })();
