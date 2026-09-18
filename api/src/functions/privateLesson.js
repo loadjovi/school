@@ -18,7 +18,7 @@ function view(e,teacherNameOverride=""){
     lessonContent:String(e.lessonContent||""),teacher:String(e.teacher||""),teacherName:String(teacherNameOverride||e.teacherName||e.teacher||""),
     parentConfirmation:String(e.parentConfirmation||(["present","late"].includes(String(e.status||""))?"pending":"not_required")),
     parentConfirmedAt:String(e.parentConfirmedAt||""),parentConfirmedBy:String(e.parentConfirmedBy||""),parentNote:String(e.parentNote||""),
-    emailNotificationStatus:String(e.emailNotificationStatus||""),emailNotificationAt:String(e.emailNotificationAt||""),emailNotificationRecipients:Number(e.emailNotificationRecipients||0),
+    emailNotificationStatus:String(e.emailNotificationStatus||""),emailNotificationAt:String(e.emailNotificationAt||""),emailNotificationRecipients:Number(e.emailNotificationRecipients||0),emailNotificationSentCount:Number(e.emailNotificationSentCount||0),emailNotificationFailedCount:Number(e.emailNotificationFailedCount||0),
     createdAt:String(e.createdAt||"")
   };
 }
@@ -134,7 +134,7 @@ app.http("privateLesson",{
       partitionKey:canonicalStudentId,rowKey:rowKey("i"),eventDate:lessonDate,startTime,endTime,status,minutes,
       lessonContent:clean(body.lessonContent,500),teacher:a.email,teacherName,
       parentConfirmation:confirmation,parentConfirmedAt:"",parentConfirmedBy:"",parentNote:"",createdAt:now,updatedAt:now,
-      emailNotificationStatus:confirmation==="pending"?"pending":"not_required",emailNotificationAt:"",emailNotificationRecipients:0
+      emailNotificationStatus:confirmation==="pending"?"pending":"not_required",emailNotificationAt:"",emailNotificationRecipients:0,emailNotificationSentCount:0,emailNotificationFailedCount:0
     };
     await table("privateLesson").createEntity(entity);
 
@@ -161,6 +161,8 @@ app.http("privateLesson",{
       entity.emailNotificationStatus=emailNotification.status;
       entity.emailNotificationAt=new Date().toISOString();
       entity.emailNotificationRecipients=Number(emailNotification.recipientCount||0);
+      entity.emailNotificationSentCount=Number(emailNotification.sentCount||0);
+      entity.emailNotificationFailedCount=Number(emailNotification.failedCount||0);
       await table("privateLesson").updateEntity(entity,"Merge");
     }
     return json({
