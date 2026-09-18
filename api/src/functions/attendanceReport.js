@@ -113,8 +113,8 @@ async function collectDaily(key,date){
   const latest=new Map();
   for await (const e of table(key).listEntities({queryOptions:{filter:`eventDate eq '${date.replaceAll("'","''")}'`}})){
     const rawStudentId=String(e.partitionKey||"");
-    const classType=key==="ensemble"?"ensemble":key==="comprehensive"?"comprehensive":"section";
-    const row={rawStudentId,eventDate:String(e.eventDate||date),classType,groupName:String(e.groupName||""),section:String(e.section||""),status:String(e.status||""),teacher:String(e.teacher||""),createdAt:String(e.createdAt||""),rowKey:String(e.rowKey||"")};
+    const classType=key==="ensemble"?"ensemble":key==="comprehensive"?"comprehensive":key==="privateLesson"?"private":"section";
+    const row={rawStudentId,eventDate:String(e.eventDate||date),classType,groupName:String(e.groupName||""),section:String(e.section||""),status:String(e.status||""),teacher:String(e.teacher||""),teacherName:String(e.teacherName||""),startTime:String(e.startTime||""),endTime:String(e.endTime||""),minutes:Number(e.minutes||0),lessonContent:String(e.lessonContent||""),parentConfirmation:String(e.parentConfirmation||""),emailNotificationStatus:String(e.emailNotificationStatus||""),createdAt:String(e.createdAt||""),rowKey:String(e.rowKey||"")};
     const d=[rawStudentId,row.eventDate,row.classType,row.groupName,row.section].join("|");
     const old=latest.get(d),stamp=`${row.createdAt}|${row.rowKey}`,oldStamp=old?`${old.createdAt}|${old.rowKey}`:"";
     if(!old||stamp>=oldStamp)latest.set(d,row);
@@ -177,6 +177,29 @@ app.http("dailyFollowup",{
       const expected=privateRows.filter(x=>x.status!=="cancelled").length;
       pushCourse("private","個別課",[],expected,privateRows,"依個別課紀錄");
     }
+    const privateLessonDetails=[];
+    for(const r of privateRows){
+      const studentId=await canonicalDailyId(r.rawStudentId,students,canonicalCache);
+      const s=students.get(String(studentId))||{studentId,name:`學生 ${studentId}`,grade:"",groupName:"",section:"",instrument:""};
+      privateLessonDetails.push({
+        studentId,
+        name:s.name,
+        grade:s.grade,
+        groupName:s.groupName,
+        instrument:s.instrument,
+        status:r.status,
+        teacherName:await dailyTeacherName(r.teacher,teacherCache),
+        teacherEmail:r.teacher,
+        startTime:r.startTime||"",
+        endTime:r.endTime||"",
+        minutes:Number(r.minutes||0),
+        lessonContent:r.lessonContent||"",
+        parentConfirmation:r.parentConfirmation||"",
+        emailNotificationStatus:r.emailNotificationStatus||""
+      });
+    }
+    privateLessonDetails.sort((a,b)=>String(a.startTime||"").localeCompare(String(b.startTime||""))||String(a.name||"").localeCompare(String(b.name||""),"zh-Hant"));
+
     const attendanceCounts={
       expected:allDailyRows.filter(x=>x.status!=="cancelled").length,
       attended:allDailyRows.filter(x=>x.status==="present"||x.status==="late").length,
@@ -202,7 +225,7 @@ app.http("dailyFollowup",{
       items.push({date:r.eventDate,classType:r.classType,studentId:r.studentId,name:s.name,grade:s.grade,groupName:r.groupName||s.groupName,section:r.classType==="ensemble"?"四分部合班":r.section||s.section||"待確認",instrument:s.instrument,status:r.status,teacherName:await dailyTeacherName(r.teacher,teacherCache),teacherEmail:r.teacher});
     }
     items.sort((x,y)=>String(x.classType).localeCompare(String(y.classType))||String(x.groupName).localeCompare(String(y.groupName),"zh-Hant")||String(x.section).localeCompare(String(y.section),"zh-Hant")||String(x.name).localeCompare(String(y.name),"zh-Hant"));
-    return json({date,scope:"00:00-23:59",items,attendanceCounts,courseSummary,counts:{total:items.length,leave:items.filter(x=>x.status==="leave").length,absent:items.filter(x=>x.status==="absent").length,section:items.filter(x=>x.classType==="section").length,ensemble:items.filter(x=>x.classType==="ensemble").length,comprehensive:items.filter(x=>x.classType==="comprehensive").length}});
+    return json({date,scope:"00:00-23:59",items,attendanceCounts,courseSummary,privateLessonDetails,counts:{total:items.length,leave:items.filter(x=>x.status==="leave").length,absent:items.filter(x=>x.status==="absent").length,section:items.filter(x=>x.classType==="section").length,ensemble:items.filter(x=>x.classType==="ensemble").length,comprehensive:items.filter(x=>x.classType==="comprehensive").length,private:items.filter(x=>x.classType==="private").length}});
   }
 });
 
