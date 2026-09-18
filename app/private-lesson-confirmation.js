@@ -14,8 +14,8 @@
   function emailStatusLine(x){
     const label=emailText[x?.emailNotificationStatus]||"";
     if(!label)return "";
-    const total=Number(x?.emailNotificationRecipients||0),sent=Number(x?.emailNotificationSentCount||0),failed=Number(x?.emailNotificationFailedCount||0),at=fmtEmailAt(x?.emailNotificationAt);
-    const counts=total?(`｜家長 ${sent||0}/${total} 位${failed?`（失敗 ${failed}）`:""}`):"";
+    const total=Number(x?.emailNotificationRecipients||0),rawSent=Number(x?.emailNotificationSentCount||0),failed=Number(x?.emailNotificationFailedCount||0),sent=(x?.emailNotificationStatus==="sent"&&total&&rawSent===0)?total:rawSent,at=fmtEmailAt(x?.emailNotificationAt);
+    const counts=total?(`｜家長 ${sent}/${total} 位${failed?`（失敗 ${failed}）`:""}`):"";
     return `📩 ${label}${counts}${at?`｜${at}`:""}`;
   }
 
