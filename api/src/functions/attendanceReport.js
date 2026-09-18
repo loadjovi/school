@@ -160,9 +160,10 @@ app.http("dailyFollowup",{
       const rows=sectionRows.filter(x=>String(x.groupName)==="B");
       pushCourse("section-B","B團分部課",["B"],activeByGroup("B"),rows,"每週二、週四");
     }
-    if(weekday===5){
+    const reserveSectionStart="2026-10-02";
+    if(weekday===5&&date>=reserveSectionStart){
       const rows=sectionRows.filter(x=>String(x.groupName)==="儲備");
-      pushCourse("section-reserve","儲備團分部課",["儲備"],activeByGroup("儲備"),rows,"每週五");
+      pushCourse("section-reserve","儲備團分部課",["儲備"],activeByGroup("儲備"),rows,"每週五｜10/2 起");
     }
     if(weekday===2){
       const rows=ensembleRows.filter(x=>["A","B"].includes(String(x.groupName)));
