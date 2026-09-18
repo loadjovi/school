@@ -31,7 +31,7 @@ app.http("studentMaster",{
       return json({items:items.map(view)});
     }
     const body=await request.json();
-    const studentName=clean(body.name||body.studentName,40),grade=clean(body.grade,20),groupName=clean(body.groupName,10),instrument=clean(body.instrument,20),schoolYear=clean(body.schoolYear,20),status=clean(body.status||"active",20);
+    const studentName=clean(body.name||body.studentName,40),grade=clean(body.grade,20),groupName=clean(body.groupName,10),instrument=clean(body.instrument,20),schoolYear=clean(body.schoolYear,20),status=clean(body.status||"active",20),changeType=clean(body.changeType,40),changeNote=clean(body.changeNote,300),effectiveDate=clean(body.effectiveDate,10);
     const now=new Date().toISOString();
     if(request.method==="POST"){
       const section=clean(body.section||defaultSection(instrument),20),err=validate({studentName,grade,groupName,instrument,section,status});if(err)return json({error:err},400);
@@ -39,7 +39,7 @@ app.http("studentMaster",{
       if(!/^\d{6}$/.test(studentId))return json({error:"請輸入 6 碼學號；學號將作為唯一 Student ID"},400);
       if(await getStudentMaster(studentId))return json({error:"此學號已存在"},409);
       const semester=clean(body.semester,10);
-      const entity={partitionKey:"STUDENT",rowKey:studentId,studentNo:studentId,studentName,grade,groupName,instrument,section,schoolYear,classCode:clean(body.classCode,20),semester,semesterName:semesterLabel(semester),seatNo:clean(body.seatNo,10),status,createdAt:now,updatedAt:now,updatedBy:access.email};
+      const entity={partitionKey:"STUDENT",rowKey:studentId,studentNo:studentId,studentName,grade,groupName,instrument,section,schoolYear,classCode:clean(body.classCode,20),semester,semesterName:semesterLabel(semester),seatNo:clean(body.seatNo,10),status,joinedAt:effectiveDate||now.slice(0,10),changeNote,createdAt:now,updatedAt:now,updatedBy:access.email};
       await table("studentMaster").createEntity(entity);
       await table("studentHistory").createEntity({partitionKey:studentId,rowKey:rowKey("hist"),changeType:"manual_create_by_student_no",changedAt:now,changedBy:access.email,oldValue:"",newValue:JSON.stringify(view(entity))});
       return json({ok:true,student:view(entity)},201);
@@ -50,7 +50,7 @@ app.http("studentMaster",{
     const semester=clean(body.semester||old.semester,10);
     const entity={...old,studentNo:old.studentNo||(/^\d{6}$/.test(studentId)?studentId:""),studentName,grade,groupName,instrument,section,schoolYear,classCode:clean(body.classCode||old.classCode,20),semester,semesterName:semesterLabel(semester),seatNo:clean(body.seatNo||old.seatNo,10),status,updatedAt:now,updatedBy:access.email};
     await table("studentMaster").updateEntity(entity,"Merge");
-    await table("studentHistory").createEntity({partitionKey:studentId,rowKey:rowKey("hist"),changeType:"profile_update",changedAt:now,changedBy:access.email,oldValue:JSON.stringify(view(old)),newValue:JSON.stringify(view(entity))});
+    await table("studentHistory").createEntity({partitionKey:studentId,rowKey:rowKey("hist"),changeType:changeType|| (becameInactive?"leave_or_inactive":becameActive?"rejoin":"profile_update"),changedAt:now,changedBy:access.email,effectiveDate:effectiveDate||now.slice(0,10),note:changeNote,oldValue:JSON.stringify(view(old)),newValue:JSON.stringify(view(entity))});
     return json({ok:true,student:view(entity)});
   }
 });
