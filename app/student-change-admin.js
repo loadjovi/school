@@ -23,6 +23,30 @@
         <button class="primary" onclick="saveStudentChange('${s.studentId}',document.getElementById('schange_${s.studentId}').value)">確認異動</button>
       </details></div>`;
   }
+  function addStudentCard(){
+    return `<div class="card"><details><summary><b>➕ 新增學生並加入本學期</b></summary>
+      <div class="notice" style="margin-top:10px">適合學期中單一新生加入，不需要重新匯入整份 Excel。新增後會同時建立 StudentMaster、SemesterEnrollment 與 StudentHistory。</div>
+      <div class="row2"><div><label>6 碼學號</label><input id="newStudentNo" inputmode="numeric" maxlength="6" placeholder="例：123456"></div><div><label>學生姓名</label><input id="newStudentName"></div></div>
+      <div class="row2"><div><label>年級</label><select id="newStudentGrade">${opts(grades,"")}</select></div><div><label>團別</label><select id="newStudentGroup">${opts(groups,"儲備")}</select></div></div>
+      <div class="row2"><div><label>樂器</label><select id="newStudentInstrument">${opts(instruments,"待確認")}</select></div><div><label>分部</label><select id="newStudentSection">${sectionOptions("待確認")}</select></div></div>
+      <div class="row2"><div><label>班級</label><input id="newStudentClass"></div><div><label>座號</label><input id="newStudentSeat"></div></div>
+      <div class="row2"><div><label>學年度</label><input id="newStudentYear" value="115" inputmode="numeric"></div><div><label>學期</label><select id="newStudentSemester"><option value="1">1｜上學期</option><option value="2">2｜下學期</option></select></div></div>
+      <div class="row2"><div><label>加入日期</label><input id="newStudentDate" type="date" value="${today()}"></div><div><label>備註</label><input id="newStudentNote" placeholder="例：學期中新加入儲備團"></div></div>
+      <label class="check"><input id="newStudentEnroll" type="checkbox" checked><div>同時加入本學期正式上課名單</div></label>
+      <button class="primary" onclick="createSingleStudent()">確認新增學生</button>
+    </details></div>`;
+  }
+  window.createSingleStudent=async function(){
+    const no=$("newStudentNo")?.value.trim(),name=$("newStudentName")?.value.trim();
+    if(!/^\\d{6}$/.test(no)){toast("請輸入 6 碼學號");return}
+    if(!name){toast("請輸入學生姓名");return}
+    const existing=(state.master||[]).find(s=>String(s.studentId)===no);
+    if(existing){toast(existing.status==="inactive"?`此學號已存在：${existing.name}，請使用「重新加入」功能`:`此學號已存在：${existing.name}`);return}
+    const body={studentNo:no,name,grade:$("newStudentGrade").value,groupName:$("newStudentGroup").value,instrument:$("newStudentInstrument").value,section:$("newStudentSection").value,classCode:$("newStudentClass").value,seatNo:$("newStudentSeat").value,schoolYear:$("newStudentYear").value,semester:$("newStudentSemester").value,status:"active",effectiveDate:$("newStudentDate").value,changeNote:$("newStudentNote").value,addToSemester:$("newStudentEnroll").checked};
+    if(!confirm(`確定新增「${name}」？\\n\\n學號：${no}\\n團別：${body.groupName}團\\n${body.schoolYear}學年度第${body.semester}學期\\n${body.addToSemester?"同時加入本學期正式上課名單":"僅建立學生主檔"}`))return;
+    try{const d=await api("/api/student-master",{method:"POST",body:JSON.stringify(body)});toast(d.semesterEnrolled?"✅ 學生已新增並加入本學期名單":"✅ 學生主檔已新增");await loadAdmin();render()}catch(e){toast("❌ "+e.message)}
+  };
+
   window.studentChangeType=function(id){const t=document.getElementById("schange_"+id)?.value,b=document.getElementById("schangeGroup_"+id);if(b)b.style.display=(t==="group_change"||t==="rejoin")?"":"none"};
   window.saveStudentChange=async function(id,type){
     const s=(state.master||[]).find(x=>String(x.studentId)===String(id));if(!s)return;
@@ -36,6 +60,6 @@
   const baseStudentsPage=studentsPage;
   studentsPage=function(){
     const active=(state.master||[]).filter(s=>s.status!=="inactive").length,inactive=(state.master||[]).length-active;
-    return `<div class="card hero"><h2>👥 學生異動管理</h2><div class="notice"><b>目前在團 ${active} 人｜退出／停用 ${inactive} 人</b><br>學生退出不刪除主檔、家長綁定、點名或練習歷史；重新加入時沿用原學號。團別、分部、班級等資料可直接在既有清冊異動。</div></div>`+baseStudentsPage();
+    return `<div class="card hero"><h2>👥 學生異動管理</h2><div class="notice"><b>目前在團 ${active} 人｜退出／停用 ${inactive} 人</b><br>學生退出不刪除主檔、家長綁定、點名或練習歷史；重新加入時沿用原學號。團別、分部、班級等資料可直接在既有清冊異動。</div></div>`+addStudentCard()+baseStudentsPage();
   };
 })();
