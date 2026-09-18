@@ -41,8 +41,12 @@ app.http("studentMaster",{
       const semester=clean(body.semester,10);
       const entity={partitionKey:"STUDENT",rowKey:studentId,studentNo:studentId,studentName,grade,groupName,instrument,section,schoolYear,classCode:clean(body.classCode,20),semester,semesterName:semesterLabel(semester),seatNo:clean(body.seatNo,10),status,joinedAt:effectiveDate||now.slice(0,10),changeNote,createdAt:now,updatedAt:now,updatedBy:access.email};
       await table("studentMaster").createEntity(entity);
-      await table("studentHistory").createEntity({partitionKey:studentId,rowKey:rowKey("hist"),changeType:"manual_create_by_student_no",changedAt:now,changedBy:access.email,oldValue:"",newValue:JSON.stringify(view(entity))});
-      return json({ok:true,student:view(entity)},201);
+      const semesterEnrolled=body.addToSemester===true&&schoolYear&&["1","2"].includes(semester);
+      if(semesterEnrolled){
+        await table("semesterEnrollment").upsertEntity({partitionKey:`${schoolYear}-${semester}`,rowKey:studentId,studentNo:studentId,studentName,grade,groupName,section,instrument,classCode:entity.classCode,seatNo:entity.seatNo,schoolYear,semester,semesterName:semesterLabel(semester),status:"enrolled",confirmedAt:now,confirmedBy:access.email,updatedAt:now},"Replace");
+      }
+      await table("studentHistory").createEntity({partitionKey:studentId,rowKey:rowKey("hist"),changeType:semesterEnrolled?"manual_create_and_enroll":"manual_create_by_student_no",schoolYear,semester,changedAt:now,changedBy:access.email,effectiveDate:effectiveDate||now.slice(0,10),note:changeNote,oldValue:"",newValue:JSON.stringify(view(entity))});
+      return json({ok:true,student:view(entity),semesterEnrolled},201);
     }
     const studentId=clean(body.studentId,80);if(!studentId)return json({error:"缺少 studentId"},400);
     const old=await getStudentMaster(studentId);if(!old)return json({error:"找不到學生主檔"},404);
