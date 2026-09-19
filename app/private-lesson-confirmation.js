@@ -131,7 +131,7 @@
     if(state.me?.role!=="parent"||!state.student)return "";
     const pending=(state.privateLessons||[]).filter(x=>x.parentConfirmation==="pending");
     if(!pending.length)return "";
-    return `<div class="card"><h2>🔔 個別課待確認 <span class="badge warn">${pending.length}</span></h2><div class="notice">老師已登記個別課日期與時間，請家長確認學生是否完成本次個別課。</div>${pending.map(x=>`<div class="item" style="display:block"><div><b>${esc(x.lessonDate)}｜${esc(x.startTime||"")}～${esc(x.endTime||"")}</b><small>${esc(teacherLabel(x))}｜${esc(statusText[x.status]||x.status)}｜${Number(x.minutes||0)} 分鐘${x.lessonContent?`<br>內容：${esc(x.lessonContent)}`:""}</small></div><div class="row2" style="margin-top:10px"><button class="primary" style="margin-top:0" onclick="confirmPrivateLesson('${esc(x.lessonId)}','confirmed')">✅ 已完成</button><button class="secondary" style="margin-top:0" onclick="confirmPrivateLesson('${esc(x.lessonId)}','issue')">⚠️ 有問題</button></div></div>`).join("")}</div>`;
+    return '<div class="card"><h2>🔔 個別課待確認 <span class="badge warn">'+pending.length+'</span></h2><div class="notice">老師已登記個別課日期、時間與教學內容。可直接在此確認，並選填 1～5 星師資評價與家長評論。</div>'+pending.map(parentLessonRow).join("")+'</div>';
   }
 
   const baseHome=home;
@@ -143,8 +143,10 @@
     if(state.me?.role!=="parent")return html;
     const rows=(state.privateLessons||[]).slice(0,12);
     if(!rows.length)return html;
-    const latest=rows[0];const history=`<div class="card"><h2>👤 個別課最近紀錄</h2><div class="item"><div><b>${esc(latest.lessonDate)}｜${esc(latest.startTime||"")}～${esc(latest.endTime||"")}</b><small>${esc(teacherLabel(latest))}｜${Number(latest.minutes||0)} 分鐘${latest.parentNote?`<br>家長備註：${esc(latest.parentNote)}`:""}</small></div><span class="badge ${confirmClass[latest.parentConfirmation]||""}">${esc(confirmText[latest.parentConfirmation]||latest.parentConfirmation)}</span></div>${rows.length>1?`<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800">查看其他 ${rows.length-1} 筆個別課紀錄</summary><div style="margin-top:10px">${rows.slice(1).map(x=>`<div class="item"><div><b>${esc(x.lessonDate)}｜${esc(x.startTime||"")}～${esc(x.endTime||"")}</b><small>${esc(teacherLabel(x))}｜${Number(x.minutes||0)} 分鐘</small></div><span class="badge ${confirmClass[x.parentConfirmation]||""}">${esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>`).join("")}</div></details>`:""}</div>`;
-    return html+history;
+    const pending=rows.filter(x=>x.parentConfirmation==="pending"),done=rows.filter(x=>x.parentConfirmation!=="pending");
+    const pendingHtml=pending.length?'<div class="card"><h2>🔔 個別課待確認 <span class="badge warn">'+pending.length+'</span></h2><div class="notice">不用回首頁，直接在「紀錄」頁即可確認本次個別課並留下師資評價。</div>'+pending.map(parentLessonRow).join("")+'</div>':"";
+    const history=done.length?'<div class="card"><h2>👤 個別課最近紀錄</h2>'+done.slice(0,3).map(parentLessonRow).join("")+(done.length>3?'<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800">查看其他 '+(done.length-3)+' 筆個別課紀錄</summary><div style="margin-top:10px">'+done.slice(3).map(parentLessonRow).join("")+'</div></details>':"")+'</div>':"";
+    return html+pendingHtml+history;
   };
 
   privatePage=function(){
