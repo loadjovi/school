@@ -10,12 +10,20 @@ function clean(v,max=200){return String(v??"").trim().slice(0,max)}
 function isEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v||"").trim())}
 function tenantView(t){return {
   schoolId:String(t.rowKey||t.schoolId||""),schoolName:String(t.schoolName||""),shortName:String(t.shortName||""),
-  systemName:String(t.systemName||""),status:String(t.status||"setup"),timezone:String(t.timezone||"Asia/Taipei"),
+  systemName:String(t.systemName||""),schoolSlug:String(t.schoolSlug||""),cityCode:String(t.cityCode||""),cityName:String(t.cityName||""),schoolLevel:String(t.schoolLevel||""),schoolLevelName:String(t.schoolLevelName||""),status:String(t.status||"setup"),timezone:String(t.timezone||"Asia/Taipei"),
   createdAt:String(t.createdAt||""),updatedAt:String(t.updatedAt||""),updatedBy:String(t.updatedBy||"")
 }}
 function adminView(x){return {email:String(x.partitionKey||""),schoolId:String(x.schoolId||x.rowKey||""),role:String(x.role||""),status:String(x.status||""),createdAt:String(x.createdAt||""),updatedAt:String(x.updatedAt||"")}}
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
 function safe(v){return String(v||"").replaceAll("'","''")}
+const CITY_MAP={
+  "keelung":"基隆市","taipei":"臺北市","new-taipei":"新北市","taoyuan":"桃園市","hsinchu-city":"新竹市","hsinchu-county":"新竹縣",
+  "miaoli":"苗栗縣","taichung":"臺中市","changhua":"彰化縣","nantou":"南投縣","yunlin":"雲林縣","chiayi-city":"嘉義市","chiayi-county":"嘉義縣",
+  "tainan":"臺南市","kaohsiung":"高雄市","pingtung":"屏東縣","yilan":"宜蘭縣","hualien":"花蓮縣","taitung":"臺東縣","penghu":"澎湖縣","kinmen":"金門縣","lienchiang":"連江縣"
+};
+const LEVEL_MAP={"elementary":"國小","junior-high":"國中","senior-high":"高中"};
+function schoolSlugValue(v){return String(v||"").trim().toLowerCase().replace(/[^a-z0-9-]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"").slice(0,40)}
+function composeSchoolId(cityCode,schoolSlug,schoolLevel){return tenantIdValue([cityCode,schoolSlug,schoolLevel].filter(Boolean).join("-"))}
 
 async function requireGlobal(request){
   const a=await getAccess(request);
@@ -35,12 +43,15 @@ app.http("tenantDirectory",{
     }
     const body=await request.json();
     if(request.method==="POST"){
-      const schoolId=tenantIdValue(body.schoolId),schoolName=clean(body.schoolName,120);
-      if(!schoolId||schoolId.length<3)return json({error:"schoolId 至少 3 碼，只能使用英文、數字與 -"},400);
+      const cityCode=tenantIdValue(body.cityCode),schoolLevel=tenantIdValue(body.schoolLevel),schoolSlug=schoolSlugValue(body.schoolSlug),schoolName=clean(body.schoolName,120);
+      if(!CITY_MAP[cityCode])return json({error:"請選擇有效的縣市"},400);
+      if(!LEVEL_MAP[schoolLevel])return json({error:"請選擇有效的學制"},400);
+      if(!schoolSlug||schoolSlug.length<2)return json({error:"英文校名識別碼至少 2 碼，只能使用小寫英文、數字與 -"},400);
       if(!schoolName)return json({error:"請填寫學校名稱"},400);
-      if(await getTenantDirectory(schoolId))return json({error:"此 schoolId 已存在"},409);
-      const entity=await saveTenantDirectory(schoolId,{schoolName,shortName:clean(body.shortName,60),systemName:clean(body.systemName,160),timezone:clean(body.timezone,80)||"Asia/Taipei",status:"setup"},a.email);
-      await writeGlobalAudit({actorEmail:a.email,action:"tenant_create",schoolId,targetEmail:"",details:{schoolName}});
+      const schoolId=composeSchoolId(cityCode,schoolSlug,schoolLevel);
+      if(await getTenantDirectory(schoolId))return json({error:"此學校識別碼已存在："+schoolId},409);
+      const entity=await saveTenantDirectory(schoolId,{schoolName,shortName:clean(body.shortName,60),systemName:clean(body.systemName,160),schoolSlug,cityCode,cityName:CITY_MAP[cityCode],schoolLevel,schoolLevelName:LEVEL_MAP[schoolLevel],timezone:clean(body.timezone,80)||"Asia/Taipei",status:"setup"},a.email);
+      await writeGlobalAudit({actorEmail:a.email,action:"tenant_create",schoolId,targetEmail:"",details:{schoolName,cityCode,cityName:CITY_MAP[cityCode],schoolLevel,schoolLevelName:LEVEL_MAP[schoolLevel],schoolSlug}});
       return json({ok:true,item:tenantView(entity)},201);
     }
     const schoolId=tenantIdValue(body.schoolId);
@@ -48,7 +59,8 @@ app.http("tenantDirectory",{
     let status=clean(body.status,20)||String(old.status||"setup");
     if(schoolId===defaultTenantId())status="active";
     else if(status==="active")return json({error:"新學校目前仍在 Tenant 隔離建置階段，Phase 2 完成前不可啟用，以避免跨校資料外洩"},409);
-    const entity=await saveTenantDirectory(schoolId,{schoolName:clean(body.schoolName,120)||old.schoolName,shortName:clean(body.shortName,60)||old.shortName,systemName:clean(body.systemName,160)||old.systemName,timezone:clean(body.timezone,80)||old.timezone,status},a.email);
+    const cityCode=tenantIdValue(body.cityCode||old.cityCode),schoolLevel=tenantIdValue(body.schoolLevel||old.schoolLevel);
+    const entity=await saveTenantDirectory(schoolId,{schoolName:clean(body.schoolName,120)||old.schoolName,shortName:clean(body.shortName,60)||old.shortName,systemName:clean(body.systemName,160)||old.systemName,schoolSlug:schoolSlugValue(body.schoolSlug||old.schoolSlug),cityCode,cityName:CITY_MAP[cityCode]||old.cityName||"",schoolLevel,schoolLevelName:LEVEL_MAP[schoolLevel]||old.schoolLevelName||"",timezone:clean(body.timezone,80)||old.timezone,status},a.email);
     await writeGlobalAudit({actorEmail:a.email,action:"tenant_update",schoolId,details:{status:entity.status,schoolName:entity.schoolName}});
     return json({ok:true,item:tenantView(entity)});
   }
@@ -92,7 +104,7 @@ app.http("globalDashboard",{
     for(const t of tenants){
       const sid=String(t.rowKey),admins=await listTenantAdmins(sid,"active"),isDefault=sid===defaultId;
       schools.push({
-        schoolId:sid,schoolName:String(t.schoolName||sid),status:String(t.status||"setup"),schoolAdminCount:admins.length,
+        schoolId:sid,schoolName:String(t.schoolName||sid),cityCode:String(t.cityCode||""),cityName:String(t.cityName||""),schoolLevel:String(t.schoolLevel||""),schoolLevelName:String(t.schoolLevelName||""),schoolSlug:String(t.schoolSlug||""),status:String(t.status||"setup"),schoolAdminCount:admins.length,
         studentCount:isDefault?students.length:0,teacherCount:isDefault?teachers.filter(x=>String(x.status||"active")==="active").length:0,
         parentAccountCount:isDefault?new Set(parentMaps.map(x=>String(x.parentEmail||"").toLowerCase()).filter(Boolean)).size:0,
         todayAttendanceRecords:isDefault?(todaySection+todayEnsemble+todayComprehensive+todayPrivate):0,
