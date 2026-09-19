@@ -127,7 +127,7 @@
   }
   const baseNav=nav;
   nav=function(){
-    if(state.me?.role==="globalAdmin"&&state.page!=="contextSelect")return '<nav class="nav"><button class="active" onclick="openGlobalTenant()"><span>🌐</span>Global</button><button></button><button></button><button></button></nav>';
+    if(state.me?.role==="globalAdmin"&&state.page!=="contextSelect")return "";
     return baseNav();
   };
   const bg=go;go=async function(p){if(p==="global"&&canGlobal()){await openGlobalTenant();return}return bg(p)};
