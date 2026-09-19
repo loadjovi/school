@@ -1,4 +1,4 @@
-const state={me:null,students:[],student:null,page:"home",summary:null,practice:[],token:sessionStorage.getItem("google_id_token")||"",registrations:[],master:[]};
+const state={me:null,students:[],student:null,page:"home",summary:null,practice:[],token:sessionStorage.getItem("google_id_token")||"",registrations:[],master:[],parentSelfBind:{schoolId:"",schoolName:"",students:[],loading:false}};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
 const grades=["一年級","二年級","三年級","四年級","五年級","六年級"],groups=["A","B","C","儲備"],instruments=["小提琴","中提琴","大提琴","低音提琴","其他"];
@@ -37,14 +37,62 @@ function roleText(){return({parent:"家長／學生",teacher:"老師",sectionTea
 function navBtn(p,i,l){return `<button class="${state.page===p?"active":""}" onclick="go('${p}')"><span>${i}</span>${l}</button>`}
 function nav(){const r=state.me.role;if(state.page==="contextSelect")return `<nav class="nav"><button></button><button></button><button></button><button></button></nav>`;if(r==="parent")return `<nav class="nav">${navBtn("home","🏠","首頁")}${navBtn("practice","⏱️","自主打卡")}${navBtn("record","📊","紀錄")}${navBtn("register","➕","新增學生")}</nav>`;if(r==="sectionTeacher")return `<nav class="nav">${navBtn("section","🎼","分部點名")}${navBtn("help","ℹ️","說明")}<button></button><button></button></nav>`;if(r==="privateTeacher")return `<nav class="nav">${navBtn("private","🎻","個別課")}${navBtn("help","ℹ️","說明")}<button></button><button></button></nav>`;if(r==="admin")return `<nav class="nav">${navBtn("admin","📈","Dashboard")}${navBtn("students","👥","學生主檔")}${navBtn("scores","🧮","考核")}${navBtn("help","ℹ️","說明")}</nav>`;return `<nav class="nav">${navBtn("home","🏠","登記")}${navBtn("help","ℹ️","說明")}<button></button><button></button></nav>`}
 function shell(content){const multi=(state.me?.contexts||[]).length>1;const roleBadge=multi?`<button class="role" style="border:0;cursor:pointer" onclick="showContextSelector()" title="切換使用身分">${roleText()} ▾</button>`:`<span class="role">${roleText()}</span>`;return `<div class="shell"><header class="top"><div class="brand">🎻 ${esc(state.me?.systemName||state.me?.schoolName||"聖心小學弦樂團")}</div><div class="sub">${state.me?.schoolName?esc(state.me.schoolName)+"｜":""}Google Gmail 登入版 v3</div><div class="userrow"><div><small>${esc(state.me.displayName||state.me.email)}</small>${roleBadge}</div><button class="logout" onclick="logout()">登出</button></div></header><main class="main">${content}</main>${nav()}</div>`}
+function parentSelfBindPanel(){
+  const b=state.parentSelfBind||{};
+  if(!b.schoolId)return "";
+  if(b.loading)return `<div class="card"><h2>👨‍👩‍👧 綁定家長身分</h2><div class="notice">正在讀取 ${esc(b.schoolName||"學校")} 學生清單…</div></div>`;
+  const students=Array.isArray(b.students)?b.students:[];
+  return `<div class="card"><button class="secondary" style="margin:0 0 12px" onclick="closeParentSelfBind()">← 取消綁定</button><h2>👨‍👩‍👧 綁定家長身分｜${esc(b.schoolName||"學校")}</h2>
+    <div class="notice"><b>此功能僅提供該校 School Admin 綁定自己的家長身分。</b><br>綁定後，這個 Google 帳號會多出「${esc(b.schoolName||"學校")}｜家長」身分，可切換查看該學生的出勤、自主練習與個別課紀錄。</div>
+    <label>家長姓名</label><input id="selfParentName" value="${esc(state.me?.displayName||"")}">
+    <label>與學生關係</label><select id="selfParentRel"><option>父親</option><option>母親</option><option>監護人</option><option>家長</option><option>其他</option></select>
+    <label>綁定學生</label><select id="selfParentStudent">${students.map(s=>`<option value="${esc(s.studentId)}">${esc(s.name||"未命名")}｜${esc(s.grade||"—")}｜${esc(s.groupName||"—")}團｜${esc(s.instrument||"—")}｜學號 ${esc(s.studentId)}</option>`).join("")}</select>
+    <div class="check"><input id="selfParentConsent" type="checkbox"><div>我確認此 Google 帳號確實為上述學生之家長／監護人，並同意建立家長存取權限。</div></div>
+    <button class="primary" onclick="saveParentSelfBind()">✅ 建立家長身分</button>
+  </div>`;
+}
 function contextSelectorPage(){
   const contexts=Array.isArray(state.me?.contexts)?state.me.contexts:[];
   const active=sessionStorage.getItem("role_context")?String(state.me?.activeContextKey||""):"";
   if(!contexts.length)return `<div class="card hero"><h2>👤 尚無可用身分</h2><div class="notice">目前帳號尚未被授予任何平台或學校角色。</div></div>`;
-  return `<div class="card hero"><h2>👤 選擇使用身分</h2><div class="notice"><b>${esc(state.me?.displayName||state.me?.email)}</b><br>同一個 Google 帳號可以同時具有 Global、學校管理員、老師與家長身分。每次只啟用一個操作身分，避免權限混用。</div></div>`+
-    contexts.map(x=>{const disabled=x.status&&x.status!=="active"&&x.type==="schoolAdmin";const current=active===x.key;return `<div class="card"><div class="student"><div><b style="font-size:17px">${esc(x.icon||"👤")} ${esc(x.label||x.role)}</b><div class="muted">${x.schoolName?esc(x.schoolName)+"｜":""}${esc(x.status==="setup"?"建置中":x.status==="inactive"?"停用":"可使用")}</div></div>${current?`<span class="badge ok">目前身分</span>`:""}</div><button class="${disabled?"secondary":"primary"}" ${disabled?"disabled":""} onclick="selectIdentityContext('${esc(x.type)}','${esc(x.schoolId||"")}')">${disabled?"尚未開放":"使用此身分"}</button></div>`}).join("");
+  const cards=contexts.map(x=>{
+    const disabled=x.status&&x.status!=="active"&&x.type==="schoolAdmin",current=active===x.key;
+    const hasParent=contexts.some(y=>y.type==="parent"&&String(y.schoolId||"")===String(x.schoolId||""));
+    const bindParent=x.type==="schoolAdmin"&&x.status==="active"&&!hasParent
+      ?`<button class="secondary" style="width:100%;margin-top:10px" onclick="openParentSelfBind('${esc(x.schoolId||"")}','${esc(x.schoolName||"")}')">＋ 綁定為此校學生家長</button>`
+      :"";
+    return `<div class="card"><div class="student"><div><b style="font-size:17px">${esc(x.icon||"👤")} ${esc(x.label||x.role)}</b><div class="muted">${x.schoolName?esc(x.schoolName)+"｜":""}${esc(x.status==="setup"?"建置中":x.status==="inactive"?"停用":"可使用")}</div></div>${current?`<span class="badge ok">目前身分</span>`:""}</div><button class="${disabled?"secondary":"primary"}" ${disabled?"disabled":""} onclick="selectIdentityContext('${esc(x.type)}','${esc(x.schoolId||"")}')">${disabled?"尚未開放":"使用此身分"}</button>${bindParent}</div>`;
+  }).join("");
+  return `<div class="card hero"><h2>👤 選擇使用身分</h2><div class="notice"><b>${esc(state.me?.displayName||state.me?.email)}</b><br>同一個 Google 帳號可以同時具有 Global、學校管理員、老師與家長身分。每次只啟用一個操作身分，避免權限混用。</div></div>`+cards+parentSelfBindPanel();
 }
 window.showContextSelector=function(){state.page="contextSelect";render()};
+window.openParentSelfBind=async function(schoolId,schoolName){
+  state.parentSelfBind={schoolId:String(schoolId||""),schoolName:String(schoolName||""),students:[],loading:true};
+  render();
+  try{
+    const d=await api("/api/parent-self-bind?schoolId="+encodeURIComponent(schoolId));
+    state.parentSelfBind={schoolId:String(schoolId||""),schoolName:String(d.schoolName||schoolName||""),students:d.students||[],loading:false};
+    render();
+    setTimeout(()=>document.getElementById("selfParentStudent")?.scrollIntoView({behavior:"smooth",block:"center"}),50);
+  }catch(e){
+    state.parentSelfBind={schoolId:"",schoolName:"",students:[],loading:false};
+    toast("❌ "+e.message);render();
+  }
+};
+window.closeParentSelfBind=function(){state.parentSelfBind={schoolId:"",schoolName:"",students:[],loading:false};render()};
+window.saveParentSelfBind=async function(){
+  const b=state.parentSelfBind||{},studentId=document.getElementById("selfParentStudent")?.value,parentName=document.getElementById("selfParentName")?.value.trim(),relationship=document.getElementById("selfParentRel")?.value;
+  if(!document.getElementById("selfParentConsent")?.checked){toast("請先確認家長／監護人關係");return}
+  if(!studentId){toast("請選擇要綁定的學生");return}
+  const s=(b.students||[]).find(x=>String(x.studentId)===String(studentId));
+  if(!confirm(`確定將目前 Google 帳號綁定為「${s?.name||studentId}」的${relationship||"家長"}？\n\n綁定後，此帳號會取得該學生之家長資料存取權限。`))return;
+  try{
+    await api("/api/parent-self-bind",{method:"POST",body:JSON.stringify({schoolId:b.schoolId,studentId,parentName,relationship,consent:true})});
+    toast("✅ 家長身分已建立");
+    state.parentSelfBind={schoolId:"",schoolName:"",students:[],loading:false};
+    state.me=await api("/api/me");state.page="contextSelect";render();
+  }catch(e){toast("❌ "+e.message)}
+};
 window.selectIdentityContext=function(type,schoolId){
   const t=String(type||""),sid=String(schoolId||"");
   if(!["global","schoolAdmin","teacher","parent"].includes(t))return;
