@@ -1,4 +1,9 @@
 (()=>{
+  if(!document.getElementById("globalTenantStyles")){
+    const style=document.createElement("style");style.id="globalTenantStyles";
+    style.textContent=".global-manage-btn{border:0;border-radius:12px;padding:10px 14px;background:var(--green);color:#fff;font-weight:900;box-shadow:0 2px 6px rgba(0,0,0,.08)}.global-manage-btn:hover{filter:brightness(.95)}.global-danger-btn{border:1px solid var(--bad);border-radius:12px;padding:9px 11px;background:#fff7f7;color:var(--bad);font-weight:900}.global-danger-btn:hover{background:#fee2e2}.global-action-hint{display:block;font-size:11px;color:var(--muted);margin-top:4px}";
+    document.head.appendChild(style);
+  }
   state.globalTenant=state.globalTenant||{loaded:false,loading:false,dashboard:null,tenants:[],admins:[],selectedSchoolId:"",error:""};
   const canGlobal=()=>state.me?.role==="admin"&&state.me?.capabilities?.globalAdmin===true;
   const st={active:"🟢 啟用",setup:"🟡 建置中",inactive:"⚪ 停用"};
@@ -23,13 +28,13 @@
   }
   function schoolCard(x){
     const mode=x.dataMode==="legacy-default"?"既有聖心資料｜今日已有 "+Number(x.todayAttendanceRecords||0)+" 筆上課／點名紀錄":"Phase 2 前維持資料隔離建置，不會開放看到聖心既有資料。";
-    return '<div class="card"><div class="student"><div><b style="font-size:17px">🏫 '+esc(x.schoolName)+'</b><div class="muted">'+esc(x.schoolId)+'｜'+esc(st[x.status]||x.status)+'</div></div><button class="secondary" style="margin:0" onclick="selectGlobalSchool(\''+esc(x.schoolId)+'\')">管理</button></div>'+
+    return '<div class="card"><div class="student"><div><b style="font-size:17px">🏫 '+esc(x.schoolName)+'</b><div class="muted">'+esc(x.schoolId)+'｜'+esc(st[x.status]||x.status)+'</div></div><button class="global-manage-btn" style="margin:0" onclick="selectGlobalSchool(\''+esc(x.schoolId)+'\')">⚙️ 管理學校</button></div>'+
       '<div class="grid" style="margin-top:10px"><div class="kpi"><b>'+Number(x.studentCount||0)+'</b><span>學生</span></div><div class="kpi"><b>'+Number(x.teacherCount||0)+'</b><span>老師</span></div><div class="kpi"><b>'+Number(x.parentAccountCount||0)+'</b><span>家長帳號</span></div><div class="kpi"><b>'+Number(x.schoolAdminCount||0)+'</b><span>學校管理員</span></div></div><div class="notice" style="margin-top:10px"><small>'+esc(mode)+'</small></div></div>';
   }
   function adminBox(){
     const sid=state.globalTenant.selectedSchoolId,t=(state.globalTenant.tenants||[]).find(x=>String(x.schoolId)===String(sid));if(!sid||!t)return "";
     const rows=(state.globalTenant.admins||[]).filter(x=>x.status==="active");
-    const list=rows.length?rows.map(x=>'<div class="item"><div><b>'+esc(x.email)+'</b><small>School Admin</small></div><button class="secondary" style="margin:0" onclick="revokeSchoolAdmin(\''+esc(sid)+'\',\''+esc(x.email)+'\')">移除</button></div>').join(""):'<div class="notice" style="margin-top:10px">尚未指定學校管理員。</div>';
+    const list=rows.length?rows.map(x=>'<div class="item"><div><b>'+esc(x.email)+'</b><small>School Admin<span class="global-action-hint">移除權限不會刪除帳號或學校資料</span></small></div><button class="global-danger-btn" style="margin:0" onclick="revokeSchoolAdmin(\''+esc(sid)+'\',\''+esc(x.email)+'\')">🗑️ 移除權限</button></div>').join(""):'<div class="notice" style="margin-top:10px">尚未指定學校管理員。</div>';
     return '<div class="card"><h2>🔐 '+esc(t.schoolName)+'｜學校管理員</h2><div class="notice">Global Admin 可以指定此校後台管理員。新學校目前維持「建置中」，Phase 2 Tenant 資料隔離完成後才會開放營運後台。</div>'+list+'<label>新增管理員 Google Email</label><input id="globalAdminEmail" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 School Admin</button></div>';
   }
   function createBox(){
