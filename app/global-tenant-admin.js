@@ -1,11 +1,15 @@
 (()=>{
   if(!document.getElementById("globalTenantStyles")){
     const style=document.createElement("style");style.id="globalTenantStyles";
-    style.textContent=".global-manage-btn{border:0;border-radius:12px;padding:10px 14px;background:var(--green);color:#fff;font-weight:900;box-shadow:0 2px 6px rgba(0,0,0,.08)}.global-manage-btn:hover{filter:brightness(.95)}.global-danger-btn{border:1px solid var(--bad);border-radius:12px;padding:9px 11px;background:#fff7f7;color:var(--bad);font-weight:900}.global-danger-btn:hover{background:#fee2e2}.global-action-hint{display:block;font-size:11px;color:var(--muted);margin-top:4px}.global-school-card-open{border:2px solid var(--green);box-shadow:0 8px 20px rgba(0,0,0,.08)}.global-inline-admin{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}.global-inline-admin h3{margin:0 0 8px;font-size:15px}";
+    style.textContent=".global-manage-btn{border:0;border-radius:12px;padding:10px 14px;background:var(--green);color:#fff;font-weight:900;box-shadow:0 2px 6px rgba(0,0,0,.08)}.global-manage-btn:hover{filter:brightness(.95)}.global-danger-btn{border:1px solid var(--bad);border-radius:12px;padding:9px 11px;background:#fff7f7;color:var(--bad);font-weight:900}.global-danger-btn:hover{background:#fee2e2}.global-action-hint{display:block;font-size:11px;color:var(--muted);margin-top:4px}.global-school-card-open{border:2px solid var(--green);box-shadow:0 8px 20px rgba(0,0,0,.08)}.global-inline-admin{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}.global-inline-admin h3{margin:0 0 8px;font-size:15px}.global-health-row{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}.global-health-row:last-child{border-bottom:0}.global-health-pill{border-radius:999px;padding:4px 9px;font-size:12px;font-weight:900;white-space:nowrap}.global-health-healthy{background:#dcfce7;color:#166534}.global-health-warning{background:#fef3c7;color:#92400e}.global-health-critical{background:#fee2e2;color:#991b1b}.global-attendance-school{margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:#fff}";
     document.head.appendChild(style);
   }
-  state.globalTenant=state.globalTenant||{loaded:false,loading:false,dashboard:null,tenants:[],admins:[],selectedSchoolId:"",regionFilter:"",migration:null,migrationBusy:false,error:""};
+  const taipeiMonth=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()).slice(0,7);
+  state.globalTenant=state.globalTenant||{loaded:false,loading:false,dashboard:null,tenants:[],admins:[],selectedSchoolId:"",regionFilter:"",migration:null,migrationBusy:false,attendance:null,attendanceMonth:taipeiMonth(),attendanceLoading:false,health:null,healthLoading:false,error:""};
   if(state.globalTenant.migrationBusy===undefined)state.globalTenant.migrationBusy=false;
+  if(!state.globalTenant.attendanceMonth)state.globalTenant.attendanceMonth=taipeiMonth();
+  if(state.globalTenant.attendanceLoading===undefined)state.globalTenant.attendanceLoading=false;
+  if(state.globalTenant.healthLoading===undefined)state.globalTenant.healthLoading=false;
   state.globalBrandingAdmin=state.globalBrandingAdmin||{loading:false,error:""};
   let globalBrandLogoFile=null,globalBrandPreviewUrl="";
   const canGlobal=()=>state.me?.capabilities?.globalAdmin===true;
@@ -33,10 +37,11 @@
     if(state.globalTenant.loaded&&!force)return;
     state.globalTenant.loading=true;state.globalTenant.error="";draw();
     try{
-      const r=await Promise.all([api("/api/global-dashboard"),api("/api/tenant-directory"),api("/api/global-branding"),api("/api/tenant-migration")]);
+      const r=await Promise.all([api("/api/global-dashboard"),api("/api/tenant-directory"),api("/api/global-branding"),api("/api/tenant-migration"),api("/api/global-attendance?month="+encodeURIComponent(state.globalTenant.attendanceMonth)),api("/api/global-health")]);
       state.globalTenant.dashboard=r[0];state.globalTenant.tenants=r[1].items||[];state.globalTenant.loaded=true;
       state.globalBranding={...(state.globalBranding||{}),...(r[2]||{})};
       state.globalTenant.migration=r[3]||null;
+      state.globalTenant.attendance=r[4]||null;state.globalTenant.health=r[5]||null;
       if(typeof window.setGlobalBranding==="function")window.setGlobalBranding(state.globalBranding);
       if(state.globalTenant.selectedSchoolId)await loadAdmins(state.globalTenant.selectedSchoolId);
     }catch(e){state.globalTenant.error=e.message||String(e)}
@@ -45,10 +50,11 @@
   function inlineAdminPanel(x){
     const sid=String(x.schoolId||"");
     if(String(state.globalTenant.selectedSchoolId||"")!==sid)return "";
-    const rows=(state.globalTenant.admins||[]).filter(a=>a.status==="active");
+    const rows=(state.globalTenant.admins||[]).filter(a=>a.status==="active"),revoked=(state.globalTenant.admins||[]).filter(a=>a.status!=="active");
     const selfEmail=String(state.me?.email||"").toLowerCase();
     const selfIsAdmin=rows.some(a=>String(a.email||"").toLowerCase()===selfEmail);
     const list=rows.length?rows.map(a=>'<div class="item"><div><b>'+esc(a.email)+'</b><small>School Admin<span class="global-action-hint">移除權限不會刪除帳號或學校資料</span></small></div><button class="global-danger-btn" style="margin:0" onclick="revokeSchoolAdmin(\''+esc(sid)+'\',\''+esc(a.email)+'\')">🗑️ 移除權限</button></div>').join(""):'<div class="notice" style="margin-top:10px">尚未指定學校管理員。</div>';
+    const revokedList=revoked.length?'<details style="margin-top:10px"><summary><b>已停用權限紀錄（'+revoked.length+'）</b></summary>'+revoked.map(a=>'<div class="item"><div><b>'+esc(a.email)+'</b><small>停用於 '+esc(a.updatedAt||"未記錄")+'</small></div><button class="secondary" style="margin:0" onclick="grantKnownSchoolAdmin(\''+esc(sid)+'\',\''+esc(a.email)+'\')">重新啟用</button></div>').join("")+'</details>':'';
     let selfAction="";
     if(selfIsAdmin&&x.status==="active"){
       selfAction='<div class="notice" style="margin-top:10px"><b>✅ 您目前是此校 School Admin</b><br>可以由 Global 切換進入此校正式營運後台。</div><button class="primary" onclick="enterSchoolAdmin(\''+esc(sid)+'\')">🏫 進入 '+esc(x.schoolName)+' 後台</button>';
@@ -57,17 +63,22 @@
     }else{
       selfAction='<button class="secondary" style="width:100%;margin-top:10px" onclick="bindSelfSchoolAdmin(\''+esc(sid)+'\')">👤 將我的 Global 帳號綁定為此校管理員</button>';
     }
-    return '<div class="global-inline-admin"><h3>🔐 '+esc(x.schoolName)+'｜學校管理員</h3><div class="notice">Global 可管理此校 School Admin 權限；只有已被指定為此校管理員的帳號，才可以進入該校營運後台。</div>'+selfAction+list+'<label>新增此校管理員 Google Email</label><input id="globalAdminEmail_'+esc(sid)+'" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 '+esc(x.schoolName)+' School Admin</button></div>';
+    const cityOptions=cities.map(option=>'<option value="'+esc(option[0])+'" '+(option[0]===x.cityCode?'selected':'')+'>'+esc(option[1])+'</option>').join("");
+    const levelOptions=levels.map(option=>'<option value="'+esc(option[0])+'" '+(option[0]===x.schoolLevel?'selected':'')+'>'+esc(option[1])+'</option>').join("");
+    const statusOptions=sid==="sacred-heart"?'<option value="active">啟用（固定）</option>':['setup','inactive'].map(value=>'<option value="'+value+'" '+(value===x.status?'selected':'')+'>'+esc(st[value]||value)+'</option>').join("");
+    const schoolForm='<div class="global-inline-admin"><h3>🏫 學校基本設定</h3><div class="notice"><b>schoolId：'+esc(sid)+'</b><br>schoolId 建立後不可修改；非聖心學校在 Phase 4 Onboarding 與隔離驗證前只能維持「建置中」或「停用」。</div><label>學校名稱</label><input id="tenantName_'+esc(sid)+'" value="'+esc(x.schoolName||'')+'" maxlength="120"><div class="row2"><div><label>簡稱</label><input id="tenantShort_'+esc(sid)+'" value="'+esc(x.shortName||'')+'" maxlength="60"></div><div><label>系統名稱</label><input id="tenantSystem_'+esc(sid)+'" value="'+esc(x.systemName||'')+'" maxlength="160"></div></div><div class="row2"><div><label>縣市</label><select id="tenantCity_'+esc(sid)+'">'+cityOptions+'</select></div><div><label>學制</label><select id="tenantLevel_'+esc(sid)+'">'+levelOptions+'</select></div></div><div class="row2"><div><label>時區</label><select id="tenantTimezone_'+esc(sid)+'"><option value="Asia/Taipei" selected>Asia/Taipei</option></select></div><div><label>狀態</label><select id="tenantStatus_'+esc(sid)+'" '+(sid==="sacred-heart"?'disabled':'')+'>'+statusOptions+'</select></div></div><button class="primary" onclick="saveSchoolTenant(\''+esc(sid)+'\')">💾 儲存學校設定</button></div>';
+    return schoolForm+'<div class="global-inline-admin"><h3>🔐 '+esc(x.schoolName)+'｜學校管理員</h3><div class="notice">Global 可管理此校 School Admin 權限；只有已被指定為此校管理員的帳號，才可以進入該校營運後台。</div>'+selfAction+list+revokedList+'<label>新增此校管理員 Google Email</label><input id="globalAdminEmail_'+esc(sid)+'" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 '+esc(x.schoolName)+' School Admin</button></div>';
   }
   function schoolCard(x){
-    const mode=x.dataMode==="tenant-scoped-operational"?"學生、家長、老師、出勤、練習與個別課資料均已 Tenant 化。":x.dataMode==="tenant-scoped-master"?"學生、家長、老師主資料已 Tenant 化；出勤、練習與個別課紀錄切換中。":x.dataMode==="legacy-default"?"既有學校營運資料":"維持資料隔離建置，不會開放看到其他學校既有資料。";
+    const mode=x.dataMode==="tenant-scoped-operational"?"學生、家長、老師、出勤、練習與個別課資料均已 Tenant 化。":"Tenant 結構已備妥，但維持建置狀態且尚未加入正式營運資料。";
     const region=[x.cityName||cityName(x.cityCode),x.schoolLevelName||levelName(x.schoolLevel)].filter(Boolean).join("｜");
     const opened=String(state.globalTenant.selectedSchoolId||"")===String(x.schoolId||"");
     const buttonText=opened?"▲ 收合管理":"⚙️ 管理學校";
     const teachers=x.teacherStatus||{},att=x.todayAttendance||{};
-    const managerExtra=x.isSchoolManager?'<div class="notice" style="margin-top:10px"><b>🔐 您具備此校後台管理權限</b><br>學生 '+Number(x.studentCount||0)+' 人｜家長帳號 '+Number(x.parentAccountCount||0)+' 個</div>':'<div class="notice" style="margin-top:10px"><b>👁️ Global 觀察模式</b><br>尚未綁定此校 School Admin，因此僅顯示出缺勤與老師狀態，不顯示學生／家長明細。</div>';
+    const managerExtra=x.isSchoolManager?'<div class="notice" style="margin-top:10px"><b>🔐 您具備此校後台管理權限</b><br>可切換進入該校後台；Global 畫面仍只呈現跨校彙總。</div>':'<div class="notice" style="margin-top:10px"><b>👁️ Global 彙總觀察</b><br>可查看學生與家長帳號數量，但不會取得姓名、Email 或個別出勤明細。</div>';
     return '<div class="card '+(opened?"global-school-card-open":"")+'"><div class="student"><div><b style="font-size:17px">🏫 '+esc(x.schoolName)+'</b><div class="muted">'+(region?esc(region)+'｜':"")+esc(x.schoolId)+'｜'+esc(st[x.status]||x.status)+'</div></div><button class="global-manage-btn" style="margin:0" onclick="selectGlobalSchool(\''+esc(x.schoolId)+'\')">'+buttonText+'</button></div>'+
-      '<div class="grid" style="margin-top:10px"><div class="kpi"><b>'+Number(teachers.active||0)+'</b><span>啟用老師</span></div><div class="kpi"><b>'+Number(teachers.loggedInToday||0)+'</b><span>今日登入老師</span></div><div class="kpi"><b>'+Number(att.total||0)+'</b><span>今日有效點名</span></div><div class="kpi"><b>'+Number(x.schoolAdminCount||0)+'</b><span>學校管理員</span></div></div>'+
+      '<div class="grid" style="margin-top:10px"><div class="kpi"><b>'+Number(x.studentCount||0)+'</b><span>在籍學生</span></div><div class="kpi"><b>'+Number(x.parentAccountCount||0)+'</b><span>家長帳號</span></div><div class="kpi"><b>'+Number(teachers.active||0)+'</b><span>啟用老師</span></div><div class="kpi"><b>'+Number(x.schoolAdminCount||0)+'</b><span>學校管理員</span></div></div>'+
+      '<div class="grid" style="margin-top:10px"><div class="kpi"><b>'+Number(teachers.loggedInToday||0)+'</b><span>今日登入老師</span></div><div class="kpi"><b>'+Number(att.total||0)+'</b><span>今日有效點名</span></div><div class="kpi"><b>'+(att.attendanceRate===null||att.attendanceRate===undefined?'—':Number(att.attendanceRate).toFixed(1)+'%')+'</b><span>今日出席率</span></div><div class="kpi"><b>'+Number(att.cancelled||0)+'</b><span>取消課堂</span></div></div>'+
       '<div class="grid" style="margin-top:10px"><div class="kpi"><b>'+Number(att.present||0)+'</b><span>出席</span></div><div class="kpi"><b>'+Number(att.leave||0)+'</b><span>請假</span></div><div class="kpi"><b>'+Number(att.absent||0)+'</b><span>缺席</span></div><div class="kpi"><b>'+Number(att.late||0)+'</b><span>遲到</span></div></div>'+
       '<div class="notice" style="margin-top:10px"><b>📍 '+esc(region||"行政區未設定")+'</b><br><small>'+esc(mode)+'</small><br><small>點名統計採有效課程 Session 計算：團體／分部課同一學生同一課程只計最新狀態；個別課則依日期＋時間＋老師辨識不同課堂，同一天上兩堂會計 2 筆，相同時段重複建立不重複計算。</small></div>'+managerExtra+inlineAdminPanel(x)+'</div>';
   }
@@ -95,6 +106,27 @@
       '<div class="grid" style="margin-top:12px"><div class="kpi"><b>'+esc(statusText)+'</b><span>遷移狀態</span></div><div class="kpi"><b>'+Number(totals.legacy||0)+'</b><span>既有資料</span></div><div class="kpi"><b>'+Number(totals.scoped||0)+'</b><span>已具 Tenant 鍵值</span></div><div class="kpi"><b>'+differences+'</b><span>鍵值差異</span></div></div>'+
       (m.updatedAt?'<div class="muted" style="margin-top:8px">最後執行：'+esc(m.updatedAt)+(m.updatedBy?'｜'+esc(m.updatedBy):'')+'</div>':'')+
       result+actions+'</div>';
+  }
+  function attendanceRateText(value){return value===null||value===undefined?"—":Number(value).toFixed(1)+"%"}
+  function crossSchoolAttendanceBox(){
+    const report=state.globalTenant.attendance,busy=state.globalTenant.attendanceLoading;
+    if(!report)return '<div class="card"><h2>📊 跨校出勤統計</h2><div class="notice">尚未取得出勤彙總。</div></div>';
+    const total=report.totals||{},classLabels={section:"分部課",ensemble:"合奏課",comprehensive:"綜合課",privateLesson:"個別課"};
+    const schools=(report.schools||[]).map(school=>{
+      const attendance=school.total||{},classes=school.byClass||{};
+      const detail=Object.keys(classLabels).map(key=>{const item=classes[key]||{};return '<div class="item"><div><b>'+classLabels[key]+'</b><small>出席 '+Number(item.attended||0)+'｜請假 '+Number(item.leave||0)+'｜缺席 '+Number(item.absent||0)+'｜遲到 '+Number(item.late||0)+'</small></div><b>'+Number(item.total||0)+' 筆</b></div>'}).join("");
+      return '<div class="global-attendance-school"><div class="student"><div><b>'+esc(school.schoolName||school.schoolId)+'</b><div class="muted">'+esc(st[school.status]||school.status||"")+'｜'+esc(school.cityName||"")+'</div></div><div style="text-align:right"><b style="font-size:20px">'+attendanceRateText(attendance.attendanceRate)+'</b><small style="display:block;color:var(--muted)">出席率</small></div></div><div class="grid" style="margin-top:10px"><div class="kpi"><b>'+Number(attendance.total||0)+'</b><span>有效點名</span></div><div class="kpi"><b>'+Number(attendance.attended||0)+'</b><span>已到（含遲到）</span></div><div class="kpi"><b>'+Number(attendance.leave||0)+'</b><span>請假</span></div><div class="kpi"><b>'+Number(attendance.absent||0)+'</b><span>缺席</span></div></div><details style="margin-top:10px"><summary><b>依課程類型查看</b></summary>'+detail+'</details></div>';
+    }).join("");
+    return '<div class="card"><h2>📊 跨校出勤統計</h2><div class="notice"><b>僅顯示彙總數字</b><br>月份由 Global 選擇，API 只使用伺服器已登錄的 Tenant 清單，不接受前端指定 schoolId，也不回傳學生或家長個資。</div><div class="row2" style="align-items:end"><div><label>統計月份</label><input type="month" value="'+esc(report.month||state.globalTenant.attendanceMonth)+'" onchange="changeGlobalAttendanceMonth(this.value)" '+(busy?'disabled':'')+'></div><div><button class="secondary" style="width:100%" onclick="exportGlobalAttendance()" '+(busy?'disabled':'')+'>⬇️ 匯出彙總 CSV</button></div></div><div class="grid" style="margin-top:12px"><div class="kpi"><b>'+Number(total.total||0)+'</b><span>有效點名</span></div><div class="kpi"><b>'+Number(total.attended||0)+'</b><span>已到（含遲到）</span></div><div class="kpi"><b>'+attendanceRateText(total.attendanceRate)+'</b><span>跨校出席率</span></div><div class="kpi"><b>'+Number(total.absent||0)+'</b><span>缺席</span></div></div>'+(busy?'<div class="notice" style="margin-top:10px">正在更新月份統計…</div>':schools)+'</div>';
+  }
+  function platformHealthBox(){
+    const health=state.globalTenant.health,busy=state.globalTenant.healthLoading;
+    if(!health)return '<div class="card"><h2>🩺 平台健康度</h2><div class="notice">尚未取得健康檢查結果。</div></div>';
+    const statusMeta={healthy:["✅ 正常","global-health-healthy"],warning:["⚠️ 注意","global-health-warning"],critical:["🚨 異常","global-health-critical"]},overall=statusMeta[health.overall]||statusMeta.warning;
+    let checkedAt=health.checkedAt||"";try{checkedAt=new Date(checkedAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false})}catch{}
+    const checks=(health.checks||[]).map(check=>{const meta=statusMeta[check.status]||statusMeta.warning;return '<div class="global-health-row"><div><b>'+esc(check.label||check.key)+'</b><small style="display:block;color:var(--muted);margin-top:3px">'+esc(check.detail||"")+'</small></div><span class="global-health-pill '+meta[1]+'">'+meta[0]+'</span></div>'}).join("");
+    const tableRows=(health.isolation?.byTable||[]).map(item=>'<div class="item"><div><b>'+esc(item.label||item.key)+'</b><small>'+Number(item.rows||0)+' 筆已掃描</small></div><b style="color:'+(Number(item.invalid||0)?'var(--bad)':'var(--green)')+'">'+(Number(item.invalid||0)?Number(item.invalid)+' 筆異常':'✅')+'</b></div>').join("");
+    return '<div class="card"><div class="student"><div><h2 style="margin:0">🩺 平台健康度</h2><div class="muted">最後檢查：'+esc(checkedAt||"未記錄")+'</div></div><span class="global-health-pill '+overall[1]+'">'+overall[0]+'</span></div><div class="grid" style="margin-top:12px"><div class="kpi"><b>'+Number(health.summary?.healthy||0)+'</b><span>正常</span></div><div class="kpi"><b>'+Number(health.summary?.warning||0)+'</b><span>注意</span></div><div class="kpi"><b>'+Number(health.summary?.critical||0)+'</b><span>異常</span></div><div class="kpi"><b>'+Number(health.isolation?.rows||0)+'</b><span>隔離鍵值掃描</span></div></div><div style="margin-top:10px">'+checks+'</div><details style="margin-top:10px"><summary><b>Tenant 資料表掃描明細</b></summary>'+tableRows+'</details><button class="secondary" style="width:100%;margin-top:10px" onclick="refreshGlobalHealth()" '+(busy?'disabled':'')+'>'+(busy?'檢查中…':'🔄 重新檢查平台健康度')+'</button><div class="notice" style="margin-top:10px">健康檢查只回傳設定是否存在、資料筆數與錯誤數，不會顯示環境變數內容或帳號個資。</div></div>';
   }
   window.previewGlobalBrandingColor=function(value){
     if(!/^#[0-9A-Fa-f]{6}$/.test(String(value||"")))return;
@@ -155,6 +187,30 @@
     }catch(e){toast("❌ Phase 2 "+(labels[action]||action)+"失敗："+(e.message||e))}
     state.globalTenant.migrationBusy=false;draw();
   };
+  window.changeGlobalAttendanceMonth=async function(month){
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month||""))){toast("月份格式不正確");return}
+    state.globalTenant.attendanceMonth=month;state.globalTenant.attendanceLoading=true;draw();
+    try{state.globalTenant.attendance=await api("/api/global-attendance?month="+encodeURIComponent(month))}catch(e){toast("❌ 跨校出勤讀取失敗："+e.message)}
+    state.globalTenant.attendanceLoading=false;draw();
+  };
+  window.exportGlobalAttendance=function(){
+    const report=state.globalTenant.attendance;if(!report)return;
+    const labels={total:"全部課程",section:"分部課",ensemble:"合奏課",comprehensive:"綜合課",privateLesson:"個別課"},rows=[["月份","schoolId","學校","狀態","課程類型","有效點名","出席","遲到","請假","缺席","取消","出席率"]];
+    for(const school of report.schools||[]){
+      for(const key of Object.keys(labels)){
+        const item=key==="total"?school.total:school.byClass?.[key];
+        rows.push([report.month,school.schoolId,school.schoolName,school.status,labels[key],Number(item?.total||0),Number(item?.present||0),Number(item?.late||0),Number(item?.leave||0),Number(item?.absent||0),Number(item?.cancelled||0),attendanceRateText(item?.attendanceRate)]);
+      }
+    }
+    const cell=value=>{let text=String(value??"");if(/^[=+\-@]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"'};
+    const blob=new Blob(["\ufeff"+rows.map(row=>row.map(cell).join(",")).join("\r\n")],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),link=document.createElement("a");
+    link.href=url;link.download="global-attendance-"+report.month+".csv";document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+  window.refreshGlobalHealth=async function(){
+    if(state.globalTenant.healthLoading)return;state.globalTenant.healthLoading=true;draw();
+    try{state.globalTenant.health=await api("/api/global-health?_="+Date.now());toast("✅ 平台健康檢查已更新")}catch(e){toast("❌ 健康檢查失敗："+e.message)}
+    state.globalTenant.healthLoading=false;draw();
+  };
 
   function createBox(){
     const cityOpts=cities.map(x=>'<option value="'+esc(x[0])+'" '+(x[0]==="keelung"?"selected":"")+'>'+esc(x[1])+'</option>').join("");
@@ -172,7 +228,7 @@
     const regionOptions=['<option value="">全部行政區</option>'].concat(cities.map(x=>'<option value="'+esc(x[0])+'" '+(state.globalTenant.regionFilter===x[0]?"selected":"")+'>'+esc(x[1])+'</option>')).join("");
     const schools=(d.schools||[]).filter(x=>!state.globalTenant.regionFilter||x.cityCode===state.globalTenant.regionFilter);
     const managed=(d.schools||[]).filter(x=>x.isSchoolManager).length;
-    return '<div class="card hero">'+(sessionStorage.getItem("school_context_id")?'<button class="secondary" style="margin:0 0 10px" onclick="returnToGlobalTenant()">← 返回 Global 觀察模式</button>':'')+'<h2>🌐 Global 管理中心</h2><div class="notice"><b>Global 帳號預設為跨校觀察角色</b><br>未綁定任何學校時，只查看各校出缺勤與老師狀態；綁定為特定學校 School Admin 後，才可進入該校後台。</div><div class="grid" style="margin-top:12px"><div class="kpi"><b>'+Number(d.schoolCount||0)+'</b><span>加入學校</span></div><div class="kpi"><b>'+Number(d.totals?.teachers||0)+'</b><span>啟用老師</span></div><div class="kpi"><b>'+Number(d.totals?.todayAttendanceRecords||0)+'</b><span>今日點名紀錄</span></div><div class="kpi"><b>'+managed+'</b><span>我管理的學校</span></div></div></div>'+globalBrandingBox()+phase2MigrationBox()+(typeof window.globalSystemBackupHtml==="function"?window.globalSystemBackupHtml():"")+'<div class="card"><h2>🏫 學校清單</h2><label>行政區篩選</label><select onchange="filterGlobalRegion(this.value)">'+regionOptions+'</select><div class="muted" style="margin-top:8px">目前顯示 '+schools.length+' / '+Number(d.schoolCount||0)+' 所學校</div></div>'+schools.map(schoolCard).join("")+createBox();
+    return '<div class="card hero">'+(sessionStorage.getItem("school_context_id")?'<button class="secondary" style="margin:0 0 10px" onclick="returnToGlobalTenant()">← 返回 Global 觀察模式</button>':'')+'<h2>🌐 Phase 3｜Global 管理中心</h2><div class="notice"><b>跨校管理採彙總最小揭露</b><br>Global 可查看各校人數、出勤與平台健康度，但不取得學生、家長或老師明細；只有綁定為該校 School Admin 後，才可切換進入該校後台。</div><div class="grid" style="margin-top:12px"><div class="kpi"><b>'+Number(d.schoolCount||0)+'</b><span>加入學校</span></div><div class="kpi"><b>'+Number(d.totals?.students||0)+'</b><span>在籍學生</span></div><div class="kpi"><b>'+Number(d.totals?.teachers||0)+'</b><span>啟用老師</span></div><div class="kpi"><b>'+Number(d.totals?.parentAccounts||0)+'</b><span>家長帳號</span></div></div><div class="grid" style="margin-top:10px"><div class="kpi"><b>'+Number(d.statusCounts?.active||0)+'</b><span>正式營運</span></div><div class="kpi"><b>'+Number(d.statusCounts?.setup||0)+'</b><span>建置中</span></div><div class="kpi"><b>'+Number(d.totals?.todayAttendanceRecords||0)+'</b><span>今日點名</span></div><div class="kpi"><b>'+managed+'</b><span>我管理的學校</span></div></div></div>'+crossSchoolAttendanceBox()+platformHealthBox()+'<div class="card"><h2>🏫 學校管理</h2><div class="notice">可編輯學校基本資料與 School Admin；新學校會保持建置中，正式啟用留待 Phase 4 隔離驗證完成。</div><label>行政區篩選</label><select onchange="filterGlobalRegion(this.value)">'+regionOptions+'</select><div class="muted" style="margin-top:8px">目前顯示 '+schools.length+' / '+Number(d.schoolCount||0)+' 所學校</div></div>'+schools.map(schoolCard).join("")+createBox()+globalBrandingBox()+phase2MigrationBox()+(typeof window.globalSystemBackupHtml==="function"?window.globalSystemBackupHtml():"");
   }
   function draw(){if(state.page==="global"&&canGlobal()){const a=document.getElementById("app");if(a){a.innerHTML=shell(page());setTimeout(()=>window.updateTenantIdPreview?.(),0)}}}
   window.openGlobalTenant=async function(){if(!canGlobal())return;state.page="global";draw();await loadGlobal(true)};
@@ -202,9 +258,17 @@
     if(!body.cityCode||!body.schoolLevel||!schoolSlug||!body.schoolName){toast("請選擇縣市、學制，並填寫英文校名識別碼與學校名稱");return}
     try{const d=await api("/api/tenant-directory",{method:"POST",body:JSON.stringify(body)});toast("✅ "+(d.item?.schoolId||"學校 Tenant")+" 已建立為建置中");state.globalTenant.loaded=false;await loadGlobal(true)}catch(e){toast("❌ "+e.message)}
   };
+  window.saveSchoolTenant=async function(sid){
+    const body={schoolId:sid,schoolName:document.getElementById("tenantName_"+sid)?.value.trim(),shortName:document.getElementById("tenantShort_"+sid)?.value.trim(),systemName:document.getElementById("tenantSystem_"+sid)?.value.trim(),cityCode:document.getElementById("tenantCity_"+sid)?.value,schoolLevel:document.getElementById("tenantLevel_"+sid)?.value,timezone:document.getElementById("tenantTimezone_"+sid)?.value||"Asia/Taipei",status:sid==="sacred-heart"?"active":document.getElementById("tenantStatus_"+sid)?.value};
+    if(!body.schoolName||!body.cityCode||!body.schoolLevel){toast("請完整填寫學校名稱、縣市與學制");return}
+    try{await api("/api/tenant-directory",{method:"PATCH",body:JSON.stringify(body)});toast("✅ 學校設定已儲存");await loadGlobal(true)}catch(e){toast("❌ "+e.message)}
+  };
   window.grantSchoolAdmin=async function(sid){
     const email=document.getElementById("globalAdminEmail_"+sid)?.value.trim();if(!email){toast("請輸入此校管理員 Email");return}
     try{await api("/api/tenant-admins",{method:"PATCH",body:JSON.stringify({schoolId:sid,email,action:"grant"})});toast("✅ 已指定此校 School Admin");await loadGlobal(true)}catch(e){toast("❌ "+e.message)}
+  };
+  window.grantKnownSchoolAdmin=async function(sid,email){
+    try{await api("/api/tenant-admins",{method:"PATCH",body:JSON.stringify({schoolId:sid,email,action:"grant"})});toast("✅ 已重新啟用此校 School Admin");await loadGlobal(true)}catch(e){toast("❌ "+e.message)}
   };
   window.revokeSchoolAdmin=async function(sid,email){
     const school=(state.globalTenant.tenants||[]).find(x=>String(x.schoolId)===String(sid));
