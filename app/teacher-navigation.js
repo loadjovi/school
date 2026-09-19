@@ -83,6 +83,7 @@
 
   const previousNav=nav;
   nav=function(){
+    if(state.page==="contextSelect")return previousNav();
     if(!teacherAccount())return previousNav();
     return `<nav class="nav">${navBtn("teacherHome","🎓","教學")}${navBtn("attendance","📋","出勤")}${navBtn("teacherSettings","⚙️","我的教學")}${navBtn("help","ℹ️","說明")}</nav>`;
   };
