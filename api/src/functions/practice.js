@@ -6,7 +6,7 @@ function minutesBetween(start,end){
   if([sh,sm,eh,em].some(Number.isNaN))return -1;
   let m=(eh*60+em)-(sh*60+sm);if(m<0)m+=1440;return m;
 }
-app.http("practice",{methods:["GET","POST"],authLevel:"anonymous",route:"practice",handler:async(request)=>{
+app.http("practice",{methods:["GET","POST","DELETE"],authLevel:"anonymous",route:"practice",handler:async(request)=>{
   const a=await getAccess(request);if(!a.authenticated)return json({error:"Unauthorized"},401);
   if(request.method==="GET"){
     const studentId=request.query.get("studentId"),month=request.query.get("month");
@@ -15,8 +15,27 @@ app.http("practice",{methods:["GET","POST"],authLevel:"anonymous",route:"practic
     const end=month?`${month}-31`:null;
     const aliases=await getStudentIdAliases(studentId);
     const rows=(await Promise.all(aliases.map(id=>listByStudent("practice",id,start,end)))).flat().sort((x,y)=>String(y.eventDate||"").localeCompare(String(x.eventDate||""))||String(y.createdAt||"").localeCompare(String(x.createdAt||"")));
-    return json({items:rows.map(x=>({practiceDate:x.eventDate,startTime:x.startTime,endTime:x.endTime,minutes:x.minutes,qualified:x.qualified,practiceContent:x.practiceContent,focus:x.focus}))});
+    return json({items:rows.map(x=>({practiceId:String(x.rowKey||""),studentId:String(x.partitionKey||""),practiceDate:x.eventDate,startTime:x.startTime,endTime:x.endTime,minutes:x.minutes,qualified:x.qualified,practiceContent:x.practiceContent,focus:x.focus,createdBy:String(x.createdBy||""),createdAt:String(x.createdAt||"")}))});
   }
+
+  if(request.method==="DELETE"){
+    if(a.role!=="parent"&&a.role!=="admin")return json({error:"此角色不可刪除自主練習"},403);
+    const body=await request.json();
+    const studentId=String(body.studentId||"").trim(),practiceId=String(body.practiceId||"").trim();
+    if(!studentId||!practiceId||!ensureStudentAccess(a,studentId))return json({error:"Forbidden"},403);
+    const aliases=await getStudentIdAliases(studentId);
+    let entity=null,partitionKey="";
+    for(const id of aliases){
+      try{
+        entity=await table("practice").getEntity(String(id),practiceId);
+        partitionKey=String(id);break;
+      }catch(e){if(e.statusCode!==404)throw e}
+    }
+    if(!entity)return json({error:"找不到自主練習紀錄，可能已被移除"},404);
+    await table("practice").deleteEntity(partitionKey,practiceId);
+    return json({ok:true,practiceId,studentId,deletedAt:new Date().toISOString(),deletedBy:a.email});
+  }
+
   if(a.role!=="parent"&&a.role!=="admin")return json({error:"此角色不可新增自主練習"},403);
   const body=await request.json();
   if(!body.studentId||!ensureStudentAccess(a,body.studentId))return json({error:"Forbidden"},403);
