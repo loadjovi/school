@@ -130,10 +130,10 @@ app.http("privateLesson",{
 
       if(action==="cancel_lesson"){
         if(!(a.role==="admin"||a.capabilities?.private))return json({error:"只有管理員或個別課老師可以取消誤登記個課"},403);
+        if(String(entity.parentConfirmation||"")==="confirmed")return json({error:"此筆個別課已完成老師登記與家長確認，紀錄已鎖定，無法取消"},409);
         if(a.role!=="admin"){
           if(!ensurePrivateAccess(a,studentId))return json({error:"此老師未綁定該學生的個別課權限"},403);
           if(String(entity.teacher||"").toLowerCase()!==String(a.email||"").toLowerCase())return json({error:"只能取消自己建立的個別課紀錄"},403);
-          if(String(entity.parentConfirmation||"")==="confirmed")return json({error:"家長已確認此筆個別課，請由學校管理員處理"},409);
         }
         if(String(entity.status||"")==="cancelled"){
           const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName);
