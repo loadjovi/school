@@ -245,6 +245,8 @@ export async function getAccess(request){
   let defaultTenant;
   try{defaultTenant=await ensureDefaultTenant(email)}catch(e){console.warn("tenant bootstrap failed",e?.message||String(e));defaultTenant={rowKey:defaultId,schoolName:"聖心小學",systemName:"聖心小學弦樂團"}}
 
+  const requestedContext=String(request.headers.get("x-role-context")||"").trim();
+  const requestedSchoolId=String(request.headers.get("x-school-id")||"").trim().toLowerCase();
   const bootstrapGlobal=admins.includes(email);
   if(bootstrapGlobal){
     try{await ensureBootstrapGlobalAdmin(email)}catch(e){console.warn("global admin bootstrap failed",e?.message||String(e))}
@@ -263,29 +265,42 @@ export async function getAccess(request){
       if(membership.status==="active")activeRoles.push(r);
     }
 
-    const requestedSchoolId=String(request.headers.get("x-school-id")||"").trim().toLowerCase();
     const selectedRole=requestedSchoolId?activeRoles.find(x=>String(x.schoolId)===requestedSchoolId):null;
+    const wantsTeacher=requestedContext==="teacher";
+    const wantsParent=requestedContext==="parent";
+    const wantsSchoolAdmin=requestedContext==="schoolAdmin";
+    const wantsGlobal=requestedContext==="global";
 
-    if(globalRole){
-      if(selectedRole){
-        const tenant=await getTenantDirectory(selectedRole.schoolId)||defaultTenant;
-        return {authenticated:true,...identity,role:"admin",schoolId:String(selectedRole.schoolId),schoolName:String(tenant?.schoolName||selectedRole.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selectedRole.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,globalAdmin:true}};
+    if(globalRole&&!wantsTeacher&&!wantsParent){
+      if(wantsSchoolAdmin){
+        if(selectedRole){
+          const tenant=await getTenantDirectory(selectedRole.schoolId)||defaultTenant;
+          return {authenticated:true,...identity,role:"admin",schoolId:String(selectedRole.schoolId),schoolName:String(tenant?.schoolName||selectedRole.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selectedRole.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,globalAdmin:true}};
+        }
+        return {authenticated:true,...identity,role:"contextDenied",schoolId:requestedSchoolId||null,schoolName:"",systemName:"",memberships,capabilities:{globalAdmin:true,contextDenied:true}};
       }
-      return {authenticated:true,...identity,role:"globalAdmin",schoolId:null,schoolName:"",systemName:"Global 多校管理",memberships,capabilities:{globalAdmin:true,globalReadOnly:true}};
+      if(wantsGlobal||!requestedContext){
+        return {authenticated:true,...identity,role:"globalAdmin",schoolId:null,schoolName:"",systemName:"Global 多校管理",memberships,capabilities:{globalAdmin:true,globalReadOnly:true}};
+      }
     }
 
-    if(activeRoles.length){
-      const selected=selectedRole||activeRoles.find(x=>x.schoolId===defaultId)||activeRoles[0];
-      const tenant=await getTenantDirectory(selected.schoolId)||defaultTenant;
-      return {authenticated:true,...identity,role:"admin",schoolId:String(selected.schoolId),schoolName:String(tenant?.schoolName||selected.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selected.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,globalAdmin:false}};
+    if(!globalRole&&activeRoles.length&&!wantsTeacher&&!wantsParent){
+      const selected=selectedRole||(!requestedContext?(activeRoles.find(x=>x.schoolId===defaultId)||activeRoles[0]):null);
+      if(selected){
+        const tenant=await getTenantDirectory(selected.schoolId)||defaultTenant;
+        return {authenticated:true,...identity,role:"admin",schoolId:String(selected.schoolId),schoolName:String(tenant?.schoolName||selected.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selected.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,globalAdmin:false}};
+      }
+      if(wantsSchoolAdmin)return {authenticated:true,...identity,role:"contextDenied",schoolId:requestedSchoolId||null,schoolName:"",systemName:"",memberships,capabilities:{contextDenied:true}};
     }
 
-    const pending=memberships[0]||{schoolId:defaultId,schoolName:"學校",status:"setup"};
-    return {authenticated:true,...identity,role:"tenantPending",schoolId:pending.schoolId,schoolName:pending.schoolName,systemName:pending.schoolName+" 管理系統",memberships,capabilities:{tenantPending:true}};
+    if(!requestedContext&&!globalRole&&!activeRoles.length){
+      const pending=memberships[0]||{schoolId:defaultId,schoolName:"學校",status:"setup"};
+      return {authenticated:true,...identity,role:"tenantPending",schoolId:pending.schoolId,schoolName:pending.schoolName,systemName:pending.schoolName+" 管理系統",memberships,capabilities:{tenantPending:true}};
+    }
   }
 
   const directory=await getTeacherDirectory(email);
-  if(directory?.status==="active"){
+  if(directory?.status==="active"&&(!requestedContext||requestedContext==="teacher")){
     const profile=await getTeacherProfile(email);
     const {sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds:rawPrivateStudentIds}=normalizeProfile(profile);
     const index=await buildStudentAliasIndex();
@@ -307,10 +322,12 @@ export async function getAccess(request){
     return {authenticated:true,...identity,displayName:directory.teacherName||identity.displayName,role,schoolId:defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),capabilities,sectionAssignments,assignments:sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,students:[...byId.values()]};
   }
 
-  if(parentMap[email])return {authenticated:true,...identity,role:"parent",schoolId:defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),students:await canonicalizeStudents(parentMap[email])};
-  const dynamicStudents=await getMappedStudentsByEmail(email);
-  if(dynamicStudents.length)return {authenticated:true,...identity,role:"parent",schoolId:defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),students:await canonicalizeStudents(dynamicStudents)};
-  return {authenticated:true,...identity,role:"unassigned",schoolId:defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),capabilities:{}};
+  if(!requestedContext||requestedContext==="parent"){
+    if(parentMap[email])return {authenticated:true,...identity,role:"parent",schoolId:defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),students:await canonicalizeStudents(parentMap[email])};
+    const dynamicStudents=await getMappedStudentsByEmail(email);
+    if(dynamicStudents.length)return {authenticated:true,...identity,role:"parent",schoolId:defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),students:await canonicalizeStudents(dynamicStudents)};
+  }
+  return {authenticated:true,...identity,role:requestedContext?"contextDenied":"unassigned",schoolId:requestedSchoolId||defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),capabilities:requestedContext?{contextDenied:true}:{}};
 }
 
 export function json(body,status=200){return {status,jsonBody:body,headers:{"Content-Type":"application/json; charset=utf-8"}}}
