@@ -114,7 +114,7 @@ async function collectDaily(key,date){
   for await (const e of table(key).listEntities({queryOptions:{filter:`eventDate eq '${date.replaceAll("'","''")}'`}})){
     const rawStudentId=String(e.partitionKey||"");
     const classType=key==="ensemble"?"ensemble":key==="comprehensive"?"comprehensive":key==="privateLesson"?"private":"section";
-    const row={rawStudentId,eventDate:String(e.eventDate||date),classType,groupName:String(e.groupName||""),section:String(e.section||""),status:String(e.status||""),teacher:String(e.teacher||""),teacherName:String(e.teacherName||""),startTime:String(e.startTime||""),endTime:String(e.endTime||""),minutes:Number(e.minutes||0),lessonContent:String(e.lessonContent||""),parentConfirmation:String(e.parentConfirmation||""),emailNotificationStatus:String(e.emailNotificationStatus||""),emailNotificationAt:String(e.emailNotificationAt||""),emailNotificationRecipients:Number(e.emailNotificationRecipients||0),emailNotificationSentCount:Number(e.emailNotificationSentCount||0),emailNotificationFailedCount:Number(e.emailNotificationFailedCount||0),createdAt:String(e.createdAt||""),rowKey:String(e.rowKey||"")};
+    const row={rawStudentId,eventDate:String(e.eventDate||date),classType,groupName:String(e.groupName||""),section:String(e.section||""),status:String(e.status||""),teacher:String(e.teacher||""),teacherName:String(e.teacherName||""),startTime:String(e.startTime||""),endTime:String(e.endTime||""),minutes:Number(e.minutes||0),lessonContent:String(e.lessonContent||""),parentConfirmation:String(e.parentConfirmation||""),emailNotificationStatus:String(e.emailNotificationStatus||""),emailNotificationAt:String(e.emailNotificationAt||""),emailNotificationRecipients:Number(e.emailNotificationRecipients||0),emailNotificationSentCount:Number(e.emailNotificationSentCount||0),emailNotificationFailedCount:Number(e.emailNotificationFailedCount||0),emailNotificationResendCount:Number(e.emailNotificationResendCount||0),emailNotificationLastResentAt:String(e.emailNotificationLastResentAt||""),emailNotificationLastResentBy:String(e.emailNotificationLastResentBy||""),createdAt:String(e.createdAt||""),rowKey:String(e.rowKey||"")};
     const d=[rawStudentId,row.eventDate,row.classType,row.groupName,row.section].join("|");
     const old=latest.get(d),stamp=`${row.createdAt}|${row.rowKey}`,oldStamp=old?`${old.createdAt}|${old.rowKey}`:"";
     if(!old||stamp>=oldStamp)latest.set(d,row);
@@ -182,6 +182,7 @@ app.http("dailyFollowup",{
       const studentId=await canonicalDailyId(r.rawStudentId,students,canonicalCache);
       const s=students.get(String(studentId))||{studentId,name:`學生 ${studentId}`,grade:"",groupName:"",section:"",instrument:""};
       privateLessonDetails.push({
+        lessonId:r.rowKey||"",
         studentId,
         name:s.name,
         grade:s.grade,
@@ -199,7 +200,10 @@ app.http("dailyFollowup",{
         emailNotificationAt:r.emailNotificationAt||"",
         emailNotificationRecipients:Number(r.emailNotificationRecipients||0),
         emailNotificationSentCount:Number(r.emailNotificationSentCount||0),
-        emailNotificationFailedCount:Number(r.emailNotificationFailedCount||0)
+        emailNotificationFailedCount:Number(r.emailNotificationFailedCount||0),
+        emailNotificationResendCount:Number(r.emailNotificationResendCount||0),
+        emailNotificationLastResentAt:r.emailNotificationLastResentAt||"",
+        emailNotificationLastResentBy:r.emailNotificationLastResentBy||""
       });
     }
     privateLessonDetails.sort((a,b)=>String(a.startTime||"").localeCompare(String(b.startTime||""))||String(a.name||"").localeCompare(String(b.name||""),"zh-Hant"));
