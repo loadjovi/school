@@ -1,7 +1,7 @@
 (()=>{
   if(!document.getElementById("globalTenantStyles")){
     const style=document.createElement("style");style.id="globalTenantStyles";
-    style.textContent=".global-manage-btn{border:0;border-radius:12px;padding:10px 14px;background:var(--green);color:#fff;font-weight:900;box-shadow:0 2px 6px rgba(0,0,0,.08)}.global-manage-btn:hover{filter:brightness(.95)}.global-danger-btn{border:1px solid var(--bad);border-radius:12px;padding:9px 11px;background:#fff7f7;color:var(--bad);font-weight:900}.global-danger-btn:hover{background:#fee2e2}.global-action-hint{display:block;font-size:11px;color:var(--muted);margin-top:4px}";
+    style.textContent=".global-manage-btn{border:0;border-radius:12px;padding:10px 14px;background:var(--green);color:#fff;font-weight:900;box-shadow:0 2px 6px rgba(0,0,0,.08)}.global-manage-btn:hover{filter:brightness(.95)}.global-danger-btn{border:1px solid var(--bad);border-radius:12px;padding:9px 11px;background:#fff7f7;color:var(--bad);font-weight:900}.global-danger-btn:hover{background:#fee2e2}.global-action-hint{display:block;font-size:11px;color:var(--muted);margin-top:4px}.global-school-card-open{border:2px solid var(--green);box-shadow:0 8px 20px rgba(0,0,0,.08)}.global-inline-admin{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}.global-inline-admin h3{margin:0 0 8px;font-size:15px}";
     document.head.appendChild(style);
   }
   state.globalTenant=state.globalTenant||{loaded:false,loading:false,dashboard:null,tenants:[],admins:[],selectedSchoolId:"",regionFilter:"",error:""};
@@ -32,22 +32,24 @@
     try{
       const r=await Promise.all([api("/api/global-dashboard"),api("/api/tenant-directory")]);
       state.globalTenant.dashboard=r[0];state.globalTenant.tenants=r[1].items||[];state.globalTenant.loaded=true;
-      if(!state.globalTenant.selectedSchoolId)state.globalTenant.selectedSchoolId=r[1].defaultSchoolId||state.globalTenant.tenants[0]?.schoolId||"";
       if(state.globalTenant.selectedSchoolId)await loadAdmins(state.globalTenant.selectedSchoolId);
     }catch(e){state.globalTenant.error=e.message||String(e)}
     state.globalTenant.loading=false;draw();
   }
+  function inlineAdminPanel(x){
+    const sid=String(x.schoolId||"");
+    if(String(state.globalTenant.selectedSchoolId||"")!==sid)return "";
+    const rows=(state.globalTenant.admins||[]).filter(a=>a.status==="active");
+    const list=rows.length?rows.map(a=>'<div class="item"><div><b>'+esc(a.email)+'</b><small>School Admin<span class="global-action-hint">移除權限不會刪除帳號或學校資料</span></small></div><button class="global-danger-btn" style="margin:0" onclick="revokeSchoolAdmin(\''+esc(sid)+'\',\''+esc(a.email)+'\')">🗑️ 移除權限</button></div>').join(""):'<div class="notice" style="margin-top:10px">尚未指定學校管理員。</div>';
+    return '<div class="global-inline-admin"><h3>🔐 '+esc(x.schoolName)+'｜學校管理員</h3><div class="notice">此區只管理 <b>'+esc(x.schoolName)+'</b> 的後台管理員，不會影響其他學校。</div>'+list+'<label>新增此校管理員 Google Email</label><input id="globalAdminEmail_'+esc(sid)+'" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 '+esc(x.schoolName)+' School Admin</button></div>';
+  }
   function schoolCard(x){
     const mode=x.dataMode==="legacy-default"?"既有聖心資料｜今日已有 "+Number(x.todayAttendanceRecords||0)+" 筆上課／點名紀錄":"Phase 2 前維持資料隔離建置，不會開放看到聖心既有資料。";
     const region=[x.cityName||cityName(x.cityCode),x.schoolLevelName||levelName(x.schoolLevel)].filter(Boolean).join("｜");
-    return '<div class="card"><div class="student"><div><b style="font-size:17px">🏫 '+esc(x.schoolName)+'</b><div class="muted">'+(region?esc(region)+'｜':"")+esc(x.schoolId)+'｜'+esc(st[x.status]||x.status)+'</div></div><button class="global-manage-btn" style="margin:0" onclick="selectGlobalSchool(\''+esc(x.schoolId)+'\')">⚙️ 管理學校</button></div>'+
-      '<div class="grid" style="margin-top:10px"><div class="kpi"><b>'+Number(x.studentCount||0)+'</b><span>學生</span></div><div class="kpi"><b>'+Number(x.teacherCount||0)+'</b><span>老師</span></div><div class="kpi"><b>'+Number(x.parentAccountCount||0)+'</b><span>家長帳號</span></div><div class="kpi"><b>'+Number(x.schoolAdminCount||0)+'</b><span>學校管理員</span></div></div><div class="notice" style="margin-top:10px"><b>📍 '+esc(region||"行政區未設定")+'</b><br><small>'+esc(mode)+'</small></div></div>';
-  }
-  function adminBox(){
-    const sid=state.globalTenant.selectedSchoolId,t=(state.globalTenant.tenants||[]).find(x=>String(x.schoolId)===String(sid));if(!sid||!t)return "";
-    const rows=(state.globalTenant.admins||[]).filter(x=>x.status==="active");
-    const list=rows.length?rows.map(x=>'<div class="item"><div><b>'+esc(x.email)+'</b><small>School Admin<span class="global-action-hint">移除權限不會刪除帳號或學校資料</span></small></div><button class="global-danger-btn" style="margin:0" onclick="revokeSchoolAdmin(\''+esc(sid)+'\',\''+esc(x.email)+'\')">🗑️ 移除權限</button></div>').join(""):'<div class="notice" style="margin-top:10px">尚未指定學校管理員。</div>';
-    return '<div class="card"><h2>🔐 '+esc(t.schoolName)+'｜學校管理員</h2><div class="notice">Global Admin 可以指定此校後台管理員。新學校目前維持「建置中」，Phase 2 Tenant 資料隔離完成後才會開放營運後台。</div>'+list+'<label>新增管理員 Google Email</label><input id="globalAdminEmail" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 School Admin</button></div>';
+    const opened=String(state.globalTenant.selectedSchoolId||"")===String(x.schoolId||"");
+    const buttonText=opened?"▲ 收合管理":"⚙️ 管理學校";
+    return '<div class="card '+(opened?"global-school-card-open":"")+'"><div class="student"><div><b style="font-size:17px">🏫 '+esc(x.schoolName)+'</b><div class="muted">'+(region?esc(region)+'｜':"")+esc(x.schoolId)+'｜'+esc(st[x.status]||x.status)+'</div></div><button class="global-manage-btn" style="margin:0" onclick="selectGlobalSchool(\''+esc(x.schoolId)+'\')">'+buttonText+'</button></div>'+
+      '<div class="grid" style="margin-top:10px"><div class="kpi"><b>'+Number(x.studentCount||0)+'</b><span>學生</span></div><div class="kpi"><b>'+Number(x.teacherCount||0)+'</b><span>老師</span></div><div class="kpi"><b>'+Number(x.parentAccountCount||0)+'</b><span>家長帳號</span></div><div class="kpi"><b>'+Number(x.schoolAdminCount||0)+'</b><span>學校管理員</span></div></div><div class="notice" style="margin-top:10px"><b>📍 '+esc(region||"行政區未設定")+'</b><br><small>'+esc(mode)+'</small></div>'+inlineAdminPanel(x)+'</div>';
   }
   function createBox(){
     const cityOpts=cities.map(x=>'<option value="'+esc(x[0])+'" '+(x[0]==="keelung"?"selected":"")+'>'+esc(x[1])+'</option>').join("");
@@ -64,12 +66,20 @@
     if(!d)return '<div class="card"><h2>🌐 Global 管理中心</h2><div class="notice">尚未載入。</div></div>';
     const regionOptions=['<option value="">全部行政區</option>'].concat(cities.map(x=>'<option value="'+esc(x[0])+'" '+(state.globalTenant.regionFilter===x[0]?"selected":"")+'>'+esc(x[1])+'</option>')).join("");
     const schools=(d.schools||[]).filter(x=>!state.globalTenant.regionFilter||x.cityCode===state.globalTenant.regionFilter);
-    return '<div class="card hero"><button class="secondary" style="margin:0 0 10px" onclick="go(\'admin\')">← 返回學校後台</button><h2>🌐 Global 管理中心</h2><div class="notice"><b>Multi-Tenant Phase 1</b><br>'+esc(d.notice||"")+'</div><div class="grid" style="margin-top:12px"><div class="kpi"><b>'+Number(d.schoolCount||0)+'</b><span>學校</span></div><div class="kpi"><b>'+Number(d.totals?.students||0)+'</b><span>學生</span></div><div class="kpi"><b>'+Number(d.totals?.teachers||0)+'</b><span>老師</span></div><div class="kpi"><b>'+Number(d.totals?.todayAttendanceRecords||0)+'</b><span>今日紀錄</span></div></div></div><div class="card"><h2>🏫 學校清單</h2><label>行政區篩選</label><select onchange="filterGlobalRegion(this.value)">'+regionOptions+'</select><div class="muted" style="margin-top:8px">目前顯示 '+schools.length+' / '+Number(d.schoolCount||0)+' 所學校</div></div>'+schools.map(schoolCard).join("")+adminBox()+createBox();
+    return '<div class="card hero"><button class="secondary" style="margin:0 0 10px" onclick="go(\'admin\')">← 返回學校後台</button><h2>🌐 Global 管理中心</h2><div class="notice"><b>Multi-Tenant Phase 1</b><br>'+esc(d.notice||"")+'</div><div class="grid" style="margin-top:12px"><div class="kpi"><b>'+Number(d.schoolCount||0)+'</b><span>學校</span></div><div class="kpi"><b>'+Number(d.totals?.students||0)+'</b><span>學生</span></div><div class="kpi"><b>'+Number(d.totals?.teachers||0)+'</b><span>老師</span></div><div class="kpi"><b>'+Number(d.totals?.todayAttendanceRecords||0)+'</b><span>今日紀錄</span></div></div></div><div class="card"><h2>🏫 學校清單</h2><label>行政區篩選</label><select onchange="filterGlobalRegion(this.value)">'+regionOptions+'</select><div class="muted" style="margin-top:8px">目前顯示 '+schools.length+' / '+Number(d.schoolCount||0)+' 所學校</div></div>'+schools.map(schoolCard).join("")+createBox();
   }
   function draw(){if(state.page==="global"&&canGlobal()){const a=document.getElementById("app");if(a){a.innerHTML=shell(page());setTimeout(()=>window.updateTenantIdPreview?.(),0)}}}
   window.openGlobalTenant=async function(){if(!canGlobal())return;state.page="global";draw();await loadGlobal(true)};
   window.reloadGlobalTenant=async function(){state.globalTenant.loaded=false;await loadGlobal(true)};
-  window.selectGlobalSchool=async function(sid){try{await loadAdmins(sid);draw()}catch(e){toast("❌ "+e.message)}};
+  window.selectGlobalSchool=async function(sid){
+    try{
+      if(String(state.globalTenant.selectedSchoolId||"")===String(sid||"")){
+        state.globalTenant.selectedSchoolId="";state.globalTenant.admins=[];draw();return;
+      }
+      await loadAdmins(sid);draw();
+      setTimeout(()=>document.getElementById("globalAdminEmail_"+sid)?.scrollIntoView({behavior:"smooth",block:"nearest"}),50);
+    }catch(e){toast("❌ "+e.message)}
+  };
   window.updateTenantIdPreview=function(){
     const el=document.getElementById("newTenantIdPreview"),v=schoolIdPreview();if(el)el.textContent=v||"請輸入英文校名識別碼";
   };
@@ -81,12 +91,13 @@
     try{const d=await api("/api/tenant-directory",{method:"POST",body:JSON.stringify(body)});toast("✅ "+(d.item?.schoolId||"學校 Tenant")+" 已建立為建置中");state.globalTenant.loaded=false;await loadGlobal(true)}catch(e){toast("❌ "+e.message)}
   };
   window.grantSchoolAdmin=async function(sid){
-    const email=document.getElementById("globalAdminEmail")?.value.trim();if(!email){toast("請輸入管理員 Email");return}
-    try{await api("/api/tenant-admins",{method:"PATCH",body:JSON.stringify({schoolId:sid,email,action:"grant"})});toast("✅ 已指定 School Admin");await loadAdmins(sid);draw()}catch(e){toast("❌ "+e.message)}
+    const email=document.getElementById("globalAdminEmail_"+sid)?.value.trim();if(!email){toast("請輸入此校管理員 Email");return}
+    try{await api("/api/tenant-admins",{method:"PATCH",body:JSON.stringify({schoolId:sid,email,action:"grant"})});toast("✅ 已指定此校 School Admin");await loadGlobal(true)}catch(e){toast("❌ "+e.message)}
   };
   window.revokeSchoolAdmin=async function(sid,email){
-    if(!confirm("確定移除 "+email+" 的 School Admin 權限？"))return;
-    try{await api("/api/tenant-admins",{method:"PATCH",body:JSON.stringify({schoolId:sid,email,action:"revoke"})});toast("✅ 已移除 School Admin");await loadAdmins(sid);draw()}catch(e){toast("❌ "+e.message)}
+    const school=(state.globalTenant.tenants||[]).find(x=>String(x.schoolId)===String(sid));
+    if(!confirm("確定移除 "+email+" 在「"+(school?.schoolName||sid)+"」的 School Admin 權限？\n\n不會刪除帳號、學生或學校資料。"))return;
+    try{await api("/api/tenant-admins",{method:"PATCH",body:JSON.stringify({schoolId:sid,email,action:"revoke"})});toast("✅ 已移除此校 School Admin 權限");await loadGlobal(true)}catch(e){toast("❌ "+e.message)}
   };
   function mountEntry(){
     if(!canGlobal()||state.page!=="admin")return;const main=document.querySelector(".main");if(!main)return;
