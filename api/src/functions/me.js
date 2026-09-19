@@ -5,10 +5,6 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
   const a=await getAccess(request);
   if(!a.authenticated)return json({error:"Unauthorized"},401);
 
-  if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(a.role)){
-    try{await touchTeacherLastLogin(a.email)}catch(e){console.warn("teacher last login update failed",e)}
-  }
-
   const contexts=[];
   const seen=new Set();
   const addContext=x=>{
@@ -52,6 +48,11 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
 
   const requestedType=String(request.headers.get("x-role-context")||"").trim();
   const requestedSchoolId=String(request.headers.get("x-school-id")||"").trim().toLowerCase();
+  const teacherRoles=["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"];
+  if(teacherRoles.includes(a.role)&&(requestedType==="teacher"||(!requestedType&&contexts.length===1))){
+    try{await touchTeacherLastLogin(a.email)}catch(e){console.warn("teacher last login update failed",e)}
+  }
+
   let activeContextKey="";
   if(requestedType==="global")activeContextKey="global";
   else if(requestedType&&requestedSchoolId)activeContextKey=requestedType+":"+requestedSchoolId;
