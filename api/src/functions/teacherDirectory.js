@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
 import { getAccess, json } from "../lib/auth.js";
-import { listTeacherDirectory, saveTeacherDirectory, getTeacherProfile, saveTeacherProfile, listStudentMaster } from "../lib/storage.js";
+import { listTeacherDirectory, saveTeacherDirectory, getTeacherProfile, saveTeacherProfile, listStudentMaster, ensureTables, table } from "../lib/storage.js";
 
 function clean(v,max=120){return String(v||"").trim().slice(0,max)}
 function normalizeEmail(v){return clean(v,200).toLowerCase()}
@@ -16,12 +16,27 @@ app.http("teacherDirectory",{
     if(!access.authenticated)return json({error:"Unauthorized"},401);
     if(access.role!=="admin")return json({error:"Forbidden"},403);
     if(request.method==="GET"){
+      await ensureTables();
+      const ratingMap=new Map();
+      for await(const e of table("privateLesson").listEntities()){
+        const email=normalizeEmail(e.teacher),rating=Number(e.teacherRating||0);
+        if(!email||!Number.isInteger(rating)||rating<1||rating>5)continue;
+        const old=ratingMap.get(email)||{ratingCount:0,ratingTotal:0,fiveStarCount:0,reviews:[]};
+        old.ratingCount++;old.ratingTotal+=rating;if(rating===5)old.fiveStarCount++;
+        const review=clean(e.teacherReview,800);
+        if(review)old.reviews.push({rating,review,lessonDate:String(e.eventDate||""),ratedAt:String(e.teacherRatedAt||"")});
+        ratingMap.set(email,old);
+      }
+      for(const v of ratingMap.values())v.reviews.sort((a,b)=>String(b.ratedAt||b.lessonDate).localeCompare(String(a.ratedAt||a.lessonDate)));
       const items=[];
       for(const t of await listTeacherDirectory()){
         const p=await getTeacherProfile(t.rowKey);
         const sectionAssignments=p?parse(p.sectionAssignments,[]):[],ensembleGroups=p?parse(p.ensembleGroups,[]):[],privateStudentIds=p?parse(p.privateStudentIds,[]):[],comprehensiveEnabled=p?.comprehensiveEnabled===true;
         const privateOnly=privateStudentIds.length>0&&!sectionAssignments.length&&!ensembleGroups.length&&!comprehensiveEnabled;
-        items.push({email:t.rowKey,teacherName:t.teacherName||"",status:t.status||"active",updatedAt:t.updatedAt||null,lastLoginAt:t.lastLoginAt||null,sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,privateOnly});
+        const r=ratingMap.get(normalizeEmail(t.rowKey))||{ratingCount:0,ratingTotal:0,fiveStarCount:0,reviews:[]};
+        const ratingAverage=r.ratingCount?Math.round((r.ratingTotal/r.ratingCount)*100)/100:null;
+        items.push({email:t.rowKey,teacherName:t.teacherName||"",status:t.status||"active",updatedAt:t.updatedAt||null,lastLoginAt:t.lastLoginAt||null,sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,privateOnly,
+          ratingAverage,ratingCount:r.ratingCount,fiveStarCount:r.fiveStarCount,recentReviews:r.reviews.slice(0,3)});
       }
       const students=(await listStudentMaster("active")).map(studentView);
       return json({items,students});
