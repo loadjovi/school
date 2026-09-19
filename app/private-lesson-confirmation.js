@@ -102,16 +102,27 @@
     }catch(e){toast("❌ "+e.message)}
   };
 
+  window.setPrivateLessonRating=function(lessonId,value){
+    const k=lessonDomKey(lessonId),n=Math.max(0,Math.min(5,Number(value||0))),input=document.getElementById("rating_"+k);
+    if(input)input.value=String(n);
+    document.querySelectorAll('[data-star-rating="'+k+'"]').forEach(btn=>{const v=Number(btn.dataset.starValue||0);btn.textContent=v<=n?"★":"☆"});
+  };
+
   window.confirmPrivateLesson=async function(lessonId,action){
     if(state.me?.role!=="parent"||!state.student)return;
-    let note="";
+    let note="",teacherRating=0,teacherReview="";
     if(action==="issue"){
       note=prompt("請簡單說明問題，例如：日期不符、時間不符、當天未上課")||"";
       if(!note.trim()){toast("請填寫問題說明");return}
+    }else{
+      const k=lessonDomKey(lessonId);
+      teacherRating=Number(document.getElementById("rating_"+k)?.value||0);
+      teacherReview=String(document.getElementById("review_"+k)?.value||"").trim();
     }
     try{
-      await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId:state.student.studentId,lessonId,action,note})});
-      toast(action==="confirmed"?"✅ 已確認本次個別課完成":"⚠️ 已回報老師確認");
+      await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId:state.student.studentId,lessonId,action,note,teacherRating,teacherReview})});
+      if(action==="confirmed")toast(teacherRating?"✅ 已確認並送出 "+teacherRating+" 星師資評價":"✅ 已確認本次個別課完成");
+      else toast("⚠️ 已回報老師確認");
       await loadPrivateLessons();render();
     }catch(e){toast("❌ "+e.message)}
   };
