@@ -2,7 +2,7 @@ import { OAuth2Client } from "google-auth-library";
 import { getMappedStudentsByEmail, listStudentMaster, getTeacherProfile, getTeacherDirectory, listUserStudentMappings, ensureDefaultTenant, ensureBootstrapGlobalAdmin, listTenantRolesByEmail, getTenantDirectory, defaultTenantId, tenantIdValue } from "./storage.js";
 
 const googleClient = new OAuth2Client();
-let aliasCache=null,aliasCacheAt=0;
+const aliasCaches=new Map();
 
 export function parseJsonEnv(name, fallback={}){
   try{return JSON.parse(process.env[name]||JSON.stringify(fallback))}catch{return fallback}
@@ -60,7 +60,8 @@ function viewMaster(e,legacyStudentIds=[]){
   return {studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,section:e.section||"待確認",schoolYear:e.schoolYear||"",status:e.status||"active",source:"studentMaster",legacyStudentIds:[...new Set((legacyStudentIds||[]).map(String).filter(x=>x&&x!==String(e.rowKey)))]};
 }
 
-function staticParentMapEntries(){
+function staticParentMapEntries(schoolId=defaultTenantId()){
+  if(tenantIdValue(schoolId)!==defaultTenantId())return [];
   const parentMap=parseJsonEnv("STUDENT_MAP_JSON",{}),rows=[];
   for(const [email,value] of Object.entries(parentMap||{})){
     const list=Array.isArray(value)?value:(Array.isArray(value?.students)?value.students:[]);
@@ -69,10 +70,10 @@ function staticParentMapEntries(){
   return rows;
 }
 
-async function allLegacyStudentEntries(){
-  const rows=[...staticParentMapEntries()];
+async function allLegacyStudentEntries(schoolId=defaultTenantId()){
+  const sid=tenantIdValue(schoolId)||defaultTenantId(),rows=[...staticParentMapEntries(sid)];
   try{
-    for(const m of await listUserStudentMappings("active")){
+    for(const m of await listUserStudentMappings("active",sid)){
       if(!m?.studentId)continue;
       rows.push({
         studentId:m.studentId,
@@ -152,9 +153,10 @@ function resolveCanonicalMaster(raw,oldId,byId,byName){
   return pickCanonicalMaster(raw,matches);
 }
 
-async function buildStudentAliasIndex(){
-  if(aliasCache&&Date.now()-aliasCacheAt<15000)return aliasCache;
-  const masters=await listStudentMaster();
+async function buildStudentAliasIndex(schoolId=defaultTenantId()){
+  const sid=tenantIdValue(schoolId)||defaultTenantId(),cached=aliasCaches.get(sid);
+  if(cached&&Date.now()-cached.cachedAt<15000)return cached.value;
+  const masters=await listStudentMaster("",sid);
   const byId=new Map(masters.map(m=>[String(m.rowKey),m]));
   const byName=new Map();
   for(const m of masters){
@@ -178,7 +180,7 @@ async function buildStudentAliasIndex(){
     }
   }
 
-  for(const raw of await allLegacyStudentEntries()){
+  for(const raw of await allLegacyStudentEntries(sid)){
     const oldId=String(raw.studentId||"").trim();
     if(!oldId)continue;
     const master=resolveCanonicalMaster(raw,oldId,byId,byName);
@@ -195,12 +197,12 @@ async function buildStudentAliasIndex(){
     }
   }
   for(const id of byId.keys())if(!canonicalToAliases.has(id)&&!aliasToCanonical.has(id))canonicalToAliases.set(id,new Set([id]));
-  aliasCache={masters,byId,byName,aliasToCanonical,canonicalToAliases,canonicalToParentEmails,parentToCanonicals};aliasCacheAt=Date.now();
-  return aliasCache;
+  const value={masters,byId,byName,aliasToCanonical,canonicalToAliases,canonicalToParentEmails,parentToCanonicals};aliasCaches.set(sid,{cachedAt:Date.now(),value});
+  return value;
 }
 
-export async function canonicalizeStudents(list=[]){
-  const index=await buildStudentAliasIndex(),out=new Map();
+export async function canonicalizeStudents(list=[],schoolId=defaultTenantId()){
+  const index=await buildStudentAliasIndex(schoolId),out=new Map();
   for(const raw of Array.isArray(list)?list:[]){
     if(typeof raw==="string"){
       const canonical=index.aliasToCanonical.get(raw)||raw,master=index.byId.get(canonical);
@@ -221,18 +223,18 @@ export async function canonicalizeStudents(list=[]){
   return [...out.values()];
 }
 
-export async function getStudentAliasInfo(studentId){
+export async function getStudentAliasInfo(studentId,schoolId=defaultTenantId()){
   const id=String(studentId||"").trim();
   if(!id)return {canonicalStudentId:"",aliases:[],safeParentEmails:[]};
-  const index=await buildStudentAliasIndex();
+  const index=await buildStudentAliasIndex(schoolId);
   const canonical=index.aliasToCanonical.get(id)||id;
   const aliases=[...new Set([canonical,id,...(index.canonicalToAliases.get(canonical)||[])])].filter(Boolean);
   const safeParentEmails=[...(index.canonicalToParentEmails.get(canonical)||[])].filter(email=>(index.parentToCanonicals.get(email)||new Set()).size===1);
   return {canonicalStudentId:canonical,aliases,safeParentEmails};
 }
 
-export async function getStudentIdAliases(studentId){
-  return (await getStudentAliasInfo(studentId)).aliases;
+export async function getStudentIdAliases(studentId,schoolId=defaultTenantId()){
+  return (await getStudentAliasInfo(studentId,schoolId)).aliases;
 }
 
 export async function getAccess(request){
@@ -246,10 +248,7 @@ export async function getAccess(request){
   try{defaultTenant=await ensureDefaultTenant(email)}catch(e){console.warn("tenant bootstrap failed",e?.message||String(e));defaultTenant={rowKey:defaultId,schoolName:"聖心小學",systemName:"聖心小學弦樂團"}}
 
   const requestedContext=String(request.headers.get("x-role-context")||"").trim();
-  const requestedSchoolId=String(request.headers.get("x-school-id")||"").trim().toLowerCase();
-  if(["teacher","parent"].includes(requestedContext)&&requestedSchoolId&&requestedSchoolId!==defaultId){
-    return {authenticated:true,...identity,role:"contextDenied",schoolId:requestedSchoolId,schoolName:"",systemName:"",capabilities:{contextDenied:true}};
-  }
+  const requestedSchoolId=tenantIdValue(request.headers.get("x-school-id"));
   const bootstrapGlobal=admins.includes(email);
   if(bootstrapGlobal){
     try{await ensureBootstrapGlobalAdmin(email)}catch(e){console.warn("global admin bootstrap failed",e?.message||String(e))}
@@ -302,14 +301,17 @@ export async function getAccess(request){
     }
   }
 
-  const directory=await getTeacherDirectory(email);
+  const roleSchoolId=(["teacher","parent"].includes(requestedContext)&&requestedSchoolId)||defaultId;
+  const roleTenant=roleSchoolId===defaultId?defaultTenant:await getTenantDirectory(roleSchoolId);
+  const roleTenantActive=String(roleTenant?.status||(roleSchoolId===defaultId?"active":""))==="active";
+  const directory=roleTenantActive?await getTeacherDirectory(email,roleSchoolId):null;
   if(directory?.status==="active"&&(!requestedContext||requestedContext==="teacher")){
-    const profile=await getTeacherProfile(email);
+    const profile=await getTeacherProfile(email,roleSchoolId);
     const {sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds:rawPrivateStudentIds}=normalizeProfile(profile);
-    const index=await buildStudentAliasIndex();
+    const index=await buildStudentAliasIndex(roleSchoolId);
     const privateStudentIds=[...new Set(rawPrivateStudentIds.map(id=>index.aliasToCanonical.get(String(id))||String(id)))];
     const capabilities={section:sectionAssignments.length>0,ensemble:ensembleGroups.length>0,comprehensive:comprehensiveEnabled,private:privateStudentIds.length>0,teacherSettings:true};
-    const masters=await listStudentMaster("active");
+    const masters=await listStudentMaster("active",roleSchoolId);
     const byId=new Map();
     for(const m of masters){
       const rawId=String(m.rowKey),canonicalId=index.aliasToCanonical.get(rawId)||rawId;
@@ -322,26 +324,26 @@ export async function getAccess(request){
       if(sectionMatch||ensembleMatch||comprehensiveMatch||privateMatch)byId.set(v.studentId,v);
     }
     const role=capabilities.section?"sectionTeacher":capabilities.ensemble?"ensembleTeacher":capabilities.comprehensive?"comprehensiveTeacher":capabilities.private?"privateTeacher":"teacher";
-    return {authenticated:true,...identity,displayName:directory.teacherName||identity.displayName,role,schoolId:defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),capabilities,sectionAssignments,assignments:sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,students:[...byId.values()]};
+    return {authenticated:true,...identity,displayName:directory.teacherName||identity.displayName,role,schoolId:roleSchoolId,schoolName:String(roleTenant?.schoolName||roleSchoolId),systemName:String(roleTenant?.systemName||roleTenant?.schoolName||roleSchoolId),capabilities,sectionAssignments,assignments:sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,students:[...byId.values()]};
   }
 
   if(!requestedContext||requestedContext==="parent"){
-    if(parentMap[email])return {authenticated:true,...identity,role:"parent",schoolId:defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),students:await canonicalizeStudents(parentMap[email])};
-    const dynamicStudents=await getMappedStudentsByEmail(email);
-    if(dynamicStudents.length)return {authenticated:true,...identity,role:"parent",schoolId:defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),students:await canonicalizeStudents(dynamicStudents)};
+    if(roleSchoolId===defaultId&&parentMap[email])return {authenticated:true,...identity,role:"parent",schoolId:defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),students:await canonicalizeStudents(parentMap[email],defaultId)};
+    const dynamicStudents=roleTenantActive?await getMappedStudentsByEmail(email,roleSchoolId):[];
+    if(dynamicStudents.length)return {authenticated:true,...identity,role:"parent",schoolId:roleSchoolId,schoolName:String(roleTenant?.schoolName||roleSchoolId),systemName:String(roleTenant?.systemName||roleTenant?.schoolName||roleSchoolId),students:await canonicalizeStudents(dynamicStudents,roleSchoolId)};
   }
-  return {authenticated:true,...identity,role:requestedContext?"contextDenied":"unassigned",schoolId:requestedSchoolId||defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),capabilities:requestedContext?{contextDenied:true}:{}};
+  return {authenticated:true,...identity,role:requestedContext?"contextDenied":"unassigned",schoolId:requestedSchoolId||defaultId,schoolName:String(roleTenant?.schoolName||defaultTenant.schoolName||"聖心小學"),systemName:String(roleTenant?.systemName||defaultTenant.systemName||"聖心小學弦樂團"),capabilities:requestedContext?{contextDenied:true}:{}};
 }
 
-export async function getTenantContext(request,{requireActive=true}={}){
+export async function getTenantContext(request,{requireActive=true,allowUnassigned=false}={}){
   const access=await getAccess(request);
   if(!access.authenticated)return {access,error:json({error:"Unauthorized"},401)};
   if(access.role==="contextDenied")return {access,error:json({error:"無權使用指定的學校情境"},403)};
   if(access.role==="globalAdmin")return {access,error:json({error:"請先切換至已授權的 School Admin 情境"},403)};
   if(access.role==="tenantPending")return {access,error:json({error:"此學校仍在建置中，尚未開放營運資料"},403)};
-  if(access.role==="unassigned")return {access,error:json({error:"帳號尚未取得學校權限"},403)};
+  if(access.role==="unassigned"&&!allowUnassigned)return {access,error:json({error:"帳號尚未取得學校權限"},403)};
   const schoolRoles=new Set(["admin","teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher","parent"]);
-  if(!schoolRoles.has(access.role))return {access,error:json({error:"此角色不可存取學校營運資料"},403)};
+  if(!schoolRoles.has(access.role)&&!(allowUnassigned&&access.role==="unassigned"))return {access,error:json({error:"此角色不可存取學校營運資料"},403)};
   const schoolId=tenantIdValue(access.schoolId);
   if(!schoolId)return {access,error:json({error:"登入權限缺少 schoolId"},403)};
   const tenant=await getTenantDirectory(schoolId);

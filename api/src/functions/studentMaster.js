@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
-import { getAccess, json } from "../lib/auth.js";
-import { ensureTables, table, rowKey, getStudentMaster, listStudentMaster, semesterLabel } from "../lib/storage.js";
+import { getTenantContext, json } from "../lib/auth.js";
+import { ensureTenantTables, table, rowKey, getStudentMaster, listStudentMaster, semesterLabel, tenantSchoolPartition, tenantStudentPartition, tenantTermPartition } from "../lib/storage.js";
 
 const allowedGroups=new Set(["A","B","C","儲備"]);
 const allowedGrades=new Set(["一年級","二年級","三年級","四年級","五年級","六年級"]);
@@ -22,12 +22,12 @@ function validate(x){
 app.http("studentMaster",{
   methods:["GET","POST","PATCH"],authLevel:"anonymous",route:"student-master",
   handler:async(request)=>{
-    const access=await getAccess(request);
-    if(!access.authenticated)return json({error:"Unauthorized"},401);
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access,schoolId}=context;
     if(access.role!=="admin")return json({error:"Forbidden"},403);
-    await ensureTables();
+    await ensureTenantTables();
     if(request.method==="GET"){
-      const status=clean(request.query.get("status"),20),items=await listStudentMaster(status);
+      const status=clean(request.query.get("status"),20),items=await listStudentMaster(status,schoolId);
       return json({items:items.map(view)});
     }
     const body=await request.json();
@@ -37,25 +37,25 @@ app.http("studentMaster",{
       const section=clean(body.section||defaultSection(instrument),20),err=validate({studentName,grade,groupName,instrument,section,status});if(err)return json({error:err},400);
       const studentId=clean(body.studentNo||body.studentId,20).replace(/\.0$/,"");
       if(!/^\d{6}$/.test(studentId))return json({error:"請輸入 6 碼學號；學號將作為唯一 Student ID"},400);
-      if(await getStudentMaster(studentId))return json({error:"此學號已存在"},409);
+      if(await getStudentMaster(studentId,schoolId))return json({error:"此學號已存在"},409);
       const semester=clean(body.semester,10);
-      const entity={partitionKey:"STUDENT",rowKey:studentId,studentNo:studentId,studentName,grade,groupName,instrument,section,schoolYear,classCode:clean(body.classCode,20),semester,semesterName:semesterLabel(semester),seatNo:clean(body.seatNo,10),status,joinedAt:effectiveDate||now.slice(0,10),changeNote,createdAt:now,updatedAt:now,updatedBy:access.email};
-      await table("studentMaster").createEntity(entity);
+      const entity={partitionKey:tenantSchoolPartition(schoolId),rowKey:studentId,schoolId,studentId,studentNo:studentId,studentName,grade,groupName,instrument,section,schoolYear,classCode:clean(body.classCode,20),semester,semesterName:semesterLabel(semester),seatNo:clean(body.seatNo,10),status,joinedAt:effectiveDate||now.slice(0,10),changeNote,createdAt:now,updatedAt:now,updatedBy:access.email};
+      await table("tenantStudentMaster").createEntity(entity);
       const semesterEnrolled=body.addToSemester===true&&schoolYear&&["1","2"].includes(semester);
       if(semesterEnrolled){
-        await table("semesterEnrollment").upsertEntity({partitionKey:`${schoolYear}-${semester}`,rowKey:studentId,studentNo:studentId,studentName,grade,groupName,section,instrument,classCode:entity.classCode,seatNo:entity.seatNo,schoolYear,semester,semesterName:semesterLabel(semester),status:"enrolled",confirmedAt:now,confirmedBy:access.email,updatedAt:now},"Replace");
+        await table("tenantSemesterEnrollment").upsertEntity({partitionKey:tenantTermPartition(schoolId,schoolYear,semester),rowKey:studentId,schoolId,studentId,studentNo:studentId,studentName,grade,groupName,section,instrument,classCode:entity.classCode,seatNo:entity.seatNo,schoolYear,semester,semesterName:semesterLabel(semester),status:"enrolled",confirmedAt:now,confirmedBy:access.email,updatedAt:now},"Replace");
       }
-      await table("studentHistory").createEntity({partitionKey:studentId,rowKey:rowKey("hist"),changeType:semesterEnrolled?"manual_create_and_enroll":"manual_create_by_student_no",schoolYear,semester,changedAt:now,changedBy:access.email,effectiveDate:effectiveDate||now.slice(0,10),note:changeNote,oldValue:"",newValue:JSON.stringify(view(entity))});
+      await table("tenantStudentHistory").createEntity({partitionKey:tenantStudentPartition(schoolId,studentId),rowKey:rowKey("hist"),schoolId,studentId,changeType:semesterEnrolled?"manual_create_and_enroll":"manual_create_by_student_no",schoolYear,semester,changedAt:now,changedBy:access.email,effectiveDate:effectiveDate||now.slice(0,10),note:changeNote,oldValue:"",newValue:JSON.stringify(view(entity))});
       return json({ok:true,student:view(entity),semesterEnrolled},201);
     }
     const studentId=clean(body.studentId,80);if(!studentId)return json({error:"缺少 studentId"},400);
-    const old=await getStudentMaster(studentId);if(!old)return json({error:"找不到學生主檔"},404);
+    const old=await getStudentMaster(studentId,schoolId);if(!old)return json({error:"找不到學生主檔"},404);
     const nextStudentName=clean(body.name??body.studentName??old.studentName,40),nextGrade=clean(body.grade??old.grade,20),nextGroupName=clean(body.groupName??old.groupName,10),nextInstrument=clean(body.instrument??old.instrument,20),nextSchoolYear=clean(body.schoolYear??old.schoolYear,20),nextStatus=clean(body.status??old.status??"active",20);
     const section=clean(body.section??old.section??defaultSection(nextInstrument),20),err=validate({studentName:nextStudentName,grade:nextGrade,groupName:nextGroupName,instrument:nextInstrument,section,status:nextStatus});if(err)return json({error:err},400);
     const semester=clean(body.semester??old.semester,10),oldStatus=String(old.status||"active"),becameInactive=oldStatus!=="inactive"&&nextStatus==="inactive",becameActive=oldStatus==="inactive"&&nextStatus==="active";
     const entity={...old,studentNo:old.studentNo||(/^\d{6}$/.test(studentId)?studentId:""),studentName:nextStudentName,grade:nextGrade,groupName:nextGroupName,instrument:nextInstrument,section,schoolYear:nextSchoolYear,classCode:clean(body.classCode??old.classCode,20),semester,semesterName:semesterLabel(semester),seatNo:clean(body.seatNo??old.seatNo,10),status:nextStatus,updatedAt:now,updatedBy:access.email};
-    await table("studentMaster").updateEntity(entity,"Merge");
-    await table("studentHistory").createEntity({partitionKey:studentId,rowKey:rowKey("hist"),changeType:changeType|| (becameInactive?"leave_or_inactive":becameActive?"rejoin":"profile_update"),changedAt:now,changedBy:access.email,effectiveDate:effectiveDate||now.slice(0,10),note:changeNote,oldValue:JSON.stringify(view(old)),newValue:JSON.stringify(view(entity))});
+    await table("tenantStudentMaster").updateEntity(entity,"Merge");
+    await table("tenantStudentHistory").createEntity({partitionKey:tenantStudentPartition(schoolId,studentId),rowKey:rowKey("hist"),schoolId,studentId,changeType:changeType|| (becameInactive?"leave_or_inactive":becameActive?"rejoin":"profile_update"),changedAt:now,changedBy:access.email,effectiveDate:effectiveDate||now.slice(0,10),note:changeNote,oldValue:JSON.stringify(view(old)),newValue:JSON.stringify(view(entity))});
     return json({ok:true,student:view(entity)});
   }
 });

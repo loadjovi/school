@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
-import { getAccess, json } from "../lib/auth.js";
-import { ensureTables, table, rowKey, listStudentMaster } from "../lib/storage.js";
+import { getTenantContext, json } from "../lib/auth.js";
+import { ensureTenantTables, table, rowKey, listStudentMaster, tenantSchoolPartition, tenantStudentPartition } from "../lib/storage.js";
 
 const gradeOrder=["一年級","二年級","三年級","四年級","五年級","六年級"];
 function clean(v,max=40){return String(v||"").trim().slice(0,max)}
@@ -45,8 +45,8 @@ function buildPlan(items,{fromSchoolYear,toSchoolYear,promoteGrades,graduateSixt
 app.http("academicYearPromotion",{
   methods:["POST"],authLevel:"anonymous",route:"academic-year-promotion",
   handler:async(request)=>{
-    const access=await getAccess(request);
-    if(!access.authenticated)return json({error:"Unauthorized"},401);
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access,schoolId}=context;
     if(access.role!=="admin")return json({error:"Forbidden"},403);
     const body=await request.json();
     const action=clean(body.action||"preview",20).toLowerCase();
@@ -59,8 +59,8 @@ app.http("academicYearPromotion",{
     if(!["preview","apply"].includes(action))return json({error:"action 必須為 preview 或 apply"},400);
     if(!toSchoolYear)return json({error:"請填寫目標學年度"},400);
     if(fromSchoolYear&&fromSchoolYear===toSchoolYear)return json({error:"來源與目標學年度不可相同"},400);
-    await ensureTables();
-    const items=await listStudentMaster();
+    await ensureTenantTables();
+    const items=await listStudentMaster("",schoolId);
     const plan=buildPlan(items,{fromSchoolYear,toSchoolYear,promoteGrades,graduateSixth,includeBlankYear,studentIds});
     const summary={
       totalStudents:items.length,
@@ -77,17 +77,19 @@ app.http("academicYearPromotion",{
     const now=new Date().toISOString();
     const batchId=rowKey("yearbatch");
     for(const c of plan.changes){
-      const current=await table("studentMaster").getEntity("STUDENT",c.old.studentId);
+      const current=await table("tenantStudentMaster").getEntity(tenantSchoolPartition(schoolId),c.old.studentId);
       const before=viewStudent(current);
       current.grade=c.updated.grade;
       current.schoolYear=c.updated.schoolYear;
       current.status=c.updated.status;
       current.updatedAt=now;
       current.updatedBy=access.email;
-      await table("studentMaster").updateEntity(current,"Merge");
-      await table("studentHistory").createEntity({
-        partitionKey:c.old.studentId,
+      await table("tenantStudentMaster").updateEntity(current,"Merge");
+      await table("tenantStudentHistory").createEntity({
+        partitionKey:tenantStudentPartition(schoolId,c.old.studentId),
         rowKey:rowKey("hist"),
+        schoolId,
+        studentId:c.old.studentId,
         changeType:c.changeType,
         changedAt:now,
         changedBy:access.email,
@@ -97,9 +99,10 @@ app.http("academicYearPromotion",{
       });
     }
     try{
-      await table("academicYearBatch").createEntity({
-        partitionKey:"BATCH",
+      await table("tenantAcademicYearBatch").createEntity({
+        partitionKey:tenantSchoolPartition(schoolId),
         rowKey:batchId,
+        schoolId,
         fromSchoolYear,
         toSchoolYear,
         promoteGrades,

@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
 import { getAccess, json, parseJsonEnv } from "../lib/auth.js";
-import { touchTeacherLastLogin, listTenantRolesByEmail, getTenantDirectory, getTeacherDirectory, getMappedStudentsByEmail, defaultTenantId, saveUserIdentity } from "../lib/storage.js";
+import { touchTeacherLastLogin, listTenantRolesByEmail, listTenantDirectory, getTenantDirectory, getTeacherDirectory, getMappedStudentsByEmail, defaultTenantId, saveUserIdentity } from "../lib/storage.js";
 app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(request)=>{
   const a=await getAccess(request);
   if(!a.authenticated)return json({error:"Unauthorized"},401);
@@ -30,28 +30,25 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
   }
 
   const defaultId=defaultTenantId();
-  const defaultTenant=await getTenantDirectory(defaultId);
-  try{
-    const teacher=await getTeacherDirectory(a.email);
-    if(teacher?.status==="active"){
-      addContext({key:"teacher:"+defaultId,type:"teacher",role:"teacher",label:(defaultTenant?.schoolName||"聖心小學")+"｜老師",icon:"🎻",schoolId:defaultId,schoolName:String(defaultTenant?.schoolName||"聖心小學"),status:String(defaultTenant?.status||"active")});
-    }
-  }catch(e){console.warn("teacher context lookup failed",e)}
-
-  try{
-    const staticMap=parseJsonEnv("STUDENT_MAP_JSON",{});
-    const staticParent=!!staticMap[String(a.email||"").toLowerCase()];
-    const dynamic=staticParent?[]:await getMappedStudentsByEmail(a.email);
-    if(staticParent||dynamic.length){
-      addContext({key:"parent:"+defaultId,type:"parent",role:"parent",label:(defaultTenant?.schoolName||"聖心小學")+"｜家長",icon:"👨‍👩‍👧",schoolId:defaultId,schoolName:String(defaultTenant?.schoolName||"聖心小學"),status:String(defaultTenant?.status||"active")});
-    }
-  }catch(e){console.warn("parent context lookup failed",e)}
+  const staticMap=parseJsonEnv("STUDENT_MAP_JSON",{}),staticParentDefault=!!staticMap[String(a.email||"").toLowerCase()];
+  let tenants=[];try{tenants=await listTenantDirectory()}catch(e){console.warn("identity tenant lookup failed",e)}
+  for(const tenant of tenants.filter(x=>String(x.status||"")==="active")){
+    const schoolId=String(tenant.rowKey||tenant.schoolId||""),schoolName=String(tenant.schoolName||schoolId);
+    try{
+      const teacher=await getTeacherDirectory(a.email,schoolId);
+      if(teacher?.status==="active")addContext({key:"teacher:"+schoolId,type:"teacher",role:"teacher",label:schoolName+"｜老師",icon:"🎻",schoolId,schoolName,status:"active"});
+    }catch(e){console.warn("teacher context lookup failed",schoolId,e)}
+    try{
+      const staticParent=schoolId===defaultId&&staticParentDefault,dynamic=staticParent?[]:await getMappedStudentsByEmail(a.email,schoolId);
+      if(staticParent||dynamic.length)addContext({key:"parent:"+schoolId,type:"parent",role:"parent",label:schoolName+"｜家長",icon:"👨‍👩‍👧",schoolId,schoolName,status:"active"});
+    }catch(e){console.warn("parent context lookup failed",schoolId,e)}
+  }
 
   const requestedType=String(request.headers.get("x-role-context")||"").trim();
   const requestedSchoolId=String(request.headers.get("x-school-id")||"").trim().toLowerCase();
   const teacherRoles=["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"];
   if(teacherRoles.includes(a.role)&&(requestedType==="teacher"||(!requestedType&&contexts.length===1))){
-    try{await touchTeacherLastLogin(a.email)}catch(e){console.warn("teacher last login update failed",e)}
+    try{await touchTeacherLastLogin(a.email,a.schoolId||defaultId)}catch(e){console.warn("teacher last login update failed",e)}
   }
 
   let activeContextKey="";

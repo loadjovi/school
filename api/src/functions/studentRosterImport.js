@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
-import { getAccess, json } from "../lib/auth.js";
-import { ensureTables, table, rowKey, listStudentMaster, semesterKey, semesterLabel } from "../lib/storage.js";
+import { getTenantContext, json } from "../lib/auth.js";
+import { ensureTenantTables, table, rowKey, listStudentMaster, semesterKey, semesterLabel, tenantSchoolPartition, tenantStudentPartition, tenantTermPartition } from "../lib/storage.js";
 
 const gradeMap={1:"一年級",2:"二年級",3:"三年級",4:"四年級",5:"五年級",6:"六年級"};
 function clean(v,max=100){return String(v??"").trim().slice(0,max)}
@@ -76,21 +76,29 @@ function compatibleLegacy(e,r){
   return conflicts.length===0;
 }
 function stripMeta(e){const x={...e};delete x.etag;delete x.timestamp;return x}
-async function migratePartitionRows(key,oldId,newId){
-  if(!oldId||oldId===newId)return 0;
+async function migratePartitionRows(key,oldPartition,newPartition,{legacyStudentId="",schoolId="",studentId=""}={}){
+  if(!oldPartition||oldPartition===newPartition)return 0;
   const client=table(key),rows=[];
-  for await (const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${String(oldId).replaceAll("'","''")}'`}}))rows.push(e);
+  for await (const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${String(oldPartition).replaceAll("'","''")}'`}}))rows.push(e);
   for(const old of rows){
-    const next=stripMeta(old);next.partitionKey=newId;next.legacyStudentId=oldId;
+    const next=stripMeta(old);next.partitionKey=newPartition;
+    if(legacyStudentId)next.legacyStudentId=legacyStudentId;
+    if(schoolId)next.schoolId=schoolId;
+    if(studentId)next.studentId=studentId;
     await client.upsertEntity(next,"Replace");
     try{await client.deleteEntity(String(old.partitionKey),String(old.rowKey))}catch{}
   }
   return rows.length;
 }
-async function migrateParentMappings(oldId,newId,student,accessEmail){
+async function migrateActivityRows(legacyKey,tenantKey,oldId,newId,schoolId){
+  const legacy=await migratePartitionRows(legacyKey,oldId,newId,{legacyStudentId:oldId});
+  const tenant=await migratePartitionRows(tenantKey,tenantStudentPartition(schoolId,oldId),tenantStudentPartition(schoolId,newId),{legacyStudentId:oldId,schoolId,studentId:newId});
+  return {legacy,tenant,total:legacy+tenant};
+}
+async function migrateParentMappings(oldId,newId,student,accessEmail,schoolId){
   if(!oldId||oldId===newId)return 0;
-  const client=table("userStudentMap"),matches=[];
-  for await (const e of client.listEntities({queryOptions:{filter:`RowKey eq '${String(oldId).replaceAll("'","''")}'`}}))matches.push(e);
+  const client=table("tenantUserStudentMap"),matches=[],sid=tenantSchoolPartition(schoolId).replaceAll("'","''");
+  for await (const e of client.listEntities({queryOptions:{filter:`schoolId eq '${sid}' and RowKey eq '${String(oldId).replaceAll("'","''")}'`}}))matches.push(e);
   let count=0;
   for(const old of matches){
     const next={...stripMeta(old),rowKey:newId,studentNo:newId,studentName:student.name,grade:student.grade,groupName:student.groupName,instrument:student.instrument,schoolYear:student.schoolYear,semester:student.semester,status:"active",legacyStudentId:oldId,migratedAt:new Date().toISOString(),migratedBy:accessEmail};
@@ -100,10 +108,10 @@ async function migrateParentMappings(oldId,newId,student,accessEmail){
   }
   return count;
 }
-async function migrateTeacherPrivateAssignments(oldId,newId){
+async function migrateTeacherPrivateAssignments(oldId,newId,schoolId){
   if(!oldId||oldId===newId)return 0;
-  const client=table("teacherProfile");let count=0;
-  for await (const e of client.listEntities()){
+  const client=table("tenantTeacherProfile");let count=0,sid=tenantSchoolPartition(schoolId).replaceAll("'","''");
+  for await (const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${sid}'`}})){
     let ids=[];try{ids=JSON.parse(String(e.privateStudentIds||"[]"))}catch{ids=[]}
     if(!Array.isArray(ids)||!ids.map(String).includes(String(oldId)))continue;
     const replaced=[...new Set(ids.map(String).map(x=>x===String(oldId)?String(newId):x))];
@@ -112,35 +120,35 @@ async function migrateTeacherPrivateAssignments(oldId,newId){
   }
   return count;
 }
-async function migrateRegistrationReferences(oldId,newId){
+async function migrateRegistrationReferences(oldId,newId,schoolId){
   if(!oldId||oldId===newId)return 0;
-  const client=table("registrations"),rows=[];
-  for await (const e of client.listEntities({queryOptions:{filter:`studentId eq '${String(oldId).replaceAll("'","''")}'`}}))rows.push(e);
+  const client=table("tenantRegistrations"),rows=[],sid=tenantSchoolPartition(schoolId).replaceAll("'","''");
+  for await (const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${sid}' and studentId eq '${String(oldId).replaceAll("'","''")}'`}}))rows.push(e);
   for(const e of rows){const next=stripMeta(e);next.studentId=newId;next.legacyStudentId=oldId;await client.upsertEntity(next,"Merge")}
   return rows.length;
 }
-async function migrateHistoricalReferences(oldId,newId,student,accessEmail){
+async function migrateHistoricalReferences(oldId,newId,student,accessEmail,schoolId){
   const counts={};
-  counts.practice=await migratePartitionRows("practice",oldId,newId);
-  counts.section=await migratePartitionRows("section",oldId,newId);
-  counts.ensemble=await migratePartitionRows("ensemble",oldId,newId);
-  counts.comprehensive=await migratePartitionRows("comprehensive",oldId,newId);
-  counts.privateLesson=await migratePartitionRows("privateLesson",oldId,newId);
-  counts.parentMappings=await migrateParentMappings(oldId,newId,student,accessEmail);
-  counts.teacherProfiles=await migrateTeacherPrivateAssignments(oldId,newId);
-  counts.registrations=await migrateRegistrationReferences(oldId,newId);
+  counts.practice=await migrateActivityRows("practice","tenantPractice",oldId,newId,schoolId);
+  counts.section=await migrateActivityRows("section","tenantSection",oldId,newId,schoolId);
+  counts.ensemble=await migrateActivityRows("ensemble","tenantEnsemble",oldId,newId,schoolId);
+  counts.comprehensive=await migrateActivityRows("comprehensive","tenantComprehensive",oldId,newId,schoolId);
+  counts.privateLesson=await migrateActivityRows("privateLesson","tenantPrivateLesson",oldId,newId,schoolId);
+  counts.parentMappings=await migrateParentMappings(oldId,newId,student,accessEmail,schoolId);
+  counts.teacherProfiles=await migrateTeacherPrivateAssignments(oldId,newId,schoolId);
+  counts.registrations=await migrateRegistrationReferences(oldId,newId,schoolId);
   return counts;
 }
-async function saveEnrollment(r,accessEmail,now){
-  const entity={partitionKey:semesterKey(r.schoolYear,r.semester),rowKey:r.studentNo,studentNo:r.studentNo,studentName:r.name,classCode:r.classCode,grade:r.grade,groupName:r.groupName,section:r.section,instrument:r.instrument,seatNo:r.seatNo,schoolYear:r.schoolYear,semester:r.semester,semesterName:r.semesterName,status:"enrolled",confirmedAt:now,confirmedBy:accessEmail,updatedAt:now};
-  await table("semesterEnrollment").upsertEntity(entity,"Replace");
+async function saveEnrollment(r,accessEmail,now,schoolId){
+  const entity={partitionKey:tenantTermPartition(schoolId,r.schoolYear,r.semester),rowKey:r.studentNo,schoolId,studentId:r.studentNo,studentNo:r.studentNo,studentName:r.name,classCode:r.classCode,grade:r.grade,groupName:r.groupName,section:r.section,instrument:r.instrument,seatNo:r.seatNo,schoolYear:r.schoolYear,semester:r.semester,semesterName:r.semesterName,status:"enrolled",confirmedAt:now,confirmedBy:accessEmail,updatedAt:now};
+  await table("tenantSemesterEnrollment").upsertEntity(entity,"Replace");
 }
 
 app.http("studentRosterImport",{
   methods:["POST"],authLevel:"anonymous",route:"student-roster-import",
   handler:async(request)=>{
-    const access=await getAccess(request);
-    if(!access.authenticated)return json({error:"Unauthorized"},401);
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access,schoolId}=context;
     if(access.role!=="admin")return json({error:"Forbidden"},403);
     const body=await request.json();
     const action=clean(body.action||"preview",20).toLowerCase(),schoolYear=clean(body.schoolYear||"115",12),semester=normalizeSemester(body.semester||"1");
@@ -148,8 +156,8 @@ app.http("studentRosterImport",{
     if(!semester)return json({error:"學期只能是 1（上學期）或 2（下學期）"},400);
     if(!["preview","apply"].includes(action))return json({error:"action 必須為 preview 或 apply"},400);
     let parsed;try{parsed=normalizeRows(body.items,schoolYear,semester)}catch(e){return json({error:e.message||"名單解析失敗"},400)}
-    await ensureTables();
-    const existing=await listStudentMaster(),byId=new Map(),byName=new Map();
+    await ensureTenantTables();
+    const existing=await listStudentMaster("",schoolId),byId=new Map(),byName=new Map();
     for(const e of existing){
       byId.set(String(e.rowKey),e);
       const k=clean(e.studentName,40);if(!byName.has(k))byName.set(k,[]);byName.get(k).push(e);
@@ -175,29 +183,29 @@ app.http("studentRosterImport",{
       const exact=byId.get(r.studentNo)||null;
       if(exact){
         const entity={...exact,studentNo:r.studentNo,studentName:r.name,classCode:r.classCode,grade:r.grade,groupName:r.groupName,section:r.section,instrument:r.instrument,schoolYear:r.schoolYear,semester:r.semester,semesterName:r.semesterName,seatNo:r.seatNo,status:"active",inactiveReason:"",updatedAt:now,updatedBy:access.email};
-        await table("studentMaster").updateEntity(entity,"Merge");
-        await saveEnrollment(r,access.email,now);
-        await table("studentHistory").createEntity({partitionKey:String(exact.rowKey),rowKey:rowKey("hist"),changeType:"semester_roster_update",schoolYear:r.schoolYear,semester:r.semester,changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(exact)),newValue:JSON.stringify(studentView(entity))});
+        await table("tenantStudentMaster").updateEntity(entity,"Merge");
+        await saveEnrollment(r,access.email,now,schoolId);
+        await table("tenantStudentHistory").createEntity({partitionKey:tenantStudentPartition(schoolId,exact.rowKey),rowKey:rowKey("hist"),schoolId,studentId:String(exact.rowKey),changeType:"semester_roster_update",schoolYear:r.schoolYear,semester:r.semester,changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(exact)),newValue:JSON.stringify(studentView(entity))});
         results.push({studentId:String(exact.rowKey),studentNo:r.studentNo,name:r.name,action:"update"});continue
       }
 
       const matches=(byName.get(r.name)||[]).filter(x=>!x.replacedByStudentId);
-      const entity={partitionKey:"STUDENT",rowKey:r.studentNo,studentNo:r.studentNo,studentName:r.name,classCode:r.classCode,grade:r.grade,groupName:r.groupName,section:r.section,instrument:r.instrument,schoolYear:r.schoolYear,semester:r.semester,semesterName:r.semesterName,seatNo:r.seatNo,status:"active",createdAt:matches[0]?.createdAt||now,updatedAt:now,updatedBy:access.email};
-      await table("studentMaster").createEntity(entity);
-      await saveEnrollment(r,access.email,now);
+      const entity={partitionKey:tenantSchoolPartition(schoolId),rowKey:r.studentNo,schoolId,studentId:r.studentNo,studentNo:r.studentNo,studentName:r.name,classCode:r.classCode,grade:r.grade,groupName:r.groupName,section:r.section,instrument:r.instrument,schoolYear:r.schoolYear,semester:r.semester,semesterName:r.semesterName,seatNo:r.seatNo,status:"active",createdAt:matches[0]?.createdAt||now,updatedAt:now,updatedBy:access.email};
+      await table("tenantStudentMaster").createEntity(entity);
+      await saveEnrollment(r,access.email,now,schoolId);
 
       if(matches.length){
         const migrations=[];
         for(const old of matches){
-          const migration=await migrateHistoricalReferences(String(old.rowKey),r.studentNo,r,access.email);migrations.push({oldStudentId:String(old.rowKey),...migration});
+          const migration=await migrateHistoricalReferences(String(old.rowKey),r.studentNo,r,access.email,schoolId);migrations.push({oldStudentId:String(old.rowKey),...migration});
           const retired={...old,status:"inactive",replacedByStudentId:r.studentNo,updatedAt:now,updatedBy:access.email};
-          await table("studentMaster").updateEntity(retired,"Merge");
-          await table("studentHistory").createEntity({partitionKey:String(old.rowKey),rowKey:rowKey("hist"),changeType:"student_number_replaced",schoolYear:r.schoolYear,semester:r.semester,changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(old)),newValue:JSON.stringify({replacedByStudentId:r.studentNo,status:"inactive",migration})});
+          await table("tenantStudentMaster").updateEntity(retired,"Merge");
+          await table("tenantStudentHistory").createEntity({partitionKey:tenantStudentPartition(schoolId,old.rowKey),rowKey:rowKey("hist"),schoolId,studentId:String(old.rowKey),changeType:"student_number_replaced",schoolYear:r.schoolYear,semester:r.semester,changedAt:now,changedBy:access.email,oldValue:JSON.stringify(studentView(old)),newValue:JSON.stringify({replacedByStudentId:r.studentNo,status:"inactive",migration})});
         }
-        await table("studentHistory").createEntity({partitionKey:r.studentNo,rowKey:rowKey("hist"),changeType:"semester_roster_student_number_migration",schoolYear:r.schoolYear,semester:r.semester,changedAt:now,changedBy:access.email,oldValue:JSON.stringify(matches.map(studentView)),newValue:JSON.stringify(studentView(entity)),legacyStudentIds:JSON.stringify(matches.map(x=>String(x.rowKey))),migration:JSON.stringify(migrations)});
+        await table("tenantStudentHistory").createEntity({partitionKey:tenantStudentPartition(schoolId,r.studentNo),rowKey:rowKey("hist"),schoolId,studentId:r.studentNo,changeType:"semester_roster_student_number_migration",schoolYear:r.schoolYear,semester:r.semester,changedAt:now,changedBy:access.email,oldValue:JSON.stringify(matches.map(studentView)),newValue:JSON.stringify(studentView(entity)),legacyStudentIds:JSON.stringify(matches.map(x=>String(x.rowKey))),migration:JSON.stringify(migrations)});
         results.push({studentId:r.studentNo,studentNo:r.studentNo,name:r.name,action:"migrate",oldStudentIds:matches.map(x=>String(x.rowKey)),migration:migrations});
       }else{
-        await table("studentHistory").createEntity({partitionKey:r.studentNo,rowKey:rowKey("hist"),changeType:"semester_roster_create",schoolYear:r.schoolYear,semester:r.semester,changedAt:now,changedBy:access.email,oldValue:"",newValue:JSON.stringify(studentView(entity))});
+        await table("tenantStudentHistory").createEntity({partitionKey:tenantStudentPartition(schoolId,r.studentNo),rowKey:rowKey("hist"),schoolId,studentId:r.studentNo,changeType:"semester_roster_create",schoolYear:r.schoolYear,semester:r.semester,changedAt:now,changedBy:access.email,oldValue:"",newValue:JSON.stringify(studentView(entity))});
         results.push({studentId:r.studentNo,studentNo:r.studentNo,name:r.name,action:"create"});
       }
       byId.set(r.studentNo,entity);byName.set(r.name,[entity]);

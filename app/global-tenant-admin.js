@@ -60,7 +60,7 @@
     return '<div class="global-inline-admin"><h3>🔐 '+esc(x.schoolName)+'｜學校管理員</h3><div class="notice">Global 可管理此校 School Admin 權限；只有已被指定為此校管理員的帳號，才可以進入該校營運後台。</div>'+selfAction+list+'<label>新增此校管理員 Google Email</label><input id="globalAdminEmail_'+esc(sid)+'" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 '+esc(x.schoolName)+' School Admin</button></div>';
   }
   function schoolCard(x){
-    const mode=x.dataMode==="legacy-default"?"既有學校營運資料":"Phase 2 前維持資料隔離建置，不會開放看到其他學校既有資料。";
+    const mode=x.dataMode==="tenant-scoped-master"?"學生、家長、老師主資料已 Tenant 化；出勤、練習與個別課紀錄切換中。":x.dataMode==="legacy-default"?"既有學校營運資料":"維持資料隔離建置，不會開放看到其他學校既有資料。";
     const region=[x.cityName||cityName(x.cityCode),x.schoolLevelName||levelName(x.schoolLevel)].filter(Boolean).join("｜");
     const opened=String(state.globalTenant.selectedSchoolId||"")===String(x.schoolId||"");
     const buttonText=opened?"▲ 收合管理":"⚙️ 管理學校";

@@ -132,7 +132,7 @@ app.http("globalDashboard",{
     const g=await requireGlobal(request);if(g.error)return g.error;
     await ensureTables();const tenants=await listTenantDirectory(),today=taipeiDate(),defaultId=defaultTenantId();
     const [students,teachers,parentMaps,todaySection,todayEnsemble,todayComprehensive,todayPrivate]=await Promise.all([
-      listStudentMaster("active"),listTeacherDirectory(),listUserStudentMappings("active"),
+      listStudentMaster("active",defaultId),listTeacherDirectory(defaultId),listUserStudentMappings("active",defaultId),
       countTodayRows("section",today),countTodayRows("ensemble",today),countTodayRows("comprehensive",today),countTodayRows("privateLesson",today)
     ]);
     const todayAttendance=mergeAttendance(todaySection,todayEnsemble,todayComprehensive,todayPrivate);
@@ -150,14 +150,14 @@ app.http("globalDashboard",{
         teacherStatus:isDefault?{active:activeTeachers.length,loggedInToday:teachersLoggedInToday,inactive:teachers.length-activeTeachers.length}:{active:0,loggedInToday:0,inactive:0},
         todayAttendance:isDefault?todayAttendance:{total:0,present:0,late:0,leave:0,absent:0,cancelled:0},
         todayAttendanceRecords:isDefault?todayAttendance.total:0,
-        dataMode:isDefault?"legacy-default":"tenant-isolation-pending"
+        dataMode:isDefault?"tenant-scoped-master":"tenant-isolation-pending"
       });
     }
     return json({
-      today,phase:"multi-tenant-phase-1",schoolCount:schools.length,
+      today,phase:"multi-tenant-phase-2-master-data",schoolCount:schools.length,
       totals:{students:schools.reduce((n,x)=>n+Number(x.studentCount||0),0),teachers:schools.reduce((n,x)=>n+Number(x.teacherStatus?.active||0),0),parentAccounts:schools.reduce((n,x)=>n+Number(x.parentAccountCount||0),0),todayAttendanceRecords:schools.reduce((n,x)=>n+Number(x.todayAttendanceRecords||0),0)},
       schools,
-      notice:"Phase 1 僅建立 Tenant 與權限治理。聖心小學沿用既有資料；新學校維持 setup，不會開放登入既有營運資料，待 Phase 2 完成資料隔離後才可啟用。"
+      notice:"Phase 2 主資料已切換為 Tenant scoped；出勤、練習與個別課紀錄仍在下一批切換中。新學校維持 setup，完整隔離驗證前不可啟用。"
     });
   }
 });

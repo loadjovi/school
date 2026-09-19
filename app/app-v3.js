@@ -4,7 +4,7 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const grades=["一年級","二年級","三年級","四年級","五年級","六年級"],groups=["A","B","C","儲備"],instruments=["小提琴","中提琴","大提琴","低音提琴","其他"];
 function opts(list,val){return list.map(x=>`<option value="${esc(x)}" ${x===val?"selected":""}>${esc(x)}</option>`).join("")}
 function toast(msg){const t=$("toast");if(!t)return;t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1800)}
-async function api(url,options={}){const h={"Content-Type":"application/json",...(options.headers||{})};if(state.token)h["X-Google-ID-Token"]=state.token;const schoolContext=sessionStorage.getItem("school_context_id")||"",roleContext=sessionStorage.getItem("role_context")||"";if(schoolContext)h["X-School-Id"]=schoolContext;if(roleContext)h["X-Role-Context"]=roleContext;const r=await fetch(url,{...options,headers:h});const d=await r.json().catch(()=>({}));if(r.status===401){logout(false);throw new Error("登入已失效，請重新使用 Google 登入")};if(!r.ok)throw new Error(d.error||d.message||`HTTP ${r.status}`);return d}
+async function api(url,options={}){const h={"Content-Type":"application/json"};if(state.token)h["X-Google-ID-Token"]=state.token;const schoolContext=sessionStorage.getItem("school_context_id")||"",roleContext=sessionStorage.getItem("role_context")||"";if(schoolContext)h["X-School-Id"]=schoolContext;if(roleContext)h["X-Role-Context"]=roleContext;Object.assign(h,options.headers||{});const r=await fetch(url,{...options,headers:h});const d=await r.json().catch(()=>({}));if(r.status===401){logout(false);throw new Error("登入已失效，請重新使用 Google 登入")};if(!r.ok)throw new Error(d.error||d.message||`HTTP ${r.status}`);return d}
 function logout(reload=true){state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}
 async function boot(){if(!state.token){renderLogin();return}try{await loadProfile()}catch(e){renderLogin(e.message)}}
 async function loadProfile(){
@@ -70,7 +70,7 @@ window.openParentSelfBind=async function(schoolId,schoolName){
   state.parentSelfBind={schoolId:String(schoolId||""),schoolName:String(schoolName||""),students:[],loading:true};
   render();
   try{
-    const d=await api("/api/parent-self-bind?schoolId="+encodeURIComponent(schoolId));
+    const d=await api("/api/parent-self-bind",{headers:{"X-Role-Context":"schoolAdmin","X-School-Id":String(schoolId||"")}});
     state.parentSelfBind={schoolId:String(schoolId||""),schoolName:String(d.schoolName||schoolName||""),students:d.students||[],loading:false};
     render();
     setTimeout(()=>document.getElementById("selfParentStudent")?.scrollIntoView({behavior:"smooth",block:"center"}),50);
@@ -87,7 +87,7 @@ window.saveParentSelfBind=async function(){
   const s=(b.students||[]).find(x=>String(x.studentId)===String(studentId));
   if(!confirm(`確定將目前 Google 帳號綁定為「${s?.name||studentId}」的${relationship||"家長"}？\n\n綁定後，此帳號會取得該學生之家長資料存取權限。`))return;
   try{
-    await api("/api/parent-self-bind",{method:"POST",body:JSON.stringify({schoolId:b.schoolId,studentId,parentName,relationship,consent:true})});
+    await api("/api/parent-self-bind",{method:"POST",headers:{"X-Role-Context":"schoolAdmin","X-School-Id":String(b.schoolId||"")},body:JSON.stringify({studentId,parentName,relationship,consent:true})});
     toast("✅ 家長身分已建立");
     state.parentSelfBind={schoolId:"",schoolName:"",students:[],loading:false};
     state.me=await api("/api/me");state.page="contextSelect";render();

@@ -1,23 +1,23 @@
 import { app } from "@azure/functions";
-import { getAccess, getStudentAliasInfo, json } from "../lib/auth.js";
-import { ensureTables, table, getStudentMaster, rowKey } from "../lib/storage.js";
+import { getTenantContext, getStudentAliasInfo, json } from "../lib/auth.js";
+import { ensureTenantTables, table, getStudentMaster, rowKey, tenantParentPartition, tenantSchoolPartition, tenantStudentPartition } from "../lib/storage.js";
 
 function clean(v,max=200){return String(v||"").trim().slice(0,max)}
 
-async function registrationById(id){
+async function registrationById(id,schoolId){
   const key=clean(id,160);
   if(!key)return null;
-  try{return await table("registrations").getEntity("REG",key)}
+  try{return await table("tenantRegistrations").getEntity(tenantSchoolPartition(schoolId),key)}
   catch(e){if(e.statusCode===404)return null;throw e}
 }
 
 app.http("studentParentLinks",{
   methods:["GET","PATCH"],authLevel:"anonymous",route:"student-parent-links",
   handler:async(request)=>{
-    const access=await getAccess(request);
-    if(!access.authenticated)return json({error:"Unauthorized"},401);
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access,schoolId}=context;
     if(access.role!=="admin")return json({error:"Forbidden"},403);
-    await ensureTables();
+    await ensureTenantTables();
 
     if(request.method==="PATCH"){
       const body=await request.json();
@@ -33,15 +33,15 @@ app.http("studentParentLinks",{
       if(!/^\d{6}$/.test(targetStudentId))return json({error:"請選擇正式 6 碼學號的學生"},400);
 
       let old;
-      try{old=await table("userStudentMap").getEntity(originalParentEmail,originalStudentId)}
+      try{old=await table("tenantUserStudentMap").getEntity(tenantParentPartition(schoolId,originalParentEmail),originalStudentId)}
       catch(e){if(e.statusCode===404)return json({error:"找不到原始家長綁定，請重新整理後再試"},404);throw e}
 
-      const master=await getStudentMaster(targetStudentId);
+      const master=await getStudentMaster(targetStudentId,schoolId);
       if(!master||String(master.status||"active")==="inactive")return json({error:"目標學生不存在或已停用"},404);
 
       const now=new Date().toISOString();
       const next={
-        partitionKey:parentEmail,rowKey:targetStudentId,
+        partitionKey:tenantParentPartition(schoolId,parentEmail),rowKey:targetStudentId,schoolId,parentEmail,studentId:targetStudentId,
         relationship,
         parentName:parentName||String(old.parentName||""),
         status:"active",
@@ -56,16 +56,16 @@ app.http("studentParentLinks",{
         correctedAt:now,correctedBy:access.email
       };
 
-      await table("userStudentMap").upsertEntity(next,"Merge");
+      await table("tenantUserStudentMap").upsertEntity(next,"Merge");
       if(originalParentEmail!==parentEmail||originalStudentId!==targetStudentId){
-        await table("userStudentMap").deleteEntity(originalParentEmail,originalStudentId);
+        await table("tenantUserStudentMap").deleteEntity(tenantParentPartition(schoolId,originalParentEmail),originalStudentId);
       }
 
       if(old.registrationId){
         try{
-          const reg=await table("registrations").getEntity("REG",String(old.registrationId));
-          await table("registrations").updateEntity({
-            partitionKey:"REG",rowKey:String(old.registrationId),
+          const reg=await table("tenantRegistrations").getEntity(tenantSchoolPartition(schoolId),String(old.registrationId));
+          await table("tenantRegistrations").updateEntity({
+            partitionKey:tenantSchoolPartition(schoolId),rowKey:String(old.registrationId),schoolId,
             parentEmail,parentName:parentName||String(reg.parentName||""),relationship,
             studentId:targetStudentId,studentName:String(master.studentName||""),
             grade:String(master.grade||""),groupName:String(master.groupName||""),
@@ -77,8 +77,8 @@ app.http("studentParentLinks",{
 
       const oldValue={parentEmail:originalParentEmail,studentId:originalStudentId,relationship:String(old.relationship||""),parentName:String(old.parentName||"")};
       const newValue={parentEmail,studentId:targetStudentId,relationship,parentName:parentName||String(old.parentName||"")};
-      await table("studentHistory").createEntity({
-        partitionKey:targetStudentId,rowKey:rowKey("hist"),changeType:"parent_binding_correction",
+      await table("tenantStudentHistory").createEntity({
+        partitionKey:tenantStudentPartition(schoolId,targetStudentId),rowKey:rowKey("hist"),schoolId,studentId:targetStudentId,changeType:"parent_binding_correction",
         changedAt:now,changedBy:access.email,oldValue:JSON.stringify(oldValue),newValue:JSON.stringify(newValue),
         registrationId:String(old.registrationId||"")
       });
@@ -92,16 +92,17 @@ app.http("studentParentLinks",{
 
     const items=[];
     const seen=new Set();
-    for await (const e of table("userStudentMap").listEntities({queryOptions:{filter:"status eq 'active'"}})){
+    const sid=tenantSchoolPartition(schoolId).replaceAll("'","''");
+    for await (const e of table("tenantUserStudentMap").listEntities({queryOptions:{filter:`schoolId eq '${sid}' and status eq 'active'`}})){
       const sourceStudentId=clean(e.rowKey,120);
       if(!sourceStudentId)continue;
-      const alias=await getStudentAliasInfo(sourceStudentId);
+      const alias=await getStudentAliasInfo(sourceStudentId,schoolId);
       const studentId=alias.canonicalStudentId||sourceStudentId;
-      const parentEmail=clean(e.partitionKey,200).toLowerCase();
+      const parentEmail=clean(e.parentEmail,200).toLowerCase();
       const key=`${studentId}|${parentEmail}`;
       if(seen.has(key))continue;
       seen.add(key);
-      const reg=await registrationById(e.registrationId);
+      const reg=await registrationById(e.registrationId,schoolId);
       items.push({
         studentId,
         sourceStudentId,

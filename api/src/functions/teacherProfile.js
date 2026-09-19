@@ -1,5 +1,5 @@
 import { app } from "@azure/functions";
-import { getAccess, json } from "../lib/auth.js";
+import { getTenantContext, json } from "../lib/auth.js";
 import { getTeacherProfile, saveTeacherProfile, listStudentMaster } from "../lib/storage.js";
 
 const allowedGroups=new Set(["A","B","儲備"]);
@@ -15,13 +15,13 @@ app.http("teacherProfile",{
   authLevel:"anonymous",
   route:"teacher-profile",
   handler:async(request)=>{
-    const access=await getAccess(request);
-    if(!access.authenticated)return json({error:"Unauthorized"},401);
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access,schoolId}=context;
     if(access.role!=="admin"&&!access.capabilities?.teacherSettings)return json({error:"此 Gmail 尚未由管理員啟用為老師帳號。"},403);
 
     const email=access.email;
-    const current=await getTeacherProfile(email);
-    const all=(await listStudentMaster("active")).map(studentView);
+    const current=await getTeacherProfile(email,schoolId);
+    const all=(await listStudentMaster("active",schoolId)).map(studentView);
 
     if(request.method==="GET"){
       return json({
@@ -60,7 +60,7 @@ app.http("teacherProfile",{
     const invalid=privateStudentIds.filter(x=>!activeIds.has(x));
     if(invalid.length)return json({error:`個課學生不存在或已離團：${invalid.join(", ")}`},400);
 
-    await saveTeacherProfile(email,{displayName:access.displayName,sectionAssignments,ensembleGroups:eGroups,comprehensiveEnabled,privateStudentIds});
+    await saveTeacherProfile(email,{displayName:access.displayName,sectionAssignments,ensembleGroups:eGroups,comprehensiveEnabled,privateStudentIds},schoolId);
     return json({ok:true,profile:{sectionAssignments,ensembleGroups:eGroups,comprehensiveEnabled,privateStudentIds}});
   }
 });

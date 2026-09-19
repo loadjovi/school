@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
-import { getAccess, parseJsonEnv, json } from "../lib/auth.js";
-import { listAllMappedStudents } from "../lib/storage.js";
+import { getTenantContext, parseJsonEnv, json } from "../lib/auth.js";
+import { listAllMappedStudents, defaultTenantId } from "../lib/storage.js";
 
 function staticStudents(){
   const parentMap=parseJsonEnv("STUDENT_MAP_JSON",{});
@@ -19,12 +19,12 @@ app.http("students",{
   authLevel:"anonymous",
   route:"students",
   handler:async(request)=>{
-    const a=await getAccess(request);
-    if(!a.authenticated)return json({error:"Unauthorized"},401);
+    const context=await getTenantContext(request,{allowUnassigned:true});if(context.error)return context.error;
+    const {access:a,schoolId}=context;
     if(a.role==="admin"){
       const m=new Map();
-      for(const s of staticStudents())m.set(s.studentId,s);
-      for(const s of await listAllMappedStudents())m.set(s.studentId,s);
+      if(schoolId===defaultTenantId())for(const s of staticStudents())m.set(s.studentId,s);
+      for(const s of await listAllMappedStudents(schoolId))m.set(s.studentId,s);
       return json([...m.values()]);
     }
     if(a.role==="unassigned")return json([]);
