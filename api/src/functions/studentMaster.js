@@ -50,9 +50,10 @@ app.http("studentMaster",{
     }
     const studentId=clean(body.studentId,80);if(!studentId)return json({error:"缺少 studentId"},400);
     const old=await getStudentMaster(studentId);if(!old)return json({error:"找不到學生主檔"},404);
-    const section=clean(body.section||old.section||defaultSection(instrument),20),err=validate({studentName,grade,groupName,instrument,section,status});if(err)return json({error:err},400);
-    const semester=clean(body.semester||old.semester,10);
-    const entity={...old,studentNo:old.studentNo||(/^\d{6}$/.test(studentId)?studentId:""),studentName,grade,groupName,instrument,section,schoolYear,classCode:clean(body.classCode||old.classCode,20),semester,semesterName:semesterLabel(semester),seatNo:clean(body.seatNo||old.seatNo,10),status,updatedAt:now,updatedBy:access.email};
+    const nextStudentName=clean(body.name??body.studentName??old.studentName,40),nextGrade=clean(body.grade??old.grade,20),nextGroupName=clean(body.groupName??old.groupName,10),nextInstrument=clean(body.instrument??old.instrument,20),nextSchoolYear=clean(body.schoolYear??old.schoolYear,20),nextStatus=clean(body.status??old.status??"active",20);
+    const section=clean(body.section??old.section??defaultSection(nextInstrument),20),err=validate({studentName:nextStudentName,grade:nextGrade,groupName:nextGroupName,instrument:nextInstrument,section,status:nextStatus});if(err)return json({error:err},400);
+    const semester=clean(body.semester??old.semester,10),oldStatus=String(old.status||"active"),becameInactive=oldStatus!=="inactive"&&nextStatus==="inactive",becameActive=oldStatus==="inactive"&&nextStatus==="active";
+    const entity={...old,studentNo:old.studentNo||(/^\d{6}$/.test(studentId)?studentId:""),studentName:nextStudentName,grade:nextGrade,groupName:nextGroupName,instrument:nextInstrument,section,schoolYear:nextSchoolYear,classCode:clean(body.classCode??old.classCode,20),semester,semesterName:semesterLabel(semester),seatNo:clean(body.seatNo??old.seatNo,10),status:nextStatus,updatedAt:now,updatedBy:access.email};
     await table("studentMaster").updateEntity(entity,"Merge");
     await table("studentHistory").createEntity({partitionKey:studentId,rowKey:rowKey("hist"),changeType:changeType|| (becameInactive?"leave_or_inactive":becameActive?"rejoin":"profile_update"),changedAt:now,changedBy:access.email,effectiveDate:effectiveDate||now.slice(0,10),note:changeNote,oldValue:JSON.stringify(view(old)),newValue:JSON.stringify(view(entity))});
     return json({ok:true,student:view(entity)});

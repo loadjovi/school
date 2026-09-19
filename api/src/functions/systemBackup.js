@@ -3,7 +3,7 @@ import { TableClient, TableServiceClient } from "@azure/data-tables";
 import { BlobServiceClient } from "@azure/storage-blob";
 import { createHash } from "node:crypto";
 import { getAccess, json } from "../lib/auth.js";
-import { ensureTables, table } from "../lib/storage.js";
+import { ensureTables, table, writeGlobalAudit } from "../lib/storage.js";
 
 const SCHEMA_VERSION=3;
 const LOGICAL_TABLES=[
@@ -61,17 +61,25 @@ async function restoreClient(client,items=[]){let count=0;for(const raw of items
 async function clientsByLogical(){await ensureTables();const map={};for(const [logical,key] of LOGICAL_TABLES)map[logical]=table(key);map.SystemSettings=await settingsClient();return map}
 
 app.http("systemBackup",{methods:["GET","POST"],authLevel:"anonymous",route:"system-backup",handler:async request=>{
-  const access=await getAccess(request);if(!access.authenticated)return json({error:"Unauthorized"},401);if(access.role!=="admin")return json({error:"Forbidden"},403);
+  const access=await getAccess(request);
+  if(!access.authenticated)return json({error:"Unauthorized"},401);
+  if(access.role!=="globalAdmin"||access.capabilities?.globalAdmin!==true)return json({error:"僅限 Global Admin 執行完整平台備份／還原"},403);
   if(request.method==="GET"){
     const tables=await collectTables(),stats=tableCounts(tables),brandingAsset=await readBrandingAsset();
     const backup={format:"SacredHeartOrchestraBackup",schemaVersion:SCHEMA_VERSION,exportedAt:new Date().toISOString(),exportedBy:access.email,app:"弦樂團管理系統",stats,environmentChecklist:REQUIRED_ENV.map(name=>({name,configured:Boolean(process.env[name])})),notes:["此檔不包含任何 Azure/Google/Email 連線字串、密碼或金鑰。","移轉到新環境時，請先重新建立環境變數，再登入管理員執行還原。","學號為學生唯一值；SemesterEnrollment 保存每學期正式上課名單。","自訂品牌 Logo 如已上傳，會一併封裝在此備份檔。"],tables};
-    if(brandingAsset)backup.brandingAsset=brandingAsset;backup.checksum=checksumFor(backup);return json(backup);
+    if(brandingAsset)backup.brandingAsset=brandingAsset;backup.checksum=checksumFor(backup);
+    await writeGlobalAudit({actorEmail:access.email,action:"global_backup_export",details:{schemaVersion:SCHEMA_VERSION,total:stats.total}});
+    return json(backup);
   }
   let body;try{body=await request.json()}catch{return json({error:"JSON 格式不正確"},400)}
   const action=String(body?.action||"preview").trim().toLowerCase(),backup=body?.backup;let stats;try{stats=validateBackup(backup)}catch(e){return json({error:e.message||"備份驗證失敗"},400)}
-  if(action==="preview")return json({ok:true,valid:true,schemaVersion:SCHEMA_VERSION,exportedAt:String(backup.exportedAt||""),stats,checksum:String(backup.checksum||""),brandingLogoIncluded:Boolean(backup.brandingAsset)});
+  if(action==="preview"){
+    await writeGlobalAudit({actorEmail:access.email,action:"global_backup_restore_preview",details:{sourceSchemaVersion:stats.sourceSchemaVersion,total:stats.total,exportedAt:String(backup.exportedAt||"")}});
+    return json({ok:true,valid:true,schemaVersion:SCHEMA_VERSION,exportedAt:String(backup.exportedAt||""),stats,checksum:String(backup.checksum||""),brandingLogoIncluded:Boolean(backup.brandingAsset)});
+  }
   if(action!=="restore")return json({error:"action 必須為 preview 或 restore"},400);
   const mode=String(body?.mode||"merge").toLowerCase();if(!["merge","replace"].includes(mode))return json({error:"mode 必須為 merge 或 replace"},400);if(mode==="replace"&&String(body?.confirmText||"")!=="完整移轉")return json({error:"完整移轉還原需要輸入確認文字「完整移轉」"},400);if(mode==="merge"&&body?.confirmRestore!==true)return json({error:"合併還原需要 confirmRestore=true"},400);
-  const clients=await clientsByLogical(),removed={},restored={},sourceVersion=Number(backup.schemaVersion||1),tenantTables=new Set(["TenantDirectory","TenantUserRole","GlobalAuditLog"]);const legacyMissing=name=>(sourceVersion===1&&tenantTables.has(name)&&!Array.isArray(backup.tables[name]))||(sourceVersion<=2&&name==="UserIdentity"&&!Array.isArray(backup.tables[name]));if(mode==="replace")for(const name of Object.keys(clients)){if(legacyMissing(name))continue;removed[name]=await clearClient(clients[name])}for(const name of Object.keys(clients)){if(legacyMissing(name)){restored[name]=0;continue}restored[name]=await restoreClient(clients[name],backup.tables[name])}const brandingLogoRestored=await restoreBrandingAsset(backup.brandingAsset,mode==="replace");
-  return json({ok:true,mode,restoredAt:new Date().toISOString(),stats,removed,restored,brandingLogoRestored,totalRestored:Object.values(restored).reduce((a,b)=>a+b,0)});
+  const clients=await clientsByLogical(),removed={},restored={},sourceVersion=Number(backup.schemaVersion||1),tenantTables=new Set(["TenantDirectory","TenantUserRole","GlobalAuditLog"]);const legacyMissing=name=>(sourceVersion===1&&tenantTables.has(name)&&!Array.isArray(backup.tables[name]))||(sourceVersion<=2&&name==="UserIdentity"&&!Array.isArray(backup.tables[name]));if(mode==="replace")for(const name of Object.keys(clients)){if(legacyMissing(name))continue;removed[name]=await clearClient(clients[name])}for(const name of Object.keys(clients)){if(legacyMissing(name)){restored[name]=0;continue}restored[name]=await restoreClient(clients[name],backup.tables[name])}const brandingLogoRestored=await restoreBrandingAsset(backup.brandingAsset,mode==="replace"),totalRestored=Object.values(restored).reduce((a,b)=>a+b,0);
+  await writeGlobalAudit({actorEmail:access.email,action:"global_backup_restore",details:{mode,sourceSchemaVersion:stats.sourceSchemaVersion,totalRestored,brandingLogoRestored}});
+  return json({ok:true,mode,restoredAt:new Date().toISOString(),stats,removed,restored,brandingLogoRestored,totalRestored});
 }});

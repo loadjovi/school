@@ -109,7 +109,7 @@
 
   if(!document.querySelector('script[data-global-tenant-admin="1"]')){
     const s=document.createElement("script");
-    s.src="/global-tenant-admin.js?v=20260919-2025";
+    s.src="/global-tenant-admin.js?v=20260919-2135";
     s.defer=true;
     s.dataset.globalTenantAdmin="1";
     document.body.appendChild(s);
