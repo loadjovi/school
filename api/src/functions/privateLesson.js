@@ -213,8 +213,9 @@ app.http("privateLesson",{
     const alias=await getStudentAliasInfo(studentId),canonicalStudentId=alias.canonicalStudentId||studentId;
     const now=new Date().toISOString(),confirmation=["present","late"].includes(status)?"pending":"not_required";
     const teacherName=await resolvedTeacherName(a.email,a.displayName||a.email);
+    const lessonId=rowKey("i");
     const entity={
-      partitionKey:canonicalStudentId,rowKey:rowKey("i"),eventDate:lessonDate,startTime,endTime,status,minutes,
+      partitionKey:canonicalStudentId,rowKey:lessonId,sessionId:lessonId,eventDate:lessonDate,startTime,endTime,status,minutes,
       lessonContent:clean(body.lessonContent,500),teacher:a.email,teacherName,
       parentConfirmation:confirmation,parentConfirmedAt:"",parentConfirmedBy:"",parentNote:"",
       teacherRating:0,teacherReview:"",teacherRatedAt:"",teacherRatedBy:"",
