@@ -171,10 +171,10 @@ app.http("globalBranding",{methods:["GET","PATCH"],authLevel:"anonymous",route:"
 }});
 
 app.http("globalBrandingLogo",{methods:["GET","POST","DELETE"],authLevel:"anonymous",route:"global-branding-logo",handler:async request=>{
-  const g=await requireGlobalBrandingAdmin(request);if(g.error)return g.error;
   if(request.method==="GET"){
-    const x=await readGlobalLogo();return {status:200,headers:{"Content-Type":x.contentType,"Cache-Control":"private, max-age=300"},body:x.buffer};
+    const x=await readGlobalLogo();return {status:200,headers:{"Content-Type":x.contentType,"Cache-Control":"public, max-age=300"},body:x.buffer};
   }
+  const g=await requireGlobalBrandingAdmin(request);if(g.error)return g.error;
   if(request.method==="DELETE")return json(await deleteGlobalLogo(g.access.email));
   let body;try{body=await request.json()}catch{return json({error:"JSON 格式不正確"},400)}
   try{return json({ok:true,...await uploadGlobalLogo(body?.dataUrl,g.access.email),branding:globalPublicView(await getGlobalBranding(true))})}catch(e){return json({error:e.message||"Global Logo 上傳失敗"},400)}
