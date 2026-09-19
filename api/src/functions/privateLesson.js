@@ -37,6 +37,7 @@ function view(e,teacherNameOverride=""){
     parentConfirmation:String(e.parentConfirmation||(["present","late"].includes(String(e.status||""))?"pending":"not_required")),
     parentConfirmedAt:String(e.parentConfirmedAt||""),parentConfirmedBy:String(e.parentConfirmedBy||""),parentNote:String(e.parentNote||""),
     emailNotificationStatus:String(e.emailNotificationStatus||""),emailNotificationAt:String(e.emailNotificationAt||""),emailNotificationRecipients:Number(e.emailNotificationRecipients||0),emailNotificationSentCount:Number(e.emailNotificationSentCount||0),emailNotificationFailedCount:Number(e.emailNotificationFailedCount||0),
+    emailNotificationResendCount:Number(e.emailNotificationResendCount||0),emailNotificationLastResentAt:String(e.emailNotificationLastResentAt||""),emailNotificationLastResentBy:String(e.emailNotificationLastResentBy||""),
     createdAt:String(e.createdAt||"")
   };
 }
@@ -121,11 +122,64 @@ app.http("privateLesson",{
     }
 
     if(request.method==="PATCH"){
-      if(a.role!=="parent")return json({error:"只有家長可以確認個別課完成狀態"},403);
       const body=await request.json(),studentId=clean(body.studentId,120),lessonId=clean(body.lessonId,180),action=clean(body.action,30).toLowerCase();
-      if(!studentId||!lessonId||!ensureStudentAccess(a,studentId))return json({error:"Forbidden"},403);
-      if(!["confirmed","issue"].includes(action))return json({error:"action 必須是 confirmed 或 issue"},400);
+      if(!studentId||!lessonId)return json({error:"缺少 studentId 或 lessonId"},400);
       const entity=await findLesson(studentId,lessonId);if(!entity)return json({error:"找不到個別課紀錄"},404);
+
+      if(action==="resend_email"){
+        if(!(a.role==="admin"||a.capabilities?.private))return json({error:"只有管理員或個別課老師可以重寄確認 Email"},403);
+        if(a.role!=="admin"){
+          if(!ensurePrivateAccess(a,studentId))return json({error:"此老師未綁定該學生的個別課權限"},403);
+          if(String(entity.teacher||"").toLowerCase()!==String(a.email||"").toLowerCase())return json({error:"只能重寄自己建立的個別課通知"},403);
+        }
+        if(String(entity.parentConfirmation||"")!=="pending")return json({error:"家長已完成確認或此筆不需確認，無法重寄"},409);
+
+        let emailNotification={status:"failed",recipientCount:0,sentCount:0,failedCount:0};
+        try{
+          const settings=await getSystemSettings();
+          if(!settings.emailNotificationsEnabled){
+            emailNotification={status:"disabled",recipientCount:0,sentCount:0,failedCount:0};
+          }else{
+            const alias=await getStudentAliasInfo(studentId),canonicalStudentId=alias.canonicalStudentId||studentId;
+            const recipients=await parentEmailsForStudent(canonicalStudentId);
+            const master=await getStudentMaster(canonicalStudentId);
+            const studentName=clean(master?.studentName||"學生",80);
+            const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName);
+            const confirmUrl=publicAppUrl(request);
+            if(!confirmUrl)console.warn("Unable to resolve public app URL for private lesson resend email; set APP_PUBLIC_URL in Azure environment variables.");
+            emailNotification=await sendPrivateLessonParentEmail({
+              recipients,studentName,teacherName,
+              lessonDate:String(entity.eventDate||""),startTime:String(entity.startTime||""),endTime:String(entity.endTime||""),
+              minutes:Number(entity.minutes||0),lessonContent:String(entity.lessonContent||""),confirmUrl
+            });
+          }
+        }catch(e){
+          console.error("Private lesson parent email resend failed:",e);
+          emailNotification={status:"failed",recipientCount:0,sentCount:0,failedCount:1,error:clean(e?.message||e,300)};
+        }
+
+        const now=new Date().toISOString();
+        entity.emailNotificationStatus=emailNotification.status;
+        entity.emailNotificationAt=now;
+        entity.emailNotificationRecipients=Number(emailNotification.recipientCount||0);
+        entity.emailNotificationSentCount=Number(emailNotification.sentCount||0);
+        entity.emailNotificationFailedCount=Number(emailNotification.failedCount||0);
+        entity.emailNotificationResendCount=Number(entity.emailNotificationResendCount||0)+1;
+        entity.emailNotificationLastResentAt=now;
+        entity.emailNotificationLastResentBy=a.email;
+        entity.updatedAt=now;
+        await table("privateLesson").updateEntity(entity,"Merge");
+        const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName);
+        return json({ok:true,item:view(entity,teacherName),emailNotification:{
+          status:emailNotification.status,recipientCount:Number(emailNotification.recipientCount||0),
+          sentCount:Number(emailNotification.sentCount||0),failedCount:Number(emailNotification.failedCount||0),
+          resendCount:Number(entity.emailNotificationResendCount||0)
+        }});
+      }
+
+      if(a.role!=="parent")return json({error:"只有家長可以確認個別課完成狀態"},403);
+      if(!ensureStudentAccess(a,studentId))return json({error:"Forbidden"},403);
+      if(!["confirmed","issue"].includes(action))return json({error:"action 必須是 confirmed、issue 或 resend_email"},400);
       if(String(entity.parentConfirmation||"")==="not_required")return json({error:"此筆紀錄不需要家長確認"},409);
       entity.parentConfirmation=action;
       entity.parentConfirmedAt=new Date().toISOString();
@@ -152,7 +206,8 @@ app.http("privateLesson",{
       partitionKey:canonicalStudentId,rowKey:rowKey("i"),eventDate:lessonDate,startTime,endTime,status,minutes,
       lessonContent:clean(body.lessonContent,500),teacher:a.email,teacherName,
       parentConfirmation:confirmation,parentConfirmedAt:"",parentConfirmedBy:"",parentNote:"",createdAt:now,updatedAt:now,
-      emailNotificationStatus:confirmation==="pending"?"pending":"not_required",emailNotificationAt:"",emailNotificationRecipients:0,emailNotificationSentCount:0,emailNotificationFailedCount:0
+      emailNotificationStatus:confirmation==="pending"?"pending":"not_required",emailNotificationAt:"",emailNotificationRecipients:0,emailNotificationSentCount:0,emailNotificationFailedCount:0,
+      emailNotificationResendCount:0,emailNotificationLastResentAt:"",emailNotificationLastResentBy:""
     };
     await table("privateLesson").createEntity(entity);
 
