@@ -5,9 +5,9 @@ import { createHash } from "node:crypto";
 import { getAccess, json } from "../lib/auth.js";
 import { ensureTables, table } from "../lib/storage.js";
 
-const SCHEMA_VERSION=2;
+const SCHEMA_VERSION=3;
 const LOGICAL_TABLES=[
-  ["PracticeLog","practice"],["SectionAttendance","section"],["EnsembleAttendance","ensemble"],["ComprehensiveAttendance","comprehensive"],["PrivateLesson","privateLesson"],["StudentRegistration","registrations"],["UserStudentMap","userStudentMap"],["StudentMaster","studentMaster"],["StudentHistory","studentHistory"],["SemesterEnrollment","semesterEnrollment"],["TeacherDirectory","teacherDirectory"],["TeacherProfile","teacherProfile"],["AcademicYearBatch","academicYearBatch"],["TenantDirectory","tenantDirectory"],["TenantUserRole","tenantUserRole"],["GlobalAuditLog","globalAuditLog"]
+  ["PracticeLog","practice"],["SectionAttendance","section"],["EnsembleAttendance","ensemble"],["ComprehensiveAttendance","comprehensive"],["PrivateLesson","privateLesson"],["StudentRegistration","registrations"],["UserStudentMap","userStudentMap"],["StudentMaster","studentMaster"],["StudentHistory","studentHistory"],["SemesterEnrollment","semesterEnrollment"],["TeacherDirectory","teacherDirectory"],["TeacherProfile","teacherProfile"],["AcademicYearBatch","academicYearBatch"],["TenantDirectory","tenantDirectory"],["TenantUserRole","tenantUserRole"],["GlobalAuditLog","globalAuditLog"],["UserIdentity","userIdentity"]
 ];
 const SETTINGS_TABLE=()=>process.env.SYSTEM_SETTINGS_TABLE||"SystemSettings";
 const BRANDING_CONTAINER=()=>process.env.BRANDING_BLOB_CONTAINER||"branding";
@@ -40,14 +40,15 @@ async function restoreBrandingAsset(asset,replace=false){
 function validateBackup(input){
   if(!input||typeof input!=="object")throw new Error("備份檔格式不正確");
   const version=Number(input.schemaVersion);
-  if(![1,2].includes(version))throw new Error(`不支援的備份格式版本：${input.schemaVersion??"空白"}`);
+  if(![1,2,3].includes(version))throw new Error(`不支援的備份格式版本：${input.schemaVersion??"空白"}`);
   if(!input.tables||typeof input.tables!=="object")throw new Error("備份檔缺少 tables");
   if(input.checksum&&String(input.checksum)!==checksumFor(input))throw new Error("備份檔檢查碼不一致，檔案可能已損毀或被修改");
   const tenantTables=new Set(["TenantDirectory","TenantUserRole","GlobalAuditLog"]);
   const allowed=new Set([...LOGICAL_TABLES.map(x=>x[0]),"SystemSettings"]);
+  const legacyMissingAllowed=name=>(version===1&&tenantTables.has(name))||(version<=2&&name==="UserIdentity");
   for(const name of allowed){
     if(!Array.isArray(input.tables[name])){
-      if(version===1&&tenantTables.has(name))continue;
+      if(legacyMissingAllowed(name))continue;
       throw new Error(`備份檔缺少資料表 ${name}`);
     }
     for(let i=0;i<input.tables[name].length;i++){const e=cleanEntity(input.tables[name][i]);if(!String(e.partitionKey||"").trim()||!String(e.rowKey||"").trim())throw new Error(`${name} 第 ${i+1} 筆缺少 PartitionKey/RowKey`)}
@@ -71,6 +72,6 @@ app.http("systemBackup",{methods:["GET","POST"],authLevel:"anonymous",route:"sys
   if(action==="preview")return json({ok:true,valid:true,schemaVersion:SCHEMA_VERSION,exportedAt:String(backup.exportedAt||""),stats,checksum:String(backup.checksum||""),brandingLogoIncluded:Boolean(backup.brandingAsset)});
   if(action!=="restore")return json({error:"action 必須為 preview 或 restore"},400);
   const mode=String(body?.mode||"merge").toLowerCase();if(!["merge","replace"].includes(mode))return json({error:"mode 必須為 merge 或 replace"},400);if(mode==="replace"&&String(body?.confirmText||"")!=="完整移轉")return json({error:"完整移轉還原需要輸入確認文字「完整移轉」"},400);if(mode==="merge"&&body?.confirmRestore!==true)return json({error:"合併還原需要 confirmRestore=true"},400);
-  const clients=await clientsByLogical(),removed={},restored={},sourceVersion=Number(backup.schemaVersion||1),tenantTables=new Set(["TenantDirectory","TenantUserRole","GlobalAuditLog"]);if(mode==="replace")for(const name of Object.keys(clients)){if(sourceVersion===1&&tenantTables.has(name)&&!Array.isArray(backup.tables[name]))continue;removed[name]=await clearClient(clients[name])}for(const name of Object.keys(clients)){if(sourceVersion===1&&tenantTables.has(name)&&!Array.isArray(backup.tables[name])){restored[name]=0;continue}restored[name]=await restoreClient(clients[name],backup.tables[name])}const brandingLogoRestored=await restoreBrandingAsset(backup.brandingAsset,mode==="replace");
+  const clients=await clientsByLogical(),removed={},restored={},sourceVersion=Number(backup.schemaVersion||1),tenantTables=new Set(["TenantDirectory","TenantUserRole","GlobalAuditLog"]);const legacyMissing=name=>(sourceVersion===1&&tenantTables.has(name)&&!Array.isArray(backup.tables[name]))||(sourceVersion<=2&&name==="UserIdentity"&&!Array.isArray(backup.tables[name]));if(mode==="replace")for(const name of Object.keys(clients)){if(legacyMissing(name))continue;removed[name]=await clearClient(clients[name])}for(const name of Object.keys(clients)){if(legacyMissing(name)){restored[name]=0;continue}restored[name]=await restoreClient(clients[name],backup.tables[name])}const brandingLogoRestored=await restoreBrandingAsset(backup.brandingAsset,mode==="replace");
   return json({ok:true,mode,restoredAt:new Date().toISOString(),stats,removed,restored,brandingLogoRestored,totalRestored:Object.values(restored).reduce((a,b)=>a+b,0)});
 }});
