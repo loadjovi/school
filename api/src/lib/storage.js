@@ -14,7 +14,10 @@ const names={
   semesterEnrollment:process.env.SEMESTER_ENROLLMENT_TABLE||"SemesterEnrollment",
   teacherDirectory:process.env.TEACHER_DIRECTORY_TABLE||"TeacherDirectory",
   teacherProfile:process.env.TEACHER_PROFILE_TABLE||"TeacherProfile",
-  academicYearBatch:process.env.ACADEMIC_YEAR_BATCH_TABLE||"AcademicYearBatch"
+  academicYearBatch:process.env.ACADEMIC_YEAR_BATCH_TABLE||"AcademicYearBatch",
+  tenantDirectory:process.env.TENANT_DIRECTORY_TABLE||"TenantDirectory",
+  tenantUserRole:process.env.TENANT_USER_ROLE_TABLE||"TenantUserRole",
+  globalAuditLog:process.env.GLOBAL_AUDIT_LOG_TABLE||"GlobalAuditLog"
 };
 
 let initialized=false;
@@ -54,3 +57,91 @@ export async function listUserStudentMappings(status="active"){await ensureTable
 export async function listAllMappedStudents(){await ensureTables();const masters=await listStudentMaster();if(masters.length)return masters.map(masterView);const client=table("userStudentMap");const map=new Map();for await(const e of client.listEntities({queryOptions:{filter:"status eq 'active'"}})){const registration=await getRegistrationById(e.registrationId);const mapped=mappingView(e,registration);if(!map.has(mapped.studentId))map.set(mapped.studentId,{studentId:mapped.studentId,name:mapped.studentName,grade:mapped.grade,groupName:mapped.groupName,instrument:mapped.instrument,section:mapped.section,parentEmail:mapped.parentEmail,source:"legacyMap"})}return [...map.values()];}
 export async function getRegistrationsByEmail(email){await ensureTables();const client=table("registrations");const safe=String(email||"").toLowerCase().replaceAll("'","''");const items=[];for await(const e of client.listEntities({queryOptions:{filter:`parentEmail eq '${safe}'`}}))items.push(e);return items.sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));}
 export async function listRegistrations(status=""){await ensureTables();const items=[];const options=status?{queryOptions:{filter:`status eq '${String(status).replaceAll("'","''")}'`}}:undefined;for await(const e of table("registrations").listEntities(options))items.push(e);return items.sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));}
+
+
+const DEFAULT_TENANT_ID="sacred-heart";
+export function defaultTenantId(){return DEFAULT_TENANT_ID}
+export function tenantIdValue(v){return String(v||"").trim().toLowerCase().replace(/[^a-z0-9-]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"").slice(0,60)}
+
+export async function ensureDefaultTenant(updatedBy="system"){
+  await ensureTables();
+  try{return await table("tenantDirectory").getEntity("TENANT",DEFAULT_TENANT_ID)}
+  catch(e){
+    if(e.statusCode!==404)throw e;
+    const now=new Date().toISOString();
+    const entity={
+      partitionKey:"TENANT",rowKey:DEFAULT_TENANT_ID,
+      schoolId:DEFAULT_TENANT_ID,schoolName:"聖心小學",shortName:"聖心",
+      systemName:"聖心小學弦樂團",status:"active",timezone:"Asia/Taipei",
+      createdAt:now,updatedAt:now,updatedBy:String(updatedBy||"system").slice(0,160)
+    };
+    try{await table("tenantDirectory").createEntity(entity)}catch(err){if(err.statusCode!==409)throw err}
+    return await table("tenantDirectory").getEntity("TENANT",DEFAULT_TENANT_ID);
+  }
+}
+
+export async function getTenantDirectory(schoolId){
+  await ensureTables();const id=tenantIdValue(schoolId);if(!id)return null;
+  try{return await table("tenantDirectory").getEntity("TENANT",id)}catch(e){if(e.statusCode===404)return null;throw e}
+}
+
+export async function listTenantDirectory(){
+  await ensureDefaultTenant();
+  const items=[];for await(const e of table("tenantDirectory").listEntities({queryOptions:{filter:"PartitionKey eq 'TENANT'"}}))items.push(e);
+  return items.sort((a,b)=>String(a.schoolName||a.rowKey).localeCompare(String(b.schoolName||b.rowKey),"zh-Hant"));
+}
+
+export async function saveTenantDirectory(schoolId,data={},updatedBy=""){
+  await ensureTables();const id=tenantIdValue(schoolId);if(!id)throw new Error("schoolId 不可空白");
+  const now=new Date().toISOString();let old=null;try{old=await table("tenantDirectory").getEntity("TENANT",id)}catch(e){if(e.statusCode!==404)throw e}
+  const entity={
+    partitionKey:"TENANT",rowKey:id,schoolId:id,
+    schoolName:String(data.schoolName??old?.schoolName??"").trim().slice(0,120),
+    shortName:String(data.shortName??old?.shortName??"").trim().slice(0,60),
+    systemName:String(data.systemName??old?.systemName??"").trim().slice(0,160),
+    status:String(data.status??old?.status??"active")==="inactive"?"inactive":"active",
+    timezone:String(data.timezone??old?.timezone??"Asia/Taipei").trim().slice(0,80)||"Asia/Taipei",
+    createdAt:old?.createdAt||now,updatedAt:now,updatedBy:String(updatedBy||"").slice(0,160)
+  };
+  if(!entity.schoolName)throw new Error("學校名稱不可空白");
+  if(!entity.shortName)entity.shortName=entity.schoolName.slice(0,60);
+  if(!entity.systemName)entity.systemName=entity.schoolName+" 管理系統";
+  await table("tenantDirectory").upsertEntity(entity,"Replace");return entity;
+}
+
+export async function listTenantRolesByEmail(email,status="active"){
+  await ensureTables();const key=teacherEmail(email);if(!key)return [];
+  const parts=[`PartitionKey eq '${key.replaceAll("'","''")}'`];if(status)parts.push(`status eq '${String(status).replaceAll("'","''")}'`);
+  const items=[];for await(const e of table("tenantUserRole").listEntities({queryOptions:{filter:parts.join(" and ")}}))items.push(e);
+  return items;
+}
+
+export async function listTenantAdmins(schoolId,status="active"){
+  await ensureTables();const id=tenantIdValue(schoolId),items=[];
+  const parts=[`schoolId eq '${id.replaceAll("'","''")}'`,`role eq 'schoolAdmin'`];if(status)parts.push(`status eq '${String(status).replaceAll("'","''")}'`);
+  for await(const e of table("tenantUserRole").listEntities({queryOptions:{filter:parts.join(" and ")}}))items.push(e);
+  return items.sort((a,b)=>String(a.partitionKey).localeCompare(String(b.partitionKey)));
+}
+
+export async function saveTenantUserRole(email,schoolId,role="schoolAdmin",status="active",updatedBy=""){
+  await ensureTables();const user=teacherEmail(email);if(!user)throw new Error("Gmail 不可空白");
+  const normalizedRole=role==="globalAdmin"?"globalAdmin":"schoolAdmin";
+  const sid=normalizedRole==="globalAdmin"?"*":tenantIdValue(schoolId);if(normalizedRole!=="globalAdmin"&&!sid)throw new Error("schoolId 不可空白");
+  const rowKey=normalizedRole==="globalAdmin"?"GLOBAL":sid;
+  const now=new Date().toISOString();let old=null;try{old=await table("tenantUserRole").getEntity(user,rowKey)}catch(e){if(e.statusCode!==404)throw e}
+  const entity={partitionKey:user,rowKey,schoolId:sid,role:normalizedRole,status:status==="inactive"?"inactive":"active",createdAt:old?.createdAt||now,updatedAt:now,updatedBy:String(updatedBy||"").slice(0,160)};
+  await table("tenantUserRole").upsertEntity(entity,"Replace");return entity;
+}
+
+export async function ensureBootstrapGlobalAdmin(email){
+  const key=teacherEmail(email);if(!key)return;
+  await ensureDefaultTenant(key);
+  await saveTenantUserRole(key,"*","globalAdmin","active",key);
+  await saveTenantUserRole(key,DEFAULT_TENANT_ID,"schoolAdmin","active",key);
+}
+
+export async function writeGlobalAudit({actorEmail="",action="",schoolId="",targetEmail="",details={}}={}){
+  await ensureTables();const now=new Date().toISOString();
+  const entity={partitionKey:now.slice(0,7),rowKey:rowKey("ga"),actorEmail:teacherEmail(actorEmail),action:String(action||"").slice(0,80),schoolId:tenantIdValue(schoolId)||String(schoolId||"").slice(0,60),targetEmail:teacherEmail(targetEmail),details:JSON.stringify(details||{}).slice(0,8000),createdAt:now};
+  await table("globalAuditLog").createEntity(entity);return entity;
+}
