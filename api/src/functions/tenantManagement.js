@@ -133,8 +133,7 @@ async function aggregateActivity(key,schoolId,startDate="",endDate="",eventDate=
   for(const entity of latest.values()){
     const status=String(entity.status||"").trim().toLowerCase();
     if(status==="cancelled"){counts.cancelled++;continue}
-    counts.total++;
-    if(["present","late","leave","absent"].includes(status))counts[status]++;
+    if(["present","late","leave","absent"].includes(status)){counts.total++;counts[status]++}
   }
   return finalizeAttendance(counts);
 }

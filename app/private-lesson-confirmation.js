@@ -1,234 +1,190 @@
 (()=>{
   state.privateLessons=state.privateLessons||[];
-  let teacherPoll=null;
+  state.privateLessonToday=state.privateLessonToday||"";
+  state.privateLessonNowTime=state.privateLessonNowTime||"";
+  let privatePoll=null;
 
-  const statusText={present:"出席",late:"遲到",leave:"請假",absent:"缺席",cancelled:"停課"};
-  const confirmText={pending:"家長待確認",confirmed:"家長已確認",issue:"家長回報有問題",not_required:"不需確認"};
-  const confirmClass={pending:"warn",confirmed:"ok",issue:"bad",not_required:""};
-  const emailText={sent:"Email 已寄送",partial:"Email 部分寄送",failed:"Email 寄送失敗",not_configured:"Email 尚未設定",no_recipients:"尚無家長 Gmail",disabled:"Email 通知已由後台關閉",pending:"Email 準備中",not_required:""};
-  function fmtEmailAt(v){
-    if(!v)return "";
-    try{return new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(v))}
-    catch{return ""}
+  const workflowText={scheduled:"已預約",awaiting_parent:"待家長確認",issue:"家長回報問題",completed:"流程完成",cancelled:"已停課"};
+  const workflowClass={scheduled:"warn",awaiting_parent:"warn",issue:"bad",completed:"ok",cancelled:"bad"};
+  const notificationTypeText={scheduled:"預約",rescheduled:"改期",cancelled:"停課",completed:"完課確認",confirmed:"家長確認",issue:"問題回報"};
+  const emailText={sent:"Email 已寄送",partial:"Email 部分寄送",failed:"Email 寄送失敗",not_configured:"Email 尚未設定",no_recipients:"尚無收件人 Email",disabled:"Email 通知已由後台關閉",pending:"Email 準備中",not_required:""};
+  function localDate(){const d=new Date(),x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,10)}
+  function localTime(){const d=new Date();return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`}
+  function shiftDate(date,days){const d=new Date(`${date}T12:00:00`);d.setDate(d.getDate()+Number(days||0));const x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,10)}
+  function today(){return state.privateLessonToday||localDate()}
+  function nowTime(){return state.privateLessonNowTime||localTime()}
+  function workflow(x){
+    if(x?.workflowStatus)return String(x.workflowStatus);
+    if(x?.status==="cancelled")return "cancelled";
+    if(x?.status==="scheduled")return "scheduled";
+    if(x?.status==="completion_issue"||x?.parentConfirmation==="issue")return "issue";
+    if(x?.status==="teacher_completed"||x?.parentConfirmation==="pending")return "awaiting_parent";
+    return "completed";
   }
-  function emailStatusLine(x){
-    const label=emailText[x?.emailNotificationStatus]||"";
-    if(!label)return "";
-    const total=Number(x?.emailNotificationRecipients||0),rawSent=Number(x?.emailNotificationSentCount||0),failed=Number(x?.emailNotificationFailedCount||0),sent=(x?.emailNotificationStatus==="sent"&&total&&rawSent===0)?total:rawSent,at=fmtEmailAt(x?.emailNotificationAt);
-    const counts=total?(`｜家長 ${sent}/${total} 位${failed?`（失敗 ${failed}）`:""}`):"";
-    const resend=Number(x?.emailNotificationResendCount||0);
-    return `📩 ${label}${counts}${at?`｜${at}`:""}${resend?`｜已重寄 ${resend} 次`:""}`;
-  }
-
+  function canChange(x){return workflow(x)==="scheduled"&&today()<String(x.lessonDate||"")}
+  function canComplete(x){const date=String(x.lessonDate||""),end=String(x.endTime||"");return workflow(x)==="issue"||workflow(x)==="scheduled"&&(date<today()||date===today()&&end&&nowTime()>=end)}
   function teacherAccount(){return state.me?.role!=="admin"&&!!state.me?.capabilities?.private}
-  function teacherLabel(x){
-    const raw=String(x?.teacherName||"").trim();
-    const name=raw&& !raw.includes("@") ? raw : "個別課老師";
-    return /老師$/.test(name)?name:`${name}老師`;
-  }
-  function currentStudentName(id){
-    const s=(state.students||[]).find(x=>String(x.studentId)===String(id));
-    return s?.name||id;
-  }
+  function teacherLabel(x){const raw=String(x?.teacherName||"").trim(),name=raw&&!raw.includes("@")?raw:"個別課老師";return /老師$/.test(name)?name:`${name}老師`}
+  function currentStudentName(id){const s=(state.students||[]).find(x=>String(x.studentId)===String(id));return s?.name||id}
   function lessonDomKey(id){return String(id||"").replace(/[^a-zA-Z0-9_-]/g,"_")}
-  function ratingStars(value){
-    const n=Math.max(0,Math.min(5,Number(value||0)));
-    return "★".repeat(n)+"☆".repeat(5-n);
+  function ratingStars(value){const n=Math.max(0,Math.min(5,Number(value||0)));return "★".repeat(n)+"☆".repeat(5-n)}
+  function fmtEmailAt(v){if(!v)return "";try{return new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(v))}catch{return ""}}
+  function emailStatusLine(x){
+    const label=emailText[x?.emailNotificationStatus]||"";if(!label)return "";
+    const type=notificationTypeText[x?.emailNotificationType]||"通知",total=Number(x?.emailNotificationRecipients||0),rawSent=Number(x?.emailNotificationSentCount||0),failed=Number(x?.emailNotificationFailedCount||0),sent=x?.emailNotificationStatus==="sent"&&total&&rawSent===0?total:rawSent,at=fmtEmailAt(x?.emailNotificationAt),resend=Number(x?.emailNotificationResendCount||0);
+    return `📩 ${type}：${label}${total?`｜${sent}/${total} 位${failed?`（失敗 ${failed}）`:""}`:""}${at?`｜${at}`:""}${resend?`｜重寄 ${resend} 次`:""}`;
+  }
+  function notifyToast(result,successText){
+    const m=result?.emailNotification||{};
+    if(m.status==="sent")toast(`✅ ${successText}，Email 已寄送 ${m.sentCount||m.recipientCount||1} 位`);
+    else if(m.status==="partial")toast(`⚠️ ${successText}；部分 Email 寄送失敗`);
+    else if(m.status==="no_recipients")toast(`✅ ${successText}；目前尚無可通知的 Email`);
+    else if(m.status==="not_configured")toast(`✅ ${successText}；Azure Email 尚未設定`);
+    else if(m.status==="disabled")toast(`✅ ${successText}；Email 通知目前關閉`);
+    else if(m.status==="failed")toast(`⚠️ ${successText}；Email 寄送失敗，平台資料已同步`);
+    else toast(`✅ ${successText}`);
+  }
+  function sortedLessons(rows=state.privateLessons){
+    const rank={awaiting_parent:0,issue:1,scheduled:2,completed:3,cancelled:4};
+    return [...(rows||[])].sort((a,b)=>{
+      const wa=workflow(a),wb=workflow(b),r=(rank[wa]??9)-(rank[wb]??9);if(r)return r;
+      if(wa==="scheduled")return String(a.lessonDate).localeCompare(String(b.lessonDate))||String(a.startTime).localeCompare(String(b.startTime));
+      return String(b.lessonDate).localeCompare(String(a.lessonDate))||String(b.startTime).localeCompare(String(a.startTime));
+    });
+  }
+  function scheduleEditor(x,source){
+    if(!canChange(x))return "";
+    const k=`${source}_${lessonDomKey(x.lessonId)}`;
+    return `<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:900;color:#3155a4">📅 改期</summary><div style="margin-top:8px"><label>新日期</label><input id="plDate_${k}" type="date" min="${esc(today())}" value="${esc(x.lessonDate)}"><div class="row2"><div><label>開始時間</label><input id="plStart_${k}" type="time" value="${esc(x.startTime)}"></div><div><label>結束時間</label><input id="plEnd_${k}" type="time" value="${esc(x.endTime)}"></div></div><label>改期原因（選填）</label><input id="plReason_${k}" maxlength="300" placeholder="例：家庭行程調整"><button class="secondary" style="width:100%;margin-top:10px" onclick="reschedulePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}','${source}')">儲存改期並同步通知</button></div></details>`;
+  }
+  function cancelButton(x,source){return canChange(x)?`<button class="secondary" style="width:100%;margin-top:8px;border-color:#c94b4b;color:#a52a2a" onclick="cancelPrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}','${source}')">⏸️ 停課並同步通知</button>`:""}
+  function lessonSummary(x,{showStudent=false}={}){
+    const rating=Number(x.teacherRating||0),review=x.teacherReview?`<br>家長評論：${esc(x.teacherReview)}`:"",rated=rating?`<br>師資評價：<span style="color:#d5a100;font-weight:900">${ratingStars(rating)}</span> ${rating}/5`:"",student=showStudent?`${esc(currentStudentName(x.studentId))}｜`:"";
+    return `<div><b>${student}${esc(x.lessonDate)}｜${esc(x.startTime||"")}～${esc(x.endTime||"")}</b><small>${esc(teacherLabel(x))}｜${Number(x.minutes||0)} 分鐘${x.actualAttendanceStatus==="late"&&["awaiting_parent","completed","issue"].includes(workflow(x))?"｜遲到後完成":""}${x.lessonContent?`<br>內容：${esc(x.lessonContent)}`:""}${rated}${review}${x.rescheduleCount?`<br>已改期 ${Number(x.rescheduleCount)} 次`:""}${emailStatusLine(x)?`<br>${esc(emailStatusLine(x))}`:""}${x.parentNote?`<br>家長備註：${esc(x.parentNote)}`:""}${workflow(x)==="cancelled"&&x.cancelReason?`<br>停課原因：${esc(x.cancelReason)}`:""}</small></div>`;
   }
   function parentReviewControls(x){
-    if(x.parentConfirmation!=="pending")return "";
-    const k=lessonDomKey(x.lessonId),rating=Number(x.teacherRating||0);
-    let stars="";
-    for(let n=1;n<=5;n++)stars+='<button type="button" data-star-rating="'+esc(k)+'" data-star-value="'+n+'" onclick="setPrivateLessonRating(\''+esc(x.lessonId)+'\','+n+')" style="border:0;background:transparent;padding:2px;font-size:30px;line-height:1;color:#d5a100;cursor:pointer">'+(n<=rating?"★":"☆")+'</button>';
-    return '<div class="notice" style="margin-top:10px"><b>⭐ 師資評價（選填）</b><br><span class="muted">可用 1～5 顆星評價本次教學，並留下教學評論；資料將提供學校後台做師資品質與成就統計。</span>'+
-      '<input id="rating_'+esc(k)+'" type="hidden" value="'+rating+'"><div style="display:flex;align-items:center;gap:4px;margin:8px 0">'+stars+
-      '<button type="button" class="secondary" style="margin:0 0 0 8px;padding:6px 9px" onclick="setPrivateLessonRating(\''+esc(x.lessonId)+'\',0)">清除</button></div>'+
-      '<label>老師教學評論／家長備註（選填）</label><textarea id="review_'+esc(k)+'" rows="2" maxlength="800" placeholder="例：老師說明清楚、孩子容易理解；或提供希望加強的方向">'+esc(x.teacherReview||"")+'</textarea>'+
-      '<div class="row2" style="margin-top:10px"><button class="primary" style="margin-top:0" onclick="confirmPrivateLesson(\''+esc(x.lessonId)+'\',\'confirmed\')">✅ 確認本次個別課</button>'+
-      '<button class="secondary" style="margin-top:0" onclick="confirmPrivateLesson(\''+esc(x.lessonId)+'\',\'issue\')">⚠️ 回報問題</button></div></div>';
+    if(workflow(x)!=="awaiting_parent")return "";
+    const k=lessonDomKey(x.lessonId),rating=Number(x.teacherRating||0);let stars="";
+    for(let n=1;n<=5;n++)stars+=`<button type="button" data-star-rating="${esc(k)}" data-star-value="${n}" onclick="setPrivateLessonRating('${esc(x.lessonId)}',${n})" style="border:0;background:transparent;padding:2px;font-size:30px;line-height:1;color:#d5a100;cursor:pointer">${n<=rating?"★":"☆"}</button>`;
+    return `<div class="notice" style="margin-top:10px"><b>✅ 請家長確認已完成上課</b><br><span class="muted">老師已送出完課；確認後才會正式完成流程並計入個別課紀錄。</span><input id="rating_${esc(k)}" type="hidden" value="${rating}"><div style="display:flex;align-items:center;gap:4px;margin:8px 0">${stars}<button type="button" class="secondary" style="margin:0 0 0 8px;padding:6px 9px" onclick="setPrivateLessonRating('${esc(x.lessonId)}',0)">清除</button></div><label>老師教學評論／家長備註（選填）</label><textarea id="review_${esc(k)}" rows="2" maxlength="800" placeholder="可選填 1～5 顆星與教學評論">${esc(x.teacherReview||"")}</textarea><div class="row2" style="margin-top:10px"><button class="primary" style="margin-top:0" onclick="confirmPrivateLesson('${esc(x.lessonId)}','confirmed')">✅ 確認完成上課</button><button class="secondary" style="margin-top:0" onclick="confirmPrivateLesson('${esc(x.lessonId)}','issue')">⚠️ 回報問題</button></div></div>`;
   }
   function parentLessonRow(x){
-    const rating=Number(x.teacherRating||0);
-    const review=x.teacherReview?'<br>家長評論：'+esc(x.teacherReview):"";
-    const rated=rating?'<br>師資評價：<span style="color:#d5a100;font-weight:900">'+ratingStars(rating)+'</span> '+rating+'/5':"";
-    return '<div class="item" style="display:block"><div class="student"><div><b>'+esc(x.lessonDate)+'｜'+esc(x.startTime||"")+'～'+esc(x.endTime||"")+'</b><small>'+esc(teacherLabel(x))+'｜'+Number(x.minutes||0)+' 分鐘'+(x.lessonContent?'<br>內容：'+esc(x.lessonContent):"")+rated+review+'</small></div><span class="badge '+(confirmClass[x.parentConfirmation]||"")+'">'+esc(confirmText[x.parentConfirmation]||x.parentConfirmation)+'</span></div>'+parentReviewControls(x)+'</div>';
+    const w=workflow(x),badge=`<span class="badge ${workflowClass[w]||""}">${esc(workflowText[w]||w)}</span>`;
+    let action="";
+    if(w==="scheduled")action=canChange(x)?`${scheduleEditor(x,"parent")}${cancelButton(x,"parent")}`:`<div class="notice" style="margin-top:10px">${String(x.lessonDate)===today()?"今天是預約上課日；上課完成後，請等待老師送出完課確認。":"已到或超過上課日期，等待老師更新上課結果。"}</div>`;
+    else if(w==="awaiting_parent")action=parentReviewControls(x);
+    else if(w==="issue")action=`<div class="notice" style="margin-top:10px">已將問題同步給老師，等待老師確認後重新送出完課。</div>`;
+    return `<div class="item" style="display:block"><div class="student">${lessonSummary(x)}${badge}</div>${action}</div>`;
+  }
+  function teacherLessonRow(x){
+    const w=workflow(x),badge=`<span class="badge ${workflowClass[w]||""}">${esc(workflowText[w]||w)}</span>`;let action="";
+    if(w==="scheduled"){
+      if(canChange(x))action=`${scheduleEditor(x,"teacher")}${cancelButton(x,"teacher")}<button class="secondary" style="width:100%;margin-top:8px" onclick="resendPrivateLessonEmail('${esc(x.studentId)}','${esc(x.lessonId)}','teacher')">📨 重寄預約 Email</button>`;
+      else if(canComplete(x)){const k=lessonDomKey(x.lessonId);action=`<div class="notice" style="margin-top:10px"><b>本堂預約時間已結束</b><br>確認實際完成上課後，再送交家長確認。</div><label>實際上課狀態</label><select id="completeAttendance_${k}"><option value="present" ${x.actualAttendanceStatus!=="late"?"selected":""}>完成上課</option><option value="late" ${x.actualAttendanceStatus==="late"?"selected":""}>遲到後完成</option></select><label>實際課程內容（選填）</label><textarea id="completeContent_${k}" rows="2" maxlength="500">${esc(x.lessonContent||"")}</textarea><button class="primary" onclick="completePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">✅ 完成上課，送家長確認</button>`}
+      else action=`<div class="notice" style="margin-top:10px">預約已同步給家長；到 ${esc(x.lessonDate)} ${esc(x.endTime)} 上課結束後，才可點選「完成上課」。</div>`;
+    }else if(w==="awaiting_parent")action=`<div class="notice" style="margin-top:10px">老師已完成上課，等待家長確認；家長確認後才正式完成流程。</div><button class="secondary" style="width:100%;margin-top:8px" onclick="resendPrivateLessonEmail('${esc(x.studentId)}','${esc(x.lessonId)}','teacher')">📨 重寄完課確認 Email</button>`;
+    else if(w==="issue"){
+      const k=lessonDomKey(x.lessonId);action=`<div class="error" style="margin-top:10px"><b>家長回報問題</b><br>${esc(x.parentNote||"請聯繫家長確認")}</div><label>實際上課狀態</label><select id="completeAttendance_${k}"><option value="present" ${x.actualAttendanceStatus!=="late"?"selected":""}>完成上課</option><option value="late" ${x.actualAttendanceStatus==="late"?"selected":""}>遲到後完成</option></select><label>修正後課程內容（選填）</label><textarea id="completeContent_${k}" rows="2" maxlength="500">${esc(x.lessonContent||"")}</textarea><button class="primary" onclick="completePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">再次送出完課確認</button>`;
+    }else if(w==="completed")action=`<div class="notice" style="margin-top:10px">🔒 老師完課與家長確認均已完成，紀錄已結案。</div>`;
+    return `<div class="item" style="display:block"><div class="student">${lessonSummary(x,{showStudent:true})}${badge}</div>${action}</div>`;
   }
 
   async function loadPrivateLessons(){
     try{
-      if(state.me?.role==="parent"&&state.student?.studentId){
-        const d=await api(`/api/private-lesson?studentId=${encodeURIComponent(state.student.studentId)}`);
-        state.privateLessons=d.items||[];
-      }else if(teacherAccount()){
-        const d=await api("/api/private-lesson");
-        state.privateLessons=d.items||[];
-      }else state.privateLessons=[];
-    }catch(e){console.warn("load private lesson confirmations failed",e);state.privateLessons=[]}
+      let d;
+      if(state.me?.role==="parent"&&state.student?.studentId)d=await api(`/api/private-lesson?studentId=${encodeURIComponent(state.student.studentId)}`);
+      else if(teacherAccount())d=await api("/api/private-lesson");
+      else {state.privateLessons=[];return}
+      state.privateLessons=d.items||[];state.privateLessonToday=d.today||localDate();state.privateLessonNowTime=d.nowTime||localTime();
+    }catch(e){console.warn("load private lessons failed",e);state.privateLessons=[]}
   }
-
-  function teacherHistoryHtml(){
-    const recent=(state.privateLessons||[]).slice(0,20);
-    return recent.length?recent.map(x=>`<div class="item" style="display:block"><div class="student"><div><b>${esc(currentStudentName(x.studentId))}｜${esc(x.lessonDate)}</b><small>${esc(x.startTime||"")}～${esc(x.endTime||"")}｜${Number(x.minutes||0)} 分鐘｜${esc(statusText[x.status]||x.status)}${emailStatusLine(x)?`<br>${esc(emailStatusLine(x))}`:""}${x.parentNote?`<br>家長：${esc(x.parentNote)}`:""}${x.status==="cancelled"&&x.cancelReason?`<br>取消原因：${esc(x.cancelReason)}`:""}</small></div><span class="badge ${x.status==="cancelled"?"bad":(confirmClass[x.parentConfirmation]||"")}">${x.status==="cancelled"?"已取消":esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>${x.parentConfirmation==="pending"&&x.status!=="cancelled"?`<button class="secondary" style="width:100%;margin-top:10px" onclick="resendPrivateLessonEmail('${esc(x.studentId)}','${esc(x.lessonId)}','teacher')">📨 重寄確認 Email</button>`:""}${x.status!=="cancelled"&&x.parentConfirmation!=="confirmed"?`<button class="secondary" style="width:100%;margin-top:8px;border-color:#c94b4b;color:#a52a2a" onclick="cancelPrivateLessonTeacher('${esc(x.studentId)}','${esc(x.lessonId)}','${esc(currentStudentName(x.studentId))}','${esc(x.startTime||"")}','${esc(x.endTime||"")}')">🗑️ 誤登記／取消</button>`:""}</div>`).join(""):`<div class="notice">目前尚無個別課紀錄。</div>`;
-  }
-
-  function startTeacherPoll(){
-    if(teacherPoll)clearInterval(teacherPoll);
-    if(!teacherAccount())return;
-    teacherPoll=setInterval(async()=>{
-      if(state.page!=="private")return;
-      await loadPrivateLessons();
-      const box=document.getElementById("privateConfirmList");
-      if(box)box.innerHTML=teacherHistoryHtml();
+  function lessonSignature(){return JSON.stringify((state.privateLessons||[]).map(x=>[x.lessonId,x.updatedAt,x.status,x.parentConfirmation,x.lessonDate,x.startTime,x.endTime]))}
+  function startPrivatePoll(){
+    if(privatePoll)clearInterval(privatePoll);
+    if(!(teacherAccount()||state.me?.role==="parent"))return;
+    privatePoll=setInterval(async()=>{
+      const active=teacherAccount()?state.page==="private":["home","record"].includes(state.page);if(!active)return;
+      const before=lessonSignature();await loadPrivateLessons();
+      if(before!==lessonSignature())render();
+      else if(teacherAccount()){const box=document.getElementById("privateConfirmList");if(box)box.innerHTML=teacherHistoryHtml()}
     },30000);
   }
+  function teacherHistoryHtml(){const rows=sortedLessons().slice(0,40);return rows.length?rows.map(teacherLessonRow).join(""):`<div class="notice">目前尚無個別課預約。</div>`}
 
-  window.reloadPrivateLessons=async function(){await loadPrivateLessons();const box=document.getElementById("privateConfirmList");if(box)box.innerHTML=teacherHistoryHtml();else render();toast("已更新個別課確認狀態")};
-
+  window.reloadPrivateLessons=async function(){await loadPrivateLessons();render();toast("已更新個別課預約與確認狀態")};
+  window.reschedulePrivateLesson=async function(studentId,lessonId,source){
+    const k=`${source}_${lessonDomKey(lessonId)}`,lessonDate=document.getElementById(`plDate_${k}`)?.value,startTime=document.getElementById(`plStart_${k}`)?.value,endTime=document.getElementById(`plEnd_${k}`)?.value,reason=document.getElementById(`plReason_${k}`)?.value.trim()||"";
+    if(!lessonDate||!startTime||!endTime){toast("請填寫新的日期、開始與結束時間");return}
+    if(!confirm(`確定改期為 ${lessonDate} ${startTime}～${endTime}？\n\n儲存後會同步更新老師與家長平台。`))return;
+    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"reschedule_lesson",lessonDate,startTime,endTime,reason})});notifyToast(r,"個別課已改期並同步");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
+  };
+  window.cancelPrivateLesson=async function(studentId,lessonId,source){
+    const x=(state.privateLessons||[]).find(r=>String(r.lessonId)===String(lessonId)),who=currentStudentName(studentId),reason=prompt(`請填寫「${who}」這堂個別課的停課原因（可簡短填寫）`,source==="parent"?"家長提出停課":"老師提出停課");
+    if(reason===null)return;if(!String(reason).trim()){toast("請填寫停課原因");return}
+    if(!confirm(`確定停課？\n\n${x?`${x.lessonDate} ${x.startTime}～${x.endTime}\n`:""}停課後會同步更新雙方平台。`))return;
+    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"cancel_lesson",reason:String(reason).trim()})});notifyToast(r,"個別課已停課並同步");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
+  };
+  window.completePrivateLesson=async function(studentId,lessonId){
+    const k=lessonDomKey(lessonId),lessonContent=document.getElementById(`completeContent_${k}`)?.value.trim()||"",attendanceStatus=document.getElementById(`completeAttendance_${k}`)?.value||"present";
+    if(!confirm("確定本堂已完成上課？\n\n送出後家長平台會出現『待確認』，並寄送完課確認 Email。"))return;
+    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"complete_lesson",lessonContent,attendanceStatus})});notifyToast(r,"已送出完成上課，等待家長確認");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
+  };
   window.resendPrivateLessonEmail=async function(studentId,lessonId,source="teacher"){
-    if(!studentId||!lessonId)return;
-    const who=currentStudentName(studentId);
-    if(!confirm(`確定重寄「${who}」這筆個別課確認 Email？\n\n系統會寄給目前已綁定此學生的所有家長 Gmail。`))return;
-    try{
-      const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"resend_email"})});
-      const m=r.emailNotification||{};
-      if(m.status==="sent")toast(`✅ 已重寄確認 Email 給 ${m.sentCount||m.recipientCount||1} 位家長`);
-      else if(m.status==="partial")toast("⚠️ 已重寄，但部分家長 Email 寄送失敗");
-      else if(m.status==="no_recipients")toast("⚠️ 此學生目前沒有已綁定的家長 Gmail");
-      else if(m.status==="not_configured")toast("⚠️ Azure Email 尚未完成設定");
-      else if(m.status==="disabled")toast("⏸️ 後台目前已關閉個別課 Email 通知");
-      else toast("❌ Email 重寄失敗");
-      if(source==="admin"&&typeof refreshAdminFollowup==="function")await refreshAdminFollowup();
-      else {await loadPrivateLessons();const box=document.getElementById("privateConfirmList");if(box)box.innerHTML=teacherHistoryHtml();else render()}
-    }catch(e){toast("❌ "+e.message)}
+    if(!studentId||!lessonId)return;const x=(state.privateLessons||[]).find(r=>String(r.lessonId)===String(lessonId)),kind=workflow(x)==="scheduled"?"預約":"完課確認";
+    if(!confirm(`確定重寄「${currentStudentName(studentId)}」這筆${kind} Email？`))return;
+    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"resend_email"})});notifyToast(r,`${kind} Email 已重寄`);if(source==="admin"&&typeof refreshAdminFollowup==="function")await refreshAdminFollowup();else{await loadPrivateLessons();render()}}catch(e){toast("❌ "+e.message)}
   };
-
-  window.cancelPrivateLessonTeacher=async function(studentId,lessonId,studentName,startTime,endTime){
-    if(!studentId||!lessonId)return;
-    const time=[startTime,endTime].filter(Boolean).join("～");
-    if(!confirm(`確定取消「${studentName||studentId}」這筆誤登記個別課？\n\n${time?("時間："+time+"\n"):""}取消後不計入授課堂數與出席統計；紀錄仍保留供稽核。`))return;
-    try{
-      await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"cancel_lesson",reason:"老師確認為誤登記"})});
-      toast("✅ 已取消誤登記個別課");
-      await loadPrivateLessons();render();
-    }catch(e){toast("❌ "+e.message)}
-  };
-
-  window.setPrivateLessonRating=function(lessonId,value){
-    const k=lessonDomKey(lessonId),n=Math.max(0,Math.min(5,Number(value||0))),input=document.getElementById("rating_"+k);
-    if(input)input.value=String(n);
-    document.querySelectorAll('[data-star-rating="'+k+'"]').forEach(btn=>{const v=Number(btn.dataset.starValue||0);btn.textContent=v<=n?"★":"☆"});
-  };
-
+  window.cancelPrivateLessonTeacher=function(studentId,lessonId){return window.cancelPrivateLesson(studentId,lessonId,"teacher")};
+  window.setPrivateLessonRating=function(lessonId,value){const k=lessonDomKey(lessonId),n=Math.max(0,Math.min(5,Number(value||0))),input=document.getElementById("rating_"+k);if(input)input.value=String(n);document.querySelectorAll(`[data-star-rating="${k}"]`).forEach(btn=>{btn.textContent=Number(btn.dataset.starValue||0)<=n?"★":"☆"})};
   window.confirmPrivateLesson=async function(lessonId,action){
-    if(state.me?.role!=="parent"||!state.student)return;
-    let note="",teacherRating=0,teacherReview="";
-    if(action==="issue"){
-      note=prompt("請簡單說明問題，例如：日期不符、時間不符、當天未上課")||"";
-      if(!note.trim()){toast("請填寫問題說明");return}
-    }else{
-      const k=lessonDomKey(lessonId);
-      teacherRating=Number(document.getElementById("rating_"+k)?.value||0);
-      teacherReview=String(document.getElementById("review_"+k)?.value||"").trim();
-      if(teacherReview&&!teacherRating){toast("請先選擇 1～5 顆星，再送出老師教學評論");return}
-    }
-    try{
-      await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId:state.student.studentId,lessonId,action,note,teacherRating,teacherReview})});
-      if(action==="confirmed")toast(teacherRating?"✅ 已確認並送出 "+teacherRating+" 星師資評價":"✅ 已確認本次個別課完成");
-      else toast("⚠️ 已回報老師確認");
-      await loadPrivateLessons();render();
-    }catch(e){toast("❌ "+e.message)}
+    if(state.me?.role!=="parent"||!state.student)return;let note="",teacherRating=0,teacherReview="";
+    if(action==="issue"){note=prompt("請說明問題，例如：日期或時間不符、當天未完成上課")||"";if(!note.trim()){toast("請填寫問題說明");return}}
+    else{const k=lessonDomKey(lessonId);teacherRating=Number(document.getElementById("rating_"+k)?.value||0);teacherReview=String(document.getElementById("review_"+k)?.value||"").trim();if(teacherReview&&!teacherRating){toast("請先選擇 1～5 顆星，再送出教學評論");return}}
+    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId:state.student.studentId,lessonId,action,note,teacherRating,teacherReview})});notifyToast(r,action==="confirmed"?"已確認完成上課，個課流程已結案":"問題已同步給老師");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
   };
 
-  function parentLessonNotice(){
+  function parentActivePanel(){
     if(state.me?.role!=="parent"||!state.student)return "";
-    const pending=(state.privateLessons||[]).filter(x=>x.parentConfirmation==="pending");
-    if(!pending.length)return "";
-    return '<div class="card"><h2>🔔 個別課待確認 <span class="badge warn">'+pending.length+'</span></h2><div class="notice">老師已登記個別課日期、時間與教學內容。可直接在此確認，並選填 1～5 星師資評價與家長評論。</div>'+pending.map(parentLessonRow).join("")+'</div>';
+    const rows=sortedLessons().filter(x=>["scheduled","awaiting_parent","issue"].includes(workflow(x)));
+    if(!rows.length)return "";
+    const pending=rows.filter(x=>workflow(x)==="awaiting_parent").length,scheduled=rows.filter(x=>workflow(x)==="scheduled").length;
+    return `<div class="card"><h2>🎻 個別課預約與確認 ${pending?`<span class="badge warn">${pending} 待確認</span>`:""}</h2><div class="notice">${scheduled?`目前有 ${scheduled} 堂預約。`:""}預約、改期與停課會同步顯示；老師完成上課後，請家長在此確認。</div>${rows.map(parentLessonRow).join("")}</div>`;
   }
-
-  const baseHome=home;
-  home=function(){return parentLessonNotice()+baseHome()};
-
-  const baseRecordPage=recordPage;
-  recordPage=function(){
-    const html=baseRecordPage();
-    if(state.me?.role!=="parent")return html;
-    const rows=(state.privateLessons||[]).slice(0,12);
-    if(!rows.length)return html;
-    const pending=rows.filter(x=>x.parentConfirmation==="pending"),done=rows.filter(x=>x.parentConfirmation!=="pending");
-    const pendingHtml=pending.length?'<div class="card"><h2>🔔 個別課待確認 <span class="badge warn">'+pending.length+'</span></h2><div class="notice">不用回首頁，直接在「紀錄」頁即可確認本次個別課並留下師資評價。</div>'+pending.map(parentLessonRow).join("")+'</div>':"";
-    const history=done.length?'<div class="card"><h2>👤 個別課最近紀錄</h2>'+done.slice(0,3).map(parentLessonRow).join("")+(done.length>3?'<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800">查看其他 '+(done.length-3)+' 筆個別課紀錄</summary><div style="margin-top:10px">'+done.slice(3).map(parentLessonRow).join("")+'</div></details>':"")+'</div>':"";
-    return html+pendingHtml+history;
-  };
+  function parentHistoryPanel(){
+    if(state.me?.role!=="parent"||!state.student)return "";
+    const rows=sortedLessons().filter(x=>["completed","cancelled"].includes(workflow(x))).slice(0,12);
+    return rows.length?`<div class="card"><h2>👤 個別課最近紀錄</h2>${rows.map(parentLessonRow).join("")}</div>`:"";
+  }
+  window.privateLessonParentPanels=function(location="home"){return location==="record"?parentActivePanel()+parentHistoryPanel():parentActivePanel()};
+  const baseHome=home;home=function(){return parentActivePanel()+baseHome()};
+  const baseRecordPage=recordPage;recordPage=function(){const html=baseRecordPage();return state.me?.role==="parent"?html+parentActivePanel()+parentHistoryPanel():html};
 
   privatePage=function(){
-    const today=new Date().toLocaleDateString("sv-SE");
-    const ids=new Set((state.me.privateStudentIds||[]).map(String));
-    const students=(state.students||[]).filter(s=>ids.has(String(s.studentId)));
-    if(!students.length)return `<div class="card"><h2>個別課紀錄</h2><div class="notice">目前尚未綁定這位老師的個課學生。請到「⚙️ 我的教學」選擇個別課學生。</div></div>`;
-    setTimeout(startTeacherPoll,0);
-    const month=today.slice(0,7),monthRows=(state.privateLessons||[]).filter(x=>String(x.lessonDate||"").startsWith(month)&&["present","late"].includes(String(x.status)));
-    const todayRows=monthRows.filter(x=>String(x.lessonDate)===today);
-    const taughtIds=new Set(monthRows.map(x=>String(x.studentId)));
-    const totalMinutes=monthRows.reduce((n,x)=>n+Number(x.minutes||0),0);
-    const latest=new Map();for(const x of (state.privateLessons||[])){const k=String(x.studentId);if(!latest.has(k)||String(x.lessonDate)>String(latest.get(k).lessonDate))latest.set(k,x)}
-    const daysSince=d=>d?Math.floor((new Date(today+"T12:00:00")-new Date(d+"T12:00:00"))/86400000):999;
-    const latestLessonText=lesson=>{
-      const date=String(lesson?.lessonDate||"");
-      const start=String(lesson?.startTime||"");
-      const end=String(lesson?.endTime||"");
-      const time=start&&end?`${start}–${end}`:(start||end);
-      return [date,time].filter(Boolean).join(" ");
-    };
-    const sorted=[...students].sort((a,b)=>daysSince(latest.get(String(b.studentId))?.lessonDate)-daysSince(latest.get(String(a.studentId))?.lessonDate));
-    const quick=sorted.map(st=>{const last=latest.get(String(st.studentId)),days=daysSince(last?.lessonDate),warn=!last?"🔴 尚無紀錄":days>=30?`🔴 ${days} 天未上課`:days>=14?`🟡 ${days} 天未上課`:`最近：${esc(latestLessonText(last))}`;return `<button class="item" style="width:100%;text-align:left;background:#fff;cursor:pointer" onclick="quickPrivateStudent('${esc(st.studentId)}')"><div><b>${esc(st.name)}</b><small>${esc(st.groupName)}團｜${esc(st.instrument)}｜${warn}</small></div><span>＋ 記錄</span></button>`}).join("");
-    return `<div class="card"><h2>👤 個別課快速紀錄</h2><div class="notice">個別課不以固定課表判定缺席；實際上完課再登記。臨時調課不會影響統計。</div><div class="grid"><div class="kpi"><b>${todayRows.length}</b><span>今日已上堂數</span></div><div class="kpi"><b>${monthRows.length}</b><span>本月授課堂數</span></div><div class="kpi"><b>${taughtIds.size} / ${students.length}</b><span>本月授課學生</span></div><div class="kpi"><b>${totalMinutes}</b><span>本月授課分鐘</span></div></div></div>
-    <div class="card"><h2>快速選擇學生</h2><div class="notice">依「距離最近一次上課時間」排序，久未上課的學生會優先提醒。</div>${quick}</div>
-    <div class="card"><h2>✍️ 本次個別課</h2><div class="notice"><b>防呆規則：</b>同一位老師可以一天教多位學生，但「同一學生＋同一老師＋同一天」只能建立 1 堂個別課。若時間輸入錯誤，請先取消原紀錄再重新建立。</div><label>學生</label><select id="iStudent">${students.map(st=>`<option value="${esc(st.studentId)}">${esc(st.name)}｜${esc(st.groupName)}團｜${esc(st.instrument)}</option>`).join("")}</select><label>上課日期</label><input id="iDate" type="date" value="${today}"><div class="row2"><div><label>開始時間</label><input id="iStart" type="time" value="18:00"></div><div><label>結束時間</label><input id="iEnd" type="time" value="18:50"></div></div><label>狀態</label><select id="iStatus"><option value="present">完成上課</option><option value="late">遲到後完成</option><option value="leave">請假</option><option value="cancelled">停課／改期</option></select><label>課程內容（選填）</label><textarea id="iContent" rows="3" placeholder="例：音階、換把、考試曲第 1～32 小節"></textarea><button class="primary" onclick="savePrivate()">✅ 完成本次上課紀錄</button></div>
-    <div class="card"><h2>家長確認／最近紀錄</h2><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理</button><div id="privateConfirmList">${teacherHistoryHtml()}</div></div>`;
+    const d=today(),defaultBookingDate=nowTime()<"18:00"?d:shiftDate(d,1),ids=new Set((state.me.privateStudentIds||[]).map(String)),students=(state.students||[]).filter(s=>ids.has(String(s.studentId)));
+    if(!students.length)return `<div class="card"><h2>個別課預約</h2><div class="notice">目前尚未綁定這位老師的個課學生。請到「⚙️ 我的教學」選擇個別課學生。</div></div>`;
+    setTimeout(startPrivatePoll,0);
+    const rows=state.privateLessons||[],month=d.slice(0,7),monthRows=rows.filter(x=>String(x.lessonDate||"").startsWith(month)),scheduled=rows.filter(x=>workflow(x)==="scheduled"&&String(x.lessonDate)>=d),pending=rows.filter(x=>["awaiting_parent","issue"].includes(workflow(x))),completed=monthRows.filter(x=>workflow(x)==="completed"&&["present","late"].includes(String(x.status))),minutes=completed.reduce((n,x)=>n+Number(x.minutes||0),0);
+    const latestCompleted=new Map(),nextScheduled=new Map();
+    for(const x of rows){const id=String(x.studentId),w=workflow(x);if(w==="completed"&&(!latestCompleted.has(id)||String(x.lessonDate)>String(latestCompleted.get(id).lessonDate)))latestCompleted.set(id,x);if(w==="scheduled"&&String(x.lessonDate)>=d&&(!nextScheduled.has(id)||String(x.lessonDate)<String(nextScheduled.get(id).lessonDate)))nextScheduled.set(id,x)}
+    const daysSince=date=>date?Math.floor((new Date(d+"T12:00:00")-new Date(date+"T12:00:00"))/86400000):999;
+    const sorted=[...students].sort((a,b)=>{const an=nextScheduled.get(String(a.studentId)),bn=nextScheduled.get(String(b.studentId));if(!!an!==!!bn)return an?-1:1;if(an&&bn)return String(an.lessonDate).localeCompare(String(bn.lessonDate));return daysSince(latestCompleted.get(String(b.studentId))?.lessonDate)-daysSince(latestCompleted.get(String(a.studentId))?.lessonDate)});
+    const quick=sorted.map(st=>{const next=nextScheduled.get(String(st.studentId)),last=latestCompleted.get(String(st.studentId)),hint=next?`下次：${next.lessonDate} ${next.startTime}–${next.endTime}`:last?`最近完成：${last.lessonDate} ${last.startTime}–${last.endTime}`:"尚無預約";return `<button class="item" style="width:100%;text-align:left;background:#fff;cursor:pointer" onclick="quickPrivateStudent('${esc(st.studentId)}')"><div><b>${esc(st.name)}</b><small>${esc(st.groupName)}團｜${esc(st.instrument)}｜${esc(hint)}</small></div><span>＋ 預約</span></button>`}).join("");
+    return `<div class="card"><h2>👤 個別課流程</h2><div class="notice"><b>預約 → 上課 → 老師完課 → 家長確認 → 正式完成</b><br>上課日前，老師與家長都可改期或停課；所有異動會同步至雙方平台。</div><div class="grid"><div class="kpi"><b>${scheduled.length}</b><span>未來預約</span></div><div class="kpi"><b>${pending.length}</b><span>待處理／確認</span></div><div class="kpi"><b>${completed.length}</b><span>本月完成流程</span></div><div class="kpi"><b>${minutes}</b><span>本月完成分鐘</span></div></div></div>
+    <div class="card"><h2>快速選擇學生</h2><div class="notice">已有預約的學生優先顯示；也可直接選擇學生建立下一堂課。</div>${quick}</div>
+    <div class="card" id="privateBookingForm"><h2>📅 預約個別課</h2><div class="notice">建立後會立即顯示在家長平台，並依後台通知設定寄送預約 Email。</div><label>學生</label><select id="iStudent">${students.map(st=>`<option value="${esc(st.studentId)}">${esc(st.name)}｜${esc(st.groupName)}團｜${esc(st.instrument)}</option>`).join("")}</select><label>上課日期</label><input id="iDate" type="date" min="${esc(d)}" value="${esc(defaultBookingDate)}"><div class="row2"><div><label>開始時間</label><input id="iStart" type="time" value="18:00"></div><div><label>結束時間</label><input id="iEnd" type="time" value="18:50"></div></div><label>預約備註／預計內容（選填）</label><textarea id="iContent" rows="3" placeholder="例：預計複習音階、換把、考試曲"></textarea><button class="primary" onclick="savePrivate()">📅 預約上課並通知家長</button></div>
+    <div class="card"><h2>預約／完課／家長確認</h2><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理雙方狀態</button><div id="privateConfirmList">${teacherHistoryHtml()}</div></div>`;
   };
-
-  window.quickPrivateStudent=function(studentId){
-    const sel=document.getElementById("iStudent");if(sel)sel.value=String(studentId);
-    const card=sel?.closest(".card");if(card)card.scrollIntoView({behavior:"smooth",block:"start"});
-  };
-
+  window.quickPrivateStudent=function(studentId){const sel=document.getElementById("iStudent");if(sel)sel.value=String(studentId);document.getElementById("privateBookingForm")?.scrollIntoView({behavior:"smooth",block:"start"})};
   savePrivate=async function(){
-    const studentId=$("iStudent")?.value;
-    if(!studentId)return;
-    const body={studentId,lessonDate:$("iDate").value,startTime:$("iStart").value,endTime:$("iEnd").value,status:$("iStatus").value,lessonContent:$("iContent").value.trim()};
-    const existing=(state.privateLessons||[]).find(x=>String(x.studentId)===String(studentId)&&String(x.lessonDate)===String(body.lessonDate)&&String(x.status)!=="cancelled");
-    if(existing){
-      const who=currentStudentName(studentId),time=[existing.startTime,existing.endTime].filter(Boolean).join("～");
-      toast(`⚠️ ${who} 今天已登記個別課${time?" "+time:""}`);
-      const box=document.getElementById("privateConfirmList");if(box)box.scrollIntoView({behavior:"smooth",block:"start"});
-      return;
-    }
-    try{
-      const r=await api("/api/private-lesson",{method:"POST",body:JSON.stringify(body)});
-      if(r.item?.parentConfirmation==="pending"){
-        const m=r.emailNotification||{};
-        if(m.status==="sent")toast(`✅ 已儲存並寄送 Email 給 ${m.sentCount||m.recipientCount||1} 位家長`);
-        else if(m.status==="disabled")toast("✅ 已儲存；網站內通知已建立，Email 由管理員後台關閉");
-        else if(m.status==="no_recipients")toast("✅ 已儲存；此學生尚未綁定家長 Gmail");
-        else if(m.status==="not_configured")toast("✅ 已儲存；家長端有通知，但 Azure Email 尚未設定");
-        else if(m.status==="partial")toast("⚠️ 已儲存；部分家長 Email 已寄送");
-        else if(m.status==="failed")toast("⚠️ 已儲存；Email 寄送失敗，網站內通知仍有效");
-        else toast("✅ 已儲存，家長端將顯示待確認通知");
-      }else toast("✅ 個別課紀錄已儲存");
-      await loadPrivateLessons();render();
-    }catch(e){toast("❌ "+e.message)}
+    const studentId=document.getElementById("iStudent")?.value;if(!studentId)return;
+    const body={studentId,lessonDate:document.getElementById("iDate")?.value,startTime:document.getElementById("iStart")?.value,endTime:document.getElementById("iEnd")?.value,lessonContent:document.getElementById("iContent")?.value.trim()||""};
+    const existing=(state.privateLessons||[]).find(x=>String(x.studentId)===String(studentId)&&String(x.lessonDate)===String(body.lessonDate)&&workflow(x)!=="cancelled");
+    if(existing){toast(`⚠️ ${currentStudentName(studentId)} 當天已有個別課 ${existing.startTime||""}～${existing.endTime||""}`);return}
+    try{const r=await api("/api/private-lesson",{method:"POST",body:JSON.stringify(body)});notifyToast(r,"已建立個別課預約並同步家長平台");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
   };
 
-  const baseRefreshStudent=refreshStudent;
-  refreshStudent=async function(){await baseRefreshStudent();if(state.me?.role==="parent")await loadPrivateLessons()};
-
-  const baseGo=go;
-  go=async function(p){
-    if((p==="private"&&teacherAccount())||(state.me?.role==="parent"&&["home","record"].includes(p)))await loadPrivateLessons();
-    return baseGo(p);
-  };
-
-  if(state.me?.role==="parent"&&state.student){loadPrivateLessons().then(()=>render()).catch(()=>{})}
-  if(teacherAccount())startTeacherPoll();
+  const baseRefreshStudent=refreshStudent;refreshStudent=async function(){await baseRefreshStudent();if(state.me?.role==="parent")await loadPrivateLessons()};
+  const baseGo=go;go=async function(p){if((p==="private"&&teacherAccount())||(state.me?.role==="parent"&&["home","record"].includes(p)))await loadPrivateLessons();const result=await baseGo(p);startPrivatePoll();return result};
+  if(state.me?.role==="parent"&&state.student)loadPrivateLessons().then(()=>{render();startPrivatePoll()}).catch(()=>{});
+  if(teacherAccount())startPrivatePoll();
 })();

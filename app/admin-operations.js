@@ -110,7 +110,7 @@
     if(!s)return `<div class="card"><h2>⚙️ 系統通知設定</h2><div class="notice">${state.adminOps.loadingSettings?"正在讀取通知設定…":"準備讀取通知設定…"}</div></div>`;
     const enabled=!!s.emailNotificationsEnabled,configured=!!s.emailServiceConfigured;
     const effective=enabled&&configured;
-    return `<div class="card"><h2>⚙️ 系統通知設定</h2><div class="item"><div><b>個別課完成 Email 通知</b><small>老師登記「出席／遲到」個別課後，寄信給該學生所有已綁定的家長 Gmail；網站內待確認通知不受此開關影響。</small></div><label style="display:flex;align-items:center;gap:8px;margin:0;white-space:nowrap"><input type="checkbox" style="width:22px;height:22px" ${enabled?"checked":""} onchange="toggleAdminEmail(this.checked)"><b>${enabled?"開啟":"關閉"}</b></label></div><div class="notice" style="margin-top:10px">Azure Email 服務：<b>${configured?"✅ 已設定":"⚠️ 尚未設定"}</b><br>目前實際寄信：<b>${effective?"✅ 啟用":"⏸️ 停用"}</b><br><small>連線字串與寄件地址仍保存在 Azure 環境變數，不會顯示在後台。</small></div></div>`;
+    return `<div class="card"><h2>⚙️ 系統通知設定</h2><div class="item"><div><b>個別課流程 Email 通知</b><small>預約、改期、停課、老師完課及家長確認時，依操作對象通知家長或老師；平台內的同步紀錄不受此開關影響。</small></div><label style="display:flex;align-items:center;gap:8px;margin:0;white-space:nowrap"><input type="checkbox" style="width:22px;height:22px" ${enabled?"checked":""} onchange="toggleAdminEmail(this.checked)"><b>${enabled?"開啟":"關閉"}</b></label></div><div class="notice" style="margin-top:10px">Azure Email 服務：<b>${configured?"✅ 已設定":"⚠️ 尚未設定"}</b><br>目前實際寄信：<b>${effective?"✅ 啟用":"⏸️ 停用"}</b><br><small>連線字串與寄件地址仍保存在 Azure 環境變數，不會顯示在後台。</small></div></div>`;
   }
 
   function dateControls(){
@@ -131,7 +131,7 @@
       const scheduledAttended=courses.reduce((n,x)=>n+Number(x.attended||0),0);
       const scheduledRate=scheduledExpected?Math.round(scheduledAttended/scheduledExpected*1000)/10:null;
       const privateDetails=d.privateLessonDetails||[];
-      const privateStatusText={present:"出席",late:"遲到",leave:"請假",absent:"缺席",cancelled:"停課"};
+      const privateStatusText={scheduled:"已預約",teacher_completed:"老師已完課",completion_issue:"家長回報問題",present:"流程完成／出席",late:"流程完成／遲到",leave:"請假",absent:"缺席",cancelled:"停課"};
       const confirmText={pending:"待家長確認",confirmed:"家長已確認",issue:"家長回報異常",not_required:"免確認"};
       const privateEmailText={sent:"✅ 已寄送",partial:"⚠️ 部分寄送",failed:"❌ 寄送失敗",not_configured:"⚠️ Email 尚未設定",no_recipients:"⚠️ 當時無可寄送家長 Gmail",disabled:"⏸️ 後台已關閉",pending:"準備寄送",not_required:"—"};
       const emailAt=v=>{if(!v)return "";try{return new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(v))}catch{return ""}};

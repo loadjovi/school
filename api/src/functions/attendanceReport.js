@@ -46,6 +46,7 @@ async function listRange(key,start,end,allowedIds,schoolId,canonicalCache){
 }
 function blank(){return {present:0,late:0,leave:0,absent:0,cancelled:0,total:0,attended:0}}
 function add(bucket,status){
+  if(!["present","late","leave","absent","cancelled"].includes(status))return;
   if(status in bucket)bucket[status]++;
   if(status!=="cancelled")bucket.total++;
   if(status==="present"||status==="late")bucket.attended++;
@@ -83,7 +84,9 @@ app.http("attendanceReport",{
       listRange("comprehensive",start,end,allowedIds,schoolId,canonicalCache),
       listRange("privateLesson",start,end,allowedIds,schoolId,canonicalCache)
     ]);
-    const records=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows].sort((a,b)=>String(b.eventDate).localeCompare(String(a.eventDate))||String(b.createdAt).localeCompare(String(a.createdAt)));
+    const records=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows]
+      .filter(r=>["present","late","leave","absent","cancelled"].includes(r.status))
+      .sort((a,b)=>String(b.eventDate).localeCompare(String(a.eventDate))||String(b.createdAt).localeCompare(String(a.createdAt)));
     const agg=new Map();
     for(const s of students)agg.set(String(s.studentId),{...s,sectionStats:blank(),ensembleStats:blank(),comprehensiveStats:blank(),privateStats:blank(),overall:blank()});
     for(const r of records){
@@ -199,8 +202,9 @@ app.http("dailyFollowup",{
       pushCourse("comprehensive","弦樂團體課（綜合課）",["A","B","儲備"],activeByGroup("A")+activeByGroup("B")+activeByGroup("儲備"),rows,"08:45–10:15");
     }
     if(privateRows.length){
-      const expected=privateRows.filter(x=>x.status!=="cancelled").length;
-      pushCourse("private","個別課",[],expected,privateRows,"依個別課紀錄");
+      const attendancePrivateRows=privateRows.filter(x=>["present","late","leave","absent","cancelled"].includes(x.status));
+      const expected=attendancePrivateRows.filter(x=>x.status!=="cancelled").length;
+      pushCourse("private","個別課",[],expected,attendancePrivateRows,"依個別課流程");
     }
     const privateLessonDetails=[];
     for(const r of privateRows){
@@ -248,14 +252,15 @@ app.http("dailyFollowup",{
       p.duplicateCount=privateDuplicateCounts.get(k)||1;
     }
 
+    const attendanceRows=allDailyRows.filter(x=>["present","late","leave","absent","cancelled"].includes(x.status));
     const attendanceCounts={
-      expected:allDailyRows.filter(x=>x.status!=="cancelled").length,
-      attended:allDailyRows.filter(x=>x.status==="present"||x.status==="late").length,
-      present:allDailyRows.filter(x=>x.status==="present").length,
-      late:allDailyRows.filter(x=>x.status==="late").length,
-      leave:allDailyRows.filter(x=>x.status==="leave").length,
-      absent:allDailyRows.filter(x=>x.status==="absent").length,
-      cancelled:allDailyRows.filter(x=>x.status==="cancelled").length
+      expected:attendanceRows.filter(x=>x.status!=="cancelled").length,
+      attended:attendanceRows.filter(x=>x.status==="present"||x.status==="late").length,
+      present:attendanceRows.filter(x=>x.status==="present").length,
+      late:attendanceRows.filter(x=>x.status==="late").length,
+      leave:attendanceRows.filter(x=>x.status==="leave").length,
+      absent:attendanceRows.filter(x=>x.status==="absent").length,
+      cancelled:attendanceRows.filter(x=>x.status==="cancelled").length
     };
     attendanceCounts.attendanceRate=attendanceCounts.expected?Math.round(attendanceCounts.attended/attendanceCounts.expected*1000)/10:null;
     const raw=allDailyRows.filter(x=>["leave","absent"].includes(x.status));

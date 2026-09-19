@@ -50,7 +50,8 @@ app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handle
   const sectionEffective=s.filter(x=>!["cancelled"].includes(x.status));
   const ensembleEffective=e.filter(x=>!["cancelled"].includes(x.status));
   const comprehensiveEffective=c.filter(x=>!["cancelled"].includes(x.status));
-  const privateEffective=i.filter(x=>!["cancelled"].includes(x.status));
+  // 預約、老師已完課待家長確認與爭議中的資料都不是正式出勤；家長確認後才會轉為 present／late。
+  const privateEffective=i.filter(x=>["present","late","leave","absent"].includes(String(x.status||"")));
   const sectionPresent=sectionEffective.filter(x=>["present","late"].includes(x.status)).length;
   const ensemblePresent=ensembleEffective.filter(x=>["present","late"].includes(x.status)).length;
   const comprehensivePresent=comprehensiveEffective.filter(x=>["present","late"].includes(x.status)).length;

@@ -20,6 +20,7 @@ function termRange(schoolYear,semester){
 }
 function blank(){return {present:0,late:0,leave:0,absent:0,cancelled:0,total:0,attended:0,rate:null}}
 function addStat(bucket,status){
+  if(!["present","late","leave","absent","cancelled"].includes(status))return;
   if(status in bucket)bucket[status]++;
   if(status!=="cancelled")bucket.total++;
   if(status==="present"||status==="late")bucket.attended++;
@@ -38,9 +39,11 @@ async function recordsForAliases(key,aliases,start,end,schoolId){
     const r={
       studentId:activityStudentId(row),eventDate:String(row.eventDate||""),classType:classTypeFor(key,row),
       groupName:String(row.groupName||""),section:String(row.section||""),status:String(row.status||""),minutes:Number(row.minutes||0),
-      teacher:String(row.teacher||""),createdAt:String(row.createdAt||""),rowKey:String(row.rowKey||"")
+      teacher:String(row.teacher||""),createdAt:String(row.createdAt||""),rowKey:String(row.rowKey||""),sessionId:String(row.sessionId||"")
     };
-    const dedupe=[r.eventDate,r.classType,r.groupName,r.section].join("|");
+    const dedupe=key==="privateLesson"
+      ?[r.eventDate,r.classType,r.sessionId||r.rowKey].join("|")
+      :[r.eventDate,r.classType,r.groupName,r.section].join("|");
     const old=latest.get(dedupe),stamp=`${r.createdAt}|${r.rowKey}`,oldStamp=old?`${old.createdAt}|${old.rowKey}`:"";
     if(!old||stamp>=oldStamp)latest.set(dedupe,r);
   }
@@ -70,7 +73,7 @@ app.http("parentSemesterAttendance",{
       recordsForAliases("comprehensive",aliases,range.start,end,schoolId),
       recordsForAliases("privateLesson",aliases,range.start,end,schoolId)
     ]);
-    const records=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows]
+    const records=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows.filter(r=>["present","late","leave","absent","cancelled"].includes(r.status))]
       .sort((a,b)=>String(b.eventDate).localeCompare(String(a.eventDate))||String(b.createdAt).localeCompare(String(a.createdAt)));
     const stats={section:blank(),ensemble:blank(),comprehensive:blank(),privateLesson:blank(),overall:blank()};
     for(const r of records){
