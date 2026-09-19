@@ -10,6 +10,12 @@ import { getSystemSettings } from "../lib/settings.js";
 const attendanceStatuses=new Set(["present","late","leave","absent"]);
 const teacherCompletionStatuses=new Set(["scheduled","completion_issue"]);
 function clean(v,max=300){return String(v??"").trim().slice(0,max)}
+export function validateParentLessonReview(ratingValue,reviewValue){
+  const rating=Number(ratingValue||0),review=clean(reviewValue,800);
+  if(!Number.isInteger(rating)||rating<1||rating>5)return {error:"請選擇 1～5 顆星後再確認完成上課"};
+  if(!review)return {error:"請填寫老師教學評論後再確認完成上課"};
+  return {rating,review};
+}
 function validTime(v){return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(v||""))}
 function timeMinutes(v){if(!validTime(v))return -1;const [h,m]=String(v).split(":").map(Number);return h*60+m}
 function minutesBetween(start,end){const a=timeMinutes(start),b=timeMinutes(end);return a>=0&&b>a?b-a:-1}
@@ -259,11 +265,11 @@ app.http("privateLesson",{
       if(action==="issue"&&!note)return json({error:"請填寫需要老師確認的問題"},400);
       entity.parentConfirmation=action;entity.parentConfirmedAt=now;entity.parentConfirmedBy=a.email;entity.parentNote=note;
       if(action==="confirmed"){
-        const rating=Number(body.teacherRating||0),review=clean(body.teacherReview,800);
-        if(rating&&(!Number.isInteger(rating)||rating<1||rating>5))return json({error:"老師評價必須為 1～5 顆星"},400);
-        if(review&&!rating)return json({error:"若要留下老師教學評論，請先選擇 1～5 顆星"},400);
+        const validation=validateParentLessonReview(body.teacherRating,body.teacherReview);
+        if(validation.error)return json({error:validation.error},400);
+        const {rating,review}=validation;
         entity.status=["present","late"].includes(String(entity.actualAttendanceStatus||""))?String(entity.actualAttendanceStatus):"present";
-        entity.teacherRating=rating||0;entity.teacherReview=review;entity.teacherRatedAt=(rating||review)?now:"";entity.teacherRatedBy=(rating||review)?a.email:"";entity.finalizedAt=now;
+        entity.teacherRating=rating;entity.teacherReview=review;entity.teacherRatedAt=now;entity.teacherRatedBy=a.email;entity.finalizedAt=now;
       }else{
         entity.actualAttendanceStatus=["present","late"].includes(String(entity.actualAttendanceStatus||entity.status||""))?String(entity.actualAttendanceStatus||entity.status):"present";
         entity.status="completion_issue";
