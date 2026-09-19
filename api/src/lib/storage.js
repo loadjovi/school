@@ -136,8 +136,11 @@ export async function saveTenantUserRole(email,schoolId,role="schoolAdmin",statu
 export async function ensureBootstrapGlobalAdmin(email){
   const key=teacherEmail(email);if(!key)return;
   await ensureDefaultTenant(key);
-  await saveTenantUserRole(key,"*","globalAdmin","active",key);
-  await saveTenantUserRole(key,DEFAULT_TENANT_ID,"schoolAdmin","active",key);
+  let global=null,school=null;
+  try{global=await table("tenantUserRole").getEntity(key,"GLOBAL")}catch(e){if(e.statusCode!==404)throw e}
+  try{school=await table("tenantUserRole").getEntity(key,DEFAULT_TENANT_ID)}catch(e){if(e.statusCode!==404)throw e}
+  if(!global||global.status!=="active"||global.role!=="globalAdmin")await saveTenantUserRole(key,"*","globalAdmin","active",key);
+  if(!school||school.status!=="active"||school.role!=="schoolAdmin")await saveTenantUserRole(key,DEFAULT_TENANT_ID,"schoolAdmin","active",key);
 }
 
 export async function writeGlobalAudit({actorEmail="",action="",schoolId="",targetEmail="",details={}}={}){
