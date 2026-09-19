@@ -88,8 +88,24 @@ app.http("tenantAdmins",{
 });
 
 async function countTodayRows(key,date){
-  const counts={total:0,present:0,late:0,leave:0,absent:0,cancelled:0};
+  // Keep the Global dashboard aligned with the school daily-followup view:
+  // one effective/latest attendance row per student + course scope.
+  // Azure Table keeps older revisions, so raw entity counts can otherwise over-count.
+  const latest=new Map();
+  const classType=key==="ensemble"?"ensemble":key==="comprehensive"?"comprehensive":key==="privateLesson"?"private":"section";
   for await(const e of table(key).listEntities({queryOptions:{filter:`eventDate eq '${safe(date)}'`}})){
+    const studentId=String(e.partitionKey||"");
+    const groupName=String(e.groupName||"");
+    const section=String(e.section||"");
+    const dedupeKey=[studentId,date,classType,groupName,section].join("|");
+    const stamp=`${String(e.createdAt||"")}|${String(e.rowKey||"")}`;
+    const old=latest.get(dedupeKey);
+    const oldStamp=old?`${String(old.createdAt||"")}|${String(old.rowKey||"")}`:"";
+    if(!old||stamp>=oldStamp)latest.set(dedupeKey,e);
+  }
+
+  const counts={total:0,present:0,late:0,leave:0,absent:0,cancelled:0};
+  for(const e of latest.values()){
     const status=String(e.status||"").toLowerCase();
     if(status==="cancelled"){counts.cancelled++;continue}
     counts.total++;
