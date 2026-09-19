@@ -68,7 +68,7 @@
 
   function teacherHistoryHtml(){
     const recent=(state.privateLessons||[]).slice(0,20);
-    return recent.length?recent.map(x=>`<div class="item" style="display:block"><div class="student"><div><b>${esc(currentStudentName(x.studentId))}｜${esc(x.lessonDate)}</b><small>${esc(x.startTime||"")}～${esc(x.endTime||"")}｜${Number(x.minutes||0)} 分鐘｜${esc(statusText[x.status]||x.status)}${emailStatusLine(x)?`<br>${esc(emailStatusLine(x))}`:""}${x.parentNote?`<br>家長：${esc(x.parentNote)}`:""}</small></div><span class="badge ${confirmClass[x.parentConfirmation]||""}">${esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>${x.parentConfirmation==="pending"?`<button class="secondary" style="width:100%;margin-top:10px" onclick="resendPrivateLessonEmail('${esc(x.studentId)}','${esc(x.lessonId)}','teacher')">📨 重寄確認 Email</button>`:""}</div>`).join(""):`<div class="notice">目前尚無個別課紀錄。</div>`;
+    return recent.length?recent.map(x=>`<div class="item" style="display:block"><div class="student"><div><b>${esc(currentStudentName(x.studentId))}｜${esc(x.lessonDate)}</b><small>${esc(x.startTime||"")}～${esc(x.endTime||"")}｜${Number(x.minutes||0)} 分鐘｜${esc(statusText[x.status]||x.status)}${emailStatusLine(x)?`<br>${esc(emailStatusLine(x))}`:""}${x.parentNote?`<br>家長：${esc(x.parentNote)}`:""}${x.status==="cancelled"&&x.cancelReason?`<br>取消原因：${esc(x.cancelReason)}`:""}</small></div><span class="badge ${x.status==="cancelled"?"bad":(confirmClass[x.parentConfirmation]||"")}">${x.status==="cancelled"?"已取消":esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>${x.parentConfirmation==="pending"&&x.status!=="cancelled"?`<button class="secondary" style="width:100%;margin-top:10px" onclick="resendPrivateLessonEmail('${esc(x.studentId)}','${esc(x.lessonId)}','teacher')">📨 重寄確認 Email</button>`:""}${x.status!=="cancelled"&&x.parentConfirmation!=="confirmed"?`<button class="secondary" style="width:100%;margin-top:8px;border-color:#c94b4b;color:#a52a2a" onclick="cancelPrivateLessonTeacher('${esc(x.studentId)}','${esc(x.lessonId)}','${esc(currentStudentName(x.studentId))}','${esc(x.startTime||"")}','${esc(x.endTime||"")}')">🗑️ 誤登記／取消</button>`:""}</div>`).join(""):`<div class="notice">目前尚無個別課紀錄。</div>`;
   }
 
   function startTeacherPoll(){
@@ -99,6 +99,17 @@
       else toast("❌ Email 重寄失敗");
       if(source==="admin"&&typeof refreshAdminFollowup==="function")await refreshAdminFollowup();
       else {await loadPrivateLessons();const box=document.getElementById("privateConfirmList");if(box)box.innerHTML=teacherHistoryHtml();else render()}
+    }catch(e){toast("❌ "+e.message)}
+  };
+
+  window.cancelPrivateLessonTeacher=async function(studentId,lessonId,studentName,startTime,endTime){
+    if(!studentId||!lessonId)return;
+    const time=[startTime,endTime].filter(Boolean).join("～");
+    if(!confirm(`確定取消「${studentName||studentId}」這筆誤登記個別課？\n\n${time?("時間："+time+"\n"):""}取消後不計入授課堂數與出席統計；紀錄仍保留供稽核。`))return;
+    try{
+      await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"cancel_lesson",reason:"老師確認為誤登記"})});
+      toast("✅ 已取消誤登記個別課");
+      await loadPrivateLessons();render();
     }catch(e){toast("❌ "+e.message)}
   };
 
@@ -166,7 +177,7 @@
     const quick=sorted.map(st=>{const last=latest.get(String(st.studentId)),days=daysSince(last?.lessonDate),warn=!last?"🔴 尚無紀錄":days>=30?`🔴 ${days} 天未上課`:days>=14?`🟡 ${days} 天未上課`:`最近：${esc(last.lessonDate)}`;return `<button class="item" style="width:100%;text-align:left;background:#fff;cursor:pointer" onclick="quickPrivateStudent('${esc(st.studentId)}')"><div><b>${esc(st.name)}</b><small>${esc(st.groupName)}團｜${esc(st.instrument)}｜${warn}</small></div><span>＋ 記錄</span></button>`}).join("");
     return `<div class="card"><h2>👤 個別課快速紀錄</h2><div class="notice">個別課不以固定課表判定缺席；實際上完課再登記。臨時調課不會影響統計。</div><div class="grid"><div class="kpi"><b>${todayRows.length}</b><span>今日已上堂數</span></div><div class="kpi"><b>${monthRows.length}</b><span>本月授課堂數</span></div><div class="kpi"><b>${taughtIds.size} / ${students.length}</b><span>本月授課學生</span></div><div class="kpi"><b>${totalMinutes}</b><span>本月授課分鐘</span></div></div></div>
     <div class="card"><h2>快速選擇學生</h2><div class="notice">依「距離最近一次上課時間」排序，久未上課的學生會優先提醒。</div>${quick}</div>
-    <div class="card"><h2>✍️ 本次個別課</h2><label>學生</label><select id="iStudent">${students.map(st=>`<option value="${esc(st.studentId)}">${esc(st.name)}｜${esc(st.groupName)}團｜${esc(st.instrument)}</option>`).join("")}</select><label>上課日期</label><input id="iDate" type="date" value="${today}"><div class="row2"><div><label>開始時間</label><input id="iStart" type="time" value="18:00"></div><div><label>結束時間</label><input id="iEnd" type="time" value="18:50"></div></div><label>狀態</label><select id="iStatus"><option value="present">完成上課</option><option value="late">遲到後完成</option><option value="leave">請假</option><option value="cancelled">停課／改期</option></select><label>課程內容（選填）</label><textarea id="iContent" rows="3" placeholder="例：音階、換把、考試曲第 1～32 小節"></textarea><button class="primary" onclick="savePrivate()">✅ 完成本次上課紀錄</button></div>
+    <div class="card"><h2>✍️ 本次個別課</h2><div class="notice"><b>防呆規則：</b>同一位老師可以一天教多位學生，但「同一學生＋同一老師＋同一天」只能建立 1 堂個別課。若時間輸入錯誤，請先取消原紀錄再重新建立。</div><label>學生</label><select id="iStudent">${students.map(st=>`<option value="${esc(st.studentId)}">${esc(st.name)}｜${esc(st.groupName)}團｜${esc(st.instrument)}</option>`).join("")}</select><label>上課日期</label><input id="iDate" type="date" value="${today}"><div class="row2"><div><label>開始時間</label><input id="iStart" type="time" value="18:00"></div><div><label>結束時間</label><input id="iEnd" type="time" value="18:50"></div></div><label>狀態</label><select id="iStatus"><option value="present">完成上課</option><option value="late">遲到後完成</option><option value="leave">請假</option><option value="cancelled">停課／改期</option></select><label>課程內容（選填）</label><textarea id="iContent" rows="3" placeholder="例：音階、換把、考試曲第 1～32 小節"></textarea><button class="primary" onclick="savePrivate()">✅ 完成本次上課紀錄</button></div>
     <div class="card"><h2>家長確認／最近紀錄</h2><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理</button><div id="privateConfirmList">${teacherHistoryHtml()}</div></div>`;
   };
 
@@ -179,6 +190,13 @@
     const studentId=$("iStudent")?.value;
     if(!studentId)return;
     const body={studentId,lessonDate:$("iDate").value,startTime:$("iStart").value,endTime:$("iEnd").value,status:$("iStatus").value,lessonContent:$("iContent").value.trim()};
+    const existing=(state.privateLessons||[]).find(x=>String(x.studentId)===String(studentId)&&String(x.lessonDate)===String(body.lessonDate)&&String(x.status)!=="cancelled");
+    if(existing){
+      const who=currentStudentName(studentId),time=[existing.startTime,existing.endTime].filter(Boolean).join("～");
+      toast(`⚠️ ${who} 今天已登記個別課${time?" "+time:""}`);
+      const box=document.getElementById("privateConfirmList");if(box)box.scrollIntoView({behavior:"smooth",block:"start"});
+      return;
+    }
     try{
       const r=await api("/api/private-lesson",{method:"POST",body:JSON.stringify(body)});
       if(r.item?.parentConfirmation==="pending"){
