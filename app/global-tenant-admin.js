@@ -85,8 +85,8 @@
   }
   function draw(){if(state.page==="global"&&canGlobal()){const a=document.getElementById("app");if(a){a.innerHTML=shell(page());setTimeout(()=>window.updateTenantIdPreview?.(),0)}}}
   window.openGlobalTenant=async function(){if(!canGlobal())return;state.page="global";draw();await loadGlobal(true)};
-  window.returnToGlobalTenant=function(){sessionStorage.removeItem("school_context_id");location.reload()};
-  window.enterSchoolAdmin=function(sid){sessionStorage.setItem("school_context_id",String(sid||""));location.reload()};
+  window.returnToGlobalTenant=function(){sessionStorage.setItem("role_context","global");sessionStorage.removeItem("school_context_id");location.reload()};
+  window.enterSchoolAdmin=function(sid){sessionStorage.setItem("role_context","schoolAdmin");sessionStorage.setItem("school_context_id",String(sid||""));location.reload()};
   window.bindSelfSchoolAdmin=async function(sid){
     const email=String(state.me?.email||"").trim();if(!email)return;
     try{await api("/api/tenant-admins",{method:"PATCH",body:JSON.stringify({schoolId:sid,email,action:"grant"})});toast("✅ 已將您的 Global 帳號綁定為此校 School Admin");await loadGlobal(true)}catch(e){toast("❌ "+e.message)}
@@ -127,13 +127,13 @@
   }
   const baseNav=nav;
   nav=function(){
-    if(state.me?.role==="globalAdmin")return '<nav class="nav"><button class="active" onclick="openGlobalTenant()"><span>🌐</span>Global</button><button></button><button></button><button></button></nav>';
+    if(state.me?.role==="globalAdmin"&&state.page!=="contextSelect")return '<nav class="nav"><button class="active" onclick="openGlobalTenant()"><span>🌐</span>Global</button><button></button><button></button><button></button></nav>';
     return baseNav();
   };
   const bg=go;go=async function(p){if(p==="global"&&canGlobal()){await openGlobalTenant();return}return bg(p)};
   const br=render;render=function(){if(state.page==="global"&&canGlobal()){draw();return}const r=br();if(canGlobal()&&state.page==="admin")setTimeout(mountEntry,0);return r};
   const bh=typeof home==="function"?home:null;
   if(bh)home=function(){if(state.me?.role==="tenantPending")return '<div class="card hero"><h2>🏫 '+esc(state.me.schoolName||"學校")+'｜系統建置中</h2><div class="notice">您的 School Admin 權限已建立，但此學校尚未完成多租戶資料隔離，因此暫不開放營運後台。這項保護可避免看到其他學校資料。</div></div>';return bh()};
-  if(state.me?.role==="globalAdmin"&&canGlobal())setTimeout(()=>window.openGlobalTenant(),0);
+  if(state.me?.role==="globalAdmin"&&canGlobal()&&state.page!=="contextSelect")setTimeout(()=>window.openGlobalTenant(),0);
   else if(canGlobal()&&state.page==="admin")setTimeout(mountEntry,0);
 })();
