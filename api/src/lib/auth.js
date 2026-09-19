@@ -278,7 +278,7 @@ export async function getAccess(request){
       if(wantsSchoolAdmin){
         if(selectedRole){
           const tenant=await getTenantDirectory(selectedRole.schoolId)||defaultTenant;
-          return {authenticated:true,...identity,role:"admin",schoolId:String(selectedRole.schoolId),schoolName:String(tenant?.schoolName||selectedRole.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selectedRole.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,globalAdmin:true}};
+          return {authenticated:true,...identity,role:"admin",schoolId:String(selectedRole.schoolId),schoolName:String(tenant?.schoolName||selectedRole.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selectedRole.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,globalAdmin:false,identityGlobalAdmin:true}};
         }
         return {authenticated:true,...identity,role:"contextDenied",schoolId:requestedSchoolId||null,schoolName:"",systemName:"",memberships,capabilities:{globalAdmin:true,contextDenied:true}};
       }
