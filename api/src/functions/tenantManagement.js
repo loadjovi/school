@@ -97,7 +97,7 @@ async function countTodayRows(key,date){
     const studentId=String(e.partitionKey||"");
     const groupName=String(e.groupName||"");
     const section=String(e.section||"");
-    const sessionId=String(e.sessionId||e.lessonId||e.rowKey||"");
+    const sessionId=String(e.sessionId||"")||[studentId,date,String(e.startTime||""),String(e.endTime||""),String(e.teacher||"").trim().toLowerCase()].join("|");
     const dedupeKey=key==="privateLesson"
       ?[studentId,date,classType,sessionId].join("|")
       :[studentId,date,classType,groupName,section].join("|");
