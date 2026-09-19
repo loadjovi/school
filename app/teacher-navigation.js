@@ -109,7 +109,7 @@
     return result;
   };
 
-  if(teacherAccount()){
+  if(teacherAccount()&&state.page!=="contextSelect"){
     // 登入／重新整理後固定回到「教學」首頁，避免直接落在某一種課程。
     state.page="teacherHome";
     if(!state.teacherSetup&&typeof loadTeacherSettings==="function"){
