@@ -238,7 +238,7 @@ app.http("privateLesson",{
     const now=new Date().toISOString(),confirmation=["present","late"].includes(status)?"pending":"not_required";
     const teacherName=await resolvedTeacherName(a.email,a.displayName||a.email);
     const teacherKey=String(a.email||"").trim().toLowerCase();
-    const sessionId=[canonicalStudentId,lessonDate,startTime,endTime,teacherKey].join("|");
+    const sessionId=[canonicalStudentId,lessonDate,teacherKey].join("|");
 
     // Business rule: the same teacher may teach many students in one day,
     // but the same teacher + same student may only have one active private lesson per day.
