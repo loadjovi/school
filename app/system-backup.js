@@ -5,7 +5,7 @@
     StudentRegistration:"家長申請",TeacherDirectory:"老師帳號",TeacherProfile:"老師權限",
     PracticeLog:"自主練習",SectionAttendance:"分部課",EnsembleAttendance:"合奏課",
     ComprehensiveAttendance:"綜合課",PrivateLesson:"個別課",StudentHistory:"學生異動歷史",
-    AcademicYearBatch:"學年度批次紀錄",TenantDirectory:"學校租戶",TenantUserRole:"租戶權限",GlobalAuditLog:"Global稽核",SystemSettings:"系統設定"
+    AcademicYearBatch:"學年度批次紀錄",TenantDirectory:"學校租戶",TenantUserRole:"租戶權限",GlobalAuditLog:"Global稽核",UserIdentity:"使用者身分",SystemSettings:"系統設定"
   };
   function filenameStamp(){const d=new Date(),p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`}
   function downloadJson(name,data){
