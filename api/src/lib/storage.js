@@ -65,13 +65,21 @@ export function tenantIdValue(v){return String(v||"").trim().toLowerCase().repla
 
 export async function ensureDefaultTenant(updatedBy="system"){
   await ensureTables();
-  try{return await table("tenantDirectory").getEntity("TENANT",DEFAULT_TENANT_ID)}
-  catch(e){
+  try{
+    const old=await table("tenantDirectory").getEntity("TENANT",DEFAULT_TENANT_ID);
+    if(!old.cityCode||!old.cityName||!old.schoolLevel){
+      const patch={partitionKey:"TENANT",rowKey:DEFAULT_TENANT_ID,cityCode:"keelung",cityName:"基隆市",schoolLevel:"elementary",schoolLevelName:"國小",schoolSlug:"sacred-heart",updatedAt:new Date().toISOString(),updatedBy:String(updatedBy||"system").slice(0,160)};
+      await table("tenantDirectory").updateEntity(patch,"Merge");
+      return {...old,...patch};
+    }
+    return old;
+  }catch(e){
     if(e.statusCode!==404)throw e;
     const now=new Date().toISOString();
     const entity={
       partitionKey:"TENANT",rowKey:DEFAULT_TENANT_ID,
       schoolId:DEFAULT_TENANT_ID,schoolName:"聖心小學",shortName:"聖心",
+      schoolSlug:"sacred-heart",cityCode:"keelung",cityName:"基隆市",schoolLevel:"elementary",schoolLevelName:"國小",
       systemName:"聖心小學弦樂團",status:"active",timezone:"Asia/Taipei",
       createdAt:now,updatedAt:now,updatedBy:String(updatedBy||"system").slice(0,160)
     };
@@ -98,6 +106,11 @@ export async function saveTenantDirectory(schoolId,data={},updatedBy=""){
     partitionKey:"TENANT",rowKey:id,schoolId:id,
     schoolName:String(data.schoolName??old?.schoolName??"").trim().slice(0,120),
     shortName:String(data.shortName??old?.shortName??"").trim().slice(0,60),
+    schoolSlug:tenantIdValue(data.schoolSlug??old?.schoolSlug??"").slice(0,50),
+    cityCode:tenantIdValue(data.cityCode??old?.cityCode??"").slice(0,40),
+    cityName:String(data.cityName??old?.cityName??"").trim().slice(0,40),
+    schoolLevel:tenantIdValue(data.schoolLevel??old?.schoolLevel??"").slice(0,30),
+    schoolLevelName:String(data.schoolLevelName??old?.schoolLevelName??"").trim().slice(0,30),
     systemName:String(data.systemName??old?.systemName??"").trim().slice(0,160),
     status:["active","inactive","setup"].includes(String(data.status??old?.status??"setup"))?String(data.status??old?.status??"setup"):"setup",
     timezone:String(data.timezone??old?.timezone??"Asia/Taipei").trim().slice(0,80)||"Asia/Taipei",
