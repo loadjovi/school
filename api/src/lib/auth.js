@@ -247,6 +247,9 @@ export async function getAccess(request){
 
   const requestedContext=String(request.headers.get("x-role-context")||"").trim();
   const requestedSchoolId=String(request.headers.get("x-school-id")||"").trim().toLowerCase();
+  if(["teacher","parent"].includes(requestedContext)&&requestedSchoolId&&requestedSchoolId!==defaultId){
+    return {authenticated:true,...identity,role:"contextDenied",schoolId:requestedSchoolId,schoolName:"",systemName:"",capabilities:{contextDenied:true}};
+  }
   const bootstrapGlobal=admins.includes(email);
   if(bootstrapGlobal){
     try{await ensureBootstrapGlobalAdmin(email)}catch(e){console.warn("global admin bootstrap failed",e?.message||String(e))}
