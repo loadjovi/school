@@ -199,6 +199,7 @@ app.http("dailyFollowup",{
     }
     const privateLessonDetails=[];
     for(const r of privateRows){
+      if(String(r.status||"")==="cancelled")continue;
       const studentId=await canonicalDailyId(r.rawStudentId,students,canonicalCache);
       const s=students.get(String(studentId))||{studentId,name:`學生 ${studentId}`,grade:"",groupName:"",section:"",instrument:""};
       privateLessonDetails.push({
@@ -231,6 +232,16 @@ app.http("dailyFollowup",{
       });
     }
     privateLessonDetails.sort((a,b)=>String(a.startTime||"").localeCompare(String(b.startTime||""))||String(a.name||"").localeCompare(String(b.name||""),"zh-Hant"));
+    const privateDuplicateCounts=new Map();
+    for(const p of privateLessonDetails){
+      const k=[String(p.studentId||""),String(p.teacherEmail||"").trim().toLowerCase()].join("|");
+      privateDuplicateCounts.set(k,(privateDuplicateCounts.get(k)||0)+1);
+    }
+    for(const p of privateLessonDetails){
+      const k=[String(p.studentId||""),String(p.teacherEmail||"").trim().toLowerCase()].join("|");
+      p.duplicateSameDay=(privateDuplicateCounts.get(k)||0)>1;
+      p.duplicateCount=privateDuplicateCounts.get(k)||1;
+    }
 
     const attendanceCounts={
       expected:allDailyRows.filter(x=>x.status!=="cancelled").length,
