@@ -188,10 +188,11 @@ app.http("privateLesson",{
       entity.parentConfirmedBy=a.email;
       entity.parentNote=clean(body.note,500);
       if(action==="confirmed"){
-        const rating=Number(body.teacherRating||0);
+        const rating=Number(body.teacherRating||0),review=clean(body.teacherReview,800);
         if(rating&&(!Number.isInteger(rating)||rating<1||rating>5))return json({error:"老師評價必須為 1～5 顆星"},400);
+        if(review&&!rating)return json({error:"若要留下老師教學評論，請先選擇 1～5 顆星"},400);
         entity.teacherRating=rating||0;
-        entity.teacherReview=clean(body.teacherReview,800);
+        entity.teacherReview=review;
         entity.teacherRatedAt=(rating||entity.teacherReview)?now:"";
         entity.teacherRatedBy=(rating||entity.teacherReview)?a.email:"";
       }
