@@ -5,6 +5,8 @@
     document.head.appendChild(style);
   }
   state.globalTenant=state.globalTenant||{loaded:false,loading:false,dashboard:null,tenants:[],admins:[],selectedSchoolId:"",regionFilter:"",error:""};
+  state.globalBrandingAdmin=state.globalBrandingAdmin||{loading:false,error:""};
+  let globalBrandLogoFile=null,globalBrandPreviewUrl="";
   const canGlobal=()=>state.me?.capabilities?.globalAdmin===true;
   const st={active:"🟢 啟用",setup:"🟡 建置中",inactive:"⚪ 停用"};
   const cities=[
@@ -30,8 +32,10 @@
     if(state.globalTenant.loaded&&!force)return;
     state.globalTenant.loading=true;state.globalTenant.error="";draw();
     try{
-      const r=await Promise.all([api("/api/global-dashboard"),api("/api/tenant-directory")]);
+      const r=await Promise.all([api("/api/global-dashboard"),api("/api/tenant-directory"),api("/api/global-branding")]);
       state.globalTenant.dashboard=r[0];state.globalTenant.tenants=r[1].items||[];state.globalTenant.loaded=true;
+      state.globalBranding={...(state.globalBranding||{}),...(r[2]||{})};
+      if(typeof window.setGlobalBranding==="function")window.setGlobalBranding(state.globalBranding);
       if(state.globalTenant.selectedSchoolId)await loadAdmins(state.globalTenant.selectedSchoolId);
     }catch(e){state.globalTenant.error=e.message||String(e)}
     state.globalTenant.loading=false;draw();
@@ -65,6 +69,66 @@
       '<div class="grid" style="margin-top:10px"><div class="kpi"><b>'+Number(att.present||0)+'</b><span>出席</span></div><div class="kpi"><b>'+Number(att.leave||0)+'</b><span>請假</span></div><div class="kpi"><b>'+Number(att.absent||0)+'</b><span>缺席</span></div><div class="kpi"><b>'+Number(att.late||0)+'</b><span>遲到</span></div></div>'+
       '<div class="notice" style="margin-top:10px"><b>📍 '+esc(region||"行政區未設定")+'</b><br><small>'+esc(mode)+'</small><br><small>點名統計採有效課程 Session 計算：團體／分部課同一學生同一課程只計最新狀態；個別課則依日期＋時間＋老師辨識不同課堂，同一天上兩堂會計 2 筆，相同時段重複建立不重複計算。</small></div>'+managerExtra+inlineAdminPanel(x)+'</div>';
   }
+  function readGlobalBrandDataUrl(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onerror=()=>reject(new Error("讀取 Global Logo 失敗"));r.onload=()=>resolve(String(r.result||""));r.readAsDataURL(file)})}
+  function globalBrandingBox(){
+    const b=state.globalBranding||{siteName:"校務整合平台",schoolName:"Global 管理中心",loginSubtitle:"跨校營運、權限與服務治理",logoAlt:"Global Logo",primaryColor:"#3155A4",logoUrl:"/api/global-branding-logo?v=default"};
+    const busy=state.globalBrandingAdmin.loading;
+    return '<div class="card"><h2>🎨 Global 品牌設定</h2><div class="notice">此設定只套用 Global 管理中心，不會改動各學校自己的品牌。可設定 Global Logo、平台名稱、副標與主題色。</div>'+
+      (state.globalBrandingAdmin.error?'<div class="error" style="margin-top:10px">'+esc(state.globalBrandingAdmin.error)+'</div>':'')+
+      '<div style="display:flex;gap:14px;align-items:center;margin-top:14px"><div style="width:92px;height:92px;border:1px solid var(--line);border-radius:18px;background:#fff;display:grid;place-items:center;overflow:hidden"><img id="globalBrandingPreview" src="'+esc(b.logoUrl||"/api/global-branding-logo?v=default")+'" alt="'+esc(b.logoAlt||"Global Logo")+'" style="width:88px;height:88px;object-fit:contain"></div><div style="flex:1"><b>目前 Global Logo</b><small style="display:block;color:var(--muted);margin-top:4px">PNG／JPG／WebP，最大 2MB</small><input type="file" accept="image/png,image/jpeg,image/webp" onchange="previewGlobalBrandingLogo(this)" '+(busy?"disabled":"")+'></div></div>'+
+      '<label>平台名稱</label><input id="globalBrandSiteName" value="'+esc(b.siteName||"")+'" maxlength="80">'+
+      '<label>管理中心副標</label><input id="globalBrandSchoolName" value="'+esc(b.schoolName||"")+'" maxlength="120">'+
+      '<label>Global 說明文字</label><input id="globalBrandSubtitle" value="'+esc(b.loginSubtitle||"")+'" maxlength="160">'+
+      '<div class="row2"><div><label>Logo 替代文字</label><input id="globalBrandLogoAlt" value="'+esc(b.logoAlt||"")+'" maxlength="120"></div><div><label>主題色（即時預覽）</label><input id="globalBrandColor" type="color" value="'+esc(/^#[0-9A-Fa-f]{6}$/.test(String(b.primaryColor||""))?b.primaryColor:"#3155A4")+'" style="height:48px;padding:6px" oninput="previewGlobalBrandingColor(this.value)"></div></div>'+
+      '<button class="primary" onclick="saveGlobalBranding()" '+(busy?"disabled":"")+'>'+(busy?"正在儲存…":"💾 儲存 Global 品牌設定")+'</button>'+
+      '<button class="secondary" style="width:100%;margin-top:8px" onclick="restoreGlobalBrandingLogo()" '+(busy?"disabled":"")+'>↩️ 恢復預設 Global Logo</button>'+
+      '<div class="notice" style="margin-top:10px">Global 品牌會獨立保存於 <b>SystemSettings / GLOBAL / BRANDING</b>；不會覆蓋學校的 <b>SYSTEM / BRANDING</b>。</div></div>';
+  }
+  window.previewGlobalBrandingColor=function(value){
+    if(!/^#[0-9A-Fa-f]{6}$/.test(String(value||"")))return;
+    state.globalBranding={...(state.globalBranding||{}),primaryColor:value};
+    if(typeof window.setGlobalBranding==="function")window.setGlobalBranding(state.globalBranding);
+  };
+  window.previewGlobalBrandingLogo=function(input){
+    const f=input?.files?.[0];globalBrandLogoFile=null;
+    if(globalBrandPreviewUrl){URL.revokeObjectURL(globalBrandPreviewUrl);globalBrandPreviewUrl=""}
+    if(!f)return;
+    if(!["image/png","image/jpeg","image/webp"].includes(f.type)){input.value="";toast("❌ Global Logo 只支援 PNG、JPG、WebP");return}
+    if(f.size>2*1024*1024){input.value="";toast("❌ Global Logo 檔案需小於 2MB");return}
+    globalBrandLogoFile=f;globalBrandPreviewUrl=URL.createObjectURL(f);
+    const img=document.getElementById("globalBrandingPreview");if(img)img.src=globalBrandPreviewUrl;
+  };
+  window.saveGlobalBranding=async function(){
+    if(state.globalBrandingAdmin.loading)return;
+    state.globalBrandingAdmin.loading=true;state.globalBrandingAdmin.error="";draw();
+    try{
+      const payload={siteName:document.getElementById("globalBrandSiteName")?.value||"",schoolName:document.getElementById("globalBrandSchoolName")?.value||"",loginSubtitle:document.getElementById("globalBrandSubtitle")?.value||"",logoAlt:document.getElementById("globalBrandLogoAlt")?.value||"",primaryColor:document.getElementById("globalBrandColor")?.value||"#3155A4"};
+      let saved=await api("/api/global-branding",{method:"PATCH",body:JSON.stringify(payload)});
+      if(globalBrandLogoFile){
+        const dataUrl=await readGlobalBrandDataUrl(globalBrandLogoFile);
+        const uploaded=await api("/api/global-branding-logo",{method:"POST",body:JSON.stringify({dataUrl})});
+        saved=uploaded.branding||saved;
+      }
+      state.globalBranding={...(state.globalBranding||{}),...saved};
+      if(typeof window.setGlobalBranding==="function")window.setGlobalBranding(state.globalBranding);
+      globalBrandLogoFile=null;if(globalBrandPreviewUrl){URL.revokeObjectURL(globalBrandPreviewUrl);globalBrandPreviewUrl=""}
+      toast("✅ Global 品牌設定已儲存並立即套用");
+    }catch(e){state.globalBrandingAdmin.error=e.message||String(e);toast("❌ "+(e.message||e))}
+    state.globalBrandingAdmin.loading=false;draw();
+  };
+  window.restoreGlobalBrandingLogo=async function(){
+    if(!confirm("確定恢復預設 Global Logo？"))return;
+    state.globalBrandingAdmin.loading=true;draw();
+    try{
+      await api("/api/global-branding-logo",{method:"DELETE"});
+      const b=await api("/api/global-branding");
+      state.globalBranding={...(state.globalBranding||{}),...b};
+      if(typeof window.setGlobalBranding==="function")window.setGlobalBranding(state.globalBranding);
+      toast("✅ 已恢復預設 Global Logo");
+    }catch(e){state.globalBrandingAdmin.error=e.message||String(e);toast("❌ "+(e.message||e))}
+    state.globalBrandingAdmin.loading=false;draw();
+  };
+
   function createBox(){
     const cityOpts=cities.map(x=>'<option value="'+esc(x[0])+'" '+(x[0]==="keelung"?"selected":"")+'>'+esc(x[1])+'</option>').join("");
     const levelOpts=levels.map(x=>'<option value="'+esc(x[0])+'">'+esc(x[1])+'</option>').join("");
@@ -81,7 +145,7 @@
     const regionOptions=['<option value="">全部行政區</option>'].concat(cities.map(x=>'<option value="'+esc(x[0])+'" '+(state.globalTenant.regionFilter===x[0]?"selected":"")+'>'+esc(x[1])+'</option>')).join("");
     const schools=(d.schools||[]).filter(x=>!state.globalTenant.regionFilter||x.cityCode===state.globalTenant.regionFilter);
     const managed=(d.schools||[]).filter(x=>x.isSchoolManager).length;
-    return '<div class="card hero">'+(sessionStorage.getItem("school_context_id")?'<button class="secondary" style="margin:0 0 10px" onclick="returnToGlobalTenant()">← 返回 Global 觀察模式</button>':'')+'<h2>🌐 Global 管理中心</h2><div class="notice"><b>Global 帳號預設為跨校觀察角色</b><br>未綁定任何學校時，只查看各校出缺勤與老師狀態；綁定為特定學校 School Admin 後，才可進入該校後台。</div><div class="grid" style="margin-top:12px"><div class="kpi"><b>'+Number(d.schoolCount||0)+'</b><span>加入學校</span></div><div class="kpi"><b>'+Number(d.totals?.teachers||0)+'</b><span>啟用老師</span></div><div class="kpi"><b>'+Number(d.totals?.todayAttendanceRecords||0)+'</b><span>今日點名紀錄</span></div><div class="kpi"><b>'+managed+'</b><span>我管理的學校</span></div></div></div><div class="card"><h2>🏫 學校清單</h2><label>行政區篩選</label><select onchange="filterGlobalRegion(this.value)">'+regionOptions+'</select><div class="muted" style="margin-top:8px">目前顯示 '+schools.length+' / '+Number(d.schoolCount||0)+' 所學校</div></div>'+schools.map(schoolCard).join("")+createBox();
+    return '<div class="card hero">'+(sessionStorage.getItem("school_context_id")?'<button class="secondary" style="margin:0 0 10px" onclick="returnToGlobalTenant()">← 返回 Global 觀察模式</button>':'')+'<h2>🌐 Global 管理中心</h2><div class="notice"><b>Global 帳號預設為跨校觀察角色</b><br>未綁定任何學校時，只查看各校出缺勤與老師狀態；綁定為特定學校 School Admin 後，才可進入該校後台。</div><div class="grid" style="margin-top:12px"><div class="kpi"><b>'+Number(d.schoolCount||0)+'</b><span>加入學校</span></div><div class="kpi"><b>'+Number(d.totals?.teachers||0)+'</b><span>啟用老師</span></div><div class="kpi"><b>'+Number(d.totals?.todayAttendanceRecords||0)+'</b><span>今日點名紀錄</span></div><div class="kpi"><b>'+managed+'</b><span>我管理的學校</span></div></div></div>'+globalBrandingBox()+'<div class="card"><h2>🏫 學校清單</h2><label>行政區篩選</label><select onchange="filterGlobalRegion(this.value)">'+regionOptions+'</select><div class="muted" style="margin-top:8px">目前顯示 '+schools.length+' / '+Number(d.schoolCount||0)+' 所學校</div></div>'+schools.map(schoolCard).join("")+createBox();
   }
   function draw(){if(state.page==="global"&&canGlobal()){const a=document.getElementById("app");if(a){a.innerHTML=shell(page());setTimeout(()=>window.updateTenantIdPreview?.(),0)}}}
   window.openGlobalTenant=async function(){if(!canGlobal())return;state.page="global";draw();await loadGlobal(true)};
