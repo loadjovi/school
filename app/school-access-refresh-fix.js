@@ -11,7 +11,7 @@
     if(resolved||running)return;
     if(typeof state==="undefined"||!state.me)return;
 
-    if(state.me.role==="admin"||state.me.role==="school"){
+    if(["admin","school","globalAdmin","tenantPending"].includes(state.me.role)){
       resolved=true;
       return;
     }
