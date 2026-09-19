@@ -7,7 +7,7 @@ import { ensureTables, table } from "../lib/storage.js";
 
 const SCHEMA_VERSION=1;
 const LOGICAL_TABLES=[
-  ["PracticeLog","practice"],["SectionAttendance","section"],["EnsembleAttendance","ensemble"],["ComprehensiveAttendance","comprehensive"],["PrivateLesson","privateLesson"],["StudentRegistration","registrations"],["UserStudentMap","userStudentMap"],["StudentMaster","studentMaster"],["StudentHistory","studentHistory"],["SemesterEnrollment","semesterEnrollment"],["TeacherDirectory","teacherDirectory"],["TeacherProfile","teacherProfile"],["AcademicYearBatch","academicYearBatch"]
+  ["PracticeLog","practice"],["SectionAttendance","section"],["EnsembleAttendance","ensemble"],["ComprehensiveAttendance","comprehensive"],["PrivateLesson","privateLesson"],["StudentRegistration","registrations"],["UserStudentMap","userStudentMap"],["StudentMaster","studentMaster"],["StudentHistory","studentHistory"],["SemesterEnrollment","semesterEnrollment"],["TeacherDirectory","teacherDirectory"],["TeacherProfile","teacherProfile"],["AcademicYearBatch","academicYearBatch"],["TenantDirectory","tenantDirectory"],["TenantUserRole","tenantUserRole"],["GlobalAuditLog","globalAuditLog"]
 ];
 const SETTINGS_TABLE=()=>process.env.SYSTEM_SETTINGS_TABLE||"SystemSettings";
 const BRANDING_CONTAINER=()=>process.env.BRANDING_BLOB_CONTAINER||"branding";
