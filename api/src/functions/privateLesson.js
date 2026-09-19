@@ -39,6 +39,7 @@ function view(e,teacherNameOverride=""){
     teacherRating:Number(e.teacherRating||0),teacherReview:String(e.teacherReview||""),teacherRatedAt:String(e.teacherRatedAt||""),teacherRatedBy:String(e.teacherRatedBy||""),
     emailNotificationStatus:String(e.emailNotificationStatus||""),emailNotificationAt:String(e.emailNotificationAt||""),emailNotificationRecipients:Number(e.emailNotificationRecipients||0),emailNotificationSentCount:Number(e.emailNotificationSentCount||0),emailNotificationFailedCount:Number(e.emailNotificationFailedCount||0),
     emailNotificationResendCount:Number(e.emailNotificationResendCount||0),emailNotificationLastResentAt:String(e.emailNotificationLastResentAt||""),emailNotificationLastResentBy:String(e.emailNotificationLastResentBy||""),
+    cancelledAt:String(e.cancelledAt||""),cancelledBy:String(e.cancelledBy||""),cancelReason:String(e.cancelReason||""),
     createdAt:String(e.createdAt||"")
   };
 }
@@ -126,6 +127,29 @@ app.http("privateLesson",{
       const body=await request.json(),studentId=clean(body.studentId,120),lessonId=clean(body.lessonId,180),action=clean(body.action,30).toLowerCase();
       if(!studentId||!lessonId)return json({error:"缺少 studentId 或 lessonId"},400);
       const entity=await findLesson(studentId,lessonId);if(!entity)return json({error:"找不到個別課紀錄"},404);
+
+      if(action==="cancel_lesson"){
+        if(!(a.role==="admin"||a.capabilities?.private))return json({error:"只有管理員或個別課老師可以取消誤登記個課"},403);
+        if(a.role!=="admin"){
+          if(!ensurePrivateAccess(a,studentId))return json({error:"此老師未綁定該學生的個別課權限"},403);
+          if(String(entity.teacher||"").toLowerCase()!==String(a.email||"").toLowerCase())return json({error:"只能取消自己建立的個別課紀錄"},403);
+          if(String(entity.parentConfirmation||"")==="confirmed")return json({error:"家長已確認此筆個別課，請由學校管理員處理"},409);
+        }
+        if(String(entity.status||"")==="cancelled"){
+          const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName);
+          return json({ok:true,item:view(entity,teacherName)});
+        }
+        const now=new Date().toISOString();
+        entity.status="cancelled";
+        entity.parentConfirmation="not_required";
+        entity.cancelledAt=now;
+        entity.cancelledBy=a.email;
+        entity.cancelReason=clean(body.reason||"誤登記個別課",300);
+        entity.updatedAt=now;
+        await table("privateLesson").updateEntity(entity,"Merge");
+        const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName);
+        return json({ok:true,item:view(entity,teacherName)});
+      }
 
       if(action==="resend_email"){
         if(!(a.role==="admin"||a.capabilities?.private))return json({error:"只有管理員或個別課老師可以重寄確認 Email"},403);
@@ -216,15 +240,22 @@ app.http("privateLesson",{
     const teacherKey=String(a.email||"").trim().toLowerCase();
     const sessionId=[canonicalStudentId,lessonDate,startTime,endTime,teacherKey].join("|");
 
-    // Same student + same date/time + same teacher is one teaching session.
-    // Prevent accidental duplicate creates while still allowing multiple lessons on the same day at different times.
+    // Business rule: the same teacher may teach many students in one day,
+    // but the same teacher + same student may only have one active private lesson per day.
     const sameDay=await rowsForStudent(canonicalStudentId,lessonDate,lessonDate);
     const duplicate=sameDay.find(r=>
       String(r.status||"")!=="cancelled"&&
-      String(r.teacher||"").trim().toLowerCase()===teacherKey&&
-      String(r.startTime||"")===startTime&&String(r.endTime||"")===endTime
+      String(r.teacher||"").trim().toLowerCase()===teacherKey
     );
-    if(duplicate)return json({error:"這位學生在相同日期、時間與老師下已存在個別課紀錄，請勿重複建立"},409);
+    if(duplicate){
+      const oldTime=[String(duplicate.startTime||""),String(duplicate.endTime||"")].filter(Boolean).join("～");
+      return json({
+        error:`這位學生今天已由同一位老師登記過個別課${oldTime?`（${oldTime}）`:""}。同一學生、同一老師、同一天只能有一堂個別課；若原紀錄有誤，請先取消誤登記紀錄再重新建立。`,
+        existingLessonId:String(duplicate.rowKey||""),
+        existingStartTime:String(duplicate.startTime||""),
+        existingEndTime:String(duplicate.endTime||"")
+      },409);
+    }
 
     const lessonId=rowKey("i");
     const entity={
@@ -234,7 +265,8 @@ app.http("privateLesson",{
       teacherRating:0,teacherReview:"",teacherRatedAt:"",teacherRatedBy:"",
       createdAt:now,updatedAt:now,
       emailNotificationStatus:confirmation==="pending"?"pending":"not_required",emailNotificationAt:"",emailNotificationRecipients:0,emailNotificationSentCount:0,emailNotificationFailedCount:0,
-      emailNotificationResendCount:0,emailNotificationLastResentAt:"",emailNotificationLastResentBy:""
+      emailNotificationResendCount:0,emailNotificationLastResentAt:"",emailNotificationLastResentBy:"",
+      cancelledAt:"",cancelledBy:"",cancelReason:""
     };
     await table("privateLesson").createEntity(entity);
 
