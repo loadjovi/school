@@ -1,9 +1,10 @@
 import { app } from "@azure/functions";
 import { getAccess, json, parseJsonEnv } from "../lib/auth.js";
-import { touchTeacherLastLogin, listTenantRolesByEmail, getTenantDirectory, getTeacherDirectory, getMappedStudentsByEmail, defaultTenantId } from "../lib/storage.js";
+import { touchTeacherLastLogin, listTenantRolesByEmail, getTenantDirectory, getTeacherDirectory, getMappedStudentsByEmail, defaultTenantId, saveUserIdentity } from "../lib/storage.js";
 app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(request)=>{
   const a=await getAccess(request);
   if(!a.authenticated)return json({error:"Unauthorized"},401);
+  try{await saveUserIdentity(a)}catch(e){console.warn("user identity registry update failed",e)}
 
   const contexts=[];
   const seen=new Set();
