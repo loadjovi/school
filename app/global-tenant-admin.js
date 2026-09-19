@@ -131,7 +131,16 @@
     return baseNav();
   };
   const bg=go;go=async function(p){if(p==="global"&&canGlobal()){await openGlobalTenant();return}return bg(p)};
-  const br=render;render=function(){if(state.page==="global"&&canGlobal()){draw();return}const r=br();if(canGlobal()&&state.page==="admin")setTimeout(mountEntry,0);return r};
+  const br=render;render=function(){
+    if(state.page==="global"&&canGlobal()){
+      draw();
+      if(!state.globalTenant.loaded&&!state.globalTenant.loading)setTimeout(()=>loadGlobal(false),0);
+      return;
+    }
+    const r=br();
+    if(canGlobal()&&state.page==="admin")setTimeout(mountEntry,0);
+    return r
+  };
   const bh=typeof home==="function"?home:null;
   if(bh)home=function(){if(state.me?.role==="tenantPending")return '<div class="card hero"><h2>🏫 '+esc(state.me.schoolName||"學校")+'｜系統建置中</h2><div class="notice">您的 School Admin 權限已建立，但此學校尚未完成多租戶資料隔離，因此暫不開放營運後台。這項保護可避免看到其他學校資料。</div></div>';return bh()};
   if(state.me?.role==="globalAdmin"&&canGlobal()&&state.page!=="contextSelect")setTimeout(()=>window.openGlobalTenant(),0);
