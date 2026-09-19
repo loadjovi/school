@@ -88,16 +88,19 @@ app.http("tenantAdmins",{
 });
 
 async function countTodayRows(key,date){
-  // Keep the Global dashboard aligned with the school daily-followup view:
-  // one effective/latest attendance row per student + course scope.
-  // Azure Table keeps older revisions, so raw entity counts can otherwise over-count.
+  // Keep the Global dashboard aligned with the school daily-followup view.
+  // Group/section/comprehensive attendance keeps one effective latest row per student/course scope.
+  // Private lessons are separate sessions: each lessonId/sessionId counts independently.
   const latest=new Map();
   const classType=key==="ensemble"?"ensemble":key==="comprehensive"?"comprehensive":key==="privateLesson"?"private":"section";
   for await(const e of table(key).listEntities({queryOptions:{filter:`eventDate eq '${safe(date)}'`}})){
     const studentId=String(e.partitionKey||"");
     const groupName=String(e.groupName||"");
     const section=String(e.section||"");
-    const dedupeKey=[studentId,date,classType,groupName,section].join("|");
+    const sessionId=String(e.sessionId||e.lessonId||e.rowKey||"");
+    const dedupeKey=key==="privateLesson"
+      ?[studentId,date,classType,sessionId].join("|")
+      :[studentId,date,classType,groupName,section].join("|");
     const stamp=`${String(e.createdAt||"")}|${String(e.rowKey||"")}`;
     const old=latest.get(dedupeKey);
     const oldStamp=old?`${String(old.createdAt||"")}|${String(old.rowKey||"")}`:"";
