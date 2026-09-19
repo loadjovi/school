@@ -30,6 +30,30 @@
     const s=(state.students||[]).find(x=>String(x.studentId)===String(id));
     return s?.name||id;
   }
+  function lessonDomKey(id){return String(id||"").replace(/[^a-zA-Z0-9_-]/g,"_")}
+  function ratingStars(value){
+    const n=Math.max(0,Math.min(5,Number(value||0)));
+    return "★".repeat(n)+"☆".repeat(5-n);
+  }
+  function parentReviewControls(x){
+    if(x.parentConfirmation!=="pending")return "";
+    const k=lessonDomKey(x.lessonId),rating=Number(x.teacherRating||0);
+    let stars="";
+    for(let n=1;n<=5;n++)stars+='<button type="button" data-star-rating="'+esc(k)+'" data-star-value="'+n+'" onclick="setPrivateLessonRating(\''+esc(x.lessonId)+'\','+n+')" style="border:0;background:transparent;padding:2px;font-size:30px;line-height:1;color:#d5a100;cursor:pointer">'+(n<=rating?"★":"☆")+'</button>';
+    return '<div class="notice" style="margin-top:10px"><b>⭐ 師資評價（選填）</b><br><span class="muted">可用 1～5 顆星評價本次教學，並留下教學評論；資料將提供學校後台做師資品質與成就統計。</span>'+
+      '<input id="rating_'+esc(k)+'" type="hidden" value="'+rating+'"><div style="display:flex;align-items:center;gap:4px;margin:8px 0">'+stars+
+      '<button type="button" class="secondary" style="margin:0 0 0 8px;padding:6px 9px" onclick="setPrivateLessonRating(\''+esc(x.lessonId)+'\',0)">清除</button></div>'+
+      '<label>老師教學評論／家長備註（選填）</label><textarea id="review_'+esc(k)+'" rows="2" maxlength="800" placeholder="例：老師說明清楚、孩子容易理解；或提供希望加強的方向">'+esc(x.teacherReview||"")+'</textarea>'+
+      '<div class="row2" style="margin-top:10px"><button class="primary" style="margin-top:0" onclick="confirmPrivateLesson(\''+esc(x.lessonId)+'\',\'confirmed\')">✅ 確認本次個別課</button>'+
+      '<button class="secondary" style="margin-top:0" onclick="confirmPrivateLesson(\''+esc(x.lessonId)+'\',\'issue\')">⚠️ 回報問題</button></div></div>';
+  }
+  function parentLessonRow(x){
+    const rating=Number(x.teacherRating||0);
+    const review=x.teacherReview?'<br>家長評論：'+esc(x.teacherReview):"";
+    const rated=rating?'<br>師資評價：<span style="color:#d5a100;font-weight:900">'+ratingStars(rating)+'</span> '+rating+'/5':"";
+    return '<div class="item" style="display:block"><div class="student"><div><b>'+esc(x.lessonDate)+'｜'+esc(x.startTime||"")+'～'+esc(x.endTime||"")+'</b><small>'+esc(teacherLabel(x))+'｜'+Number(x.minutes||0)+' 分鐘'+(x.lessonContent?'<br>內容：'+esc(x.lessonContent):"")+rated+review+'</small></div><span class="badge '+(confirmClass[x.parentConfirmation]||"")+'">'+esc(confirmText[x.parentConfirmation]||x.parentConfirmation)+'</span></div>'+parentReviewControls(x)+'</div>';
+  }
+
   async function loadPrivateLessons(){
     try{
       if(state.me?.role==="parent"&&state.student?.studentId){
