@@ -118,6 +118,7 @@
       const k=lessonDomKey(lessonId);
       teacherRating=Number(document.getElementById("rating_"+k)?.value||0);
       teacherReview=String(document.getElementById("review_"+k)?.value||"").trim();
+      if(teacherReview&&!teacherRating){toast("請先選擇 1～5 顆星，再送出老師教學評論");return}
     }
     try{
       await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId:state.student.studentId,lessonId,action,note,teacherRating,teacherReview})});
