@@ -1,10 +1,12 @@
 (()=>{
   const DEFAULTS={siteName:"聖心小學弦樂團",schoolName:"輔大聖心國小",loginSubtitle:"家長、老師與管理員共用入口",logoAlt:"聖心 Logo",primaryColor:"#245C49",logoUrl:"/api/branding-logo?v=default",updatedAt:""};
+  const GLOBAL_DEFAULTS={siteName:"校務整合平台",schoolName:"Global 管理中心",loginSubtitle:"跨校營運、權限與服務治理",logoAlt:"Global Logo",primaryColor:"#3155A4",logoUrl:"/api/global-branding-logo?v=default",updatedAt:""};
   state.branding={...DEFAULTS,...(state.branding||{})};
+  state.globalBranding={...GLOBAL_DEFAULTS,...(state.globalBranding||{})};
   state.brandingAdmin=state.brandingAdmin||{loading:false,error:""};
   let selectedLogoFile=null,previewObjectUrl="";
 
-  function brand(){return {...DEFAULTS,...(state.branding||{})}}
+  function brand(){return state.me?.role==="globalAdmin"?{...GLOBAL_DEFAULTS,...(state.globalBranding||{})}:{...DEFAULTS,...(state.branding||{})}}
   function hexRgb(hex){
     const m=/^#([0-9a-f]{6})$/i.exec(String(hex||""));if(!m)return null;
     const n=parseInt(m[1],16);return [(n>>16)&255,(n>>8)&255,n&255];
@@ -41,6 +43,8 @@
     applyTheme();patchLogin();return state.branding;
   }
   window.reloadBranding=loadBranding;
+  window.applyActiveBranding=function(){applyTheme();return brand()};
+  window.setGlobalBranding=function(v){state.globalBranding={...GLOBAL_DEFAULTS,...(v||{})};applyTheme();return state.globalBranding};
   window.previewBrandingColor=function(value){
     if(!/^#[0-9A-Fa-f]{6}$/.test(String(value||"")))return;
     state.branding={...brand(),primaryColor:value};applyTheme();
