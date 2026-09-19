@@ -107,6 +107,14 @@
     }
   },250);
 
+  if(!document.querySelector('script[data-global-tenant-admin="1"]')){
+    const s=document.createElement("script");
+    s.src="/global-tenant-admin.js?v=20260919-1105";
+    s.defer=true;
+    s.dataset.globalTenantAdmin="1";
+    document.body.appendChild(s);
+  }
+
   window.addEventListener("pageshow",scheduleCheck);
   window.addEventListener("online",scheduleCheck);
   document.addEventListener("visibilitychange",()=>{
