@@ -16,7 +16,7 @@
   const slug=v=>String(v||"").trim().toLowerCase().replace(/[^a-z0-9-]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"").slice(0,40);
   const cityName=code=>(cities.find(x=>x[0]===code)||[])[1]||code;
   const levelName=code=>(levels.find(x=>x[0]===code)||[])[1]||code;
-  const schoolIdPreview=()=>[document.getElementById("newTenantCity")?.value,slug(document.getElementById("newTenantSlug")?.value),document.getElementById("newTenantLevel")?.value].filter(Boolean).join("-");
+  const schoolIdPreview=()=>{const s=slug(document.getElementById("newTenantSlug")?.value);if(!s)return "";return [document.getElementById("newTenantCity")?.value,s,document.getElementById("newTenantLevel")?.value].filter(Boolean).join("-")};
 
 
   async function loadAdmins(sid){
@@ -54,7 +54,7 @@
     const levelOpts=levels.map(x=>'<option value="'+esc(x[0])+'">'+esc(x[1])+'</option>').join("");
     return '<div class="card"><h2>➕ 新增學校 Tenant</h2><div class="notice">選擇縣市與學制後，只需要輸入英文校名識別碼。系統會自動產生唯一 schoolId，降低人工輸入錯誤。<br><br>例如：基隆市＋忠義＋國小 → <b>keelung-zhongyi-elementary</b></div>'+
       '<div class="row2"><div><label>縣市／行政區</label><select id="newTenantCity" onchange="updateTenantIdPreview()">'+cityOpts+'</select></div><div><label>學制</label><select id="newTenantLevel" onchange="updateTenantIdPreview()">'+levelOpts+'</select></div></div>'+
-      '<label>英文校名識別碼</label><input id="newTenantSlug" placeholder="例：zhongyi" oninput="updateTenantIdPreview()"><div class="notice" style="margin-top:8px"><b>系統產生 schoolId</b><br><span id="newTenantIdPreview">keelung--elementary</span></div>'+
+      '<label>英文校名識別碼</label><input id="newTenantSlug" placeholder="例：zhongyi" oninput="updateTenantIdPreview()"><div class="notice" style="margin-top:8px"><b>系統產生 schoolId</b><br><span id="newTenantIdPreview">請輸入英文校名識別碼</span></div>'+
       '<label>學校名稱</label><input id="newTenantName" placeholder="例：忠義國小"><div class="row2"><div><label>簡稱</label><input id="newTenantShort" placeholder="忠義"></div><div><label>系統名稱</label><input id="newTenantSystem" placeholder="忠義國小弦樂團"></div></div><button class="primary" onclick="createSchoolTenant()">建立學校 Tenant</button></div>';
   }
   function page(){
