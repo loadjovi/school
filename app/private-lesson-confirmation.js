@@ -16,7 +16,8 @@
     if(!label)return "";
     const total=Number(x?.emailNotificationRecipients||0),rawSent=Number(x?.emailNotificationSentCount||0),failed=Number(x?.emailNotificationFailedCount||0),sent=(x?.emailNotificationStatus==="sent"&&total&&rawSent===0)?total:rawSent,at=fmtEmailAt(x?.emailNotificationAt);
     const counts=total?(`｜家長 ${sent}/${total} 位${failed?`（失敗 ${failed}）`:""}`):"";
-    return `📩 ${label}${counts}${at?`｜${at}`:""}`;
+    const resend=Number(x?.emailNotificationResendCount||0);
+    return `📩 ${label}${counts}${at?`｜${at}`:""}${resend?`｜已重寄 ${resend} 次`:""}`;
   }
 
   function teacherAccount(){return state.me?.role!=="admin"&&!!state.me?.capabilities?.private}
@@ -43,7 +44,7 @@
 
   function teacherHistoryHtml(){
     const recent=(state.privateLessons||[]).slice(0,20);
-    return recent.length?recent.map(x=>`<div class="item"><div><b>${esc(currentStudentName(x.studentId))}｜${esc(x.lessonDate)}</b><small>${esc(x.startTime||"")}～${esc(x.endTime||"")}｜${Number(x.minutes||0)} 分鐘｜${esc(statusText[x.status]||x.status)}${emailStatusLine(x)?`<br>${esc(emailStatusLine(x))}`:""}${x.parentNote?`<br>家長：${esc(x.parentNote)}`:""}</small></div><span class="badge ${confirmClass[x.parentConfirmation]||""}">${esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>`).join(""):`<div class="notice">目前尚無個別課紀錄。</div>`;
+    return recent.length?recent.map(x=>`<div class="item" style="display:block"><div class="student"><div><b>${esc(currentStudentName(x.studentId))}｜${esc(x.lessonDate)}</b><small>${esc(x.startTime||"")}～${esc(x.endTime||"")}｜${Number(x.minutes||0)} 分鐘｜${esc(statusText[x.status]||x.status)}${emailStatusLine(x)?`<br>${esc(emailStatusLine(x))}`:""}${x.parentNote?`<br>家長：${esc(x.parentNote)}`:""}</small></div><span class="badge ${confirmClass[x.parentConfirmation]||""}">${esc(confirmText[x.parentConfirmation]||x.parentConfirmation)}</span></div>${x.parentConfirmation==="pending"?`<button class="secondary" style="width:100%;margin-top:10px" onclick="resendPrivateLessonEmail('${esc(x.studentId)}','${esc(x.lessonId)}','teacher')">📨 重寄確認 Email</button>`:""}</div>`).join(""):`<div class="notice">目前尚無個別課紀錄。</div>`;
   }
 
   function startTeacherPoll(){
@@ -58,6 +59,24 @@
   }
 
   window.reloadPrivateLessons=async function(){await loadPrivateLessons();const box=document.getElementById("privateConfirmList");if(box)box.innerHTML=teacherHistoryHtml();else render();toast("已更新個別課確認狀態")};
+
+  window.resendPrivateLessonEmail=async function(studentId,lessonId,source="teacher"){
+    if(!studentId||!lessonId)return;
+    const who=currentStudentName(studentId);
+    if(!confirm(`確定重寄「${who}」這筆個別課確認 Email？\n\n系統會寄給目前已綁定此學生的所有家長 Gmail。`))return;
+    try{
+      const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"resend_email"})});
+      const m=r.emailNotification||{};
+      if(m.status==="sent")toast(`✅ 已重寄確認 Email 給 ${m.sentCount||m.recipientCount||1} 位家長`);
+      else if(m.status==="partial")toast("⚠️ 已重寄，但部分家長 Email 寄送失敗");
+      else if(m.status==="no_recipients")toast("⚠️ 此學生目前沒有已綁定的家長 Gmail");
+      else if(m.status==="not_configured")toast("⚠️ Azure Email 尚未完成設定");
+      else if(m.status==="disabled")toast("⏸️ 後台目前已關閉個別課 Email 通知");
+      else toast("❌ Email 重寄失敗");
+      if(source==="admin"&&typeof refreshAdminFollowup==="function")await refreshAdminFollowup();
+      else {await loadPrivateLessons();const box=document.getElementById("privateConfirmList");if(box)box.innerHTML=teacherHistoryHtml();else render()}
+    }catch(e){toast("❌ "+e.message)}
+  };
 
   window.confirmPrivateLesson=async function(lessonId,action){
     if(state.me?.role!=="parent"||!state.student)return;
