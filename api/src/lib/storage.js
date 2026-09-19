@@ -15,23 +15,41 @@ const names={
   teacherDirectory:process.env.TEACHER_DIRECTORY_TABLE||"TeacherDirectory",
   teacherProfile:process.env.TEACHER_PROFILE_TABLE||"TeacherProfile",
   academicYearBatch:process.env.ACADEMIC_YEAR_BATCH_TABLE||"AcademicYearBatch",
+  tenantPractice:process.env.TENANT_PRACTICE_TABLE||"TenantPracticeLog",
+  tenantSection:process.env.TENANT_SECTION_TABLE||"TenantSectionAttendance",
+  tenantEnsemble:process.env.TENANT_ENSEMBLE_TABLE||"TenantEnsembleAttendance",
+  tenantComprehensive:process.env.TENANT_COMPREHENSIVE_TABLE||"TenantComprehensiveAttendance",
+  tenantPrivateLesson:process.env.TENANT_PRIVATE_TABLE||"TenantPrivateLesson",
+  tenantRegistrations:process.env.TENANT_STUDENT_REGISTRATION_TABLE||"TenantStudentRegistration",
+  tenantUserStudentMap:process.env.TENANT_USER_STUDENT_MAP_TABLE||"TenantUserStudentMap",
+  tenantStudentMaster:process.env.TENANT_STUDENT_MASTER_TABLE||"TenantStudentMaster",
+  tenantStudentHistory:process.env.TENANT_STUDENT_HISTORY_TABLE||"TenantStudentHistory",
+  tenantSemesterEnrollment:process.env.TENANT_SEMESTER_ENROLLMENT_TABLE||"TenantSemesterEnrollment",
+  tenantTeacherDirectory:process.env.TENANT_TEACHER_DIRECTORY_TABLE||"TenantTeacherDirectory",
+  tenantTeacherProfile:process.env.TENANT_TEACHER_PROFILE_TABLE||"TenantTeacherProfile",
+  tenantAcademicYearBatch:process.env.TENANT_ACADEMIC_YEAR_BATCH_TABLE||"TenantAcademicYearBatch",
   tenantDirectory:process.env.TENANT_DIRECTORY_TABLE||"TenantDirectory",
   tenantUserRole:process.env.TENANT_USER_ROLE_TABLE||"TenantUserRole",
+  tenantMigration:process.env.TENANT_MIGRATION_TABLE||"TenantMigration",
   globalAuditLog:process.env.GLOBAL_AUDIT_LOG_TABLE||"GlobalAuditLog",
   userIdentity:process.env.USER_IDENTITY_TABLE||"UserIdentity"
 };
+const tenantDataKeys=["tenantPractice","tenantSection","tenantEnsemble","tenantComprehensive","tenantPrivateLesson","tenantRegistrations","tenantUserStudentMap","tenantStudentMaster","tenantStudentHistory","tenantSemesterEnrollment","tenantTeacherDirectory","tenantTeacherProfile","tenantAcademicYearBatch","tenantMigration"];
 
-let initialized=false;
+let initialized=false,tenantInitialized=false;
+
+async function createTables(keys){
+  if(!conn())throw new Error("STORAGE_CONNECTION_STRING 未設定");
+  const service=TableServiceClient.fromConnectionString(conn());
+  for(const key of keys){try{await service.createTable(names[key])}catch(e){if(e.statusCode!==409)throw e}}
+}
 
 export async function ensureTables(){
   if(initialized)return;
-  if(!conn())throw new Error("STORAGE_CONNECTION_STRING 未設定");
-  const service=TableServiceClient.fromConnectionString(conn());
-  for(const name of Object.values(names)){
-    try{await service.createTable(name)}catch(e){if(e.statusCode!==409)throw e}
-  }
+  await createTables(Object.keys(names).filter(key=>!tenantDataKeys.includes(key)));
   initialized=true;
 }
+export async function ensureTenantTables(){if(tenantInitialized)return;await ensureTables();await createTables(tenantDataKeys);tenantInitialized=true}
 
 export function table(key){return TableClient.fromConnectionString(conn(),names[key]);}
 export function rowKey(prefix="r"){const iso=new Date().toISOString().replace(/[-:.TZ]/g,"");const rand=Math.random().toString(36).slice(2,10);return `${prefix}_${iso}_${rand}`;}
@@ -63,6 +81,10 @@ export async function listRegistrations(status=""){await ensureTables();const it
 const DEFAULT_TENANT_ID="sacred-heart";
 export function defaultTenantId(){return DEFAULT_TENANT_ID}
 export function tenantIdValue(v){return String(v||"").trim().toLowerCase().replace(/[^a-z0-9-]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"").slice(0,60)}
+export function tenantSchoolPartition(schoolId){const id=tenantIdValue(schoolId);if(!id)throw new Error("schoolId 不可空白");return id}
+export function tenantStudentPartition(schoolId,studentId){const id=tenantSchoolPartition(schoolId),student=String(studentId||"").trim();if(!student)throw new Error("studentId 不可空白");return `${id}|student|${student}`}
+export function tenantParentPartition(schoolId,email){const id=tenantSchoolPartition(schoolId),parent=teacherEmail(email);if(!parent)throw new Error("家長 Email 不可空白");return `${id}|parent|${parent}`}
+export function tenantTermPartition(schoolId,schoolYear,semester){const id=tenantSchoolPartition(schoolId),term=semesterKey(schoolYear,semester);if(term==="-")throw new Error("學年度與學期不可空白");return `${id}|term|${term}`}
 
 export async function ensureDefaultTenant(updatedBy="system"){
   await ensureTables();

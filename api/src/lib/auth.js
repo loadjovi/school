@@ -1,5 +1,5 @@
 import { OAuth2Client } from "google-auth-library";
-import { getMappedStudentsByEmail, listStudentMaster, getTeacherProfile, getTeacherDirectory, listUserStudentMappings, ensureDefaultTenant, ensureBootstrapGlobalAdmin, listTenantRolesByEmail, getTenantDirectory, defaultTenantId } from "./storage.js";
+import { getMappedStudentsByEmail, listStudentMaster, getTeacherProfile, getTeacherDirectory, listUserStudentMappings, ensureDefaultTenant, ensureBootstrapGlobalAdmin, listTenantRolesByEmail, getTenantDirectory, defaultTenantId, tenantIdValue } from "./storage.js";
 
 const googleClient = new OAuth2Client();
 let aliasCache=null,aliasCacheAt=0;
@@ -331,6 +331,23 @@ export async function getAccess(request){
     if(dynamicStudents.length)return {authenticated:true,...identity,role:"parent",schoolId:defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),students:await canonicalizeStudents(dynamicStudents)};
   }
   return {authenticated:true,...identity,role:requestedContext?"contextDenied":"unassigned",schoolId:requestedSchoolId||defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),capabilities:requestedContext?{contextDenied:true}:{}};
+}
+
+export async function getTenantContext(request,{requireActive=true}={}){
+  const access=await getAccess(request);
+  if(!access.authenticated)return {access,error:json({error:"Unauthorized"},401)};
+  if(access.role==="contextDenied")return {access,error:json({error:"無權使用指定的學校情境"},403)};
+  if(access.role==="globalAdmin")return {access,error:json({error:"請先切換至已授權的 School Admin 情境"},403)};
+  if(access.role==="tenantPending")return {access,error:json({error:"此學校仍在建置中，尚未開放營運資料"},403)};
+  if(access.role==="unassigned")return {access,error:json({error:"帳號尚未取得學校權限"},403)};
+  const schoolRoles=new Set(["admin","teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher","parent"]);
+  if(!schoolRoles.has(access.role))return {access,error:json({error:"此角色不可存取學校營運資料"},403)};
+  const schoolId=tenantIdValue(access.schoolId);
+  if(!schoolId)return {access,error:json({error:"登入權限缺少 schoolId"},403)};
+  const tenant=await getTenantDirectory(schoolId);
+  if(!tenant)return {access,error:json({error:"登入權限所屬學校不存在"},403)};
+  if(requireActive&&String(tenant.status||"")!=="active")return {access,error:json({error:"此學校尚未啟用"},403)};
+  return {access,schoolId,tenant,error:null};
 }
 
 export function json(body,status=200){return {status,jsonBody:body,headers:{"Content-Type":"application/json; charset=utf-8"}}}

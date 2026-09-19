@@ -5,7 +5,8 @@
     StudentRegistration:"家長申請",TeacherDirectory:"老師帳號",TeacherProfile:"老師權限",
     PracticeLog:"自主練習",SectionAttendance:"分部課",EnsembleAttendance:"合奏課",
     ComprehensiveAttendance:"綜合課",PrivateLesson:"個別課",StudentHistory:"學生異動歷史",
-    AcademicYearBatch:"學年度批次紀錄",TenantDirectory:"學校租戶",TenantUserRole:"租戶權限",GlobalAuditLog:"Global稽核",UserIdentity:"使用者身分",SystemSettings:"系統設定"
+    AcademicYearBatch:"學年度批次紀錄",TenantPracticeLog:"Tenant 自主練習",TenantSectionAttendance:"Tenant 分部課",TenantEnsembleAttendance:"Tenant 合奏課",TenantComprehensiveAttendance:"Tenant 綜合課",TenantPrivateLesson:"Tenant 個別課",
+    TenantStudentRegistration:"Tenant 家長申請",TenantUserStudentMap:"Tenant 家長綁定",TenantStudentMaster:"Tenant 學生主檔",TenantStudentHistory:"Tenant 學生歷史",TenantSemesterEnrollment:"Tenant 學期名單",TenantTeacherDirectory:"Tenant 老師帳號",TenantTeacherProfile:"Tenant 老師權限",TenantAcademicYearBatch:"Tenant 學年度批次",TenantDirectory:"學校租戶",TenantUserRole:"租戶權限",TenantMigration:"Tenant 遷移狀態",GlobalAuditLog:"Global稽核",UserIdentity:"使用者身分",SystemSettings:"系統設定"
   };
   function filenameStamp(){const d=new Date(),p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`}
   function downloadJson(name,data){
