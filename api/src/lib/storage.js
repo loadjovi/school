@@ -99,7 +99,7 @@ export async function saveTenantDirectory(schoolId,data={},updatedBy=""){
     schoolName:String(data.schoolName??old?.schoolName??"").trim().slice(0,120),
     shortName:String(data.shortName??old?.shortName??"").trim().slice(0,60),
     systemName:String(data.systemName??old?.systemName??"").trim().slice(0,160),
-    status:String(data.status??old?.status??"active")==="inactive"?"inactive":"active",
+    status:["active","inactive","setup"].includes(String(data.status??old?.status??"setup"))?String(data.status??old?.status??"setup"):"setup",
     timezone:String(data.timezone??old?.timezone??"Asia/Taipei").trim().slice(0,80)||"Asia/Taipei",
     createdAt:old?.createdAt||now,updatedAt:now,updatedBy:String(updatedBy||"").slice(0,160)
   };
