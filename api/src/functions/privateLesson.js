@@ -213,9 +213,22 @@ app.http("privateLesson",{
     const alias=await getStudentAliasInfo(studentId),canonicalStudentId=alias.canonicalStudentId||studentId;
     const now=new Date().toISOString(),confirmation=["present","late"].includes(status)?"pending":"not_required";
     const teacherName=await resolvedTeacherName(a.email,a.displayName||a.email);
+    const teacherKey=String(a.email||"").trim().toLowerCase();
+    const sessionId=[canonicalStudentId,lessonDate,startTime,endTime,teacherKey].join("|");
+
+    // Same student + same date/time + same teacher is one teaching session.
+    // Prevent accidental duplicate creates while still allowing multiple lessons on the same day at different times.
+    const sameDay=await rowsForStudent(canonicalStudentId,lessonDate,lessonDate);
+    const duplicate=sameDay.find(r=>
+      String(r.status||"")!=="cancelled"&&
+      String(r.teacher||"").trim().toLowerCase()===teacherKey&&
+      String(r.startTime||"")===startTime&&String(r.endTime||"")===endTime
+    );
+    if(duplicate)return json({error:"這位學生在相同日期、時間與老師下已存在個別課紀錄，請勿重複建立"},409);
+
     const lessonId=rowKey("i");
     const entity={
-      partitionKey:canonicalStudentId,rowKey:lessonId,sessionId:lessonId,eventDate:lessonDate,startTime,endTime,status,minutes,
+      partitionKey:canonicalStudentId,rowKey:lessonId,sessionId,eventDate:lessonDate,startTime,endTime,status,minutes,
       lessonContent:clean(body.lessonContent,500),teacher:a.email,teacherName,
       parentConfirmation:confirmation,parentConfirmedAt:"",parentConfirmedBy:"",parentNote:"",
       teacherRating:0,teacherReview:"",teacherRatedAt:"",teacherRatedBy:"",
