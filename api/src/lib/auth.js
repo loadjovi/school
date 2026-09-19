@@ -255,14 +255,20 @@ export async function getAccess(request){
   const globalRole=tenantRoles.find(x=>x.role==="globalAdmin");
   const schoolRoles=tenantRoles.filter(x=>x.role==="schoolAdmin"&&x.schoolId&&x.schoolId!=="*");
   if(globalRole||schoolRoles.length){
-    const selected=schoolRoles.find(x=>x.schoolId===defaultId)||schoolRoles[0]||{schoolId:defaultId};
-    const tenant=await getTenantDirectory(selected.schoolId)||defaultTenant;
-    const memberships=[];
+    const memberships=[],activeRoles=[];
     for(const r of schoolRoles){
       const t=await getTenantDirectory(r.schoolId);
-      memberships.push({schoolId:r.schoolId,role:"schoolAdmin",schoolName:String(t?.schoolName||r.schoolId)});
+      const membership={schoolId:r.schoolId,role:"schoolAdmin",schoolName:String(t?.schoolName||r.schoolId),status:String(t?.status||"setup")};
+      memberships.push(membership);
+      if(membership.status==="active")activeRoles.push(r);
     }
-    return {authenticated:true,...identity,role:"admin",schoolId:String(selected.schoolId||defaultId),schoolName:String(tenant?.schoolName||"聖心小學"),systemName:String(tenant?.systemName||"聖心小學弦樂團"),memberships,capabilities:{admin:true,tenantAdmin:true,globalAdmin:!!globalRole}};
+    if(globalRole||activeRoles.length){
+      const selected=activeRoles.find(x=>x.schoolId===defaultId)||activeRoles[0]||{schoolId:defaultId};
+      const tenant=await getTenantDirectory(selected.schoolId)||defaultTenant;
+      return {authenticated:true,...identity,role:"admin",schoolId:String(selected.schoolId||defaultId),schoolName:String(tenant?.schoolName||"聖心小學"),systemName:String(tenant?.systemName||"聖心小學弦樂團"),memberships,capabilities:{admin:true,tenantAdmin:true,globalAdmin:!!globalRole}};
+    }
+    const pending=memberships[0]||{schoolId:defaultId,schoolName:"學校",status:"setup"};
+    return {authenticated:true,...identity,role:"tenantPending",schoolId:pending.schoolId,schoolName:pending.schoolName,systemName:pending.schoolName+" 管理系統",memberships,capabilities:{tenantPending:true}};
   }
 
   const directory=await getTeacherDirectory(email);
