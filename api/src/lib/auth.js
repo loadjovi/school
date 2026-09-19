@@ -245,14 +245,14 @@ export async function getAccess(request){
   let defaultTenant;
   try{defaultTenant=await ensureDefaultTenant(email)}catch(e){console.warn("tenant bootstrap failed",e?.message||String(e));defaultTenant={rowKey:defaultId,schoolName:"聖心小學",systemName:"聖心小學弦樂團"}}
 
-  if(admins.includes(email)){
+  const bootstrapGlobal=admins.includes(email);
+  if(bootstrapGlobal){
     try{await ensureBootstrapGlobalAdmin(email)}catch(e){console.warn("global admin bootstrap failed",e?.message||String(e))}
-    return {authenticated:true,...identity,role:"admin",schoolId:defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),memberships:[{schoolId:defaultId,role:"schoolAdmin",schoolName:String(defaultTenant.schoolName||"聖心小學")}],capabilities:{admin:true,tenantAdmin:true,globalAdmin:true}};
   }
 
   let tenantRoles=[];
   try{tenantRoles=await listTenantRolesByEmail(email,"active")}catch(e){console.warn("tenant role lookup failed",e?.message||String(e))}
-  const globalRole=tenantRoles.find(x=>x.role==="globalAdmin");
+  const globalRole=tenantRoles.find(x=>x.role==="globalAdmin")||(bootstrapGlobal?{role:"globalAdmin",schoolId:"*"}:null);
   const schoolRoles=tenantRoles.filter(x=>x.role==="schoolAdmin"&&x.schoolId&&x.schoolId!=="*");
   if(globalRole||schoolRoles.length){
     const memberships=[],activeRoles=[];
@@ -262,11 +262,24 @@ export async function getAccess(request){
       memberships.push(membership);
       if(membership.status==="active")activeRoles.push(r);
     }
-    if(globalRole||activeRoles.length){
-      const selected=activeRoles.find(x=>x.schoolId===defaultId)||activeRoles[0]||{schoolId:defaultId};
-      const tenant=await getTenantDirectory(selected.schoolId)||defaultTenant;
-      return {authenticated:true,...identity,role:"admin",schoolId:String(selected.schoolId||defaultId),schoolName:String(tenant?.schoolName||"聖心小學"),systemName:String(tenant?.systemName||"聖心小學弦樂團"),memberships,capabilities:{admin:true,tenantAdmin:true,globalAdmin:!!globalRole}};
+
+    const requestedSchoolId=String(request.headers.get("x-school-id")||"").trim().toLowerCase();
+    const selectedRole=requestedSchoolId?activeRoles.find(x=>String(x.schoolId)===requestedSchoolId):null;
+
+    if(globalRole){
+      if(selectedRole){
+        const tenant=await getTenantDirectory(selectedRole.schoolId)||defaultTenant;
+        return {authenticated:true,...identity,role:"admin",schoolId:String(selectedRole.schoolId),schoolName:String(tenant?.schoolName||selectedRole.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selectedRole.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,globalAdmin:true}};
+      }
+      return {authenticated:true,...identity,role:"globalAdmin",schoolId:null,schoolName:"",systemName:"Global 多校管理",memberships,capabilities:{globalAdmin:true,globalReadOnly:true}};
     }
+
+    if(activeRoles.length){
+      const selected=selectedRole||activeRoles.find(x=>x.schoolId===defaultId)||activeRoles[0];
+      const tenant=await getTenantDirectory(selected.schoolId)||defaultTenant;
+      return {authenticated:true,...identity,role:"admin",schoolId:String(selected.schoolId),schoolName:String(tenant?.schoolName||selected.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selected.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,globalAdmin:false}};
+    }
+
     const pending=memberships[0]||{schoolId:defaultId,schoolName:"學校",status:"setup"};
     return {authenticated:true,...identity,role:"tenantPending",schoolId:pending.schoolId,schoolName:pending.schoolName,systemName:pending.schoolName+" 管理系統",memberships,capabilities:{tenantPending:true}};
   }
