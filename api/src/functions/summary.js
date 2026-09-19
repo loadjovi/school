@@ -1,11 +1,26 @@
 import { app } from "@azure/functions";
 import { getAccess, ensureStudentAccess, getStudentIdAliases, json } from "../lib/auth.js";
-import { listByStudent } from "../lib/storage.js";
+import { listByStudent, getStudentMaster } from "../lib/storage.js";
+function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
+function latestForDate(rows,date){return [...(rows||[])].filter(x=>String(x.eventDate||"").slice(0,10)===date).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")))[0]||null}
+function todayCoursesFor(student,date,sectionRows,ensembleRows,comprehensiveRows){
+  const groupRaw=String(student?.groupName||""),group=groupRaw==="C"?"儲備":groupRaw;
+  const weekday=new Date(date+"T12:00:00+08:00").getDay();
+  const comprehensiveDates=new Set(["2026-09-18","2026-10-02","2026-10-16","2026-10-30","2026-11-20","2026-11-27","2026-12-04"]);
+  const courses=[];
+  const add=(key,label,time,rows)=>{const r=latestForDate(rows,date);courses.push({key,label,time,status:r?String(r.status||""):"",recorded:!!r})};
+  if(group==="A"&&(weekday===1||weekday===3))add("section","A團分部課","依分部課時段",sectionRows);
+  if(group==="B"&&(weekday===2||weekday===4))add("section","B團分部課","依分部課時段",sectionRows);
+  if(group==="儲備"&&weekday===5&&date>="2026-10-02")add("section","儲備團分部課","每週五｜10/2 起",sectionRows);
+  if(["A","B"].includes(group)&&weekday===2)add("ensemble","A、B團合奏課","12:30–13:20",ensembleRows);
+  if(["A","B","儲備"].includes(group)&&comprehensiveDates.has(date))add("comprehensive","弦樂團體課（綜合課）","08:45–10:15",comprehensiveRows);
+  return courses;
+}
 app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handler:async(request)=>{
   const a=await getAccess(request);if(!a.authenticated)return json({error:"Unauthorized"},401);
   const studentId=request.query.get("studentId"),month=request.query.get("month")||new Date().toISOString().slice(0,7);
   if(!studentId||!ensureStudentAccess(a,studentId))return json({error:"Forbidden"},403);
-  const start=`${month}-01`,end=`${month}-31`,aliases=await getStudentIdAliases(studentId);
+  const start=`${month}-01`,end=`${month}-31`,aliases=await getStudentIdAliases(studentId),today=taipeiDate();
   const [practiceSets,s,e,c,i]=await Promise.all([
     Promise.all(aliases.map(id=>listByStudent("practice",id,start,end))),
     listByStudent("section",studentId,start,end),
@@ -26,12 +41,15 @@ app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handle
   const ensemblePresent=ensembleEffective.filter(x=>["present","late"].includes(x.status)).length;
   const comprehensivePresent=comprehensiveEffective.filter(x=>["present","late"].includes(x.status)).length;
   const privatePresent=privateEffective.filter(x=>["present","late"].includes(x.status)).length;
+  const master=await getStudentMaster(studentId);
+  const todayCourses=todayCoursesFor(master,today,s,e,c);
   return json({
     month,practiceQualifiedDays:qualifiedDays,practiceMinutes,practiceRate:Math.min(qualifiedDays/Math.max(targetDays,1),1),
     sectionPresent,sectionTotal:sectionEffective.length,
     ensemblePresent,ensembleTotal:ensembleEffective.length,
     comprehensivePresent,comprehensiveTotal:comprehensiveEffective.length,
     privatePresent,privateTotal:privateEffective.length,
+    today,todayCourses,
     weightedScore:null
   });
 }});
