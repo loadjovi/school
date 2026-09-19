@@ -56,10 +56,10 @@
     const b=brand();
     let html=baseShell(content);
     const replacement=`<div class="brand" style="display:flex;align-items:center;gap:9px"><span style="width:42px;height:42px;border-radius:10px;background:#fff;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 42px">${logoImg("","style=\"width:40px;height:40px;object-fit:contain;display:block\"")}</span><span>${esc(b.siteName)}</span></div>${b.schoolName?`<div class="sub">${esc(b.schoolName)}</div>`:""}`;
-    const brandAndSub=/<div class="brand"[^>]*>[\\s\\S]*?<\\/div><div class="sub"[^>]*>[\\s\\S]*?<\\/div>/;
+    const brandAndSub=/<div class="brand"[^>]*>[\s\S]*?<\/div><div class="sub"[^>]*>[\s\S]*?<\/div>/;
     if(brandAndSub.test(html))html=html.replace(brandAndSub,replacement);
     else{
-      const brandOnly=/<div class="brand"[^>]*>[\\s\\S]*?<\\/div>/;
+      const brandOnly=/<div class="brand"[^>]*>[\s\S]*?<\/div>/;
       if(brandOnly.test(html))html=html.replace(brandOnly,replacement);
     }
     return html;
