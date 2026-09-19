@@ -17,7 +17,8 @@ const names={
   academicYearBatch:process.env.ACADEMIC_YEAR_BATCH_TABLE||"AcademicYearBatch",
   tenantDirectory:process.env.TENANT_DIRECTORY_TABLE||"TenantDirectory",
   tenantUserRole:process.env.TENANT_USER_ROLE_TABLE||"TenantUserRole",
-  globalAuditLog:process.env.GLOBAL_AUDIT_LOG_TABLE||"GlobalAuditLog"
+  globalAuditLog:process.env.GLOBAL_AUDIT_LOG_TABLE||"GlobalAuditLog",
+  userIdentity:process.env.USER_IDENTITY_TABLE||"UserIdentity"
 };
 
 let initialized=false;
@@ -158,4 +159,19 @@ export async function writeGlobalAudit({actorEmail="",action="",schoolId="",targ
   await ensureTables();const now=new Date().toISOString();
   const entity={partitionKey:now.slice(0,7),rowKey:rowKey("ga"),actorEmail:teacherEmail(actorEmail),action:String(action||"").slice(0,80),schoolId:tenantIdValue(schoolId)||String(schoolId||"").slice(0,60),targetEmail:teacherEmail(targetEmail),details:JSON.stringify(details||{}).slice(0,8000),createdAt:now};
   await table("globalAuditLog").createEntity(entity);return entity;
+}
+
+
+export async function saveUserIdentity(identity={}){
+  await ensureTables();
+  const sub=String(identity.sub||"").trim();if(!sub)return null;
+  const now=new Date().toISOString();let old=null;
+  try{old=await table("userIdentity").getEntity("GOOGLE",sub)}catch(e){if(e.statusCode!==404)throw e}
+  const entity={
+    partitionKey:"GOOGLE",rowKey:sub,identityId:sub,provider:"google",
+    email:teacherEmail(identity.email),displayName:String(identity.displayName||identity.name||identity.email||"").trim().slice(0,160),
+    picture:String(identity.picture||"").trim().slice(0,1000),status:"active",
+    createdAt:old?.createdAt||now,lastLoginAt:now,updatedAt:now
+  };
+  await table("userIdentity").upsertEntity(entity,"Replace");return entity;
 }
