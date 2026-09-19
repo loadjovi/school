@@ -97,3 +97,85 @@ app.http("brandingLogo",{methods:["GET","POST","DELETE"],authLevel:"anonymous",r
   let body;try{body=await request.json()}catch{return json({error:"JSON 格式不正確"},400)}
   try{return json({ok:true,...await uploadLogo(body?.dataUrl,access.email),branding:publicView(await getBranding(true))})}catch(e){return json({error:e.message||"Logo 上傳失敗"},400)}
 }});
+
+
+const GLOBAL_DEFAULT_LOGO_SVG=`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" rx="48" fill="#3155A4"/><circle cx="128" cy="128" r="74" fill="none" stroke="#fff" stroke-width="12"/><path d="M54 128h148M128 54c26 24 40 49 40 74s-14 50-40 74M128 54c-26 24-40 49-40 74s14 50 40 74" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/></svg>`;
+const globalDefaults=()=>({siteName:"校務整合平台",schoolName:"Global 管理中心",loginSubtitle:"跨校營運、權限與服務治理",logoAlt:"Global Logo",primaryColor:"#3155A4",logoBlobName:"",logoContentType:"image/svg+xml",updatedAt:"",updatedBy:""});
+async function getGlobalBranding(create=true){
+  const client=await settingsClient();
+  try{
+    const e=await client.getEntity("GLOBAL","BRANDING");
+    const d=globalDefaults();
+    return {...d,siteName:String(e.siteName||d.siteName),schoolName:String(e.schoolName||d.schoolName),loginSubtitle:String(e.loginSubtitle||d.loginSubtitle),logoAlt:String(e.logoAlt||d.logoAlt),primaryColor:String(e.primaryColor||d.primaryColor),logoBlobName:String(e.logoBlobName||""),logoContentType:String(e.logoContentType||d.logoContentType),updatedAt:String(e.updatedAt||""),updatedBy:String(e.updatedBy||"")};
+  }catch(e){
+    if(e.statusCode!==404)throw e;
+    const d=globalDefaults();
+    if(create)await client.upsertEntity({partitionKey:"GLOBAL",rowKey:"BRANDING",...d,createdAt:new Date().toISOString()},"Merge");
+    return d;
+  }
+}
+async function saveGlobalBranding(input,updatedBy){
+  const current=await getGlobalBranding(true),d=globalDefaults();
+  const siteName=String(input.siteName??current.siteName).trim().slice(0,80)||d.siteName;
+  const schoolName=String(input.schoolName??current.schoolName).trim().slice(0,120)||d.schoolName;
+  const loginSubtitle=String(input.loginSubtitle??current.loginSubtitle).trim().slice(0,160);
+  const logoAlt=String(input.logoAlt??current.logoAlt).trim().slice(0,120)||d.logoAlt;
+  let primaryColor=String(input.primaryColor??current.primaryColor).trim();
+  if(!/^#[0-9A-Fa-f]{6}$/.test(primaryColor))primaryColor=current.primaryColor||d.primaryColor;
+  const now=new Date().toISOString();
+  const entity={partitionKey:"GLOBAL",rowKey:"BRANDING",siteName,schoolName,loginSubtitle,logoAlt,primaryColor,logoBlobName:current.logoBlobName||"",logoContentType:current.logoContentType||d.logoContentType,updatedAt:now,updatedBy:String(updatedBy||"").slice(0,160)};
+  const client=await settingsClient();await client.upsertEntity(entity,"Merge");return entity;
+}
+async function uploadGlobalLogo(dataUrl,updatedBy){
+  const m=/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl||""));
+  if(!m)throw new Error("Logo 只支援 PNG、JPG、WebP");
+  const buf=Buffer.from(m[2],"base64");
+  if(!buf.length||buf.length>2*1024*1024)throw new Error("Logo 檔案需小於 2MB");
+  const contentType=m[1],container=await blobContainer(),blob=container.getBlockBlobClient("global-logo");
+  await blob.uploadData(buf,{blobHTTPHeaders:{blobContentType:contentType}});
+  const client=await settingsClient(),current=await getGlobalBranding(true),now=new Date().toISOString();
+  await client.upsertEntity({partitionKey:"GLOBAL",rowKey:"BRANDING",...current,logoBlobName:"global-logo",logoContentType:contentType,updatedAt:now,updatedBy:String(updatedBy||"").slice(0,160)},"Merge");
+  return {contentType,size:buf.length,updatedAt:now};
+}
+async function readGlobalLogo(){
+  const branding=await getGlobalBranding(true);
+  if(branding.logoBlobName){
+    try{
+      const container=await blobContainer(),blob=container.getBlobClient(branding.logoBlobName),response=await blob.download(),chunks=[];
+      for await(const chunk of response.readableStreamBody)chunks.push(Buffer.from(chunk));
+      return {buffer:Buffer.concat(chunks),contentType:response.contentType||branding.logoContentType||"image/png",updatedAt:branding.updatedAt||""};
+    }catch(e){if(e.statusCode!==404)throw e}
+  }
+  return {buffer:Buffer.from(GLOBAL_DEFAULT_LOGO_SVG,"utf8"),contentType:"image/svg+xml",updatedAt:"default"};
+}
+async function deleteGlobalLogo(updatedBy){
+  const branding=await getGlobalBranding(true);
+  if(branding.logoBlobName){try{const container=await blobContainer();await container.deleteBlob(branding.logoBlobName,{deleteSnapshots:"include"})}catch(e){if(e.statusCode!==404)throw e}}
+  const client=await settingsClient(),now=new Date().toISOString(),d=globalDefaults();
+  await client.upsertEntity({partitionKey:"GLOBAL",rowKey:"BRANDING",...branding,logoBlobName:"",logoContentType:d.logoContentType,updatedAt:now,updatedBy:String(updatedBy||"").slice(0,160)},"Merge");
+  return {ok:true,updatedAt:now};
+}
+function globalPublicView(b){return {siteName:b.siteName,schoolName:b.schoolName,loginSubtitle:b.loginSubtitle,logoAlt:b.logoAlt,primaryColor:b.primaryColor,logoUrl:`/api/global-branding-logo?v=${encodeURIComponent(b.updatedAt||"default")}`,updatedAt:b.updatedAt||""}}
+async function requireGlobalBrandingAdmin(request){
+  const access=await getAccess(request);
+  if(!access.authenticated)return {error:json({error:"Unauthorized"},401)};
+  if(access.capabilities?.globalAdmin!==true)return {error:json({error:"Global Admin 權限不足"},403)};
+  return {access};
+}
+
+app.http("globalBranding",{methods:["GET","PATCH"],authLevel:"anonymous",route:"global-branding",handler:async request=>{
+  const g=await requireGlobalBrandingAdmin(request);if(g.error)return g.error;
+  if(request.method==="GET")return json(globalPublicView(await getGlobalBranding(true)));
+  let body;try{body=await request.json()}catch{return json({error:"JSON 格式不正確"},400)}
+  return json(globalPublicView(await saveGlobalBranding(body||{},g.access.email)));
+}});
+
+app.http("globalBrandingLogo",{methods:["GET","POST","DELETE"],authLevel:"anonymous",route:"global-branding-logo",handler:async request=>{
+  const g=await requireGlobalBrandingAdmin(request);if(g.error)return g.error;
+  if(request.method==="GET"){
+    const x=await readGlobalLogo();return {status:200,headers:{"Content-Type":x.contentType,"Cache-Control":"private, max-age=300"},body:x.buffer};
+  }
+  if(request.method==="DELETE")return json(await deleteGlobalLogo(g.access.email));
+  let body;try{body=await request.json()}catch{return json({error:"JSON 格式不正確"},400)}
+  try{return json({ok:true,...await uploadGlobalLogo(body?.dataUrl,g.access.email),branding:globalPublicView(await getGlobalBranding(true))})}catch(e){return json({error:e.message||"Global Logo 上傳失敗"},400)}
+}});
