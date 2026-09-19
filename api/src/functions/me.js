@@ -32,15 +32,15 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
   const defaultId=defaultTenantId();
   const staticMap=parseJsonEnv("STUDENT_MAP_JSON",{}),staticParentDefault=!!staticMap[String(a.email||"").toLowerCase()];
   let tenants=[];try{tenants=await listTenantDirectory()}catch(e){console.warn("identity tenant lookup failed",e)}
-  for(const tenant of tenants.filter(x=>String(x.status||"")==="active")){
-    const schoolId=String(tenant.rowKey||tenant.schoolId||""),schoolName=String(tenant.schoolName||schoolId);
+  for(const tenant of tenants.filter(x=>["active","onboarding"].includes(String(x.status||"")))){
+    const schoolId=String(tenant.rowKey||tenant.schoolId||""),schoolName=String(tenant.schoolName||schoolId),tenantStatus=String(tenant.status||"active");
     try{
       const teacher=await getTeacherDirectory(a.email,schoolId);
-      if(teacher?.status==="active")addContext({key:"teacher:"+schoolId,type:"teacher",role:"teacher",label:schoolName+"｜老師",icon:"🎻",schoolId,schoolName,status:"active"});
+      if(teacher?.status==="active")addContext({key:"teacher:"+schoolId,type:"teacher",role:"teacher",label:schoolName+"｜老師",icon:"🎻",schoolId,schoolName,status:tenantStatus});
     }catch(e){console.warn("teacher context lookup failed",schoolId,e)}
     try{
       const staticParent=schoolId===defaultId&&staticParentDefault,dynamic=staticParent?[]:await getMappedStudentsByEmail(a.email,schoolId);
-      if(staticParent||dynamic.length)addContext({key:"parent:"+schoolId,type:"parent",role:"parent",label:schoolName+"｜家長",icon:"👨‍👩‍👧",schoolId,schoolName,status:"active"});
+      if(staticParent||dynamic.length)addContext({key:"parent:"+schoolId,type:"parent",role:"parent",label:schoolName+"｜家長",icon:"👨‍👩‍👧",schoolId,schoolName,status:tenantStatus});
     }catch(e){console.warn("parent context lookup failed",schoolId,e)}
   }
 

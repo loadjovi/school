@@ -5,6 +5,7 @@ import {
   listTenantAdmins,saveTenantUserRole,writeGlobalAudit,defaultTenantId,
   listStudentMaster,listTeacherDirectory,listUserStudentMappings,listActivityRange,activityStudentId,ensureTenantTables,tenantIdValue,table
 } from "../lib/storage.js";
+import { scanTenantIsolation } from "../lib/tenantIsolation.js";
 
 function clean(v,max=200){return String(v??"").trim().slice(0,max)}
 function isEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v||"").trim())}
@@ -57,9 +58,10 @@ app.http("tenantDirectory",{
     if(!schoolId)return json({error:"缺少 schoolId"},400);
     const old=await getTenantDirectory(schoolId);if(!old)return json({error:"找不到學校 Tenant"},404);
     let status=clean(body.status,20)||String(old.status||"setup");
-    if(!["active","inactive","setup"].includes(status))return json({error:"學校狀態不正確"},400);
+    if(!["active","inactive","setup","onboarding"].includes(status))return json({error:"學校狀態不正確"},400);
     if(schoolId===defaultTenantId())status="active";
-    else if(status==="active")return json({error:"新學校必須完成 Phase 4 Onboarding 與雙校隔離驗證後才能啟用"},409);
+    else if(status!==String(old.status||"setup")&&["active","onboarding"].includes(status))return json({error:"請使用 Phase 4 Onboarding 流程變更此狀態"},409);
+    else if(["active","onboarding"].includes(String(old.status||""))&&status!==String(old.status))return json({error:"正式營運或驗證中狀態只能由 Phase 4 Onboarding 流程變更"},409);
     const cityCode=tenantIdValue(body.cityCode||old.cityCode),schoolLevel=tenantIdValue(body.schoolLevel||old.schoolLevel);
     if(!CITY_MAP[cityCode])return json({error:"請選擇有效的縣市"},400);
     if(!LEVEL_MAP[schoolLevel])return json({error:"請選擇有效的學制"},400);
@@ -161,7 +163,7 @@ async function schoolDashboardSummary(tenant,today,memberSchoolIds){
     studentCount:students.length,parentAccountCount:new Set(parentMaps.map(x=>String(x.parentEmail||"").trim().toLowerCase()).filter(Boolean)).size,
     teacherStatus:{active:activeTeachers.length,loggedInToday,inactive:teachers.length-activeTeachers.length},
     todayAttendance:attendance.total,todayAttendanceRecords:attendance.total.total,
-    dataMode:String(tenant.status||"setup")==="active"?"tenant-scoped-operational":"tenant-ready-no-data"
+    dataMode:String(tenant.status||"setup")==="active"?"tenant-scoped-operational":String(tenant.status||"")==="onboarding"?"tenant-onboarding-testing":"tenant-ready-no-data"
   };
 }
 
@@ -172,12 +174,12 @@ app.http("globalDashboard",{
     await ensureTenantTables();const tenants=await listTenantDirectory(),today=taipeiDate();
     const memberSchoolIds=new Set((g.a.memberships||[]).filter(x=>String(x.status||"active")==="active").map(x=>String(x.schoolId||"")));
     const schools=await Promise.all(tenants.map(tenant=>schoolDashboardSummary(tenant,today,memberSchoolIds)));
-    const statusCounts=schools.reduce((out,x)=>{const status=["active","setup","inactive"].includes(x.status)?x.status:"setup";out[status]++;return out},{active:0,setup:0,inactive:0});
+    const statusCounts=schools.reduce((out,x)=>{const status=["active","onboarding","setup","inactive"].includes(x.status)?x.status:"setup";out[status]++;return out},{active:0,onboarding:0,setup:0,inactive:0});
     return json({
-      today,phase:"multi-tenant-phase-3-global-console",aggregateOnly:true,schoolCount:schools.length,statusCounts,
+      today,phase:"multi-tenant-phase-4-onboarding",aggregateOnly:true,schoolCount:schools.length,statusCounts,
       totals:{students:schools.reduce((n,x)=>n+Number(x.studentCount||0),0),teachers:schools.reduce((n,x)=>n+Number(x.teacherStatus?.active||0),0),parentAccounts:schools.reduce((n,x)=>n+Number(x.parentAccountCount||0),0),todayAttendanceRecords:schools.reduce((n,x)=>n+Number(x.todayAttendanceRecords||0),0)},
       schools,
-      notice:"Phase 3 Global Console 僅提供跨校彙總數字，不回傳學生、家長或老師明細。新學校完成 Phase 4 Onboarding 與雙校隔離驗證前仍不可啟用。"
+      notice:"Phase 4 Onboarding 以隔離驗證閘門控制新學校啟用；Global Console 僅提供跨校彙總數字，不回傳學生、家長或老師明細。"
     });
   }
 });
@@ -198,37 +200,6 @@ app.http("globalAttendance",{
   }
 });
 
-const ISOLATION_DATASETS=[
-  {key:"tenantStudentMaster",label:"學生主檔",kind:"school"},{key:"tenantRegistrations",label:"家長申請",kind:"school"},{key:"tenantUserStudentMap",label:"家長綁定",kind:"parent"},
-  {key:"tenantStudentHistory",label:"學生異動",kind:"student"},{key:"tenantSemesterEnrollment",label:"學期名單",kind:"term"},{key:"tenantTeacherDirectory",label:"老師帳號",kind:"school"},
-  {key:"tenantTeacherProfile",label:"老師權限",kind:"school"},{key:"tenantAcademicYearBatch",label:"學年度批次",kind:"school"},{key:"tenantPractice",label:"自主練習",kind:"student"},
-  {key:"tenantSection",label:"分部課",kind:"student"},{key:"tenantEnsemble",label:"合奏課",kind:"student"},{key:"tenantComprehensive",label:"綜合課",kind:"student"},{key:"tenantPrivateLesson",label:"個別課",kind:"student"}
-];
-function validTenantPartition(entity,schoolIds,kind){
-  const schoolId=tenantIdValue(entity.schoolId),partition=String(entity.partitionKey||"");
-  if(!schoolId||!schoolIds.has(schoolId))return false;
-  if(kind==="school")return partition===schoolId;
-  return partition.startsWith(`${schoolId}|${kind}|`);
-}
-async function isolationHealth(schoolIds){
-  const byTable=[];let rows=0,invalid=0;
-  for(const definition of ISOLATION_DATASETS){
-    let count=0,bad=0;
-    for await(const entity of table(definition.key).listEntities()){
-      count++;if(!validTenantPartition(entity,schoolIds,definition.kind))bad++;
-    }
-    rows+=count;invalid+=bad;byTable.push({key:definition.key,label:definition.label,rows:count,invalid:bad});
-  }
-  let roleRows=0,invalidRoles=0;
-  for await(const role of table("tenantUserRole").listEntities()){
-    roleRows++;
-    const roleName=String(role.role||""),schoolId=String(role.schoolId||"");
-    const valid=roleName==="globalAdmin"?schoolId==="*":roleName==="schoolAdmin"&&schoolIds.has(tenantIdValue(schoolId));
-    if(!valid)invalidRoles++;
-  }
-  rows+=roleRows;invalid+=invalidRoles;byTable.push({key:"tenantUserRole",label:"Tenant 權限",rows:roleRows,invalid:invalidRoles});
-  return {rows,invalid,byTable};
-}
 function healthCheck(key,label,status,detail){return {key,label,status,detail}}
 function healthSummary(checks){
   const summary={healthy:0,warning:0,critical:0};
@@ -256,13 +227,13 @@ app.http("globalHealth",{
       checks.push(healthCheck("default-tenant","聖心 Tenant 狀態",defaultTenant&&String(defaultTenant.status)==="active"?"healthy":"critical",defaultTenant&&String(defaultTenant.status)==="active"?"已啟用":"找不到或未啟用"));
       try{const marker=await table("tenantMigration").getEntity(defaultTenantId(),"phase2-tenant-scope-v1");migrationStatus=String(marker.status||"not_started")}catch(error){if(error.statusCode===404)migrationStatus="not_started";else migrationStatus="error"}
       checks.push(healthCheck("phase2-migration","Phase 2 Tenant 遷移",migrationStatus==="verified"?"healthy":"critical",migrationStatus==="verified"?"完整性已驗證":`目前狀態：${migrationStatus}`));
-      const operational=tenants.filter(x=>["active","setup"].includes(String(x.status||"setup")));
+      const operational=tenants.filter(x=>["active","onboarding","setup"].includes(String(x.status||"setup")));
       const coverage=await Promise.all(operational.map(async tenant=>({schoolId:String(tenant.rowKey),count:(await listTenantAdmins(String(tenant.rowKey),"active")).length})));
       adminCoverage={required:coverage.length,covered:coverage.filter(x=>x.count>0).length,missing:coverage.filter(x=>x.count===0).length};
       checks.push(healthCheck("school-admin-coverage","School Admin 覆蓋",adminCoverage.missing===0?"healthy":"warning",adminCoverage.missing===0?`${adminCoverage.covered} 所學校皆已指派`:`${adminCoverage.missing} 所學校尚未指派`));
-      try{isolation=await isolationHealth(schoolIds);checks.push(healthCheck("tenant-isolation","Tenant 鍵值隔離",isolation.invalid===0?"healthy":"critical",isolation.invalid===0?`${isolation.rows} 筆資料通過`:`發現 ${isolation.invalid} 筆鍵值異常`))}catch{checks.push(healthCheck("tenant-isolation","Tenant 鍵值隔離","critical","完整性掃描失敗"))}
+      try{isolation=await scanTenantIsolation(schoolIds);checks.push(healthCheck("tenant-isolation","Tenant 鍵值隔離",isolation.invalid===0?"healthy":"critical",isolation.invalid===0?`${isolation.rows} 筆資料通過`:`發現 ${isolation.invalid} 筆鍵值異常`))}catch{checks.push(healthCheck("tenant-isolation","Tenant 鍵值隔離","critical","完整性掃描失敗"))}
     }
     const result=healthSummary(checks);
-    return json({checkedAt:new Date().toISOString(),phase:"multi-tenant-phase-3-global-console",overall:result.overall,summary:result.summary,checks,environment,isolation,tenants:{total:tenants.length,active:tenants.filter(x=>x.status==="active").length,setup:tenants.filter(x=>x.status==="setup").length,inactive:tenants.filter(x=>x.status==="inactive").length,adminCoverage},migrationStatus,aggregateOnly:true});
+    return json({checkedAt:new Date().toISOString(),phase:"multi-tenant-phase-4-onboarding",overall:result.overall,summary:result.summary,checks,environment,isolation,tenants:{total:tenants.length,active:tenants.filter(x=>x.status==="active").length,onboarding:tenants.filter(x=>x.status==="onboarding").length,setup:tenants.filter(x=>x.status==="setup").length,inactive:tenants.filter(x=>x.status==="inactive").length,adminCoverage},migrationStatus,aggregateOnly:true});
   }
 });

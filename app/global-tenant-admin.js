@@ -1,19 +1,21 @@
 (()=>{
   if(!document.getElementById("globalTenantStyles")){
     const style=document.createElement("style");style.id="globalTenantStyles";
-    style.textContent=".global-manage-btn{border:0;border-radius:12px;padding:10px 14px;background:var(--green);color:#fff;font-weight:900;box-shadow:0 2px 6px rgba(0,0,0,.08)}.global-manage-btn:hover{filter:brightness(.95)}.global-danger-btn{border:1px solid var(--bad);border-radius:12px;padding:9px 11px;background:#fff7f7;color:var(--bad);font-weight:900}.global-danger-btn:hover{background:#fee2e2}.global-action-hint{display:block;font-size:11px;color:var(--muted);margin-top:4px}.global-school-card-open{border:2px solid var(--green);box-shadow:0 8px 20px rgba(0,0,0,.08)}.global-inline-admin{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}.global-inline-admin h3{margin:0 0 8px;font-size:15px}.global-health-row{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}.global-health-row:last-child{border-bottom:0}.global-health-pill{border-radius:999px;padding:4px 9px;font-size:12px;font-weight:900;white-space:nowrap}.global-health-healthy{background:#dcfce7;color:#166534}.global-health-warning{background:#fef3c7;color:#92400e}.global-health-critical{background:#fee2e2;color:#991b1b}.global-attendance-school{margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:#fff}";
+    style.textContent=".global-manage-btn{border:0;border-radius:12px;padding:10px 14px;background:var(--green);color:#fff;font-weight:900;box-shadow:0 2px 6px rgba(0,0,0,.08)}.global-manage-btn:hover{filter:brightness(.95)}.global-danger-btn{border:1px solid var(--bad);border-radius:12px;padding:9px 11px;background:#fff7f7;color:var(--bad);font-weight:900}.global-danger-btn:hover{background:#fee2e2}.global-action-hint{display:block;font-size:11px;color:var(--muted);margin-top:4px}.global-school-card-open{border:2px solid var(--green);box-shadow:0 8px 20px rgba(0,0,0,.08)}.global-inline-admin{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}.global-inline-admin h3{margin:0 0 8px;font-size:15px}.global-health-row{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}.global-health-row:last-child{border-bottom:0}.global-health-pill{border-radius:999px;padding:4px 9px;font-size:12px;font-weight:900;white-space:nowrap}.global-health-healthy{background:#dcfce7;color:#166534}.global-health-warning{background:#fef3c7;color:#92400e}.global-health-critical{background:#fee2e2;color:#991b1b}.global-attendance-school{margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:#fff}.global-onboarding{border:2px solid #f59e0b;background:linear-gradient(180deg,#fffbeb,#fff)}.global-onboarding-check{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}.global-onboarding-check:last-child{border-bottom:0}.global-onboarding-check input{width:20px;height:20px;margin:1px 0 0;flex:0 0 auto}.global-onboarding-link{display:flex;gap:8px;align-items:center;margin-top:8px}.global-onboarding-link code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:9px;font-size:11px}";
     document.head.appendChild(style);
   }
   const taipeiMonth=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()).slice(0,7);
-  state.globalTenant=state.globalTenant||{loaded:false,loading:false,dashboard:null,tenants:[],admins:[],selectedSchoolId:"",regionFilter:"",migration:null,migrationBusy:false,attendance:null,attendanceMonth:taipeiMonth(),attendanceLoading:false,health:null,healthLoading:false,error:""};
+  state.globalTenant=state.globalTenant||{loaded:false,loading:false,dashboard:null,tenants:[],admins:[],selectedSchoolId:"",regionFilter:"",migration:null,migrationBusy:false,attendance:null,attendanceMonth:taipeiMonth(),attendanceLoading:false,health:null,healthLoading:false,onboarding:[],onboardingBusy:false,error:""};
   if(state.globalTenant.migrationBusy===undefined)state.globalTenant.migrationBusy=false;
   if(!state.globalTenant.attendanceMonth)state.globalTenant.attendanceMonth=taipeiMonth();
   if(state.globalTenant.attendanceLoading===undefined)state.globalTenant.attendanceLoading=false;
   if(state.globalTenant.healthLoading===undefined)state.globalTenant.healthLoading=false;
+  if(!Array.isArray(state.globalTenant.onboarding))state.globalTenant.onboarding=[];
+  if(state.globalTenant.onboardingBusy===undefined)state.globalTenant.onboardingBusy=false;
   state.globalBrandingAdmin=state.globalBrandingAdmin||{loading:false,error:""};
   let globalBrandLogoFile=null,globalBrandPreviewUrl="";
   const canGlobal=()=>state.me?.capabilities?.globalAdmin===true;
-  const st={active:"🟢 啟用",setup:"🟡 建置中",inactive:"⚪ 停用"};
+  const st={active:"🟢 啟用",onboarding:"🟠 隔離驗證中",setup:"🟡 建置中",inactive:"⚪ 停用"};
   const cities=[
     ["keelung","基隆市"],["taipei","臺北市"],["new-taipei","新北市"],["taoyuan","桃園市"],["hsinchu-city","新竹市"],["hsinchu-county","新竹縣"],
     ["miaoli","苗栗縣"],["taichung","臺中市"],["changhua","彰化縣"],["nantou","南投縣"],["yunlin","雲林縣"],["chiayi-city","嘉義市"],["chiayi-county","嘉義縣"],
@@ -37,11 +39,11 @@
     if(state.globalTenant.loaded&&!force)return;
     state.globalTenant.loading=true;state.globalTenant.error="";draw();
     try{
-      const r=await Promise.all([api("/api/global-dashboard"),api("/api/tenant-directory"),api("/api/global-branding"),api("/api/tenant-migration"),api("/api/global-attendance?month="+encodeURIComponent(state.globalTenant.attendanceMonth)),api("/api/global-health")]);
+      const r=await Promise.all([api("/api/global-dashboard"),api("/api/tenant-directory"),api("/api/global-branding"),api("/api/tenant-migration"),api("/api/global-attendance?month="+encodeURIComponent(state.globalTenant.attendanceMonth)),api("/api/global-health"),api("/api/tenant-onboarding")]);
       state.globalTenant.dashboard=r[0];state.globalTenant.tenants=r[1].items||[];state.globalTenant.loaded=true;
       state.globalBranding={...(state.globalBranding||{}),...(r[2]||{})};
       state.globalTenant.migration=r[3]||null;
-      state.globalTenant.attendance=r[4]||null;state.globalTenant.health=r[5]||null;
+      state.globalTenant.attendance=r[4]||null;state.globalTenant.health=r[5]||null;state.globalTenant.onboarding=r[6]?.items||[];
       if(typeof window.setGlobalBranding==="function")window.setGlobalBranding(state.globalBranding);
       if(state.globalTenant.selectedSchoolId)await loadAdmins(state.globalTenant.selectedSchoolId);
     }catch(e){state.globalTenant.error=e.message||String(e)}
@@ -56,8 +58,9 @@
     const list=rows.length?rows.map(a=>'<div class="item"><div><b>'+esc(a.email)+'</b><small>School Admin<span class="global-action-hint">移除權限不會刪除帳號或學校資料</span></small></div><button class="global-danger-btn" style="margin:0" onclick="revokeSchoolAdmin(\''+esc(sid)+'\',\''+esc(a.email)+'\')">🗑️ 移除權限</button></div>').join(""):'<div class="notice" style="margin-top:10px">尚未指定學校管理員。</div>';
     const revokedList=revoked.length?'<details style="margin-top:10px"><summary><b>已停用權限紀錄（'+revoked.length+'）</b></summary>'+revoked.map(a=>'<div class="item"><div><b>'+esc(a.email)+'</b><small>停用於 '+esc(a.updatedAt||"未記錄")+'</small></div><button class="secondary" style="margin:0" onclick="grantKnownSchoolAdmin(\''+esc(sid)+'\',\''+esc(a.email)+'\')">重新啟用</button></div>').join("")+'</details>':'';
     let selfAction="";
-    if(selfIsAdmin&&x.status==="active"){
-      selfAction='<div class="notice" style="margin-top:10px"><b>✅ 您目前是此校 School Admin</b><br>可以由 Global 切換進入此校正式營運後台。</div><button class="primary" onclick="enterSchoolAdmin(\''+esc(sid)+'\')">🏫 進入 '+esc(x.schoolName)+' 後台</button>';
+    if(selfIsAdmin&&["active","onboarding"].includes(x.status)){
+      const testing=x.status==="onboarding";
+      selfAction='<div class="notice" style="margin-top:10px"><b>'+(testing?'🧪 隔離驗證帳號':'✅ 您目前是此校 School Admin')+'</b><br>'+(testing?'現在只能操作此校 Tenant，畫面會持續顯示橘色驗證提示。':'可以由 Global 切換進入此校正式營運後台。')+'</div><button class="primary" onclick="enterSchoolAdmin(\''+esc(sid)+'\')">'+(testing?'🧪 進入 ':'🏫 進入 ')+esc(x.schoolName)+(testing?' 隔離測試後台':' 後台')+'</button>';
     }else if(selfIsAdmin){
       selfAction='<div class="notice" style="margin-top:10px"><b>✅ 您已綁定為此校 School Admin</b><br>此校目前為「'+esc(st[x.status]||x.status)+'」，待 Tenant 資料隔離完成並啟用後，才可進入營運後台。</div>';
     }else{
@@ -65,12 +68,13 @@
     }
     const cityOptions=cities.map(option=>'<option value="'+esc(option[0])+'" '+(option[0]===x.cityCode?'selected':'')+'>'+esc(option[1])+'</option>').join("");
     const levelOptions=levels.map(option=>'<option value="'+esc(option[0])+'" '+(option[0]===x.schoolLevel?'selected':'')+'>'+esc(option[1])+'</option>').join("");
-    const statusOptions=sid==="sacred-heart"?'<option value="active">啟用（固定）</option>':['setup','inactive'].map(value=>'<option value="'+value+'" '+(value===x.status?'selected':'')+'>'+esc(st[value]||value)+'</option>').join("");
-    const schoolForm='<div class="global-inline-admin"><h3>🏫 學校基本設定</h3><div class="notice"><b>schoolId：'+esc(sid)+'</b><br>schoolId 建立後不可修改；非聖心學校在 Phase 4 Onboarding 與隔離驗證前只能維持「建置中」或「停用」。</div><label>學校名稱</label><input id="tenantName_'+esc(sid)+'" value="'+esc(x.schoolName||'')+'" maxlength="120"><div class="row2"><div><label>簡稱</label><input id="tenantShort_'+esc(sid)+'" value="'+esc(x.shortName||'')+'" maxlength="60"></div><div><label>系統名稱</label><input id="tenantSystem_'+esc(sid)+'" value="'+esc(x.systemName||'')+'" maxlength="160"></div></div><div class="row2"><div><label>縣市</label><select id="tenantCity_'+esc(sid)+'">'+cityOptions+'</select></div><div><label>學制</label><select id="tenantLevel_'+esc(sid)+'">'+levelOptions+'</select></div></div><div class="row2"><div><label>時區</label><select id="tenantTimezone_'+esc(sid)+'"><option value="Asia/Taipei" selected>Asia/Taipei</option></select></div><div><label>狀態</label><select id="tenantStatus_'+esc(sid)+'" '+(sid==="sacred-heart"?'disabled':'')+'>'+statusOptions+'</select></div></div><button class="primary" onclick="saveSchoolTenant(\''+esc(sid)+'\')">💾 儲存學校設定</button></div>';
+    const lifecycleLocked=sid==="sacred-heart"||["onboarding","active"].includes(x.status);
+    const statusOptions=sid==="sacred-heart"?'<option value="active">啟用（固定）</option>':lifecycleLocked?'<option value="'+esc(x.status)+'">'+esc(st[x.status]||x.status)+'（由 Phase 4 管理）</option>':['setup','inactive'].map(value=>'<option value="'+value+'" '+(value===x.status?'selected':'')+'>'+esc(st[value]||value)+'</option>').join("");
+    const schoolForm='<div class="global-inline-admin"><h3>🏫 學校基本設定</h3><div class="notice"><b>schoolId：'+esc(sid)+'</b><br>schoolId 建立後不可修改；「隔離驗證中」與「正式啟用」只能由 Phase 4 安全流程切換。</div><label>學校名稱</label><input id="tenantName_'+esc(sid)+'" value="'+esc(x.schoolName||'')+'" maxlength="120"><div class="row2"><div><label>簡稱</label><input id="tenantShort_'+esc(sid)+'" value="'+esc(x.shortName||'')+'" maxlength="60"></div><div><label>系統名稱</label><input id="tenantSystem_'+esc(sid)+'" value="'+esc(x.systemName||'')+'" maxlength="160"></div></div><div class="row2"><div><label>縣市</label><select id="tenantCity_'+esc(sid)+'">'+cityOptions+'</select></div><div><label>學制</label><select id="tenantLevel_'+esc(sid)+'">'+levelOptions+'</select></div></div><div class="row2"><div><label>時區</label><select id="tenantTimezone_'+esc(sid)+'"><option value="Asia/Taipei" selected>Asia/Taipei</option></select></div><div><label>狀態</label><select id="tenantStatus_'+esc(sid)+'" '+(lifecycleLocked?'disabled':'')+'>'+statusOptions+'</select></div></div><button class="primary" onclick="saveSchoolTenant(\''+esc(sid)+'\')">💾 儲存學校設定</button></div>';
     return schoolForm+'<div class="global-inline-admin"><h3>🔐 '+esc(x.schoolName)+'｜學校管理員</h3><div class="notice">Global 可管理此校 School Admin 權限；只有已被指定為此校管理員的帳號，才可以進入該校營運後台。</div>'+selfAction+list+revokedList+'<label>新增此校管理員 Google Email</label><input id="globalAdminEmail_'+esc(sid)+'" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 '+esc(x.schoolName)+' School Admin</button></div>';
   }
   function schoolCard(x){
-    const mode=x.dataMode==="tenant-scoped-operational"?"學生、家長、老師、出勤、練習與個別課資料均已 Tenant 化。":"Tenant 結構已備妥，但維持建置狀態且尚未加入正式營運資料。";
+    const mode=x.dataMode==="tenant-scoped-operational"?"學生、家長、老師、出勤、練習與個別課資料均已 Tenant 化。":x.dataMode==="tenant-onboarding-testing"?"正在隔離驗證；測試帳號只能操作此校 Tenant，尚未正式啟用。":"Tenant 結構已備妥，但維持建置狀態且尚未加入正式營運資料。";
     const region=[x.cityName||cityName(x.cityCode),x.schoolLevelName||levelName(x.schoolLevel)].filter(Boolean).join("｜");
     const opened=String(state.globalTenant.selectedSchoolId||"")===String(x.schoolId||"");
     const buttonText=opened?"▲ 收合管理":"⚙️ 管理學校";
@@ -106,6 +110,32 @@
       '<div class="grid" style="margin-top:12px"><div class="kpi"><b>'+esc(statusText)+'</b><span>遷移狀態</span></div><div class="kpi"><b>'+Number(totals.legacy||0)+'</b><span>既有資料</span></div><div class="kpi"><b>'+Number(totals.scoped||0)+'</b><span>已具 Tenant 鍵值</span></div><div class="kpi"><b>'+differences+'</b><span>鍵值差異</span></div></div>'+
       (m.updatedAt?'<div class="muted" style="margin-top:8px">最後執行：'+esc(m.updatedAt)+(m.updatedBy?'｜'+esc(m.updatedBy):'')+'</div>':'')+
       result+actions+'</div>';
+  }
+  function onboardingTime(value){if(!value)return "";try{return new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false})}catch{return String(value)}}
+  function onboardingUrl(schoolId,role){const url=new URL(location.href);url.search="";url.hash="";url.searchParams.set("onboardingSchoolId",schoolId);url.searchParams.set("onboardingRole",role);return url.toString()}
+  function phase4OnboardingBox(){
+    const items=state.globalTenant.onboarding||[],busy=state.globalTenant.onboardingBusy;
+    if(!items.length)return '<div class="card global-onboarding"><h2>🚀 Phase 4｜第二校正式 Onboarding</h2><div class="notice"><b>尚未建立第二間學校 Tenant</b><br>請先在下方新增學校、完成基本資料並指派至少一位 School Admin；系統才會開放隔離驗證。</div></div>';
+    const cards=items.map(item=>{
+      const sid=String(item.schoolId||""),status=String(item.tenantStatus||"setup"),checks=item.checks||[],manual=item.manualChecks||[];
+      const systemChecks=checks.map(check=>'<div class="global-health-row"><div><b>'+esc(check.label||check.key)+'</b><small style="display:block;color:var(--muted);margin-top:3px">'+esc(check.detail||"")+'</small></div><span class="global-health-pill '+(check.passed?'global-health-healthy':'global-health-warning')+'">'+(check.passed?'✅ 通過':'待完成')+'</span></div>').join("");
+      const manualChecks=manual.map(check=>'<label class="global-onboarding-check"><input type="checkbox" '+(check.passed?'checked':'')+' '+(status!=="onboarding"||busy?'disabled':'')+' onchange="setTenantOnboardingCheck(\''+esc(sid)+'\',\''+esc(check.key)+'\',this.checked)"><span><b>'+esc(check.label||check.key)+'</b><small style="display:block;color:var(--muted);margin-top:3px">'+esc(check.description||"")+(check.confirmedAt?'｜確認：'+esc(onboardingTime(check.confirmedAt)):'')+'</small></span></label>').join("");
+      const testLinks=[['schoolAdmin','School Admin'],['teacher','老師'],['parent','家長']].map(pair=>{const link=onboardingUrl(sid,pair[0]);return '<div class="global-onboarding-link"><code title="'+esc(link)+'">'+esc(pair[1])+'｜'+esc(link)+'</code><button class="secondary" style="margin:0;white-space:nowrap" onclick="copyTenantOnboardingLink(\''+esc(sid)+'\',\''+pair[0]+'\')">複製</button></div>'}).join("");
+      let action="";
+      if(status==="active"){
+        action='<div class="notice" style="margin-top:12px;background:#ecfdf5"><b>✅ 第二校已正式啟用</b><br>自動檢查與四項人工隔離驗證均已通過。'+(item.activatedAt?'<br>啟用時間：'+esc(onboardingTime(item.activatedAt)):'')+'</div>';
+      }else if(status==="onboarding"){
+        action='<div class="notice" style="margin-top:12px"><b>🧪 隔離測試入口</b><br>請分別用第二校管理員、老師與家長測試帳號開啟對應連結。伺服器仍會核對真實權限，連結本身不會授予角色。</div>'+testLinks+
+          '<h3 style="margin:16px 0 4px">人工隔離驗證</h3>'+manualChecks+
+          '<div class="row2" style="margin-top:12px"><button class="secondary" onclick="runTenantOnboardingAction(\'verify\',\''+esc(sid)+'\')" '+(busy?'disabled':'')+'>🔄 重新驗證</button><button class="primary" onclick="runTenantOnboardingAction(\'activate\',\''+esc(sid)+'\')" '+(busy||!item.readyToActivate?'disabled':'')+'>✅ 正式啟用第二校</button></div><button class="secondary" style="width:100%;margin-top:8px" onclick="runTenantOnboardingAction(\'pause\',\''+esc(sid)+'\')" '+(busy?'disabled':'')+'>⏸ 暫停隔離驗證</button>'+
+          '<div class="notice" style="margin-top:10px"><b>'+(item.readyToActivate?'✅ 全部條件通過，可正式啟用':'🔒 啟用鎖定中')+'</b><br>'+(item.readyToActivate?'啟用後，第二校帳號將進入正式營運。':'請先完成所有自動檢查與四項人工隔離驗證。')+'</div>';
+      }else{
+        const blockers=checks.filter(check=>["tenant-profile","school-admin","access-school-scope","partition-isolation"].includes(check.key)&&!check.passed).map(check=>check.label).join("、");
+        action='<button class="primary" style="width:100%;margin-top:12px" onclick="runTenantOnboardingAction(\'start\',\''+esc(sid)+'\')" '+(busy||!item.startReady?'disabled':'')+'>🧪 開始隔離驗證</button><div class="notice" style="margin-top:10px"><b>'+(item.startReady?'可開始測試':'尚未開放')+'</b><br>'+(item.startReady?'開始後只開放授權測試帳號進入此校 Tenant，不會直接正式啟用。':'請先完成：'+esc(blockers||"學校基本設定與 School Admin 指派"))+'</div>';
+      }
+      return '<div class="card global-onboarding"><div class="student"><div><b style="font-size:17px">🏫 '+esc(item.schoolName||sid)+'</b><div class="muted">'+esc(sid)+'｜'+esc(st[status]||status)+'</div></div><span class="global-health-pill '+(status==="active"?'global-health-healthy':status==="onboarding"?'global-health-warning':'global-health-warning')+'">'+esc(status==="active"?'已上線':status==="onboarding"?'驗證中':'準備中')+'</span></div><div class="grid" style="margin-top:12px"><div class="kpi"><b>'+Number(item.counts?.students||0)+'</b><span>第二校學生</span></div><div class="kpi"><b>'+Number(item.counts?.teachers||0)+'</b><span>第二校老師</span></div><div class="kpi"><b>'+Number(item.counts?.parentAccounts||0)+'</b><span>家長帳號</span></div><div class="kpi"><b>'+Number(item.counts?.schoolAdmins||0)+'</b><span>School Admin</span></div></div><details style="margin-top:12px" '+(!item.automatedPassed?'open':'')+'><summary><b>自動安全檢查（'+checks.filter(x=>x.passed).length+' / '+checks.length+'）</b></summary><div style="margin-top:6px">'+systemChecks+'</div></details>'+action+'</div>';
+    }).join("");
+    return '<div class="card"><h2>🚀 Phase 4｜第二校正式 Onboarding</h2><div class="notice"><b>三段式安全門：準備 → 隔離驗證 → 正式啟用</b><br>一般學校設定無法直接把 Tenant 改為啟用；必須通過 Tenant 鍵值掃描、測試資料條件與四項跨校隔離確認。</div></div>'+cards;
   }
   function attendanceRateText(value){return value===null||value===undefined?"—":Number(value).toFixed(1)+"%"}
   function crossSchoolAttendanceBox(){
@@ -211,6 +241,29 @@
     try{state.globalTenant.health=await api("/api/global-health?_="+Date.now());toast("✅ 平台健康檢查已更新")}catch(e){toast("❌ 健康檢查失敗："+e.message)}
     state.globalTenant.healthLoading=false;draw();
   };
+  window.copyTenantOnboardingLink=async function(sid,role){
+    const link=onboardingUrl(String(sid||""),String(role||""));
+    try{await navigator.clipboard.writeText(link);toast("✅ 測試入口已複製")}catch{window.prompt("請複製測試入口",link)}
+  };
+  window.setTenantOnboardingCheck=async function(sid,checkKey,passed){
+    if(state.globalTenant.onboardingBusy)return;
+    if(passed&&!confirm("請確認您已實際使用對應角色帳號完成此項跨校隔離測試。\n\n確認結果會留下 Global 稽核紀錄。")){draw();return}
+    state.globalTenant.onboardingBusy=true;draw();
+    try{await api("/api/tenant-onboarding",{method:"POST",body:JSON.stringify({action:"confirm",schoolId:sid,checkKey,passed:passed===true})});toast(passed?"✅ 隔離驗證已確認":"↩️ 已取消此項確認");state.globalTenant.onboardingBusy=false;await loadGlobal(true)}catch(e){toast("❌ "+e.message);state.globalTenant.onboardingBusy=false;draw()}
+  };
+  window.runTenantOnboardingAction=async function(action,sid){
+    if(state.globalTenant.onboardingBusy)return;
+    const school=(state.globalTenant.onboarding||[]).find(x=>String(x.schoolId)===String(sid)),name=school?.schoolName||sid;
+    if(action==="start"&&!confirm("開始「"+name+"」Phase 4 隔離驗證？\n\n測試帳號會被限制在此校 Tenant；這不會正式啟用學校，也不會刪除資料。"))return;
+    if(action==="pause"&&!confirm("暫停「"+name+"」隔離驗證？\n\n學校會回到建置中，既有測試資料與驗證紀錄會保留。"))return;
+    if(action==="activate"&&!confirm("確定正式啟用「"+name+"」？\n\n啟用後，第二校老師、家長與 School Admin 將進入正式營運。只有所有安全條件通過時，伺服器才會允許此操作。"))return;
+    state.globalTenant.onboardingBusy=true;draw();
+    try{
+      await api("/api/tenant-onboarding",{method:"POST",body:JSON.stringify({action,schoolId:sid})});
+      const labels={start:"已進入隔離驗證模式",verify:"安全條件已重新驗證",activate:"已正式啟用第二校",pause:"已暫停隔離驗證"};toast("✅ "+(labels[action]||"Phase 4 操作完成"));
+      state.globalTenant.onboardingBusy=false;await loadGlobal(true);
+    }catch(e){toast("❌ "+e.message);state.globalTenant.onboardingBusy=false;draw()}
+  };
 
   function createBox(){
     const cityOpts=cities.map(x=>'<option value="'+esc(x[0])+'" '+(x[0]==="keelung"?"selected":"")+'>'+esc(x[1])+'</option>').join("");
@@ -228,7 +281,11 @@
     const regionOptions=['<option value="">全部行政區</option>'].concat(cities.map(x=>'<option value="'+esc(x[0])+'" '+(state.globalTenant.regionFilter===x[0]?"selected":"")+'>'+esc(x[1])+'</option>')).join("");
     const schools=(d.schools||[]).filter(x=>!state.globalTenant.regionFilter||x.cityCode===state.globalTenant.regionFilter);
     const managed=(d.schools||[]).filter(x=>x.isSchoolManager).length;
-    return '<div class="card hero">'+(sessionStorage.getItem("school_context_id")?'<button class="secondary" style="margin:0 0 10px" onclick="returnToGlobalTenant()">← 返回 Global 觀察模式</button>':'')+'<h2>🌐 Phase 3｜Global 管理中心</h2><div class="notice"><b>跨校管理採彙總最小揭露</b><br>Global 可查看各校人數、出勤與平台健康度，但不取得學生、家長或老師明細；只有綁定為該校 School Admin 後，才可切換進入該校後台。</div><div class="grid" style="margin-top:12px"><div class="kpi"><b>'+Number(d.schoolCount||0)+'</b><span>加入學校</span></div><div class="kpi"><b>'+Number(d.totals?.students||0)+'</b><span>在籍學生</span></div><div class="kpi"><b>'+Number(d.totals?.teachers||0)+'</b><span>啟用老師</span></div><div class="kpi"><b>'+Number(d.totals?.parentAccounts||0)+'</b><span>家長帳號</span></div></div><div class="grid" style="margin-top:10px"><div class="kpi"><b>'+Number(d.statusCounts?.active||0)+'</b><span>正式營運</span></div><div class="kpi"><b>'+Number(d.statusCounts?.setup||0)+'</b><span>建置中</span></div><div class="kpi"><b>'+Number(d.totals?.todayAttendanceRecords||0)+'</b><span>今日點名</span></div><div class="kpi"><b>'+managed+'</b><span>我管理的學校</span></div></div></div>'+crossSchoolAttendanceBox()+platformHealthBox()+'<div class="card"><h2>🏫 學校管理</h2><div class="notice">可編輯學校基本資料與 School Admin；新學校會保持建置中，正式啟用留待 Phase 4 隔離驗證完成。</div><label>行政區篩選</label><select onchange="filterGlobalRegion(this.value)">'+regionOptions+'</select><div class="muted" style="margin-top:8px">目前顯示 '+schools.length+' / '+Number(d.schoolCount||0)+' 所學校</div></div>'+schools.map(schoolCard).join("")+createBox()+globalBrandingBox()+phase2MigrationBox()+(typeof window.globalSystemBackupHtml==="function"?window.globalSystemBackupHtml():"");
+    return '<div class="card hero">'+(sessionStorage.getItem("school_context_id")?'<button class="secondary" style="margin:0 0 10px" onclick="returnToGlobalTenant()">← 返回 Global 觀察模式</button>':'')+
+      '<h2>🌐 Global 管理中心｜Phase 4</h2><div class="notice"><b>跨校管理採彙總最小揭露</b><br>Global 可查看各校人數、出勤與平台健康度，但不取得學生、家長或老師明細；第二校必須完成隔離驗證才可正式啟用。</div>'+
+      '<div class="grid" style="margin-top:12px"><div class="kpi"><b>'+Number(d.schoolCount||0)+'</b><span>加入學校</span></div><div class="kpi"><b>'+Number(d.totals?.students||0)+'</b><span>在籍學生</span></div><div class="kpi"><b>'+Number(d.totals?.teachers||0)+'</b><span>啟用老師</span></div><div class="kpi"><b>'+Number(d.totals?.parentAccounts||0)+'</b><span>家長帳號</span></div></div>'+
+      '<div class="grid" style="margin-top:10px"><div class="kpi"><b>'+Number(d.statusCounts?.active||0)+'</b><span>正式營運</span></div><div class="kpi"><b>'+Number(d.statusCounts?.onboarding||0)+'</b><span>隔離驗證中</span></div><div class="kpi"><b>'+Number(d.totals?.todayAttendanceRecords||0)+'</b><span>今日點名</span></div><div class="kpi"><b>'+managed+'</b><span>我管理的學校</span></div></div></div>'+
+      phase4OnboardingBox()+crossSchoolAttendanceBox()+platformHealthBox()+'<div class="card"><h2>🏫 學校管理</h2><div class="notice">可編輯學校基本資料與 School Admin；一般設定無法直接啟用第二校，生命週期由 Phase 4 安全門控管。</div><label>行政區篩選</label><select onchange="filterGlobalRegion(this.value)">'+regionOptions+'</select><div class="muted" style="margin-top:8px">目前顯示 '+schools.length+' / '+Number(d.schoolCount||0)+' 所學校</div></div>'+schools.map(schoolCard).join("")+createBox()+globalBrandingBox()+phase2MigrationBox()+(typeof window.globalSystemBackupHtml==="function"?window.globalSystemBackupHtml():"");
   }
   function draw(){if(state.page==="global"&&canGlobal()){const a=document.getElementById("app");if(a){a.innerHTML=shell(page());setTimeout(()=>window.updateTenantIdPreview?.(),0)}}}
   window.openGlobalTenant=async function(){if(!canGlobal())return;state.page="global";draw();await loadGlobal(true)};
