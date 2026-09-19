@@ -36,6 +36,7 @@ function view(e,teacherNameOverride=""){
     lessonContent:String(e.lessonContent||""),teacher:String(e.teacher||""),teacherName:String(teacherNameOverride||e.teacherName||e.teacher||""),
     parentConfirmation:String(e.parentConfirmation||(["present","late"].includes(String(e.status||""))?"pending":"not_required")),
     parentConfirmedAt:String(e.parentConfirmedAt||""),parentConfirmedBy:String(e.parentConfirmedBy||""),parentNote:String(e.parentNote||""),
+    teacherRating:Number(e.teacherRating||0),teacherReview:String(e.teacherReview||""),teacherRatedAt:String(e.teacherRatedAt||""),teacherRatedBy:String(e.teacherRatedBy||""),
     emailNotificationStatus:String(e.emailNotificationStatus||""),emailNotificationAt:String(e.emailNotificationAt||""),emailNotificationRecipients:Number(e.emailNotificationRecipients||0),emailNotificationSentCount:Number(e.emailNotificationSentCount||0),emailNotificationFailedCount:Number(e.emailNotificationFailedCount||0),
     emailNotificationResendCount:Number(e.emailNotificationResendCount||0),emailNotificationLastResentAt:String(e.emailNotificationLastResentAt||""),emailNotificationLastResentBy:String(e.emailNotificationLastResentBy||""),
     createdAt:String(e.createdAt||"")
@@ -181,10 +182,19 @@ app.http("privateLesson",{
       if(!ensureStudentAccess(a,studentId))return json({error:"Forbidden"},403);
       if(!["confirmed","issue"].includes(action))return json({error:"action 必須是 confirmed、issue 或 resend_email"},400);
       if(String(entity.parentConfirmation||"")==="not_required")return json({error:"此筆紀錄不需要家長確認"},409);
+      const now=new Date().toISOString();
       entity.parentConfirmation=action;
-      entity.parentConfirmedAt=new Date().toISOString();
+      entity.parentConfirmedAt=now;
       entity.parentConfirmedBy=a.email;
       entity.parentNote=clean(body.note,500);
+      if(action==="confirmed"){
+        const rating=Number(body.teacherRating||0);
+        if(rating&&(!Number.isInteger(rating)||rating<1||rating>5))return json({error:"老師評價必須為 1～5 顆星"},400);
+        entity.teacherRating=rating||0;
+        entity.teacherReview=clean(body.teacherReview,800);
+        entity.teacherRatedAt=(rating||entity.teacherReview)?now:"";
+        entity.teacherRatedBy=(rating||entity.teacherReview)?a.email:"";
+      }
       await table("privateLesson").updateEntity(entity,"Merge");
       const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName);
       return json({ok:true,item:view(entity,teacherName)});
@@ -205,7 +215,9 @@ app.http("privateLesson",{
     const entity={
       partitionKey:canonicalStudentId,rowKey:rowKey("i"),eventDate:lessonDate,startTime,endTime,status,minutes,
       lessonContent:clean(body.lessonContent,500),teacher:a.email,teacherName,
-      parentConfirmation:confirmation,parentConfirmedAt:"",parentConfirmedBy:"",parentNote:"",createdAt:now,updatedAt:now,
+      parentConfirmation:confirmation,parentConfirmedAt:"",parentConfirmedBy:"",parentNote:"",
+      teacherRating:0,teacherReview:"",teacherRatedAt:"",teacherRatedBy:"",
+      createdAt:now,updatedAt:now,
       emailNotificationStatus:confirmation==="pending"?"pending":"not_required",emailNotificationAt:"",emailNotificationRecipients:0,emailNotificationSentCount:0,emailNotificationFailedCount:0,
       emailNotificationResendCount:0,emailNotificationLastResentAt:"",emailNotificationLastResentBy:""
     };
