@@ -100,16 +100,18 @@
   };
   window.saveGlobalBranding=async function(){
     if(state.globalBrandingAdmin.loading)return;
+    const payload={siteName:document.getElementById("globalBrandSiteName")?.value||"",schoolName:document.getElementById("globalBrandSchoolName")?.value||"",loginSubtitle:document.getElementById("globalBrandSubtitle")?.value||"",logoAlt:document.getElementById("globalBrandLogoAlt")?.value||"",primaryColor:document.getElementById("globalBrandColor")?.value||"#3155A4"};
+    const logoFile=globalBrandLogoFile;
     state.globalBrandingAdmin.loading=true;state.globalBrandingAdmin.error="";draw();
     try{
-      const payload={siteName:document.getElementById("globalBrandSiteName")?.value||"",schoolName:document.getElementById("globalBrandSchoolName")?.value||"",loginSubtitle:document.getElementById("globalBrandSubtitle")?.value||"",logoAlt:document.getElementById("globalBrandLogoAlt")?.value||"",primaryColor:document.getElementById("globalBrandColor")?.value||"#3155A4"};
       let saved=await api("/api/global-branding",{method:"PATCH",body:JSON.stringify(payload)});
-      if(globalBrandLogoFile){
-        const dataUrl=await readGlobalBrandDataUrl(globalBrandLogoFile);
+      if(logoFile){
+        const dataUrl=await readGlobalBrandDataUrl(logoFile);
         const uploaded=await api("/api/global-branding-logo",{method:"POST",body:JSON.stringify({dataUrl})});
         saved=uploaded.branding||saved;
       }
-      state.globalBranding={...(state.globalBranding||{}),...saved};
+      const verified=await api("/api/global-branding?_="+Date.now(),{cache:"no-store"});
+      state.globalBranding={...(state.globalBranding||{}),...saved,...verified};
       if(typeof window.setGlobalBranding==="function")window.setGlobalBranding(state.globalBranding);
       globalBrandLogoFile=null;if(globalBrandPreviewUrl){URL.revokeObjectURL(globalBrandPreviewUrl);globalBrandPreviewUrl=""}
       toast("✅ Global 品牌設定已儲存並立即套用");
