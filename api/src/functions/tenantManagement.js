@@ -88,7 +88,23 @@ app.http("tenantAdmins",{
 });
 
 async function countTodayRows(key,date){
-  let n=0;for await(const e of table(key).listEntities({queryOptions:{filter:`eventDate eq '${safe(date)}'`}})){if(String(e.status||"")!=="cancelled")n++}return n
+  const counts={total:0,present:0,late:0,leave:0,absent:0,cancelled:0};
+  for await(const e of table(key).listEntities({queryOptions:{filter:`eventDate eq '${safe(date)}'`}})){
+    const status=String(e.status||"").toLowerCase();
+    if(status==="cancelled"){counts.cancelled++;continue}
+    counts.total++;
+    if(Object.prototype.hasOwnProperty.call(counts,status))counts[status]++;
+  }
+  return counts;
+}
+function mergeAttendance(...items){
+  const out={total:0,present:0,late:0,leave:0,absent:0,cancelled:0};
+  for(const item of items)for(const k of Object.keys(out))out[k]+=Number(item?.[k]||0);
+  return out;
+}
+function taipeiDateOf(value){
+  if(!value)return "";
+  try{return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(value))}catch{return ""}
 }
 
 app.http("globalDashboard",{
@@ -100,20 +116,27 @@ app.http("globalDashboard",{
       listStudentMaster("active"),listTeacherDirectory(),listUserStudentMappings("active"),
       countTodayRows("section",today),countTodayRows("ensemble",today),countTodayRows("comprehensive",today),countTodayRows("privateLesson",today)
     ]);
+    const todayAttendance=mergeAttendance(todaySection,todayEnsemble,todayComprehensive,todayPrivate);
+    const activeTeachers=teachers.filter(x=>String(x.status||"active")==="active");
+    const teachersLoggedInToday=activeTeachers.filter(x=>taipeiDateOf(x.lastLoginAt)===today).length;
+    const memberSchoolIds=new Set((g.a.memberships||[]).filter(x=>String(x.status||"active")==="active").map(x=>String(x.schoolId||"")));
     const schools=[];
     for(const t of tenants){
       const sid=String(t.rowKey),admins=await listTenantAdmins(sid,"active"),isDefault=sid===defaultId;
+      const isSchoolManager=memberSchoolIds.has(sid);
       schools.push({
-        schoolId:sid,schoolName:String(t.schoolName||sid),cityCode:String(t.cityCode||""),cityName:String(t.cityName||""),schoolLevel:String(t.schoolLevel||""),schoolLevelName:String(t.schoolLevelName||""),schoolSlug:String(t.schoolSlug||""),status:String(t.status||"setup"),schoolAdminCount:admins.length,
-        studentCount:isDefault?students.length:0,teacherCount:isDefault?teachers.filter(x=>String(x.status||"active")==="active").length:0,
-        parentAccountCount:isDefault?new Set(parentMaps.map(x=>String(x.parentEmail||"").toLowerCase()).filter(Boolean)).size:0,
-        todayAttendanceRecords:isDefault?(todaySection+todayEnsemble+todayComprehensive+todayPrivate):0,
+        schoolId:sid,schoolName:String(t.schoolName||sid),cityCode:String(t.cityCode||""),cityName:String(t.cityName||""),schoolLevel:String(t.schoolLevel||""),schoolLevelName:String(t.schoolLevelName||""),schoolSlug:String(t.schoolSlug||""),status:String(t.status||"setup"),schoolAdminCount:admins.length,isSchoolManager,
+        studentCount:isSchoolManager&&isDefault?students.length:null,
+        parentAccountCount:isSchoolManager&&isDefault?new Set(parentMaps.map(x=>String(x.parentEmail||"").toLowerCase()).filter(Boolean)).size:null,
+        teacherStatus:isDefault?{active:activeTeachers.length,loggedInToday:teachersLoggedInToday,inactive:teachers.length-activeTeachers.length}:{active:0,loggedInToday:0,inactive:0},
+        todayAttendance:isDefault?todayAttendance:{total:0,present:0,late:0,leave:0,absent:0,cancelled:0},
+        todayAttendanceRecords:isDefault?todayAttendance.total:0,
         dataMode:isDefault?"legacy-default":"tenant-isolation-pending"
       });
     }
     return json({
       today,phase:"multi-tenant-phase-1",schoolCount:schools.length,
-      totals:{students:schools.reduce((n,x)=>n+x.studentCount,0),teachers:schools.reduce((n,x)=>n+x.teacherCount,0),parentAccounts:schools.reduce((n,x)=>n+x.parentAccountCount,0),todayAttendanceRecords:schools.reduce((n,x)=>n+x.todayAttendanceRecords,0)},
+      totals:{students:schools.reduce((n,x)=>n+Number(x.studentCount||0),0),teachers:schools.reduce((n,x)=>n+Number(x.teacherStatus?.active||0),0),parentAccounts:schools.reduce((n,x)=>n+Number(x.parentAccountCount||0),0),todayAttendanceRecords:schools.reduce((n,x)=>n+Number(x.todayAttendanceRecords||0),0)},
       schools,
       notice:"Phase 1 僅建立 Tenant 與權限治理。聖心小學沿用既有資料；新學校維持 setup，不會開放登入既有營運資料，待 Phase 2 完成資料隔離後才可啟用。"
     });
