@@ -72,6 +72,7 @@
 
   const originalRender=render;
   render=function(){
+    if(state.page==="contextSelect")return originalRender();
     if(!isTeacher())return originalRender();
     const available=[];if(cap().section)available.push("section");if(cap().ensemble)available.push("ensemble");if(cap().private)available.push("private");available.push("help");
     if(!available.includes(state.page))state.page=available[0];
