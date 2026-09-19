@@ -12,8 +12,9 @@ const teacherCompletionStatuses=new Set(["scheduled","completion_issue"]);
 function clean(v,max=300){return String(v??"").trim().slice(0,max)}
 export function validateParentLessonReview(ratingValue,reviewValue){
   const rating=Number(ratingValue||0),review=clean(reviewValue,800);
-  if(!Number.isInteger(rating)||rating<1||rating>5)return {error:"請選擇 1～5 顆星後再確認完成上課"};
-  if(!review)return {error:"請填寫老師教學評論後再確認完成上課"};
+  if(rating&&(!Number.isInteger(rating)||rating<1||rating>5))return {error:"老師評價必須為 1～5 顆星"};
+  if(rating&&!review)return {error:"已選擇星等，請填寫老師教學評論後再確認完成上課"};
+  if(review&&!rating)return {error:"若要留下老師教學評論，請先選擇 1～5 顆星"};
   return {rating,review};
 }
 function validTime(v){return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(v||""))}
@@ -269,7 +270,7 @@ app.http("privateLesson",{
         if(validation.error)return json({error:validation.error},400);
         const {rating,review}=validation;
         entity.status=["present","late"].includes(String(entity.actualAttendanceStatus||""))?String(entity.actualAttendanceStatus):"present";
-        entity.teacherRating=rating;entity.teacherReview=review;entity.teacherRatedAt=now;entity.teacherRatedBy=a.email;entity.finalizedAt=now;
+        entity.teacherRating=rating;entity.teacherReview=review;entity.teacherRatedAt=(rating||review)?now:"";entity.teacherRatedBy=(rating||review)?a.email:"";entity.finalizedAt=now;
       }else{
         entity.actualAttendanceStatus=["present","late"].includes(String(entity.actualAttendanceStatus||entity.status||""))?String(entity.actualAttendanceStatus||entity.status):"present";
         entity.status="completion_issue";
