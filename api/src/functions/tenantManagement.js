@@ -1,9 +1,9 @@
 import { app } from "@azure/functions";
-import { getAccess, json } from "../lib/auth.js";
+import { getAccess, getStudentAliasInfo, json } from "../lib/auth.js";
 import {
   ensureDefaultTenant,listTenantDirectory,getTenantDirectory,saveTenantDirectory,
   listTenantAdmins,saveTenantUserRole,writeGlobalAudit,defaultTenantId,
-  listStudentMaster,listTeacherDirectory,listUserStudentMappings,table,ensureTables,tenantIdValue
+  listStudentMaster,listTeacherDirectory,listUserStudentMappings,listActivityRange,activityStudentId,ensureTenantTables,tenantIdValue
 } from "../lib/storage.js";
 
 function clean(v,max=200){return String(v??"").trim().slice(0,max)}
@@ -15,7 +15,6 @@ function tenantView(t){return {
 }}
 function adminView(x){return {email:String(x.partitionKey||""),schoolId:String(x.schoolId||x.rowKey||""),role:String(x.role||""),status:String(x.status||""),createdAt:String(x.createdAt||""),updatedAt:String(x.updatedAt||"")}}
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
-function safe(v){return String(v||"").replaceAll("'","''")}
 const CITY_MAP={
   "keelung":"基隆市","taipei":"臺北市","new-taipei":"新北市","taoyuan":"桃園市","hsinchu-city":"新竹市","hsinchu-county":"新竹縣",
   "miaoli":"苗栗縣","taichung":"臺中市","changhua":"彰化縣","nantou":"南投縣","yunlin":"雲林縣","chiayi-city":"嘉義市","chiayi-county":"嘉義縣",
@@ -87,14 +86,16 @@ app.http("tenantAdmins",{
   }
 });
 
-async function countTodayRows(key,date){
+async function countTodayRows(key,date,schoolId){
   // Keep the Global dashboard aligned with the school daily-followup view.
   // Group/section/comprehensive attendance keeps one effective latest row per student/course scope.
   // Private lessons are separate sessions: each lessonId/sessionId counts independently.
-  const latest=new Map();
+  const latest=new Map(),canonicalCache=new Map();
   const classType=key==="ensemble"?"ensemble":key==="comprehensive"?"comprehensive":key==="privateLesson"?"private":"section";
-  for await(const e of table(key).listEntities({queryOptions:{filter:`eventDate eq '${safe(date)}'`}})){
-    const studentId=String(e.partitionKey||"");
+  for(const e of await listActivityRange(key,schoolId,"","",date)){
+    const rawStudentId=activityStudentId(e);
+    let studentId=canonicalCache.get(rawStudentId);
+    if(!studentId){try{studentId=String((await getStudentAliasInfo(rawStudentId,schoolId)).canonicalStudentId||rawStudentId)}catch{studentId=rawStudentId}canonicalCache.set(rawStudentId,studentId)}
     const groupName=String(e.groupName||"");
     const section=String(e.section||"");
     const sessionId=String(e.sessionId||"")||[studentId,date,String(e.startTime||""),String(e.endTime||""),String(e.teacher||"").trim().toLowerCase()].join("|");
@@ -130,10 +131,10 @@ app.http("globalDashboard",{
   methods:["GET"],authLevel:"anonymous",route:"global-dashboard",
   handler:async request=>{
     const g=await requireGlobal(request);if(g.error)return g.error;
-    await ensureTables();const tenants=await listTenantDirectory(),today=taipeiDate(),defaultId=defaultTenantId();
+    await ensureTenantTables();const tenants=await listTenantDirectory(),today=taipeiDate(),defaultId=defaultTenantId();
     const [students,teachers,parentMaps,todaySection,todayEnsemble,todayComprehensive,todayPrivate]=await Promise.all([
       listStudentMaster("active",defaultId),listTeacherDirectory(defaultId),listUserStudentMappings("active",defaultId),
-      countTodayRows("section",today),countTodayRows("ensemble",today),countTodayRows("comprehensive",today),countTodayRows("privateLesson",today)
+      countTodayRows("section",today,defaultId),countTodayRows("ensemble",today,defaultId),countTodayRows("comprehensive",today,defaultId),countTodayRows("privateLesson",today,defaultId)
     ]);
     const todayAttendance=mergeAttendance(todaySection,todayEnsemble,todayComprehensive,todayPrivate);
     const activeTeachers=teachers.filter(x=>String(x.status||"active")==="active");
@@ -150,14 +151,14 @@ app.http("globalDashboard",{
         teacherStatus:isDefault?{active:activeTeachers.length,loggedInToday:teachersLoggedInToday,inactive:teachers.length-activeTeachers.length}:{active:0,loggedInToday:0,inactive:0},
         todayAttendance:isDefault?todayAttendance:{total:0,present:0,late:0,leave:0,absent:0,cancelled:0},
         todayAttendanceRecords:isDefault?todayAttendance.total:0,
-        dataMode:isDefault?"tenant-scoped-master":"tenant-isolation-pending"
+        dataMode:isDefault?"tenant-scoped-operational":"tenant-isolation-pending"
       });
     }
     return json({
-      today,phase:"multi-tenant-phase-2-master-data",schoolCount:schools.length,
+      today,phase:"multi-tenant-phase-2-operational-data",schoolCount:schools.length,
       totals:{students:schools.reduce((n,x)=>n+Number(x.studentCount||0),0),teachers:schools.reduce((n,x)=>n+Number(x.teacherStatus?.active||0),0),parentAccounts:schools.reduce((n,x)=>n+Number(x.parentAccountCount||0),0),todayAttendanceRecords:schools.reduce((n,x)=>n+Number(x.todayAttendanceRecords||0),0)},
       schools,
-      notice:"Phase 2 主資料已切換為 Tenant scoped；出勤、練習與個別課紀錄仍在下一批切換中。新學校維持 setup，完整隔離驗證前不可啟用。"
+      notice:"Phase 2 主資料、出勤、練習、個別課與相關報表已切換為 Tenant scoped；跨校隔離驗證完成前，新學校仍維持 setup 且不可啟用。"
     });
   }
 });

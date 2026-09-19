@@ -13,6 +13,7 @@ import {
 } from "../lib/storage.js";
 
 const MIGRATION_ID="phase2-tenant-scope-v1";
+const CUTOVER_LOCKED=true;
 const DATASETS=[
   {name:"StudentMaster",label:"學生主檔",sourceKey:"studentMaster",targetKey:"tenantStudentMaster",kind:"school",legacyPartition:"STUDENT"},
   {name:"StudentRegistration",label:"家長申請",sourceKey:"registrations",targetKey:"tenantRegistrations",kind:"school",legacyPartition:"REG"},
@@ -108,7 +109,7 @@ async function saveMarker(schoolId,status,action,actorEmail,summary){
   if(status==="verified")entity.verifiedAt=now;else if(old?.verifiedAt)entity.verifiedAt=old.verifiedAt;
   await table("tenantMigration").upsertEntity(entity,"Replace");return entity;
 }
-function markerView(marker,schoolId){return {ok:true,migrationId:MIGRATION_ID,schoolId,status:String(marker?.status||"not_started"),lastAction:String(marker?.lastAction||""),updatedAt:String(marker?.updatedAt||""),updatedBy:String(marker?.updatedBy||""),backfilledAt:String(marker?.backfilledAt||""),verifiedAt:String(marker?.verifiedAt||""),summary:parseSummary(marker?.summary),secondTenantsRemainSetup:true}}
+function markerView(marker,schoolId){const markerStatus=String(marker?.status||"not_started");return {ok:true,migrationId:MIGRATION_ID,schoolId,status:CUTOVER_LOCKED&&markerStatus==="verified"?"cutover":markerStatus,lastAction:String(marker?.lastAction||""),updatedAt:String(marker?.updatedAt||""),updatedBy:String(marker?.updatedBy||""),backfilledAt:String(marker?.backfilledAt||""),verifiedAt:String(marker?.verifiedAt||""),summary:parseSummary(marker?.summary),cutoverLocked:CUTOVER_LOCKED,cutoverStage:"operational-data",secondTenantsRemainSetup:true}}
 
 app.http("tenantMigration",{methods:["GET","POST"],authLevel:"anonymous",route:"tenant-migration",handler:async request=>{
   const access=await getAccess(request);
@@ -118,6 +119,7 @@ app.http("tenantMigration",{methods:["GET","POST"],authLevel:"anonymous",route:"
   try{
     await ensureTenantTables();await ensureDefaultTenant(access.email);
     if(request.method==="GET")return json(markerView(await getMarker(schoolId),schoolId));
+    if(CUTOVER_LOCKED)return json({error:"Tenant 資料已切換為正式讀寫來源；為避免舊表覆寫新資料，回填工具已鎖定。",cutoverLocked:true},409);
     let body;try{body=await request.json()}catch{return json({error:"JSON 格式不正確"},400)}
     const action=String(body?.action||"").trim().toLowerCase();
     if(!["preview","backfill","verify"].includes(action))return json({error:"action 必須為 preview、backfill 或 verify"},400);

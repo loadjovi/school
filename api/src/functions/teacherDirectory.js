@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
-import { listTeacherDirectory, saveTeacherDirectory, getTeacherProfile, saveTeacherProfile, listStudentMaster, ensureTables, table } from "../lib/storage.js";
+import { listTeacherDirectory, saveTeacherDirectory, getTeacherProfile, saveTeacherProfile, listStudentMaster, listActivityRange } from "../lib/storage.js";
 
 function clean(v,max=120){return String(v||"").trim().slice(0,max)}
 function normalizeEmail(v){return clean(v,200).toLowerCase()}
@@ -16,9 +16,8 @@ app.http("teacherDirectory",{
     const {access,schoolId}=context;
     if(access.role!=="admin")return json({error:"Forbidden"},403);
     if(request.method==="GET"){
-      await ensureTables();
       const ratingMap=new Map();
-      for await(const e of table("privateLesson").listEntities()){
+      for(const e of await listActivityRange("privateLesson",schoolId)){
         const email=normalizeEmail(e.teacher),rating=Number(e.teacherRating||0);
         if(!email||!Number.isInteger(rating)||rating<1||rating>5)continue;
         const old=ratingMap.get(email)||{ratingCount:0,ratingTotal:0,fiveStarCount:0,reviews:[]};

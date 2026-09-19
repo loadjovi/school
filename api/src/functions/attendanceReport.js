@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
-import { getAccess, getStudentAliasInfo, json } from "../lib/auth.js";
-import { ensureTables, table, listStudentMaster, getTeacherDirectory, getTeacherProfile, listUserStudentMappings } from "../lib/storage.js";
+import { getTenantContext, getStudentAliasInfo, json } from "../lib/auth.js";
+import { ensureTenantTables, listActivityRange, activityStudentId, listStudentMaster, getTeacherDirectory, getTeacherProfile, listUserStudentMappings } from "../lib/storage.js";
 import { getSystemSettings, saveSystemSettings } from "../lib/settings.js";
 
 function clean(v,max=80){return String(v||"").trim().slice(0,max)}
@@ -11,11 +11,15 @@ function monthRange(month){
 function studentView(e){
   return {studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,section:e.section||"待確認",schoolYear:e.schoolYear||"",status:e.status||"active"};
 }
-async function listRange(key,start,end,allowedIds){
+async function canonicalReportStudentId(studentId,cache,schoolId){
+  const raw=String(studentId||"");
+  if(cache.has(raw))return cache.get(raw);
+  try{const info=await getStudentAliasInfo(raw,schoolId),canonical=String(info.canonicalStudentId||raw);cache.set(raw,canonical);return canonical}catch{cache.set(raw,raw);return raw}
+}
+async function listRange(key,start,end,allowedIds,schoolId,canonicalCache){
   const latest=new Map();
-  const filter=`eventDate ge '${start}' and eventDate le '${end}'`;
-  for await (const e of table(key).listEntities({queryOptions:{filter}})){
-    const studentId=String(e.partitionKey);
+  for(const e of await listActivityRange(key,schoolId,start,end)){
+    const studentId=await canonicalReportStudentId(activityStudentId(e),canonicalCache,schoolId);
     if(allowedIds&&!allowedIds.has(studentId))continue;
     const row={
       studentId,
@@ -50,33 +54,34 @@ function add(bucket,status){
 app.http("attendanceReport",{
   methods:["GET"],authLevel:"anonymous",route:"attendance-report",
   handler:async(request)=>{
-    const a=await getAccess(request);
-    if(!a.authenticated)return json({error:"Unauthorized"},401);
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access:a,schoolId}=context;
     const isTeacher=!!a.capabilities?.teacherSettings;
     if(a.role!=="admin"&&!isTeacher)return json({error:"Forbidden"},403);
     const {month,start,end}=monthRange(clean(request.query.get("month"),12));
-    await ensureTables();
+    await ensureTenantTables();
 
     let students;
     if(a.role==="admin"){
-      students=(await listStudentMaster("active")).map(studentView);
+      students=(await listStudentMaster("active",schoolId)).map(studentView);
     }else{
       const map=new Map((a.students||[]).filter(x=>x?.studentId).map(x=>[String(x.studentId),{
         studentId:String(x.studentId),name:x.name,grade:x.grade,groupName:x.groupName,instrument:x.instrument,section:x.section||"待確認",schoolYear:x.schoolYear||"",status:x.status||"active"
       }]));
-      const profile=await getTeacherProfile(a.email);
+      const profile=await getTeacherProfile(a.email,schoolId);
       if(profile?.comprehensiveEnabled===true){
-        for(const s of (await listStudentMaster("active")).map(studentView))map.set(String(s.studentId),s);
+        for(const s of (await listStudentMaster("active",schoolId)).map(studentView))map.set(String(s.studentId),s);
       }
       students=[...map.values()];
     }
     const byId=new Map(students.map(s=>[String(s.studentId),s]));
     const allowedIds=new Set(byId.keys());
+    const canonicalCache=new Map();
     const [sectionRows,ensembleRows,comprehensiveRows,privateRows]=await Promise.all([
-      listRange("section",start,end,allowedIds),
-      listRange("ensemble",start,end,allowedIds),
-      listRange("comprehensive",start,end,allowedIds),
-      listRange("privateLesson",start,end,allowedIds)
+      listRange("section",start,end,allowedIds,schoolId,canonicalCache),
+      listRange("ensemble",start,end,allowedIds,schoolId,canonicalCache),
+      listRange("comprehensive",start,end,allowedIds,schoolId,canonicalCache),
+      listRange("privateLesson",start,end,allowedIds,schoolId,canonicalCache)
     ]);
     const records=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows].sort((a,b)=>String(b.eventDate).localeCompare(String(a.eventDate))||String(b.createdAt).localeCompare(String(a.createdAt)));
     const agg=new Map();
@@ -93,32 +98,32 @@ app.http("attendanceReport",{
 
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
 function emailConfigured(){return !!(String(process.env.ACS_EMAIL_CONNECTION_STRING||"").trim()&&String(process.env.ACS_EMAIL_SENDER||"").trim())}
-async function notificationSettingsResponse(request,a){
+async function notificationSettingsResponse(request,a,schoolId){
   if(request.method==="PATCH"){
     const body=await request.json();
     if(typeof body.emailNotificationsEnabled!=="boolean")return json({error:"emailNotificationsEnabled 必須為布林值"},400);
-    const saved=await saveSystemSettings({emailNotificationsEnabled:body.emailNotificationsEnabled,updatedBy:a.email});
+    const saved=await saveSystemSettings({emailNotificationsEnabled:body.emailNotificationsEnabled,updatedBy:a.email,schoolId});
     return json({...saved,emailServiceConfigured:emailConfigured(),effectiveEmailEnabled:saved.emailNotificationsEnabled&&emailConfigured()});
   }
-  const settings=await getSystemSettings();
+  const settings=await getSystemSettings(schoolId);
   return json({...settings,emailServiceConfigured:emailConfigured(),effectiveEmailEnabled:settings.emailNotificationsEnabled&&emailConfigured()});
 }
-async function canonicalDailyId(id,students,cache){
+async function canonicalDailyId(id,students,cache,schoolId){
   const key=String(id||"");
   if(students.has(key))return key;
   if(cache.has(key))return cache.get(key);
-  try{const a=await getStudentAliasInfo(key);const c=String(a.canonicalStudentId||key);cache.set(key,c);return c}catch{cache.set(key,key);return key}
+  try{const a=await getStudentAliasInfo(key,schoolId);const c=String(a.canonicalStudentId||key);cache.set(key,c);return c}catch{cache.set(key,key);return key}
 }
-async function dailyTeacherName(email,cache){
+async function dailyTeacherName(email,cache,schoolId){
   const key=String(email||"").trim().toLowerCase();
   if(!key)return "";
   if(cache.has(key))return cache.get(key);
-  try{const d=await getTeacherDirectory(key);const name=String(d?.teacherName||"").trim()||key;cache.set(key,name);return name}catch{cache.set(key,key);return key}
+  try{const d=await getTeacherDirectory(key,schoolId);const name=String(d?.teacherName||"").trim()||key;cache.set(key,name);return name}catch{cache.set(key,key);return key}
 }
-async function collectDaily(key,date){
+async function collectDaily(key,date,schoolId){
   const latest=new Map();
-  for await (const e of table(key).listEntities({queryOptions:{filter:`eventDate eq '${date.replaceAll("'","''")}'`}})){
-    const rawStudentId=String(e.partitionKey||"");
+  for(const e of await listActivityRange(key,schoolId,"","",date)){
+    const rawStudentId=activityStudentId(e);
     const classType=key==="ensemble"?"ensemble":key==="comprehensive"?"comprehensive":key==="privateLesson"?"private":"section";
     const row={rawStudentId,eventDate:String(e.eventDate||date),classType,groupName:String(e.groupName||""),section:String(e.section||""),status:String(e.status||""),teacher:String(e.teacher||""),teacherName:String(e.teacherName||""),startTime:String(e.startTime||""),endTime:String(e.endTime||""),minutes:Number(e.minutes||0),lessonContent:String(e.lessonContent||""),parentConfirmation:String(e.parentConfirmation||""),teacherRating:Number(e.teacherRating||0),teacherReview:String(e.teacherReview||""),emailNotificationStatus:String(e.emailNotificationStatus||""),emailNotificationAt:String(e.emailNotificationAt||""),emailNotificationRecipients:Number(e.emailNotificationRecipients||0),emailNotificationSentCount:Number(e.emailNotificationSentCount||0),emailNotificationFailedCount:Number(e.emailNotificationFailedCount||0),emailNotificationResendCount:Number(e.emailNotificationResendCount||0),emailNotificationLastResentAt:String(e.emailNotificationLastResentAt||""),emailNotificationLastResentBy:String(e.emailNotificationLastResentBy||""),createdAt:String(e.createdAt||""),rowKey:String(e.rowKey||""),sessionId:String(e.sessionId||"")};
     const privateSessionKey=row.sessionId||[rawStudentId,row.eventDate,row.startTime,row.endTime,row.teacher.trim().toLowerCase()].join("|");
@@ -134,24 +139,24 @@ async function collectDaily(key,date){
 app.http("dailyFollowup",{
   methods:["GET","PATCH"],authLevel:"anonymous",route:"daily-followup",
   handler:async(request)=>{
-    const a=await getAccess(request);
-    if(!a.authenticated)return json({error:"Unauthorized"},401);
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access:a,schoolId}=context;
     if(a.role!=="admin")return json({error:"Forbidden"},403);
 
-    if(String(request.query.get("mode")||"")==="settings")return notificationSettingsResponse(request,a);
+    if(String(request.query.get("mode")||"")==="settings")return notificationSettingsResponse(request,a,schoolId);
 
     if(request.method!=="GET")return json({error:"Method not allowed"},405);
     const date=clean(request.query.get("date")||taipeiDate(),20);
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"日期格式不正確"},400);
-    await ensureTables();
+    await ensureTenantTables();
 
-    const masters=await listStudentMaster();
+    const masters=await listStudentMaster("",schoolId);
     const students=new Map(masters.map(e=>[String(e.rowKey),studentView(e)]));
     const canonicalCache=new Map(),teacherCache=new Map();
 
     const currentParentBindings=new Map();
-    for(const m of await listUserStudentMappings("active")){
-      const canonicalId=await canonicalDailyId(m.studentId,students,canonicalCache);
+    for(const m of await listUserStudentMappings("active",schoolId)){
+      const canonicalId=await canonicalDailyId(m.studentId,students,canonicalCache,schoolId);
       if(!currentParentBindings.has(canonicalId))currentParentBindings.set(canonicalId,[]);
       const rows=currentParentBindings.get(canonicalId);
       const email=String(m.parentEmail||"").trim().toLowerCase();
@@ -159,7 +164,7 @@ app.http("dailyFollowup",{
         parentEmail:email,parentName:String(m.parentName||""),relationship:String(m.relationship||"家長")
       });
     }
-    const [sectionRows,ensembleRows,comprehensiveRows,privateRows]=await Promise.all([collectDaily("section",date),collectDaily("ensemble",date),collectDaily("comprehensive",date),collectDaily("privateLesson",date)]);
+    const [sectionRows,ensembleRows,comprehensiveRows,privateRows]=await Promise.all([collectDaily("section",date,schoolId),collectDaily("ensemble",date,schoolId),collectDaily("comprehensive",date,schoolId),collectDaily("privateLesson",date,schoolId)]);
     const allDailyRows=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows];
     const activeMasters=masters.filter(e=>String(e.status||"active")!=="inactive");
     const activeByGroup=g=>activeMasters.filter(e=>String(e.groupName||"")===g).length;
@@ -200,7 +205,7 @@ app.http("dailyFollowup",{
     const privateLessonDetails=[];
     for(const r of privateRows){
       if(String(r.status||"")==="cancelled")continue;
-      const studentId=await canonicalDailyId(r.rawStudentId,students,canonicalCache);
+      const studentId=await canonicalDailyId(r.rawStudentId,students,canonicalCache,schoolId);
       const s=students.get(String(studentId))||{studentId,name:`學生 ${studentId}`,grade:"",groupName:"",section:"",instrument:""};
       privateLessonDetails.push({
         lessonId:r.rowKey||"",
@@ -210,7 +215,7 @@ app.http("dailyFollowup",{
         groupName:s.groupName,
         instrument:s.instrument,
         status:r.status,
-        teacherName:await dailyTeacherName(r.teacher,teacherCache),
+        teacherName:await dailyTeacherName(r.teacher,teacherCache,schoolId),
         teacherEmail:r.teacher,
         startTime:r.startTime||"",
         endTime:r.endTime||"",
@@ -256,7 +261,7 @@ app.http("dailyFollowup",{
     const raw=allDailyRows.filter(x=>["leave","absent"].includes(x.status));
     const latest=new Map();
     for(const r of raw){
-      const studentId=await canonicalDailyId(r.rawStudentId,students,canonicalCache),row={...r,studentId};
+      const studentId=await canonicalDailyId(r.rawStudentId,students,canonicalCache,schoolId),row={...r,studentId};
       const k=[studentId,row.eventDate,row.classType,row.groupName,row.section].join("|");
       const old=latest.get(k),stamp=`${row.createdAt}|${row.rowKey}`,oldStamp=old?`${old.createdAt}|${old.rowKey}`:"";
       if(!old||stamp>=oldStamp)latest.set(k,row);
@@ -265,7 +270,7 @@ app.http("dailyFollowup",{
     const items=[];
     for(const r of latest.values()){
       const s=students.get(String(r.studentId))||{studentId:r.studentId,name:`學生 ${r.studentId}`,grade:"",groupName:r.groupName,section:r.section||"待確認",instrument:""};
-      items.push({date:r.eventDate,classType:r.classType,studentId:r.studentId,name:s.name,grade:s.grade,groupName:r.groupName||s.groupName,section:r.classType==="ensemble"?"四分部合班":r.section||s.section||"待確認",instrument:s.instrument,status:r.status,teacherName:await dailyTeacherName(r.teacher,teacherCache),teacherEmail:r.teacher});
+      items.push({date:r.eventDate,classType:r.classType,studentId:r.studentId,name:s.name,grade:s.grade,groupName:r.groupName||s.groupName,section:r.classType==="ensemble"?"四分部合班":r.section||s.section||"待確認",instrument:s.instrument,status:r.status,teacherName:await dailyTeacherName(r.teacher,teacherCache,schoolId),teacherEmail:r.teacher});
     }
     items.sort((x,y)=>String(x.classType).localeCompare(String(y.classType))||String(x.groupName).localeCompare(String(y.groupName),"zh-Hant")||String(x.section).localeCompare(String(y.section),"zh-Hant")||String(x.name).localeCompare(String(y.name),"zh-Hant"));
     return json({date,scope:"00:00-23:59",items,attendanceCounts,courseSummary,privateLessonDetails,counts:{total:items.length,leave:items.filter(x=>x.status==="leave").length,absent:items.filter(x=>x.status==="absent").length,section:items.filter(x=>x.classType==="section").length,ensemble:items.filter(x=>x.classType==="ensemble").length,comprehensive:items.filter(x=>x.classType==="comprehensive").length,private:items.filter(x=>x.classType==="private").length}});
@@ -276,9 +281,9 @@ app.http("dailyFollowup",{
 app.http("adminSettingsCompat",{
   methods:["GET","PATCH"],authLevel:"anonymous",route:"admin-settings",
   handler:async(request)=>{
-    const a=await getAccess(request);
-    if(!a.authenticated)return json({error:"Unauthorized"},401);
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access:a,schoolId}=context;
     if(a.role!=="admin")return json({error:"Forbidden"},403);
-    return notificationSettingsResponse(request,a);
+    return notificationSettingsResponse(request,a,schoolId);
   }
 });

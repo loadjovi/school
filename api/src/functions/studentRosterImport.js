@@ -90,10 +90,9 @@ async function migratePartitionRows(key,oldPartition,newPartition,{legacyStudent
   }
   return rows.length;
 }
-async function migrateActivityRows(legacyKey,tenantKey,oldId,newId,schoolId){
-  const legacy=await migratePartitionRows(legacyKey,oldId,newId,{legacyStudentId:oldId});
+async function migrateActivityRows(tenantKey,oldId,newId,schoolId){
   const tenant=await migratePartitionRows(tenantKey,tenantStudentPartition(schoolId,oldId),tenantStudentPartition(schoolId,newId),{legacyStudentId:oldId,schoolId,studentId:newId});
-  return {legacy,tenant,total:legacy+tenant};
+  return {tenant,total:tenant};
 }
 async function migrateParentMappings(oldId,newId,student,accessEmail,schoolId){
   if(!oldId||oldId===newId)return 0;
@@ -129,11 +128,11 @@ async function migrateRegistrationReferences(oldId,newId,schoolId){
 }
 async function migrateHistoricalReferences(oldId,newId,student,accessEmail,schoolId){
   const counts={};
-  counts.practice=await migrateActivityRows("practice","tenantPractice",oldId,newId,schoolId);
-  counts.section=await migrateActivityRows("section","tenantSection",oldId,newId,schoolId);
-  counts.ensemble=await migrateActivityRows("ensemble","tenantEnsemble",oldId,newId,schoolId);
-  counts.comprehensive=await migrateActivityRows("comprehensive","tenantComprehensive",oldId,newId,schoolId);
-  counts.privateLesson=await migrateActivityRows("privateLesson","tenantPrivateLesson",oldId,newId,schoolId);
+  counts.practice=await migrateActivityRows("tenantPractice",oldId,newId,schoolId);
+  counts.section=await migrateActivityRows("tenantSection",oldId,newId,schoolId);
+  counts.ensemble=await migrateActivityRows("tenantEnsemble",oldId,newId,schoolId);
+  counts.comprehensive=await migrateActivityRows("tenantComprehensive",oldId,newId,schoolId);
+  counts.privateLesson=await migrateActivityRows("tenantPrivateLesson",oldId,newId,schoolId);
   counts.parentMappings=await migrateParentMappings(oldId,newId,student,accessEmail,schoolId);
   counts.teacherProfiles=await migrateTeacherPrivateAssignments(oldId,newId,schoolId);
   counts.registrations=await migrateRegistrationReferences(oldId,newId,schoolId);

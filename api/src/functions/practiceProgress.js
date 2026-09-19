@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
-import { getAccess, getStudentAliasInfo, canonicalizeStudents, json } from "../lib/auth.js";
-import { ensureTables, table, listStudentMaster } from "../lib/storage.js";
+import { getTenantContext, getStudentAliasInfo, canonicalizeStudents, json } from "../lib/auth.js";
+import { listActivityRange, listStudentMaster, activityStudentId } from "../lib/storage.js";
 
 function clean(v,max=20){return String(v||"").trim().slice(0,max)}
 function monthRange(raw){
@@ -30,19 +30,11 @@ function viewPractice(r,qualifiedMinutes){
     createdAt:String(r.createdAt||"")
   };
 }
-async function listMonthPractice(start,end){
-  await ensureTables();
-  const filter=`eventDate ge '${String(start).replaceAll("'","''")}' and eventDate le '${String(end).replaceAll("'","''")}'`;
-  const items=[];
-  for await (const e of table("practice").listEntities({queryOptions:{filter}}))items.push(e);
-  return items;
-}
-
 app.http("practiceProgress",{
   methods:["GET"],authLevel:"anonymous",route:"practice-progress",
   handler:async(request)=>{
-    const a=await getAccess(request);
-    if(!a.authenticated)return json({error:"Unauthorized"},401);
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access:a,schoolId}=context;
     const isTeacher=!!a.capabilities?.teacherSettings;
     if(a.role!=="admin"&&!isTeacher)return json({error:"Forbidden"},403);
 
@@ -57,23 +49,23 @@ app.http("practiceProgress",{
 
     let students=[];
     if(a.role==="admin"){
-      const raw=(await listStudentMaster("active")).map(viewStudent);
-      students=(await canonicalizeStudents(raw)).map(viewStudent);
+      const raw=(await listStudentMaster("active",schoolId)).map(viewStudent);
+      students=(await canonicalizeStudents(raw,schoolId)).map(viewStudent);
     }else students=(a.students||[]).filter(x=>x?.studentId).map(viewStudent);
 
     const seen=new Set();
     students=students.filter(s=>s.studentId&&!seen.has(s.studentId)&&(seen.add(s.studentId),true));
 
-    const monthRows=await listMonthPractice(start,end);
+    const monthRows=await listActivityRange("practice",schoolId,start,end);
 
     const items=await Promise.all(students.map(async s=>{
-      const aliasInfo=await getStudentAliasInfo(s.studentId);
+      const aliasInfo=await getStudentAliasInfo(s.studentId,schoolId);
       const aliasSet=new Set(aliasInfo.aliases.map(String));
       const parentSet=new Set(aliasInfo.safeParentEmails.map(x=>String(x).toLowerCase()));
       const unique=new Map();
       let matchedByIdCount=0,matchedByParentCount=0;
       for(const r of monthRows){
-        const partition=String(r.partitionKey||"");
+        const partition=activityStudentId(r);
         const creator=String(r.createdBy||"").trim().toLowerCase();
         const byId=aliasSet.has(partition);
         const byParent=!byId&&creator&&parentSet.has(creator);

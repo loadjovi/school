@@ -1,4 +1,5 @@
 import { TableClient, TableServiceClient } from "@azure/data-tables";
+import { defaultTenantId, tenantSchoolPartition } from "./storage.js";
 
 const tableName=()=>process.env.SYSTEM_SETTINGS_TABLE||"SystemSettings";
 const conn=()=>process.env.STORAGE_CONNECTION_STRING;
@@ -14,21 +15,31 @@ async function ensureSettingsTable(){
 
 function client(){return TableClient.fromConnectionString(conn(),tableName())}
 
-export async function getSystemSettings(){
+export async function getSystemSettings(schoolId=defaultTenantId()){
   await ensureSettingsTable();
+  const partition=tenantSchoolPartition(schoolId);
   try{
-    const e=await client().getEntity("SYSTEM","notifications");
+    const e=await client().getEntity(partition,"notifications");
     return {emailNotificationsEnabled:e.emailNotificationsEnabled===true,updatedAt:String(e.updatedAt||""),updatedBy:String(e.updatedBy||"")};
   }catch(e){
     if(e.statusCode!==404)throw e;
+    if(partition===defaultTenantId()){
+      try{
+        const legacy=await client().getEntity("SYSTEM","notifications");
+        const migrated={partitionKey:partition,rowKey:"notifications",schoolId:partition,emailNotificationsEnabled:legacy.emailNotificationsEnabled===true,updatedAt:String(legacy.updatedAt||new Date().toISOString()),updatedBy:String(legacy.updatedBy||"legacy-migration")};
+        await client().upsertEntity(migrated,"Merge");
+        return {emailNotificationsEnabled:migrated.emailNotificationsEnabled,updatedAt:migrated.updatedAt,updatedBy:migrated.updatedBy};
+      }catch(legacyError){if(legacyError.statusCode!==404)throw legacyError}
+    }
     return {emailNotificationsEnabled:false,updatedAt:"",updatedBy:""};
   }
 }
 
-export async function saveSystemSettings({emailNotificationsEnabled=false,updatedBy=""}={}){
+export async function saveSystemSettings({emailNotificationsEnabled=false,updatedBy="",schoolId=defaultTenantId()}={}){
   await ensureSettingsTable();
+  const partition=tenantSchoolPartition(schoolId);
   const entity={
-    partitionKey:"SYSTEM",rowKey:"notifications",
+    partitionKey:partition,rowKey:"notifications",schoolId:partition,
     emailNotificationsEnabled:emailNotificationsEnabled===true,
     updatedAt:new Date().toISOString(),updatedBy:String(updatedBy||"").slice(0,160)
   };

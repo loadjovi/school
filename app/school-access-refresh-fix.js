@@ -34,10 +34,13 @@
         return;
       }
 
+      if(d.schoolId)sessionStorage.setItem("school_context_id",String(d.schoolId));
       state.schoolViewer=state.schoolViewer||{};
       state.schoolViewer.checked=true;
       state.schoolViewer.allowed=true;
       state.me.role="school";
+      state.me.schoolId=d.schoolId||state.me.schoolId;
+      state.me.schoolName=d.schoolName||state.me.schoolName;
       state.me.capabilities={
         ...(state.me.capabilities||{}),
         schoolAttendance:true,
@@ -109,7 +112,7 @@
 
   if(!document.querySelector('script[data-global-tenant-admin="1"]')){
     const s=document.createElement("script");
-    s.src="/global-tenant-admin.js?v=20260919-2355";
+    s.src="/global-tenant-admin.js?v=20260920-0010";
     s.defer=true;
     s.dataset.globalTenantAdmin="1";
     document.body.appendChild(s);

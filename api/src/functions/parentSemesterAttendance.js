@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
-import { getAccess, ensureStudentAccess, getStudentIdAliases, json } from "../lib/auth.js";
-import { listByStudent, getStudentMaster, semesterLabel } from "../lib/storage.js";
+import { getTenantContext, ensureStudentAccess, getStudentIdAliases, json } from "../lib/auth.js";
+import { listByStudent, getStudentMaster, semesterLabel, activityStudentId } from "../lib/storage.js";
 
 function safeInt(v){const n=Number.parseInt(String(v||""),10);return Number.isFinite(n)?n:0}
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
@@ -31,12 +31,12 @@ function classTypeFor(key,row){
   if(key==="comprehensive")return "comprehensive";
   return String(row.classType||"privateLesson");
 }
-async function recordsForAliases(key,aliases,start,end){
-  const sets=await Promise.all(aliases.map(id=>listByStudent(key,id,start,end)));
+async function recordsForAliases(key,aliases,start,end,schoolId){
+  const sets=await Promise.all(aliases.map(id=>listByStudent(key,id,start,end,schoolId)));
   const latest=new Map();
   for(const row of sets.flat()){
     const r={
-      studentId:String(row.partitionKey||""),eventDate:String(row.eventDate||""),classType:classTypeFor(key,row),
+      studentId:activityStudentId(row),eventDate:String(row.eventDate||""),classType:classTypeFor(key,row),
       groupName:String(row.groupName||""),section:String(row.section||""),status:String(row.status||""),minutes:Number(row.minutes||0),
       teacher:String(row.teacher||""),createdAt:String(row.createdAt||""),rowKey:String(row.rowKey||"")
     };
@@ -50,25 +50,25 @@ async function recordsForAliases(key,aliases,start,end){
 app.http("parentSemesterAttendance",{
   methods:["GET"],authLevel:"anonymous",route:"parent-semester-attendance",
   handler:async request=>{
-    const access=await getAccess(request);
-    if(!access.authenticated)return json({error:"Unauthorized"},401);
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access,schoolId}=context;
     if(access.role!=="parent"&&access.role!=="admin")return json({error:"Forbidden"},403);
     const studentId=String(request.query.get("studentId")||"").trim();
     if(!studentId||!ensureStudentAccess(access,studentId))return json({error:"Forbidden"},403);
 
-    const master=await getStudentMaster(studentId);
+    const master=await getStudentMaster(studentId,schoolId);
     const fallback=currentRocTerm();
     const schoolYear=String(request.query.get("schoolYear")||master?.schoolYear||fallback.schoolYear).trim();
     const semester=String(request.query.get("semester")||master?.semester||fallback.semester).trim();
     const range=termRange(schoolYear,semester);
     if(!range)return json({error:"學年度或學期格式不正確"},400);
     const today=taipeiDate(),end=today<range.end?today:range.end;
-    const aliases=await getStudentIdAliases(studentId);
+    const aliases=await getStudentIdAliases(studentId,schoolId);
     const [sectionRows,ensembleRows,comprehensiveRows,privateRows]=await Promise.all([
-      recordsForAliases("section",aliases,range.start,end),
-      recordsForAliases("ensemble",aliases,range.start,end),
-      recordsForAliases("comprehensive",aliases,range.start,end),
-      recordsForAliases("privateLesson",aliases,range.start,end)
+      recordsForAliases("section",aliases,range.start,end,schoolId),
+      recordsForAliases("ensemble",aliases,range.start,end,schoolId),
+      recordsForAliases("comprehensive",aliases,range.start,end,schoolId),
+      recordsForAliases("privateLesson",aliases,range.start,end,schoolId)
     ]);
     const records=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows]
       .sort((a,b)=>String(b.eventDate).localeCompare(String(a.eventDate))||String(b.createdAt).localeCompare(String(a.createdAt)));

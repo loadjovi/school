@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
-import { getAccess, ensurePrivateAccess, ensureStudentAccess, getStudentAliasInfo, json } from "../lib/auth.js";
-import { ensureTables, table, rowKey, listByStudent, getTeacherDirectory, listUserStudentMappings, getStudentMaster } from "../lib/storage.js";
+import { getTenantContext, ensurePrivateAccess, ensureStudentAccess, getStudentAliasInfo, json } from "../lib/auth.js";
+import { ensureTenantTables, table, rowKey, listByStudent, getTeacherDirectory, listUserStudentMappings, getStudentMaster, tenantStudentPartition, activityStudentId } from "../lib/storage.js";
 import { sendPrivateLessonParentEmail } from "../lib/email.js";
 import { getSystemSettings } from "../lib/settings.js";
 
@@ -31,7 +31,7 @@ function publicAppUrl(request){
 }
 function view(e,teacherNameOverride=""){
   return {
-    lessonId:String(e.rowKey||""),studentId:String(e.partitionKey||""),lessonDate:String(e.eventDate||""),
+    lessonId:String(e.rowKey||""),studentId:activityStudentId(e),lessonDate:String(e.eventDate||""),
     startTime:String(e.startTime||""),endTime:String(e.endTime||""),minutes:Number(e.minutes||0),status:String(e.status||"present"),
     lessonContent:String(e.lessonContent||""),teacher:String(e.teacher||""),teacherName:String(teacherNameOverride||e.teacherName||e.teacher||""),
     parentConfirmation:String(e.parentConfirmation||(["present","late"].includes(String(e.status||""))?"pending":"not_required")),
@@ -43,11 +43,11 @@ function view(e,teacherNameOverride=""){
     createdAt:String(e.createdAt||"")
   };
 }
-async function resolvedTeacherName(email,fallback=""){
+async function resolvedTeacherName(email,fallback="",schoolId=""){
   const key=String(email||"").trim().toLowerCase();
   if(!key)return clean(fallback,120);
   try{
-    const d=await getTeacherDirectory(key);
+    const d=await getTeacherDirectory(key,schoolId);
     const name=clean(d?.teacherName,120);
     if(name)return name;
   }catch(e){console.warn("Unable to resolve teacher directory name:",e?.message||String(e))}
@@ -55,26 +55,26 @@ async function resolvedTeacherName(email,fallback=""){
   if(stored&&stored.toLowerCase()!==key)return stored;
   return "個別課老師";
 }
-async function rowsForStudent(studentId,start,end){
-  const alias=await getStudentAliasInfo(studentId),ids=[...new Set(alias.aliases?.length?alias.aliases:[studentId])];
-  const rows=(await Promise.all(ids.map(id=>listByStudent("privateLesson",id,start,end)))).flat();
+async function rowsForStudent(studentId,start,end,schoolId){
+  const alias=await getStudentAliasInfo(studentId,schoolId),ids=[...new Set(alias.aliases?.length?alias.aliases:[studentId])];
+  const rows=(await Promise.all(ids.map(id=>listByStudent("privateLesson",id,start,end,schoolId)))).flat();
   const unique=new Map();for(const r of rows)unique.set(`${r.partitionKey}|${r.rowKey}`,r);
   return [...unique.values()];
 }
-async function findLesson(studentId,lessonId){
-  const alias=await getStudentAliasInfo(studentId),ids=[...new Set(alias.aliases?.length?alias.aliases:[studentId])];
+async function findLesson(studentId,lessonId,schoolId){
+  const alias=await getStudentAliasInfo(studentId,schoolId),ids=[...new Set(alias.aliases?.length?alias.aliases:[studentId])];
   for(const id of ids){
-    try{return await table("privateLesson").getEntity(String(id),String(lessonId))}
+    try{return await table("tenantPrivateLesson").getEntity(tenantStudentPartition(schoolId,id),String(lessonId))}
     catch(e){if(e.statusCode!==404)throw e}
   }
   return null;
 }
-async function parentEmailsForStudent(canonicalStudentId){
-  const mappings=await listUserStudentMappings("active"),emails=new Set();
+async function parentEmailsForStudent(canonicalStudentId,schoolId){
+  const mappings=await listUserStudentMappings("active",schoolId),emails=new Set();
   for(const m of mappings){
     if(!m.parentEmail||!m.studentId)continue;
     try{
-      const alias=await getStudentAliasInfo(m.studentId);
+      const alias=await getStudentAliasInfo(m.studentId,schoolId);
       const canonical=String(alias.canonicalStudentId||m.studentId);
       if(canonical===String(canonicalStudentId))emails.add(String(m.parentEmail).trim().toLowerCase());
     }catch(e){
@@ -87,8 +87,9 @@ async function parentEmailsForStudent(canonicalStudentId){
 app.http("privateLesson",{
   methods:["GET","POST","PATCH"],authLevel:"anonymous",route:"private-lesson",
   handler:async(request)=>{
-    const a=await getAccess(request);if(!a.authenticated)return json({error:"Unauthorized"},401);
-    await ensureTables();
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access:a,schoolId}=context;
+    await ensureTenantTables();
 
     if(request.method==="GET"){
       const requested=clean(request.query.get("studentId"),120),month=clean(request.query.get("month"),12);
@@ -107,7 +108,7 @@ app.http("privateLesson",{
 
       const rows=[];
       for(const id of ids){
-        for(const r of await rowsForStudent(id,start,end)){
+        for(const r of await rowsForStudent(id,start,end,schoolId)){
           if(a.capabilities?.private&&a.role!=="admin"&&String(r.teacher||"").toLowerCase()!==String(a.email||"").toLowerCase())continue;
           rows.push(r);
         }
@@ -116,7 +117,7 @@ app.http("privateLesson",{
       const records=[];
       for(const r of rows){
         const teacherEmail=String(r.teacher||"").trim().toLowerCase();
-        if(!nameCache.has(teacherEmail))nameCache.set(teacherEmail,await resolvedTeacherName(teacherEmail,r.teacherName));
+        if(!nameCache.has(teacherEmail))nameCache.set(teacherEmail,await resolvedTeacherName(teacherEmail,r.teacherName,schoolId));
         records.push(view(r,nameCache.get(teacherEmail)));
       }
       records.sort((x,y)=>String(y.lessonDate).localeCompare(String(x.lessonDate))||String(y.createdAt).localeCompare(String(x.createdAt)));
@@ -126,7 +127,7 @@ app.http("privateLesson",{
     if(request.method==="PATCH"){
       const body=await request.json(),studentId=clean(body.studentId,120),lessonId=clean(body.lessonId,180),action=clean(body.action,30).toLowerCase();
       if(!studentId||!lessonId)return json({error:"缺少 studentId 或 lessonId"},400);
-      const entity=await findLesson(studentId,lessonId);if(!entity)return json({error:"找不到個別課紀錄"},404);
+      const entity=await findLesson(studentId,lessonId,schoolId);if(!entity)return json({error:"找不到個別課紀錄"},404);
 
       if(action==="cancel_lesson"){
         if(!(a.role==="admin"||a.capabilities?.private))return json({error:"只有管理員或個別課老師可以取消誤登記個課"},403);
@@ -136,7 +137,7 @@ app.http("privateLesson",{
           if(String(entity.teacher||"").toLowerCase()!==String(a.email||"").toLowerCase())return json({error:"只能取消自己建立的個別課紀錄"},403);
         }
         if(String(entity.status||"")==="cancelled"){
-          const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName);
+          const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName,schoolId);
           return json({ok:true,item:view(entity,teacherName)});
         }
         const now=new Date().toISOString();
@@ -146,8 +147,8 @@ app.http("privateLesson",{
         entity.cancelledBy=a.email;
         entity.cancelReason=clean(body.reason||"誤登記個別課",300);
         entity.updatedAt=now;
-        await table("privateLesson").updateEntity(entity,"Merge");
-        const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName);
+        await table("tenantPrivateLesson").updateEntity(entity,"Merge");
+        const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName,schoolId);
         return json({ok:true,item:view(entity,teacherName)});
       }
 
@@ -161,15 +162,15 @@ app.http("privateLesson",{
 
         let emailNotification={status:"failed",recipientCount:0,sentCount:0,failedCount:0};
         try{
-          const settings=await getSystemSettings();
+          const settings=await getSystemSettings(schoolId);
           if(!settings.emailNotificationsEnabled){
             emailNotification={status:"disabled",recipientCount:0,sentCount:0,failedCount:0};
           }else{
-            const alias=await getStudentAliasInfo(studentId),canonicalStudentId=alias.canonicalStudentId||studentId;
-            const recipients=await parentEmailsForStudent(canonicalStudentId);
-            const master=await getStudentMaster(canonicalStudentId);
+            const alias=await getStudentAliasInfo(studentId,schoolId),canonicalStudentId=alias.canonicalStudentId||studentId;
+            const recipients=await parentEmailsForStudent(canonicalStudentId,schoolId);
+            const master=await getStudentMaster(canonicalStudentId,schoolId);
             const studentName=clean(master?.studentName||"學生",80);
-            const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName);
+            const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName,schoolId);
             const confirmUrl=publicAppUrl(request);
             if(!confirmUrl)console.warn("Unable to resolve public app URL for private lesson resend email; set APP_PUBLIC_URL in Azure environment variables.");
             emailNotification=await sendPrivateLessonParentEmail({
@@ -193,8 +194,8 @@ app.http("privateLesson",{
         entity.emailNotificationLastResentAt=now;
         entity.emailNotificationLastResentBy=a.email;
         entity.updatedAt=now;
-        await table("privateLesson").updateEntity(entity,"Merge");
-        const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName);
+        await table("tenantPrivateLesson").updateEntity(entity,"Merge");
+        const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName,schoolId);
         return json({ok:true,item:view(entity,teacherName),emailNotification:{
           status:emailNotification.status,recipientCount:Number(emailNotification.recipientCount||0),
           sentCount:Number(emailNotification.sentCount||0),failedCount:Number(emailNotification.failedCount||0),
@@ -220,8 +221,8 @@ app.http("privateLesson",{
         entity.teacherRatedAt=(rating||entity.teacherReview)?now:"";
         entity.teacherRatedBy=(rating||entity.teacherReview)?a.email:"";
       }
-      await table("privateLesson").updateEntity(entity,"Merge");
-      const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName);
+      await table("tenantPrivateLesson").updateEntity(entity,"Merge");
+      const teacherName=await resolvedTeacherName(entity.teacher,entity.teacherName,schoolId);
       return json({ok:true,item:view(entity,teacherName)});
     }
 
@@ -234,15 +235,17 @@ app.http("privateLesson",{
     let minutes=startTime&&endTime?minutesBetween(startTime,endTime):Number(body.minutes||0);
     if(!Number.isFinite(minutes)||minutes<0||minutes>240)return json({error:"個別課時間不合法"},400);
     if(["present","late"].includes(status)&&minutes<=0)return json({error:"請填寫正確的上課時間"},400);
-    const alias=await getStudentAliasInfo(studentId),canonicalStudentId=alias.canonicalStudentId||studentId;
+    const alias=await getStudentAliasInfo(studentId,schoolId),canonicalStudentId=alias.canonicalStudentId||studentId;
+    const master=await getStudentMaster(canonicalStudentId,schoolId);
+    if(!master||String(master.status||"active")==="inactive")return json({error:"學生不存在或已停用"},404);
     const now=new Date().toISOString(),confirmation=["present","late"].includes(status)?"pending":"not_required";
-    const teacherName=await resolvedTeacherName(a.email,a.displayName||a.email);
+    const teacherName=await resolvedTeacherName(a.email,a.displayName||a.email,schoolId);
     const teacherKey=String(a.email||"").trim().toLowerCase();
     const sessionId=[canonicalStudentId,lessonDate,teacherKey].join("|");
 
     // Business rule: the same teacher may teach many students in one day,
     // but the same teacher + same student may only have one active private lesson per day.
-    const sameDay=await rowsForStudent(canonicalStudentId,lessonDate,lessonDate);
+    const sameDay=await rowsForStudent(canonicalStudentId,lessonDate,lessonDate,schoolId);
     const duplicate=sameDay.find(r=>
       String(r.status||"")!=="cancelled"&&
       String(r.teacher||"").trim().toLowerCase()===teacherKey
@@ -259,7 +262,7 @@ app.http("privateLesson",{
 
     const lessonId=rowKey("i");
     const entity={
-      partitionKey:canonicalStudentId,rowKey:lessonId,sessionId,eventDate:lessonDate,startTime,endTime,status,minutes,
+      partitionKey:tenantStudentPartition(schoolId,canonicalStudentId),rowKey:lessonId,schoolId,studentId:canonicalStudentId,sessionId,eventDate:lessonDate,startTime,endTime,status,minutes,
       lessonContent:clean(body.lessonContent,500),teacher:a.email,teacherName,
       parentConfirmation:confirmation,parentConfirmedAt:"",parentConfirmedBy:"",parentNote:"",
       teacherRating:0,teacherReview:"",teacherRatedAt:"",teacherRatedBy:"",
@@ -268,17 +271,16 @@ app.http("privateLesson",{
       emailNotificationResendCount:0,emailNotificationLastResentAt:"",emailNotificationLastResentBy:"",
       cancelledAt:"",cancelledBy:"",cancelReason:""
     };
-    await table("privateLesson").createEntity(entity);
+    await table("tenantPrivateLesson").createEntity(entity);
 
     let emailNotification={status:"not_required",recipientCount:0,sentCount:0,failedCount:0};
     if(confirmation==="pending"){
       try{
-        const settings=await getSystemSettings();
+        const settings=await getSystemSettings(schoolId);
         if(!settings.emailNotificationsEnabled){
           emailNotification={status:"disabled",recipientCount:0,sentCount:0,failedCount:0};
         }else{
-          const recipients=await parentEmailsForStudent(canonicalStudentId);
-          const master=await getStudentMaster(canonicalStudentId);
+          const recipients=await parentEmailsForStudent(canonicalStudentId,schoolId);
           const studentName=clean(master?.studentName||body.studentName||"學生",80);
           const confirmUrl=publicAppUrl(request);
           if(!confirmUrl)console.warn("Unable to resolve public app URL for private lesson email; set APP_PUBLIC_URL in Azure environment variables.");
@@ -296,7 +298,7 @@ app.http("privateLesson",{
       entity.emailNotificationRecipients=Number(emailNotification.recipientCount||0);
       entity.emailNotificationSentCount=Number(emailNotification.sentCount||0);
       entity.emailNotificationFailedCount=Number(emailNotification.failedCount||0);
-      await table("privateLesson").updateEntity(entity,"Merge");
+      await table("tenantPrivateLesson").updateEntity(entity,"Merge");
     }
     return json({
       ok:true,item:view(entity,teacherName),

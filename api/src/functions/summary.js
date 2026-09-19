@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
-import { getAccess, ensureStudentAccess, getStudentIdAliases, json } from "../lib/auth.js";
-import { listByStudent, getStudentMaster } from "../lib/storage.js";
+import { getTenantContext, ensureStudentAccess, getStudentIdAliases, json } from "../lib/auth.js";
+import { listByStudent, getStudentMaster, activityStudentId } from "../lib/storage.js";
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
 function latestForDate(rows,date){return [...(rows||[])].filter(x=>String(x.eventDate||"").slice(0,10)===date).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")))[0]||null}
 function todayCoursesFor(student,date,sectionRows,ensembleRows,comprehensiveRows){
@@ -16,19 +16,33 @@ function todayCoursesFor(student,date,sectionRows,ensembleRows,comprehensiveRows
   if(["A","B","儲備"].includes(group)&&comprehensiveDates.has(date))add("comprehensive","弦樂團體課（綜合課）","08:45–10:15",comprehensiveRows);
   return courses;
 }
+async function rowsForAliases(key,aliases,start,end,schoolId){
+  const sets=await Promise.all(aliases.map(id=>listByStudent(key,id,start,end,schoolId))),latest=new Map();
+  for(const row of sets.flat()){
+    const studentId=activityStudentId(row),classType=String(row.classType||key),sessionId=String(row.sessionId||"");
+    const dedupe=key==="practice"
+      ?[studentId,String(row.rowKey||"")].join("|")
+      :key==="privateLesson"
+        ?[studentId,String(row.eventDate||""),classType,sessionId||String(row.rowKey||"")].join("|")
+        :[String(row.eventDate||""),classType,String(row.groupName||""),String(row.section||"")].join("|");
+    const old=latest.get(dedupe),stamp=`${String(row.createdAt||"")}|${String(row.rowKey||"")}`,oldStamp=old?`${String(old.createdAt||"")}|${String(old.rowKey||"")}`:"";
+    if(!old||stamp>=oldStamp)latest.set(dedupe,row);
+  }
+  return [...latest.values()];
+}
 app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handler:async(request)=>{
-  const a=await getAccess(request);if(!a.authenticated)return json({error:"Unauthorized"},401);
+  const context=await getTenantContext(request);if(context.error)return context.error;
+  const {access:a,schoolId}=context;
   const studentId=request.query.get("studentId"),month=request.query.get("month")||new Date().toISOString().slice(0,7);
   if(!studentId||!ensureStudentAccess(a,studentId))return json({error:"Forbidden"},403);
-  const start=`${month}-01`,end=`${month}-31`,aliases=await getStudentIdAliases(studentId),today=taipeiDate();
-  const [practiceSets,s,e,c,i]=await Promise.all([
-    Promise.all(aliases.map(id=>listByStudent("practice",id,start,end))),
-    listByStudent("section",studentId,start,end),
-    listByStudent("ensemble",studentId,start,end),
-    listByStudent("comprehensive",studentId,start,end),
-    listByStudent("privateLesson",studentId,start,end)
+  const start=`${month}-01`,end=`${month}-31`,aliases=await getStudentIdAliases(studentId,schoolId),today=taipeiDate();
+  const [p,s,e,c,i]=await Promise.all([
+    rowsForAliases("practice",aliases,start,end,schoolId),
+    rowsForAliases("section",aliases,start,end,schoolId),
+    rowsForAliases("ensemble",aliases,start,end,schoolId),
+    rowsForAliases("comprehensive",aliases,start,end,schoolId),
+    rowsForAliases("privateLesson",aliases,start,end,schoolId)
   ]);
-  const p=practiceSets.flat();
   const qualifiedMinutes=Number(process.env.PRACTICE_QUALIFIED_MINUTES||15);
   const qualifiedDays=new Set(p.filter(x=>x.qualified===true||Number(x.minutes||0)>=qualifiedMinutes).map(x=>x.eventDate)).size;
   const practiceMinutes=p.reduce((n,x)=>n+Number(x.minutes||0),0);
@@ -41,7 +55,7 @@ app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handle
   const ensemblePresent=ensembleEffective.filter(x=>["present","late"].includes(x.status)).length;
   const comprehensivePresent=comprehensiveEffective.filter(x=>["present","late"].includes(x.status)).length;
   const privatePresent=privateEffective.filter(x=>["present","late"].includes(x.status)).length;
-  const master=await getStudentMaster(studentId);
+  const master=await getStudentMaster(studentId,schoolId);
   const todayCourses=todayCoursesFor(master,today,s,e,c);
   return json({
     month,practiceQualifiedDays:qualifiedDays,practiceMinutes,practiceRate:Math.min(qualifiedDays/Math.max(targetDays,1),1),

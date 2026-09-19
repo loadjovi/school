@@ -60,7 +60,7 @@
     return '<div class="global-inline-admin"><h3>🔐 '+esc(x.schoolName)+'｜學校管理員</h3><div class="notice">Global 可管理此校 School Admin 權限；只有已被指定為此校管理員的帳號，才可以進入該校營運後台。</div>'+selfAction+list+'<label>新增此校管理員 Google Email</label><input id="globalAdminEmail_'+esc(sid)+'" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 '+esc(x.schoolName)+' School Admin</button></div>';
   }
   function schoolCard(x){
-    const mode=x.dataMode==="tenant-scoped-master"?"學生、家長、老師主資料已 Tenant 化；出勤、練習與個別課紀錄切換中。":x.dataMode==="legacy-default"?"既有學校營運資料":"維持資料隔離建置，不會開放看到其他學校既有資料。";
+    const mode=x.dataMode==="tenant-scoped-operational"?"學生、家長、老師、出勤、練習與個別課資料均已 Tenant 化。":x.dataMode==="tenant-scoped-master"?"學生、家長、老師主資料已 Tenant 化；出勤、練習與個別課紀錄切換中。":x.dataMode==="legacy-default"?"既有學校營運資料":"維持資料隔離建置，不會開放看到其他學校既有資料。";
     const region=[x.cityName||cityName(x.cityCode),x.schoolLevelName||levelName(x.schoolLevel)].filter(Boolean).join("｜");
     const opened=String(state.globalTenant.selectedSchoolId||"")===String(x.schoolId||"");
     const buttonText=opened?"▲ 收合管理":"⚙️ 管理學校";
@@ -88,12 +88,13 @@
   }
   function phase2MigrationBox(){
     const m=state.globalTenant.migration||{},summary=m.summary||{},totals=summary.totals||{},items=summary.items||[];
-    const busy=state.globalTenant.migrationBusy,statusText={not_started:"尚未開始",previewed:"預覽完成",backfilled:"回填完成",backfill_incomplete:"回填未完整",verified:"驗證通過",verification_failed:"驗證未通過"}[m.status]||m.status||"尚未開始";
+    const busy=state.globalTenant.migrationBusy,statusText={not_started:"尚未開始",previewed:"預覽完成",backfilled:"回填完成",backfill_incomplete:"回填未完整",verified:"驗證通過",verification_failed:"驗證未通過",cutover:"已切換運作"}[m.status]||m.status||"尚未開始";
     const differences=Number(totals.missing||0)+Number(totals.extra||0)+Number(totals.mismatched||0),result=items.length?'<details style="margin-top:12px" '+(differences>0?'open':'')+'><summary><b>資料表明細（'+items.length+' 類）</b></summary><div style="margin-top:8px">'+items.map(x=>{const diff=Number(x.missing||0)+Number(x.extra||0)+Number(x.mismatched||0);return '<div class="item"><div><b>'+esc(x.label||x.name)+'</b><small>舊鍵值 '+Number(x.legacy||0)+' 筆｜Tenant 鍵值 '+Number(x.scoped||0)+' 筆</small></div><span style="font-weight:900;color:'+(diff===0?'var(--green)':'var(--bad)')+'">'+(diff===0?'✅ 完整':'缺 '+Number(x.missing||0)+'／多 '+Number(x.extra||0)+'／異 '+Number(x.mismatched||0))+'</span></div>'}).join("")+'</div></details>':'';
-    return '<div class="card"><h2>🧭 Phase 2｜聖心資料 Tenant 回填</h2><div class="notice"><b>目標 schoolId：sacred-heart</b><br>先把既有單校資料複製成 Tenant scoped 鍵值。此工具<b>不刪除舊資料、不啟用第二間學校，也不接受前端指定 schoolId</b>，可安全重跑。</div>'+
+    const actions=m.cutoverLocked?'<div class="notice" style="margin-top:12px"><b>✅ 已切換為正式 Tenant 資料來源</b><br>舊資料表已停止寫入；為避免重新回填覆寫切換後的新紀錄，回填工具已鎖定。</div>':'<div class="row2" style="margin-top:12px"><button class="secondary" onclick="runTenantMigration(\'preview\')" '+(busy?'disabled':'')+'>🔎 1. 預覽</button><button class="primary" onclick="runTenantMigration(\'backfill\')" '+(busy?'disabled':'')+'>📥 2. 安全回填</button></div><button class="secondary" style="width:100%;margin-top:8px" onclick="runTenantMigration(\'verify\')" '+(busy?'disabled':'')+'>'+(busy?'處理中…':'✅ 3. 驗證完整性')+'</button>';
+    return '<div class="card"><h2>🧭 Phase 2｜聖心資料 Tenant 回填</h2><div class="notice"><b>目標 schoolId：sacred-heart</b><br>既有單校資料已轉換為 Tenant scoped 鍵值；第二間學校仍維持建置狀態，且所有營運 API 的 schoolId 由登入權限決定。</div>'+
       '<div class="grid" style="margin-top:12px"><div class="kpi"><b>'+esc(statusText)+'</b><span>遷移狀態</span></div><div class="kpi"><b>'+Number(totals.legacy||0)+'</b><span>既有資料</span></div><div class="kpi"><b>'+Number(totals.scoped||0)+'</b><span>已具 Tenant 鍵值</span></div><div class="kpi"><b>'+differences+'</b><span>鍵值差異</span></div></div>'+
       (m.updatedAt?'<div class="muted" style="margin-top:8px">最後執行：'+esc(m.updatedAt)+(m.updatedBy?'｜'+esc(m.updatedBy):'')+'</div>':'')+
-      result+'<div class="row2" style="margin-top:12px"><button class="secondary" onclick="runTenantMigration(\'preview\')" '+(busy?'disabled':'')+'>🔎 1. 預覽</button><button class="primary" onclick="runTenantMigration(\'backfill\')" '+(busy?'disabled':'')+'>📥 2. 安全回填</button></div><button class="secondary" style="width:100%;margin-top:8px" onclick="runTenantMigration(\'verify\')" '+(busy?'disabled':'')+'>'+(busy?'處理中…':'✅ 3. 驗證完整性')+'</button></div>';
+      result+actions+'</div>';
   }
   window.previewGlobalBrandingColor=function(value){
     if(!/^#[0-9A-Fa-f]{6}$/.test(String(value||"")))return;

@@ -50,8 +50,11 @@
     try{
       const d=await api("/api/school-access-self");
       if(!d.allowed)return;
+      if(d.schoolId)sessionStorage.setItem("school_context_id",String(d.schoolId));
       state.schoolViewer.allowed=true;
       state.me.role="school";
+      state.me.schoolId=d.schoolId||state.me.schoolId;
+      state.me.schoolName=d.schoolName||state.me.schoolName;
       state.me.capabilities={schoolAttendance:true,readOnly:true};
       state.students=[];state.student=null;state.page="school";
       render();
