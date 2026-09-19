@@ -9,6 +9,7 @@
 
   const originalNav=nav;
   nav=function(){
+    if(state.page==="contextSelect")return originalNav();
     if(!isTeacher())return originalNav();
     const items=[];
     if(cap().section)items.push(navBtn("section","🎼","分部課"));
