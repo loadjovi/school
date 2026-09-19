@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
 import { getAccess, getStudentAliasInfo, json } from "../lib/auth.js";
-import { ensureTables, table, listStudentMaster, getTeacherDirectory, getTeacherProfile } from "../lib/storage.js";
+import { ensureTables, table, listStudentMaster, getTeacherDirectory, getTeacherProfile, listUserStudentMappings } from "../lib/storage.js";
 import { getSystemSettings, saveSystemSettings } from "../lib/settings.js";
 
 function clean(v,max=80){return String(v||"").trim().slice(0,max)}
@@ -148,6 +148,17 @@ app.http("dailyFollowup",{
     const masters=await listStudentMaster();
     const students=new Map(masters.map(e=>[String(e.rowKey),studentView(e)]));
     const canonicalCache=new Map(),teacherCache=new Map();
+
+    const currentParentBindings=new Map();
+    for(const m of await listUserStudentMappings("active")){
+      const canonicalId=await canonicalDailyId(m.studentId,students,canonicalCache);
+      if(!currentParentBindings.has(canonicalId))currentParentBindings.set(canonicalId,[]);
+      const rows=currentParentBindings.get(canonicalId);
+      const email=String(m.parentEmail||"").trim().toLowerCase();
+      if(email&&!rows.some(x=>x.parentEmail===email))rows.push({
+        parentEmail:email,parentName:String(m.parentName||""),relationship:String(m.relationship||"家長")
+      });
+    }
     const [sectionRows,ensembleRows,comprehensiveRows,privateRows]=await Promise.all([collectDaily("section",date),collectDaily("ensemble",date),collectDaily("comprehensive",date),collectDaily("privateLesson",date)]);
     const allDailyRows=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows];
     const activeMasters=masters.filter(e=>String(e.status||"active")!=="inactive");
@@ -207,6 +218,8 @@ app.http("dailyFollowup",{
         parentConfirmation:r.parentConfirmation||"",
         teacherRating:Number(r.teacherRating||0),
         teacherReview:r.teacherReview||"",
+        currentParentBindings:currentParentBindings.get(String(studentId))||[],
+        currentParentEmailCount:(currentParentBindings.get(String(studentId))||[]).length,
         emailNotificationStatus:r.emailNotificationStatus||"",
         emailNotificationAt:r.emailNotificationAt||"",
         emailNotificationRecipients:Number(r.emailNotificationRecipients||0),
