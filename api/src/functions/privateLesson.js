@@ -11,6 +11,24 @@ function minutesBetween(start,end){
   if([sh,sm,eh,em].some(Number.isNaN))return -1;
   let m=(eh*60+em)-(sh*60+sm);if(m<0)m+=1440;return m;
 }
+function publicAppUrl(request){
+  const explicit=clean(process.env.APP_PUBLIC_URL||process.env.SWA_PUBLIC_URL||"",1000);
+  const candidates=[explicit,clean(request.headers.get("origin"),1000),clean(request.headers.get("referer"),1000)];
+  const forwardedHost=clean(request.headers.get("x-forwarded-host"),500);
+  const forwardedProto=clean(request.headers.get("x-forwarded-proto"),20)||"https";
+  if(forwardedHost)candidates.push(`${forwardedProto}://${forwardedHost}`);
+  for(const raw of candidates){
+    if(!raw||raw==="null")continue;
+    try{
+      const u=new URL(raw);
+      const host=String(u.hostname||"").toLowerCase();
+      if(!["http:","https:"].includes(u.protocol))continue;
+      if(host.endsWith(".azurewebsites.net"))continue;
+      return u.origin+"/";
+    }catch{}
+  }
+  return "";
+}
 function view(e,teacherNameOverride=""){
   return {
     lessonId:String(e.rowKey||""),studentId:String(e.partitionKey||""),lessonDate:String(e.eventDate||""),
@@ -148,7 +166,8 @@ app.http("privateLesson",{
           const recipients=await parentEmailsForStudent(canonicalStudentId);
           const master=await getStudentMaster(canonicalStudentId);
           const studentName=clean(master?.studentName||body.studentName||"學生",80);
-          const confirmUrl=new URL("/",request.url).toString();
+          const confirmUrl=publicAppUrl(request);
+          if(!confirmUrl)console.warn("Unable to resolve public app URL for private lesson email; set APP_PUBLIC_URL in Azure environment variables.");
           emailNotification=await sendPrivateLessonParentEmail({
             recipients,studentName,teacherName,lessonDate,startTime,endTime,minutes,
             lessonContent:entity.lessonContent,confirmUrl
