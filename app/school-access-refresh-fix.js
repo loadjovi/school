@@ -115,6 +115,14 @@
     document.body.appendChild(s);
   }
 
+  if(!document.querySelector('script[data-parent-binding-correction="1"]')){
+    const s=document.createElement("script");
+    s.src="/parent-binding-correction.js?v=20260919-1605";
+    s.defer=true;
+    s.dataset.parentBindingCorrection="1";
+    document.body.appendChild(s);
+  }
+
   window.addEventListener("pageshow",scheduleCheck);
   window.addEventListener("online",scheduleCheck);
   document.addEventListener("visibilitychange",()=>{
