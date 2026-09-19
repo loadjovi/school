@@ -26,6 +26,16 @@
     const d=new Date(v);if(Number.isNaN(d.getTime()))return "尚無登入紀錄";
     return new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(d).replace(/\//g,"/");
   }
+  function ratingText(t){
+    const count=Number(t.ratingCount||0),avg=Number(t.ratingAverage||0),five=Number(t.fiveStarCount||0);
+    if(!count)return "⭐ 家長師資評價：尚無評價";
+    return "⭐ 家長師資評價："+avg.toFixed(2)+" / 5｜"+count+" 筆｜5 星 "+five+" 筆";
+  }
+  function ratingReviews(t){
+    const rows=Array.isArray(t.recentReviews)?t.recentReviews:[];
+    if(!rows.length)return "";
+    return '<details style="margin-top:8px"><summary style="cursor:pointer;font-weight:800">查看最近家長評論</summary><div style="margin-top:8px">'+rows.map(r=>'<div class="notice" style="margin-top:6px"><b>'+"★".repeat(Number(r.rating||0))+"☆".repeat(Math.max(0,5-Number(r.rating||0)))+'</b>｜'+esc(r.lessonDate||"")+'<br>'+esc(r.review||"")+'</div>').join("")+'</div></details>';
+  }
 
   function studentOptions(selected=[]){
     const ids=new Set((selected||[]).map(String));
@@ -37,7 +47,7 @@
     const privateEditor=t.privateOnly?`<div style="margin-top:10px"><label>🔒 個課限定學生</label><select id="tp_${k}" multiple size="6" style="width:100%">${studentOptions(t.privateStudentIds)}</select><small>此類老師登入後僅能使用個別課，且只會看到這裡綁定的學生；不提供其他學生名單、分部課、合奏課或綜合課權限。</small></div>`:"";
     return `<div class="item" style="display:block">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-        <div><b>${esc(t.teacherName||"未命名老師")}</b>${t.privateOnly?' <span class="badge warn">個課限定</span>':''}<small>${esc(t.email)}<br>${esc(summary(t))}<br><b>最近登入：</b>${esc(loginText(t.lastLoginAt))}</small></div>
+        <div><b>${esc(t.teacherName||"未命名老師")}</b>${t.privateOnly?' <span class="badge warn">個課限定</span>':''}<small>${esc(t.email)}<br>${esc(summary(t))}<br><b>最近登入：</b>${esc(loginText(t.lastLoginAt))}<br><b>${esc(ratingText(t))}</b></small>${ratingReviews(t)}</div>
         <span class="badge ${active?"ok":"warn"}">${active?"啟用":"停用"}</span>
       </div>
       <div class="row2" style="margin-top:10px"><div><label>老師姓名</label><input id="tn_${k}" value="${esc(t.teacherName||"")}"></div><div><label>帳號狀態</label><select id="ts_${k}"><option value="active" ${active?"selected":""}>啟用</option><option value="inactive" ${!active?"selected":""}>停用</option></select></div></div>
@@ -52,7 +62,7 @@
   }
 
   function managementPage(){
-    return `<div class="card"><button class="secondary" onclick="closeTeacherAdmin()">← 返回後台首頁</button><h2 style="margin-top:14px">👩‍🏫 老師帳號管理</h2><div class="notice">管理老師姓名、Gmail、帳號狀態與教學範圍；「最近登入」會在老師成功登入系統後更新。</div></div>
+    return `<div class="card"><button class="secondary" onclick="closeTeacherAdmin()">← 返回後台首頁</button><h2 style="margin-top:14px">👩‍🏫 老師帳號管理</h2><div class="notice">管理老師姓名、Gmail、帳號狀態與教學範圍；「最近登入」會在老師成功登入系統後更新。個別課家長的 1～5 星評價會彙整成「平均星等、評價筆數、5 星筆數」，可作為後續師資成就規則的資料基礎。</div></div>
       <div class="card"><h2>新增一般老師</h2><label>老師姓名</label><input id="newTeacherName" placeholder="例：陳宣文"><label>Google Gmail</label><input id="newTeacherEmail" type="email" placeholder="teacher@gmail.com"><button class="primary" onclick="addTeacherAdmin()">新增並啟用老師</button></div>
       <div class="card"><h2>🔒 新增個課限定老師</h2><div class="notice">適用於非藝享的個課老師。此帳號<b>只能使用個別課功能</b>，登入後只會看到後台指定的學生，避免其他學生個資外洩。</div><label>老師姓名</label><input id="newPrivateTeacherName" placeholder="例：王老師"><label>Google Gmail</label><input id="newPrivateTeacherEmail" type="email" placeholder="teacher@gmail.com"><label>綁定學生（可複選）</label><select id="newPrivateTeacherStudents" multiple size="8" style="width:100%">${studentOptions([])}</select><small>Windows 可按 Ctrl、Mac 可按 Command 複選；手機可依裝置的多選方式操作。</small><button class="primary" onclick="addPrivateTeacherAdmin()">新增個課老師並綁定學生</button></div>
       <div class="card"><h2>老師清單（${state.teachers.length}）</h2>${state.teachers.length?state.teachers.map(teacherCard).join(""):'<div class="notice">目前尚未建立老師帳號。</div>'}</div>`;
