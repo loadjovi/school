@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
 import { getSystemSettings, saveSystemSettings } from "../lib/settings.js";
+import { listTenantDirectory } from "../lib/storage.js";
 
 function emailConfigured(){
   return !!(
@@ -11,6 +12,19 @@ function emailConfigured(){
 
 app.http("config",{methods:["GET"],authLevel:"anonymous",route:"config",handler:async()=>{
   return json({googleClientId:String(process.env.GOOGLE_CLIENT_ID||"")});
+}});
+
+app.http("schoolOptions",{methods:["GET"],authLevel:"anonymous",route:"school-options",handler:async()=>{
+  const items=(await listTenantDirectory())
+    .filter(x=>["active","onboarding"].includes(String(x.status||"")))
+    .map(x=>({
+      schoolId:String(x.rowKey||x.schoolId||""),
+      schoolName:String(x.schoolName||x.rowKey||""),
+      systemName:String(x.systemName||x.schoolName||x.rowKey||""),
+      status:String(x.status||"active")
+    }))
+    .sort((a,b)=>a.schoolName.localeCompare(b.schoolName,"zh-Hant"));
+  return json({items});
 }});
 
 app.http("adminSettings",{
