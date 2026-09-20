@@ -46,7 +46,8 @@ app.http("studentRegistration",{
       const body=await request.json();
       const studentName=clean(body.studentName,40),classCode=clean(body.classCode,20);
       const parentName=clean(access.displayName,40),relationship="家長";
-      if(studentName.length<2)return json({error:"請填寫學生姓名"},400);\n      if(!classCode)return json({error:"請填寫學生班級"},400);
+      if(studentName.length<2)return json({error:"請填寫學生姓名"},400);
+      if(!classCode)return json({error:"請填寫學生班級"},400);
       if(body.consent!==true)return json({error:"請勾選資料使用確認"},400);
 
       const existing=await getRegistrationsByEmail(access.email,schoolId);
