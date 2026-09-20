@@ -6,6 +6,20 @@ const safe=v=>String(v||"").replaceAll("'","''");
 const normGroup=v=>String(v||"").trim().replace(/團$/,"");
 const validDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||""));
 const validTime=v=>/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v||""));
+const scheduleKey=x=>{
+  const raw=[
+    String(x.courseType||"other"),
+    String(x.groupName||""),
+    String(x.recurrence||"weekly"),
+    String(x.weekday??""),
+    String(x.sessionDate||""),
+    String(x.startDate||""),
+    String(x.endDate||""),
+    String(x.startTime||""),
+    String(x.endTime||"")
+  ].join("|");
+  return "sch_"+Buffer.from(raw,"utf8").toString("base64url").slice(0,220);
+};
 const scheduleView=e=>({
   scheduleId:String(e.rowKey||""),courseType:String(e.courseType||""),courseName:String(e.courseName||""),
   groupName:String(e.groupName||""),section:String(e.section||""),recurrence:String(e.recurrence||"weekly"),
