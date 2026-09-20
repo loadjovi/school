@@ -18,7 +18,7 @@ function validateStudentFields({studentName,grade,groupName,instrument}){
 function view(e){
   return {
     registrationId:e.rowKey,parentEmail:e.parentEmail,parentName:e.parentName,relationship:e.relationship,
-    studentName:e.studentName,classCode:e.classCode||"",grade:e.grade,groupName:e.groupName,instrument:e.instrument,
+    studentName:e.studentName,studentNo:e.studentNo||e.matchedStudentId||"",grade:e.grade,groupName:e.groupName,instrument:e.instrument,
     schoolYear:e.schoolYear||"",status:e.status,studentId:e.studentId||null,createdAt:e.createdAt,
     reviewedAt:e.reviewedAt||null,reviewedBy:e.reviewedBy||null,note:e.note||"",
     notificationStatus:e.notificationStatus||"",notificationSentAt:e.notificationSentAt||null,notificationError:e.notificationError||""
@@ -44,25 +44,22 @@ app.http("studentRegistration",{
     if(request.method==="POST"){
       if(["sectionTeacher","privateTeacher","admin"].includes(access.role))return json({error:"此帳號角色不可提交家長學生登記"},403);
       const body=await request.json();
-      const studentName=clean(body.studentName,40),classCode=clean(body.classCode,20);
+      const studentName=clean(body.studentName,40),studentNo=clean(body.studentNo,20);
       const parentName=clean(access.displayName,40),relationship="家長";
       if(studentName.length<2)return json({error:"請填寫學生姓名"},400);
-      if(!classCode)return json({error:"請填寫學生班級"},400);
+      if(!studentNo)return json({error:"請填寫學生學號"},400);\n      if(!/^\\d{6}$/.test(studentNo))return json({error:"學號需為 6 碼數字"},400);
       if(body.consent!==true)return json({error:"請勾選資料使用確認"},400);
 
       const existing=await getRegistrationsByEmail(access.email,schoolId);
       if(existing.find(x=>x.studentName===studentName&&["pending","approved"].includes(x.status)))return json({error:"此學生已有待審核或已核准的登記資料"},409);
 
-      const activeStudents=(await listStudentMaster("active",schoolId)).filter(x=>/^\d{6}$/.test(String(x.rowKey||"")));
-      const sameName=activeStudents.filter(x=>clean(x.studentName,40)===studentName);
-      if(!sameName.length)return json({error:"找不到這位學生，請確認姓名是否與學校名單完全相同"},404);
-      const matchedByClass=sameName.filter(x=>clean(x.classCode,20)===classCode);
-      if(!matchedByClass.length)return json({error:"姓名與班級無法對應，請確認學生姓名與班級是否正確"},404);
-      if(matchedByClass.length>1)return json({error:"姓名與班級仍有多位相同學生，為避免綁定錯誤，請聯絡管理員協助"},409);
-      const matched=matchedByClass[0],grade=clean(matched.grade,20),groupName=clean(matched.groupName,10),instrument=clean(matched.instrument,20),schoolYear=clean(matched.schoolYear,20);
+      const matched=await getStudentMaster(studentNo,schoolId);
+      if(!matched||matched.status==="inactive")return json({error:"找不到此學號，請確認學生學號是否正確"},404);
+      if(clean(matched.studentName,40)!==studentName)return json({error:"學生姓名與學號無法對應，請確認後再送出"},404);
+      const grade=clean(matched.grade,20),groupName=clean(matched.groupName,10),instrument=clean(matched.instrument,20),schoolYear=clean(matched.schoolYear,20);
       await ensureTenantTables();
       const registrationId=rowKey("reg");
-      const entity={partitionKey:tenantSchoolPartition(schoolId),rowKey:registrationId,schoolId,parentEmail:access.email,parentName,relationship,studentName,classCode,grade,groupName,instrument,schoolYear,status:"pending",consent:true,createdAt:new Date().toISOString(),googleSub:access.sub||"",matchedStudentId:String(matched.rowKey||"")};
+      const entity={partitionKey:tenantSchoolPartition(schoolId),rowKey:registrationId,schoolId,parentEmail:access.email,parentName,relationship,studentName,studentNo,grade,groupName,instrument,schoolYear,status:"pending",consent:true,createdAt:new Date().toISOString(),googleSub:access.sub||"",matchedStudentId:String(matched.rowKey||"")};
       await table("tenantRegistrations").createEntity(entity);
       return json({ok:true,registration:view(entity)},201);
     }
