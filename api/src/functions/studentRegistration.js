@@ -52,10 +52,13 @@ app.http("studentRegistration",{
       const existing=await getRegistrationsByEmail(access.email,schoolId);
       if(existing.find(x=>x.studentName===studentName&&["pending","approved"].includes(x.status)))return json({error:"此學生已有待審核或已核准的登記資料"},409);
 
-      const sameName=(await listStudentMaster("active",schoolId)).filter(x=>clean(x.studentName,40)===studentName&&/^\\d{6}$/.test(String(x.rowKey||"")));
+      const activeStudents=(await listStudentMaster("active",schoolId)).filter(x=>/^\d{6}$/.test(String(x.rowKey||"")));
+      const sameName=activeStudents.filter(x=>clean(x.studentName,40)===studentName);
       if(!sameName.length)return json({error:"找不到這位學生，請確認姓名是否與學校名單完全相同"},404);
-      if(sameName.length>1)return json({error:"學校名單有同名學生，請聯絡管理員協助綁定"},409);
-      const matched=sameName[0],grade=clean(matched.grade,20),groupName=clean(matched.groupName,10),instrument=clean(matched.instrument,20),schoolYear=clean(matched.schoolYear,20);
+      const matchedByClass=sameName.filter(x=>clean(x.classCode,20)===classCode);
+      if(!matchedByClass.length)return json({error:"姓名與班級無法對應，請確認學生姓名與班級是否正確"},404);
+      if(matchedByClass.length>1)return json({error:"姓名與班級仍有多位相同學生，為避免綁定錯誤，請聯絡管理員協助"},409);
+      const matched=matchedByClass[0],grade=clean(matched.grade,20),groupName=clean(matched.groupName,10),instrument=clean(matched.instrument,20),schoolYear=clean(matched.schoolYear,20);
       await ensureTenantTables();
       const registrationId=rowKey("reg");
       const entity={partitionKey:tenantSchoolPartition(schoolId),rowKey:registrationId,schoolId,parentEmail:access.email,parentName,relationship,studentName,classCode,grade,groupName,instrument,schoolYear,status:"pending",consent:true,createdAt:new Date().toISOString(),googleSub:access.sub||"",matchedStudentId:String(matched.rowKey||"")};
