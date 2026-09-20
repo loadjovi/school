@@ -234,6 +234,16 @@ app.http("privateLesson",{
         return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity)});
       }
 
+      if(action==="update_lesson_content"){
+        if(!(isAdmin||isTeacher))return json({error:"只有個別課老師或管理員可以修改上課內容"},403);
+        if(workflowStatus(entity)!=="scheduled")return json({error:"只有尚未完成的預約可以修改上課內容"},409);
+        if(!isAdmin&&String(entity.eventDate||"")!==clock.date)return json({error:"僅能在預約上課當天修改實際上課內容"},409);
+        entity.lessonContent=clean(body.lessonContent,500);
+        entity.updatedAt=new Date().toISOString();
+        await table("tenantPrivateLesson").updateEntity(entity,"Merge");
+        return json({ok:true,item:view(entity,teacherName)});
+      }
+
       if(action==="complete_lesson"){
         if(!(isAdmin||isTeacher))return json({error:"只有個別課老師或管理員可以登記完成上課"},403);
         if(!teacherCompletionStatuses.has(String(entity.status||"")))return json({error:"這筆個別課目前不是可完成上課的預約狀態"},409);
