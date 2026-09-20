@@ -303,6 +303,9 @@ export async function getAccess(request){
     }
   }
 
+  if(["teacher","parent"].includes(requestedContext)&&!requestedSchoolId){
+    return {authenticated:true,...identity,role:"contextDenied",schoolId:null,schoolName:"",systemName:"",capabilities:{contextDenied:true,missingSchoolContext:true}};
+  }
   const roleSchoolId=(["teacher","parent"].includes(requestedContext)&&requestedSchoolId)||defaultId;
   const roleTenant=roleSchoolId===defaultId?defaultTenant:await getTenantDirectory(roleSchoolId);
   const roleTenantStatus=String(roleTenant?.status||(roleSchoolId===defaultId?"active":"")),roleTenantOnboarding=roleTenantStatus==="onboarding";
