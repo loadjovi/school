@@ -216,7 +216,11 @@
     <div class="card"><h2>預約／完課／家長確認</h2><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理雙方狀態</button><div id="privateConfirmList">${teacherHistoryHtml()}</div></div>`;
   };
   function activeLessonHtml(x){
-    return `<h2>🎻 本次個別課</h2><div class="notice"><b>今天是預約上課日</b><br>原預約日期與時間已鎖定，不會因開啟或填寫內容而異動。</div><label>學生</label><div class="item" style="background:#f8fafc"><div><b>${esc(currentStudentName(x.studentId))}</b><small>${esc(x.lessonDate)}｜${esc(x.startTime)}～${esc(x.endTime)}</small></div><span class="badge warn">已約</span></div><label>實際上課內容（可修正）</label><textarea id="activeLessonContent" rows="4" maxlength="500" placeholder="請填寫本次實際上課內容">${esc(x.lessonContent||"")}</textarea><button class="primary" onclick="completeActivePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">✅ 已完成上課並通知家長</button><button class="secondary" style="width:100%;margin-top:8px" onclick="showPrivateBookingForm()">＋ 建立下一堂預約</button>`;
+    const changeable=canChange(x),ended=canComplete(x);
+    if(changeable){
+      return `<h2>🎻 本次個別課</h2><div class="notice"><b>今天是預約上課日</b><br>目前尚未到 ${esc(x.startTime)} 開始時間，老師仍可改期或停課；開始上課後，原預約日期與時間才會鎖定。</div><label>學生</label><div class="item" style="background:#f8fafc"><div><b>${esc(currentStudentName(x.studentId))}</b><small>${esc(x.lessonDate)}｜${esc(x.startTime)}～${esc(x.endTime)}</small></div><span class="badge warn">已約</span></div>${scheduleEditor(x,"active")}${cancelButton(x,"active")}<button class="secondary" style="width:100%;margin-top:8px" onclick="showPrivateBookingForm()">＋ 建立下一堂預約</button>`;
+    }
+    return `<h2>🎻 本次個別課</h2><div class="notice"><b>今天是預約上課日</b><br>上課已開始，原預約日期與時間固定為 ${esc(x.startTime)}～${esc(x.endTime)}；填寫上課內容不會改動預約時間。</div><label>學生</label><div class="item" style="background:#f8fafc"><div><b>${esc(currentStudentName(x.studentId))}</b><small>${esc(x.lessonDate)}｜${esc(x.startTime)}～${esc(x.endTime)}</small></div><span class="badge warn">已約</span></div><label>實際上課內容（可修正）</label><textarea id="activeLessonContent" rows="4" maxlength="500" placeholder="請填寫本次實際上課內容">${esc(x.lessonContent||"")}</textarea>${ended?`<button class="primary" onclick="completeActivePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">✅ 已完成上課並通知家長</button>`:`<button class="secondary" style="width:100%" onclick="saveActivePrivateLessonContent('${esc(x.studentId)}','${esc(x.lessonId)}')">💾 儲存上課內容</button><div class="muted" style="margin-top:8px">預約結束時間 ${esc(x.endTime)} 後，可送出「已完成上課並通知家長」。</div>`}<button class="secondary" style="width:100%;margin-top:8px" onclick="showPrivateBookingForm()">＋ 建立下一堂預約</button>`;
   }
   window.openPrivateLesson=function(lessonId){
     const x=(state.privateLessons||[]).find(r=>String(r.lessonId)===String(lessonId));
@@ -235,6 +239,10 @@
   };
   window.showPrivateBookingForm=function(){state.activePrivateLessonId="";state.suppressAutoPrivateLesson=true;render()};
   window.closeActivePrivateLesson=window.showPrivateBookingForm;
+  window.saveActivePrivateLessonContent=async function(studentId,lessonId){
+    const lessonContent=document.getElementById("activeLessonContent")?.value.trim()||"";
+    try{await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"update_lesson_content",lessonContent})});toast("✅ 上課內容已儲存");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
+  };
   window.completeActivePrivateLesson=async function(studentId,lessonId){
     const x=(state.privateLessons||[]).find(r=>String(r.lessonId)===String(lessonId)),lessonContent=document.getElementById("activeLessonContent")?.value.trim()||"";
     if(!x)return;
