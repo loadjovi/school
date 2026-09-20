@@ -2,6 +2,7 @@
   state.privateLessons=state.privateLessons||[];
   state.privateLessonToday=state.privateLessonToday||"";
   state.privateLessonNowTime=state.privateLessonNowTime||"";
+  state.activePrivateLessonId=state.activePrivateLessonId||"";
   let privatePoll=null;
 
   const workflowText={scheduled:"已預約",awaiting_parent:"待家長確認",issue:"家長回報問題",completed:"流程完成",cancelled:"已停課"};
@@ -112,7 +113,17 @@
       else if(teacherAccount()){const box=document.getElementById("privateConfirmList");if(box)box.innerHTML=teacherHistoryHtml()}
     },30000);
   }
-  function teacherHistoryHtml(){const rows=sortedLessons().slice(0,40);return rows.length?rows.map(teacherLessonRow).join(""):`<div class="notice">目前尚無個別課預約。</div>`}
+  function teacherHistoryHtml(){
+    const rows=sortedLessons().slice(0,40);
+    if(!rows.length)return `<div class="notice">目前尚無個別課預約。</div>`;
+    return rows.map(x=>{
+      if(state.activePrivateLessonId&&String(x.lessonId)===String(state.activePrivateLessonId)){
+        const w=workflow(x),badge=`<span class="badge ${workflowClass[w]||""}">${esc(workflowText[w]||w)}</span>`;
+        return `<div class="item" id="privateLesson_${lessonDomKey(x.lessonId)}" style="display:block"><div class="student">${lessonSummary(x,{showStudent:true})}${badge}</div><div class="muted" style="margin-top:8px">此堂課正在上方「本次個別課」操作。</div></div>`;
+      }
+      return teacherLessonRow(x);
+    }).join("");
+  }
 
   window.reloadPrivateLessons=async function(){await loadPrivateLessons();render();toast("已更新個別課預約與確認狀態")};
   window.reschedulePrivateLesson=async function(studentId,lessonId,source){
@@ -195,21 +206,24 @@
     const x=(state.privateLessons||[]).find(r=>String(r.lessonId)===String(lessonId));
     if(!x)return;
     if(workflow(x)==="scheduled"&&String(x.lessonDate)===today()){
+      state.activePrivateLessonId=String(x.lessonId);
       const card=document.getElementById("privateBookingForm");
       if(!card)return;
-      card.innerHTML=`<h2>🎻 本次個別課</h2><div class="notice"><b>今天是預約上課日</b><br>原預約日期與時間已鎖定，不會因開啟或填寫內容而異動。</div><label>學生</label><div class="item" style="background:#f8fafc"><div><b>${esc(currentStudentName(x.studentId))}</b><small>${esc(x.lessonDate)}｜${esc(x.startTime)}～${esc(x.endTime)}</small></div><span class="badge warn">已約</span></div><label>實際上課內容（可修正）</label><textarea id="activeLessonContent" rows="4" maxlength="500" placeholder="請填寫本次實際上課內容">${esc(x.lessonContent||"")}</textarea><button class="primary" onclick="completeActivePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">✅ 已完成上課並通知家長</button><button class="secondary" style="width:100%;margin-top:8px" onclick="render()">取消／返回預約</button>`;
+      card.innerHTML=`<h2>🎻 本次個別課</h2><div class="notice"><b>今天是預約上課日</b><br>原預約日期與時間已鎖定，不會因開啟或填寫內容而異動。</div><label>學生</label><div class="item" style="background:#f8fafc"><div><b>${esc(currentStudentName(x.studentId))}</b><small>${esc(x.lessonDate)}｜${esc(x.startTime)}～${esc(x.endTime)}</small></div><span class="badge warn">已約</span></div><label>實際上課內容（可修正）</label><textarea id="activeLessonContent" rows="4" maxlength="500" placeholder="請填寫本次實際上課內容">${esc(x.lessonContent||"")}</textarea><button class="primary" onclick="completeActivePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">✅ 已完成上課並通知家長</button><button class="secondary" style="width:100%;margin-top:8px" onclick="closeActivePrivateLesson()">取消／返回預約</button>`;
+      const list=document.getElementById("privateConfirmList");if(list)list.innerHTML=teacherHistoryHtml();
       card.scrollIntoView({behavior:"smooth",block:"start"});
       setTimeout(()=>document.getElementById("activeLessonContent")?.focus(),350);
       return;
     }
     const el=document.getElementById("privateLesson_"+lessonDomKey(lessonId));if(el)el.scrollIntoView({behavior:"smooth",block:"center"});
   };
+  window.closeActivePrivateLesson=function(){state.activePrivateLessonId="";render()};
   window.completeActivePrivateLesson=async function(studentId,lessonId){
     const x=(state.privateLessons||[]).find(r=>String(r.lessonId)===String(lessonId)),lessonContent=document.getElementById("activeLessonContent")?.value.trim()||"";
     if(!x)return;
     if(!canComplete(x)){toast(`目前尚未到預約結束時間 ${x.endTime}，請於課程結束後再送出完成上課。`);return}
     if(!confirm("確定本堂已完成上課？\n\n送出後家長平台會出現『待確認』，並寄送完課確認 Email。"))return;
-    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"complete_lesson",lessonContent,attendanceStatus:"present"})});notifyToast(r,"已完成上課並通知家長");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
+    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"complete_lesson",lessonContent,attendanceStatus:"present"})});notifyToast(r,"已完成上課並通知家長");state.activePrivateLessonId="";await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
   };
   window.quickPrivateStudent=function(studentId){const sel=document.getElementById("iStudent");if(sel)sel.value=String(studentId);document.getElementById("privateBookingForm")?.scrollIntoView({behavior:"smooth",block:"start"})};
   savePrivate=async function(){
