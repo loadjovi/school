@@ -108,7 +108,11 @@
     if(!(teacherAccount()||state.me?.role==="parent"))return;
     privatePoll=setInterval(async()=>{
       const active=teacherAccount()?state.page==="private":["home","record"].includes(state.page);if(!active)return;
+      // 老師正在輸入時，不重新繪製個課畫面，避免 textarea/input 因背景同步失去焦點或未儲存文字被覆蓋。
+      const focused=document.activeElement;
+      const editing=teacherAccount()&&focused&&["INPUT","TEXTAREA","SELECT"].includes(focused.tagName)&&focused.closest("#privateBookingForm, #privateConfirmList");
       const before=lessonSignature();await loadPrivateLessons();
+      if(editing)return;
       if(before!==lessonSignature())render();
       else if(teacherAccount()){const box=document.getElementById("privateConfirmList");if(box)box.innerHTML=teacherHistoryHtml()}
     },30000);
