@@ -55,12 +55,15 @@
     const list=rows.length?rows.map(x=>`<div class="item" style="display:block">
       <div class="student">
         <div><b>${esc(studentName(x.studentId))}</b><small>學號 ${esc(x.studentId||"—")}｜${esc(x.relationship||"家長")} ${esc(x.parentName||"")}</small><small>${esc(x.parentEmail||"")}</small></div>
-        <button class="secondary" style="margin:0;padding:8px 10px" onclick="editParentBindingFix('${esc(bindingKey(x))}')">✏️ 修正</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          <button class="secondary" style="margin:0;padding:8px 10px" onclick="editParentBindingFix('${esc(bindingKey(x))}')">✏️ 修正</button>
+          <button class="secondary" style="margin:0;padding:8px 10px;border-color:#c94b4b;color:#a52a2a" onclick="removeParentBinding('${esc(x.parentEmail||"")}','${esc(x.sourceStudentId||x.studentId||"")}','${esc(studentName(x.studentId))}')">🗑️ 移除</button>
+        </div>
       </div>
       ${editHtml(x)}
     </div>`).join(""):`<div class="notice">沒有符合搜尋條件的家長綁定。</div>`;
     return `<div class="card"><button class="secondary" style="margin:0 0 12px" onclick="closeParentBindingCorrection()">← 返回</button><h2>🛠️ 家長 Gmail／學生綁定修正</h2>
-      <div class="notice"><b>適用情境</b><br>家長驗證時綁錯學生、Gmail 輸入錯誤，或需要改綁到正確學生。<br><br>修正後原綁定會被替換，並寫入學生異動歷史。</div>
+      <div class="notice"><b>適用情境</b><br>家長驗證時綁錯學生、Gmail 輸入錯誤，或需要改綁到正確學生。<br><br>修正後原綁定會被替換，並寫入學生異動歷史。若需讓帳號回到未綁定狀態，可直接使用「移除」。</div>
       <label>搜尋學生姓名／學號／家長 Gmail</label><input type="search" value="${esc(v.query)}" placeholder="輸入姓名、學號或 Gmail" oninput="setParentBindingCorrectionQuery(this.value)">
       <div style="margin-top:12px"><b>目前綁定：${rows.length} 筆</b></div>${list}
     </div>`;
@@ -79,6 +82,18 @@
   window.setParentBindingCorrectionQuery=function(v){state.parentBindingCorrection.query=String(v||"");mount();const input=document.querySelector('#parentBindingCorrection input[type="search"]');if(input){input.focus();input.setSelectionRange(input.value.length,input.value.length)}};
   window.editParentBindingFix=function(key){state.parentBindingCorrection.editKey=String(key||"");mount();setTimeout(()=>document.getElementById("bindingFixEmail")?.scrollIntoView({behavior:"smooth",block:"center"}),50)};
   window.cancelParentBindingFix=function(){state.parentBindingCorrection.editKey="";mount()};
+  window.removeParentBinding=async function(parentEmail,studentId,studentName){
+    if(!confirm(`確定移除這筆家長綁定？\n\n學生：${studentName}\n家長 Gmail：${parentEmail}\n\n移除後，此 Gmail 將不再具有此學生的家長存取權；學生資料不會刪除，系統會保留異動紀錄。`))return;
+    try{
+      await api("/api/student-parent-links",{method:"PATCH",body:JSON.stringify({action:"remove_binding",originalParentEmail:parentEmail,originalStudentId:studentId})});
+      toast("✅ 家長 Gmail 綁定已移除");
+      state.parentBindingCorrection.editKey="";
+      await loadAdmin();
+      await loadCorrectionLinks();
+      render();
+    }catch(e){toast("❌ "+e.message)}
+  };
+
   window.saveParentBindingFix=async function(originalParentEmail,originalStudentId){
     const parentEmail=document.getElementById("bindingFixEmail")?.value.trim();
     const parentName=document.getElementById("bindingFixName")?.value.trim();
