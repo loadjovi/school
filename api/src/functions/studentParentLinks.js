@@ -34,6 +34,15 @@ app.http("studentParentLinks",{
         const studentId=alias.canonicalStudentId||originalStudentId;
         const now=new Date().toISOString();
         await table("tenantUserStudentMap").deleteEntity(tenantParentPartition(schoolId,originalParentEmail),originalStudentId);
+        if(old.registrationId){
+          const reg=await registrationById(old.registrationId,schoolId);
+          if(reg&&String(reg.status||"")==="approved"){
+            await table("tenantRegistrations").updateEntity({
+              partitionKey:tenantSchoolPartition(schoolId),rowKey:String(old.registrationId),schoolId,
+              status:"revoked",revokedAt:now,revokedBy:access.email,revokeReason:"parent_binding_removed"
+            },"Merge");
+          }
+        }
         await table("tenantStudentHistory").createEntity({
           partitionKey:tenantStudentPartition(schoolId,studentId),rowKey:rowKey("hist"),schoolId,studentId,changeType:"parent_binding_removed",
           changedAt:now,changedBy:access.email,
