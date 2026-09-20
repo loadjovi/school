@@ -115,7 +115,7 @@ function lessonEnded(entity,clock){
   const date=String(entity.eventDate||""),end=String(entity.endTime||"");
   return date<clock.date||(date===clock.date&&validTime(end)&&timeMinutes(clock.time)>=timeMinutes(end));
 }
-function canChangeSchedule(entity,clock){return workflowStatus(entity)==="scheduled"&&clock.date<String(entity.eventDate||"")}
+function canChangeSchedule(entity,clock){const date=String(entity.eventDate||""),start=String(entity.startTime||"");return workflowStatus(entity)==="scheduled"&&(clock.date<date||clock.date===date&&start&&clock.time<start)}
 async function duplicateFor(studentId,teacherEmail,lessonDate,schoolId,excludeLessonId=""){
   const key=String(teacherEmail||"").trim().toLowerCase(),rows=await rowsForStudent(studentId,lessonDate,lessonDate,schoolId);
   return rows.find(r=>String(r.rowKey||"")!==String(excludeLessonId||"")&&String(r.status||"")!=="cancelled"&&String(r.teacher||"").trim().toLowerCase()===key)||null;
@@ -202,7 +202,7 @@ app.http("privateLesson",{
 
       if(action==="reschedule_lesson"){
         if(!(isAdmin||isParent||isTeacher))return json({error:"只有此學生家長、個別課老師或管理員可以改期"},403);
-        if(!isAdmin&&!canChangeSchedule(entity,clock))return json({error:"只有尚未到上課日期的預約可以改期"},409);
+        if(!isAdmin&&!canChangeSchedule(entity,clock))return json({error:"只有尚未到上課開始時間的預約可以改期"},409);
         if(isAdmin&&workflowStatus(entity)!=="scheduled")return json({error:"只有預約中的個別課可以改期"},409);
         const lessonDate=clean(body.lessonDate,20),startTime=clean(body.startTime,10),endTime=clean(body.endTime,10),error=scheduleError(lessonDate,startTime,endTime,clock,{requireFutureStart:true});
         if(error)return json({error},400);
@@ -225,7 +225,7 @@ app.http("privateLesson",{
         if(!(isAdmin||isParent||isTeacher))return json({error:"只有此學生家長、個別課老師或管理員可以停課"},403);
         if(workflowStatus(entity)==="cancelled")return json({ok:true,item:view(entity,teacherName)});
         if(String(entity.parentConfirmation||"")==="confirmed")return json({error:"此筆個別課已完成家長確認，紀錄已鎖定"},409);
-        if(!isAdmin&&!canChangeSchedule(entity,clock))return json({error:"只有尚未到上課日期的預約可以停課"},409);
+        if(!isAdmin&&!canChangeSchedule(entity,clock))return json({error:"只有尚未到上課開始時間的預約可以停課"},409);
         const now=new Date().toISOString();
         entity.status="cancelled";entity.parentConfirmation="not_required";entity.cancelledAt=now;entity.cancelledBy=a.email;entity.cancelReason=clean(body.reason||"個別課停課",300);entity.updatedAt=now;
         await table("tenantPrivateLesson").updateEntity(entity,"Merge");
