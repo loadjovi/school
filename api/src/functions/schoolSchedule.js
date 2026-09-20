@@ -32,6 +32,22 @@ const exceptionView=e=>({
   status:String(e.status||"cancelled"),newDate:String(e.newDate||""),newStartTime:String(e.newStartTime||""),
   newEndTime:String(e.newEndTime||""),reason:String(e.reason||""),updatedAt:String(e.updatedAt||"")
 });
+async function getScheduleState(schoolId){
+  const sid=tenantSchoolPartition(schoolId);
+  try{
+    const e=await table("tenantScheduleState").getEntity(sid,"current");
+    return {status:String(e.status||"draft"),activatedAt:String(e.activatedAt||""),activatedBy:String(e.activatedBy||""),updatedAt:String(e.updatedAt||""),updatedBy:String(e.updatedBy||"")};
+  }catch(e){
+    if(e.statusCode!==404)throw e;
+    return {status:"draft",activatedAt:"",activatedBy:"",updatedAt:"",updatedBy:""};
+  }
+}
+async function saveScheduleState(schoolId,status,updatedBy){
+  const sid=tenantSchoolPartition(schoolId),now=new Date().toISOString(),old=await getScheduleState(schoolId);
+  const entity={partitionKey:sid,rowKey:"current",schoolId:sid,status:status==="active"?"active":"draft",activatedAt:status==="active"?(old.activatedAt||now):"",activatedBy:status==="active"?(old.activatedBy||String(updatedBy||"")):"",updatedAt:now,updatedBy:String(updatedBy||"")};
+  await table("tenantScheduleState").upsertEntity(entity,"Replace");
+  return {status:entity.status,activatedAt:entity.activatedAt,activatedBy:entity.activatedBy,updatedAt:entity.updatedAt,updatedBy:entity.updatedBy};
+}
 async function listSchedules(schoolId){
   const sid=tenantSchoolPartition(schoolId),items=[];
   for await(const e of table("tenantSchedule").listEntities({queryOptions:{filter:`PartitionKey eq '${safe(sid)}'`}}))items.push(scheduleView(e));
@@ -43,8 +59,11 @@ async function listExceptions(schoolId,date=""){
   const items=[];for await(const e of table("tenantScheduleException").listEntities({queryOptions:{filter:parts.join(" and ")}}))items.push(exceptionView(e));
   return items;
 }
-export async function resolveSchoolCourses(schoolId,date,student=null){
-  await ensureTenantTables(); const schedules=await listSchedules(schoolId),exceptions=await listExceptions(schoolId,date);
+export async function resolveSchoolCourses(schoolId,date,student=null,options={}){
+  await ensureTenantTables();
+  const state=await getScheduleState(schoolId);
+  if(state.status!=="active"&&!options.includeDraft)return [];
+  const schedules=await listSchedules(schoolId),exceptions=await listExceptions(schoolId,date);
   const exMap=new Map(exceptions.map(x=>[`${x.scheduleId}|${x.sessionDate}`,x]));
   const weekday=new Date(date+"T12:00:00+08:00").getDay(),group=normGroup(student?.groupName||"");
   const result=[];
@@ -59,13 +78,36 @@ export async function resolveSchoolCourses(schoolId,date,student=null){
   }
   return result;
 }
+export async function enforceScheduledCourse(schoolId,date,courseType,groupName=""){
+  await ensureTenantTables();
+  const state=await getScheduleState(schoolId);
+  if(state.status!=="active")return {enforced:false,allowed:true,state};
+  const courses=await resolveSchoolCourses(schoolId,date,null,{includeDraft:true});
+  const group=normGroup(groupName);
+  const candidates=courses.filter(x=>{
+    if(String(x.courseType||"")!==String(courseType||""))return false;
+    const target=normGroup(x.groupName);
+    if(!group||!target||target==="ALL")return true;
+    return target.split(",").map(normGroup).includes(group);
+  });
+  if(!candidates.length)return {enforced:true,allowed:false,state,reason:"此日期不是已啟用課表的上課日"};
+  const available=candidates.find(x=>!["cancelled","rescheduled"].includes(String(x.effectiveStatus||"active")));
+  if(available)return {enforced:true,allowed:true,state,course:available};
+  const cancelled=candidates.find(x=>String(x.effectiveStatus||"")==="cancelled");
+  if(cancelled)return {enforced:true,allowed:false,state,reason:cancelled.exception?.reason?("本課程已停課："+cancelled.exception.reason):"本課程已停課"};
+  return {enforced:true,allowed:false,state,reason:"本課程已改期，原日期不可點名"};
+}
 app.http("schoolSchedule",{methods:["GET","POST","PATCH"],authLevel:"anonymous",route:"school-schedule",handler:async(request)=>{
   const context=await getTenantContext(request);if(context.error)return context.error;const {access:a,schoolId}=context;
   await ensureTenantTables();
   if(request.method==="GET"){
-    const date=String(request.query.get("date")||"").trim();
-    if(date)return json({date,items:await resolveSchoolCourses(schoolId,date)});
-    return json({items:await listSchedules(schoolId),exceptions:await listExceptions(schoolId)});
+    const date=String(request.query.get("date")||"").trim(),preview=String(request.query.get("preview")||"")==="1";
+    const scheduleState=await getScheduleState(schoolId);
+    if(date){
+      const includeDraft=preview&&a.role==="admin";
+      return json({date,scheduleState,items:await resolveSchoolCourses(schoolId,date,null,{includeDraft})});
+    }
+    return json({scheduleState,items:await listSchedules(schoolId),exceptions:await listExceptions(schoolId)});
   }
   if(a.role!=="admin")return json({error:"僅學校管理員可維護課表"},403);
   const body=await request.json(),sid=tenantSchoolPartition(schoolId),now=new Date().toISOString();
@@ -103,11 +145,22 @@ app.http("schoolSchedule",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
         }
       }
 
-      return json({ok:true,count:prepared.length,mode:replacing?"replace":"append",items:prepared.map(scheduleView)});
+      const scheduleState=await saveScheduleState(schoolId,"draft",a.email);
+      return json({ok:true,count:prepared.length,mode:replacing?"replace":"append",scheduleState,items:prepared.map(scheduleView)});
     }catch(e){
       console.error("school schedule import failed",{schoolId:sid,mode:String(body.mode||"append"),count:rows.length,error:e?.message||String(e),statusCode:e?.statusCode||0});
       return json({error:"課表匯入失敗："+String(e?.message||e||"未知錯誤")},500);
     }
+  }
+  if(body.action==="activate"){
+    const active=(await listSchedules(schoolId)).filter(x=>x.status==="active");
+    if(!active.length)return json({error:"目前沒有可啟用的課程規則，請先匯入課表"},400);
+    const scheduleState=await saveScheduleState(schoolId,"active",a.email);
+    return json({ok:true,scheduleState,count:active.length});
+  }
+  if(body.action==="draft"){
+    const scheduleState=await saveScheduleState(schoolId,"draft",a.email);
+    return json({ok:true,scheduleState});
   }
   if(body.action==="exception"){
     const scheduleId=String(body.scheduleId||""),sessionDate=String(body.sessionDate||"");
@@ -125,4 +178,4 @@ app.http("schoolSchedule",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
   return json({error:"不支援的異動"},400);
 }});
 
-export { listSchedules, listExceptions };
+export { listSchedules, listExceptions, getScheduleState };
