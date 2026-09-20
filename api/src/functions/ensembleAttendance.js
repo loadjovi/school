@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, ensureEnsembleAccess, json } from "../lib/auth.js";
 import { ensureTenantTables, table, rowKey, getStudentMaster, tenantStudentPartition, listActivityRange, activityStudentId } from "../lib/storage.js";
+import { enforceScheduledCourse } from "./schoolSchedule.js";
 
 const safe=v=>String(v||"").replaceAll("'","''");
 
@@ -30,6 +31,8 @@ app.http("ensembleAttendance",{
       if(!sessionDate||!groupName)return json({error:"缺少日期或團別"},400);
       if(!["A","B"].includes(groupName)&&a.role!=="admin")return json({error:"目前團體課僅開放 A、B 團"},400);
       if(!ensureEnsembleAccess(a,{groupName}))return json({error:"無此團體課權限"},403);
+      const schedulePolicy=await enforceScheduledCourse(schoolId,sessionDate,"ensemble",groupName);
+      if(schedulePolicy.enforced&&!schedulePolicy.allowed)return json({error:schedulePolicy.reason,scheduleBlocked:true},409);
       const latest=new Map();
       for(const e of await listActivityRange("ensemble",schoolId,"","",sessionDate)){
         if(String(e.classType||"ensemble")!=="ensemble")continue;
@@ -48,6 +51,8 @@ app.http("ensembleAttendance",{
     if(!sessionDate||!groupName||!items.length)return json({error:"缺少團別、日期或點名資料"},400);
     if(!["A","B"].includes(groupName)&&a.role!=="admin")return json({error:"目前團體課僅開放 A、B 團"},400);
     if(!ensureEnsembleAccess(a,{groupName}))return json({error:"無此團體課權限"},403);
+    const schedulePolicy=await enforceScheduledCourse(schoolId,sessionDate,"ensemble",groupName);
+    if(schedulePolicy.enforced&&!schedulePolicy.allowed)return json({error:schedulePolicy.reason,scheduleBlocked:true},409);
     const now=new Date().toISOString();
     for(const item of items){
       const master=await getStudentMaster(item.studentId,schoolId);
