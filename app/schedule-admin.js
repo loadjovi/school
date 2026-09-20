@@ -1,6 +1,7 @@
 (()=>{
   const isAdmin=()=>state.me?.role==="admin";
   state.schoolSchedule=state.schoolSchedule||null;
+  state.schedulePreview=state.schedulePreview||null;
 
   const weekdayText=n=>["週日","週一","週二","週三","週四","週五","週六"][Number(n)]||"";
   const typeText=t=>({section:"分部課",ensemble:"合奏課",comprehensive:"綜合課"}[t]||"課程");
@@ -9,18 +10,40 @@
   async function loadSchedule(){state.schoolSchedule=await api("/api/school-schedule")}
   window.openScheduleAdmin=async function(){state.page="schoolSchedule";await loadSchedule();render()};
   window.closeScheduleAdmin=function(){state.page="admin";render()};
+  window.activateSchoolSchedule=async function(){
+    const count=(state.schoolSchedule?.items||[]).filter(x=>x.status==="active").length;
+    if(!count){toast("❌ 請先匯入課表");return}
+    if(!confirm(`確定正式啟用目前 ${count} 筆課程規則？\n\n啟用後：\n• 家長首頁依課表顯示今日課程\n• 老師只能在有效上課日點名\n• 已設定停課的日期不可點名`))return;
+    try{await api("/api/school-schedule",{method:"PATCH",body:JSON.stringify({action:"activate"})});toast("✅ 課表已正式啟用");state.schedulePreview=null;await loadSchedule();render()}catch(e){toast("❌ "+e.message)}
+  };
+  window.setScheduleDraft=async function(){
+    if(!confirm("切回草稿後，家長首頁將暫停套用此課表，老師點名也不再受課表限制。\n\n確定繼續？"))return;
+    try{await api("/api/school-schedule",{method:"PATCH",body:JSON.stringify({action:"draft"})});toast("🟡 已切回草稿");await loadSchedule();render()}catch(e){toast("❌ "+e.message)}
+  };
+  window.previewScheduleDate=async function(){
+    const date=prompt("輸入要預覽的日期（YYYY-MM-DD）",new Date().toLocaleDateString("sv-SE"));if(!date)return;
+    try{state.schedulePreview=await api("/api/school-schedule?date="+encodeURIComponent(date)+"&preview=1");render()}catch(e){toast("❌ "+e.message)}
+  };
+  window.clearSchedulePreview=function(){state.schedulePreview=null;render()};
+
 
   function scheduleAdmin(){
-    const data=state.schoolSchedule||{items:[],exceptions:[]},items=data.items||[],exceptions=data.exceptions||[];
-    const active=items.filter(x=>x.status==="active");
+    const data=state.schoolSchedule||{items:[],exceptions:[],scheduleState:{status:"draft"}},items=data.items||[],exceptions=data.exceptions||[],scheduleState=data.scheduleState||{status:"draft"};
+    const active=items.filter(x=>x.status==="active"),isLive=scheduleState.status==="active",preview=state.schedulePreview;
     const legacyWarning=active.length===14?`<div class="notice" style="margin-top:10px;border:1px solid #f59e0b"><b>⚠️ 偵測到舊版 14 筆課表</b><br>舊版把 A／B 合奏課設成每週二，會多算未實際上課的日期。請下載新版範本後，用「匯入並取代」修正；新版正確應為 <b>29 筆規則</b>。</div>`:"";
+    const statePanel=isLive
+      ?`<div class="notice" style="margin-top:12px;border:1px solid #16a34a"><b>🟢 課表已正式啟用</b><br>家長首頁與老師點名都會依此課表執行；非上課日、停課日不可點名。<br><small>啟用時間：${esc(scheduleState.activatedAt||"—")}</small></div><button class="secondary" style="width:100%;margin-top:8px" onclick="setScheduleDraft()">暫停正式課表／切回草稿</button>`
+      :`<div class="notice" style="margin-top:12px;border:1px solid #f59e0b"><b>🟡 課表目前為草稿</b><br>可先預覽與核對；尚未套用到家長首頁，也不限制老師點名。確認無誤後再正式啟用。</div><button class="secondary" style="width:100%;margin-top:8px" onclick="previewScheduleDate()">👀 預覽指定日期</button><button class="primary" style="margin-top:8px" onclick="activateSchoolSchedule()">✅ 正式啟用課表</button>`;
+    const previewPanel=preview?`<div class="card"><div class="student"><div><h2 style="margin:0">👀 課表預覽｜${esc(preview.date)}</h2><div class="muted">預覽草稿，不影響家長與老師</div></div><button class="secondary" style="width:auto;margin:0;padding:8px 10px" onclick="clearSchedulePreview()">關閉</button></div>${preview.items?.length?preview.items.map(x=>`<div class="item"><div><b>${esc(x.courseName)}</b><small>${esc(x.groupName||"全團")}｜${esc(x.startTime)}–${esc(x.endTime)}</small></div><span class="badge ${x.effectiveStatus==="cancelled"?"bad":"ok"}">${x.effectiveStatus==="cancelled"?"停課":"上課"}</span></div>`).join(""):'<div class="notice" style="margin-top:10px">此日期沒有排定固定課程。</div>'}</div>`:"";
     return `<div class="card hero"><button class="secondary" style="width:auto;margin:0 0 12px;padding:8px 12px" onclick="closeScheduleAdmin()">← 回管理員 Dashboard</button><div class="student"><div><h2 style="margin:0">📅 課表管理</h2><div class="muted">學校課表統一管理｜家長與老師同步</div></div><span class="badge ok">${active.length} 個課程規則</span></div>
       <div class="notice" style="margin-top:12px">平常只需在這裡維護課表。臨時停課直接按「停課」，家長首頁會立即顯示，不列入缺席。</div>
+      ${statePanel}
       ${legacyWarning}
       <button class="primary" onclick="downloadSacredHeartScheduleTemplate()">📥 下載新版聖心課表範本（29 筆）</button>
       <button class="secondary" style="width:100%;margin-top:8px" onclick="document.getElementById('scheduleCsv').click()">📤 匯入並取代目前課表 CSV</button>
       <input id="scheduleCsv" type="file" accept=".csv,text/csv" style="display:none" onchange="importScheduleCsv(this.files[0])">
     </div>
+    ${previewPanel}
     <div class="card"><h2>目前課表</h2>${active.length?active.map(x=>`<div class="item"><div><b>${esc(x.courseName)}</b><small>${esc(typeText(x.courseType))}｜${esc(x.groupName||"全團")}｜${x.recurrence==="weekly"?esc(weekdayText(x.weekday)):esc(x.sessionDate)}｜${esc(x.startTime)}–${esc(x.endTime)}</small></div><button class="secondary" style="width:auto;margin:0;padding:8px 10px" onclick="cancelSchedulePrompt('${esc(x.scheduleId)}','${esc(x.courseName)}')">停課</button></div>`).join(""):'<div class="notice">尚未建立課表，可直接匯入聖心範本。</div>'}</div>
     <div class="card"><h2>近期異動</h2>${exceptions.length?exceptions.slice().sort((a,b)=>String(b.sessionDate).localeCompare(String(a.sessionDate))).slice(0,8).map(x=>`<div class="item"><div><b>${esc(x.sessionDate)}｜${x.status==="cancelled"?"停課":"課程異動"}</b><small>${esc(x.reason||"未填原因")}</small></div><span class="badge warn">已通知首頁</span></div>`).join(""):'<div class="notice">目前沒有課程異動。</div>'}</div>`;
   }
@@ -56,7 +79,7 @@
       const warning=`準備匯入 ${items.length} 筆課表並「取代目前課表」。\n\n現有課程規則與已設定的停課異動會先清除，再建立新版課表。\n\n確認繼續？`;
       if(!confirm(warning))return;
       await api("/api/school-schedule",{method:"POST",body:JSON.stringify({mode:"replace",items})});
-      toast(`✅ 已取代為 ${items.length} 筆課表`);
+      toast(`✅ 已匯入 ${items.length} 筆課表，目前為草稿，請預覽後正式啟用`);
       await loadSchedule();render();
     }catch(e){toast("❌ "+e.message)}
     finally{const i=document.getElementById("scheduleCsv");if(i)i.value=""}
