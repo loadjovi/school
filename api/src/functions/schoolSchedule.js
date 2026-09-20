@@ -56,21 +56,44 @@ app.http("schoolSchedule",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
   if(a.role!=="admin")return json({error:"僅學校管理員可維護課表"},403);
   const body=await request.json(),sid=tenantSchoolPartition(schoolId),now=new Date().toISOString();
   if(request.method==="POST"){
-    const rows=Array.isArray(body.items)?body.items:[body],saved=[];
-    if(String(body.mode||"")==="replace"){
-      for await(const e of table("tenantScheduleException").listEntities({queryOptions:{filter:`PartitionKey eq '${safe(sid)}'`}}))await table("tenantScheduleException").deleteEntity(e.partitionKey,e.rowKey);
-      for await(const e of table("tenantSchedule").listEntities({queryOptions:{filter:`PartitionKey eq '${safe(sid)}'`}}))await table("tenantSchedule").deleteEntity(e.partitionKey,e.rowKey);
+    const rows=Array.isArray(body.items)?body.items:[body],prepared=[];
+    try{
+      for(const x of rows){
+        const recurrence=x.recurrence==="date"?"date":"weekly",startTime=String(x.startTime||""),endTime=String(x.endTime||"");
+        if(!validTime(startTime)||!validTime(endTime))return json({error:"時間格式需為 HH:mm"},400);
+        if(recurrence==="date"&&!validDate(x.sessionDate))return json({error:"指定日期課程需提供 YYYY-MM-DD"},400);
+        if(recurrence==="weekly"&&(!Number.isInteger(Number(x.weekday))||Number(x.weekday)<0||Number(x.weekday)>6))return json({error:"每週課程需提供 weekday 0-6"},400);
+        const normalized={...x,recurrence,startTime,endTime};
+        const id=String(x.scheduleId||scheduleKey(normalized));
+        prepared.push({partitionKey:sid,rowKey:id,schoolId:sid,courseType:String(x.courseType||"other"),courseName:String(x.courseName||"課程").slice(0,100),groupName:String(x.groupName||"").slice(0,40),section:String(x.section||"").slice(0,60),recurrence,weekday:Number(x.weekday||0),startDate:String(x.startDate||""),endDate:String(x.endDate||""),sessionDate:String(x.sessionDate||""),startTime,endTime,status:x.status==="inactive"?"inactive":"active",note:String(x.note||"").slice(0,300),updatedAt:now,updatedBy:a.email});
+      }
+
+      const scheduleClient=table("tenantSchedule"),exceptionClient=table("tenantScheduleException");
+      const replacing=String(body.mode||"")==="replace";
+      let oldSchedules=[],oldExceptions=[];
+      if(replacing){
+        for await(const e of scheduleClient.listEntities({queryOptions:{filter:`PartitionKey eq '${safe(sid)}'`}}))oldSchedules.push({partitionKey:e.partitionKey,rowKey:e.rowKey});
+        for await(const e of exceptionClient.listEntities({queryOptions:{filter:`PartitionKey eq '${safe(sid)}'`}}))oldExceptions.push({partitionKey:e.partitionKey,rowKey:e.rowKey});
+      }
+
+      for(const entity of prepared)await scheduleClient.upsertEntity(entity,"Replace");
+
+      if(replacing){
+        const keep=new Set(prepared.map(x=>x.rowKey));
+        for(const e of oldSchedules){
+          if(keep.has(String(e.rowKey)))continue;
+          try{await scheduleClient.deleteEntity(e.partitionKey,e.rowKey)}catch(err){if(err.statusCode!==404)throw err}
+        }
+        for(const e of oldExceptions){
+          try{await exceptionClient.deleteEntity(e.partitionKey,e.rowKey)}catch(err){if(err.statusCode!==404)throw err}
+        }
+      }
+
+      return json({ok:true,count:prepared.length,mode:replacing?"replace":"append",items:prepared.map(scheduleView)});
+    }catch(e){
+      console.error("school schedule import failed",{schoolId:sid,mode:String(body.mode||"append"),count:rows.length,error:e?.message||String(e),statusCode:e?.statusCode||0});
+      return json({error:"課表匯入失敗："+String(e?.message||e||"未知錯誤")},500);
     }
-    for(const x of rows){
-      const recurrence=x.recurrence==="date"?"date":"weekly",startTime=String(x.startTime||""),endTime=String(x.endTime||"");
-      if(!validTime(startTime)||!validTime(endTime))return json({error:"時間格式需為 HH:mm"},400);
-      if(recurrence==="date"&&!validDate(x.sessionDate))return json({error:"指定日期課程需提供 YYYY-MM-DD"},400);
-      if(recurrence==="weekly"&&(!Number.isInteger(Number(x.weekday))||Number(x.weekday)<0||Number(x.weekday)>6))return json({error:"每週課程需提供 weekday 0-6"},400);
-      const normalized={...x,recurrence,startTime,endTime};
-      const id=String(x.scheduleId||scheduleKey(normalized)),entity={partitionKey:sid,rowKey:id,schoolId:sid,courseType:String(x.courseType||"other"),courseName:String(x.courseName||"課程").slice(0,100),groupName:String(x.groupName||"").slice(0,40),section:String(x.section||"").slice(0,60),recurrence,weekday:Number(x.weekday||0),startDate:String(x.startDate||""),endDate:String(x.endDate||""),sessionDate:String(x.sessionDate||""),startTime,endTime,status:x.status==="inactive"?"inactive":"active",note:String(x.note||"").slice(0,300),updatedAt:now,updatedBy:a.email};
-      await table("tenantSchedule").upsertEntity(entity,"Replace");saved.push(scheduleView(entity));
-    }
-    return json({ok:true,count:saved.length,mode:String(body.mode||"append"),items:saved});
   }
   if(body.action==="exception"){
     const scheduleId=String(body.scheduleId||""),sessionDate=String(body.sessionDate||"");
