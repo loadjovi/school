@@ -1,5 +1,5 @@
 (()=>{const q=new URLSearchParams(location.search),sid=String(q.get("onboardingSchoolId")||"").trim().toLowerCase(),role=String(q.get("onboardingRole")||"").trim();if(/^[a-z0-9-]{2,60}$/.test(sid)&&["schoolAdmin","teacher","parent"].includes(role)){sessionStorage.setItem("school_context_id",sid);sessionStorage.setItem("role_context",role)}})();
-const state={me:null,students:[],student:null,page:"home",summary:null,practice:[],token:sessionStorage.getItem("google_id_token")||"",registrations:[],master:[],parentSelfBind:{schoolId:"",schoolName:"",students:[],loading:false}};
+const state={me:null,students:[],student:null,page:"home",summary:null,practice:[],token:sessionStorage.getItem("google_id_token")||"",registrations:[],master:[],schoolOptions:[],parentSelfBind:{schoolId:"",schoolName:"",students:[],loading:false}};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
 const grades=["一年級","二年級","三年級","四年級","五年級","六年級"],groups=["A","B","C","儲備"],instruments=["小提琴","中提琴","大提琴","低音提琴","其他"];
@@ -12,6 +12,10 @@ async function loadProfile(){
   state.me=await api("/api/me");
   const contexts=Array.isArray(state.me.contexts)?state.me.contexts:[];
   const chosen=sessionStorage.getItem("role_context")||"";
+  if(!chosen&&state.me.role==="unassigned"&&!contexts.length){
+    try{const d=await api("/api/school-options");state.schoolOptions=Array.isArray(d.items)?d.items:[]}catch{state.schoolOptions=[]}
+    state.students=[];state.student=null;state.page="schoolSelect";render();return;
+  }
   if(!chosen&&contexts.length>0&&(contexts.length>1||["unassigned","tenantPending"].includes(state.me.role))){
     state.me.role="contextSelector";state.me.capabilities={};state.me.activeContextKey="";
     state.students=[];state.student=null;state.page="contextSelect";render();return;
@@ -104,6 +108,21 @@ window.selectIdentityContext=function(type,schoolId){
 };
 async function go(p){state.page=p;if(["home","practice","record"].includes(p)&&state.student)await refreshStudent();if(state.me.role==="admin"&&["admin","students"].includes(p))await loadAdmin();render()}
 function scoreItem(n,s,v,c="ok"){return `<div class="item"><div><b>${esc(n)}</b><small>${esc(s)}</small></div><span class="badge ${c}">${esc(v)}</span></div>`}
+function schoolSelectionPage(){
+  const items=Array.isArray(state.schoolOptions)?state.schoolOptions:[];
+  const rows=items.length?items.map(x=>{
+    const testing=String(x.status||"")==="onboarding";
+    return `<div class="card"><div class="student"><div><b style="font-size:17px">🏫 ${esc(x.schoolName||x.schoolId)}</b><div class="muted">${testing?"隔離驗證中":"正式啟用"}｜${esc(x.systemName||"")}</div></div><span class="badge ${testing?"warn":"ok"}">${testing?"測試":"可使用"}</span></div><button class="primary" onclick="chooseParentSchool('${esc(x.schoolId)}')">${testing?"進入測試並綁定":"選擇此學校"}</button></div>`;
+  }).join(""):`<div class="card"><div class="notice">目前沒有可選擇的學校，請聯絡系統管理員。</div></div>`;
+  return `<div class="card hero"><h2>🏫 第一次登入｜選擇學校</h2><div class="notice">請先選擇學生所屬學校。後續姓名與學號只會在該校學生主檔中比對，不會跨校查詢或綁定。</div></div>${rows}`;
+}
+window.chooseParentSchool=function(schoolId){
+  const sid=String(schoolId||"").trim();
+  if(!sid)return;
+  sessionStorage.setItem("school_context_id",sid);
+  sessionStorage.setItem("role_context","parent");
+  location.reload();
+};
 function registrationForm(){return `<div class="card"><h2>第一次登入｜綁定學生</h2><div class="notice"><b>綁定學校：${esc(state.me?.schoolName||"未指定學校")}</b><br>登入 Gmail：${esc(state.me.email)}<br>請填寫學生姓名與學號供系統比對。年級、班級、團別與樂器一律以目前學校的學生主檔為準，家長填寫內容不會修改學生資料。</div><label>學生姓名</label><input id="rName" autocomplete="off" placeholder="請輸入學生完整姓名"><label>學生學號</label><input id="rStudentNo" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="請輸入 6 碼學生學號"><div class="check"><input id="rConsent" type="checkbox"><div>我確認此 Google 帳號為上述學生之家長／監護人，並同意建立家長存取權限。</div></div><button class="primary" onclick="submitRegistration()">送出綁定申請</button></div>`}
 async function submitRegistration(){if(!$("rConsent").checked){toast("請先確認家長／監護人關係");return}const studentName=$("rName").value.trim(),studentNo=$("rStudentNo").value.trim();if(!studentName){toast("請填寫學生姓名");return}if(!studentNo){toast("請填寫學生學號");return}if(!/^\d{6}$/.test(studentNo)){toast("學號需為 6 碼數字");return}const body={studentName,studentNo,consent:true};try{await api("/api/student-registration",{method:"POST",body:JSON.stringify(body)});toast("✅ 已送出，等待管理員確認");state.page="home";render()}catch(e){toast("❌ "+e.message)}}
 function home(){if(state.me.role==="unassigned")return registrationForm();if(!state.student)return `<div class="card"><div class="notice">目前帳號尚未綁定學生。</div></div>`;const s=state.summary||{},rate=Math.round((s.practiceRate||0)*1000)/10;return `<div class="card hero"><div class="student"><div class="studentleft"><div class="avatar">${esc(state.student.name?.[0]||"學")}</div><div><div class="name">${esc(state.student.name)}</div><div class="muted">${esc(state.student.groupName)}團｜${esc(state.student.instrument)}｜${esc(state.student.grade)}</div></div></div><div class="pill">${new Date().getMonth()+1}月</div></div><div class="grid"><div class="kpi"><b>${s.practiceQualifiedDays||0}</b><span>自主練習達標天數</span></div><div class="kpi"><b>${s.practiceMinutes||0}</b><span>累計練習分鐘</span></div><div class="kpi"><b>${s.sectionPresent||0} / ${s.sectionTotal||0}</b><span>分部團練</span></div><div class="kpi"><b>${s.privatePresent||0} / ${s.privateTotal||0}</b><span>個別課</span></div></div><div style="margin-top:12px;font-size:12px;font-weight:800">自主練習達標率 <span style="float:right">${rate}%</span></div><div class="progress"><i style="width:${Math.min(rate,100)}%"></i></div></div><div class="card"><h2>今天要做什麼？</h2><div class="notice">年級、團別與樂器資料由學生主檔管理，之後異動不會影響既有點名／練習紀錄。</div><button class="primary" onclick="go('practice')">立即自主練習打卡</button></div>`}
@@ -134,5 +153,5 @@ function studentEdit(s){return `<div class="card"><h2>${esc(s.name)} <span class
 function studentsPage(){return `<div class="card"><h2>學生主檔管理</h2><div class="notice">年級、團別、樂器皆可後續修改；每次異動會寫入 StudentHistory，不會改掉過去點名與練習紀錄。</div></div>${state.master.map(studentEdit).join("")||'<div class="card"><div class="notice">尚無學生主檔。之後可以匯入目前弦樂團名單。</div></div>'}`}
 async function saveStudent(id){const body={studentId:id,name:$(`sn_${id}`).value,grade:$(`sg_${id}`).value,groupName:$(`sgrp_${id}`).value,instrument:$(`si_${id}`).value,schoolYear:$(`sy_${id}`).value,status:$(`ss_${id}`).value};try{await api("/api/student-master",{method:"PATCH",body:JSON.stringify(body)});toast("✅ 學生主檔已更新");await loadAdmin();render()}catch(e){toast("❌ "+e.message)}}
 function helpPage(){return `<div class="card"><h2>系統說明</h2><div class="notice">Gmail 只用來辨識家長／老師／管理員；學生資料存在 StudentMaster。年級升級、A/B 團異動、換樂器時，只更新學生主檔即可。</div></div>`}
-function render(){let c;if(state.page==="contextSelect")c=contextSelectorPage();else if(state.me.role==="admin")c=state.page==="students"?studentsPage():state.page==="help"?helpPage():adminPage();else if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me.role)||state.me?.capabilities?.teacherSettings){if(state.page==="help")c=helpPage();else if(state.page==="private")c=privatePage();else if(state.page==="section")c=sectionPage();else c=home()}else if(state.page==="practice")c=practicePage();else if(state.page==="record")c=recordPage();else if(state.page==="register")c=registrationForm();else if(state.page==="help")c=helpPage();else c=home();document.getElementById("app").innerHTML=shell(c)}
+function render(){let c;if(state.page==="schoolSelect")c=schoolSelectionPage();else if(state.page==="contextSelect")c=contextSelectorPage();else if(state.me.role==="admin")c=state.page==="students"?studentsPage():state.page==="help"?helpPage():adminPage();else if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me.role)||state.me?.capabilities?.teacherSettings){if(state.page==="help")c=helpPage();else if(state.page==="private")c=privatePage();else if(state.page==="section")c=sectionPage();else c=home()}else if(state.page==="practice")c=practicePage();else if(state.page==="record")c=recordPage();else if(state.page==="register")c=registrationForm();else if(state.page==="help")c=helpPage();else c=home();document.getElementById("app").innerHTML=shell(c)}
 boot();
