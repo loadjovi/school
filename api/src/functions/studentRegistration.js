@@ -47,7 +47,8 @@ app.http("studentRegistration",{
       const studentName=clean(body.studentName,40),studentNo=clean(body.studentNo,20);
       const parentName=clean(access.displayName,40),relationship="家長";
       if(studentName.length<2)return json({error:"請填寫學生姓名"},400);
-      if(!studentNo)return json({error:"請填寫學生學號"},400);\n      if(!/^\\d{6}$/.test(studentNo))return json({error:"學號需為 6 碼數字"},400);
+      if(!studentNo)return json({error:"請填寫學生學號"},400);
+      if(!/^\d{6}$/.test(studentNo))return json({error:"學號需為 6 碼數字"},400);
       if(body.consent!==true)return json({error:"請勾選資料使用確認"},400);
 
       const existing=await getRegistrationsByEmail(access.email,schoolId);
