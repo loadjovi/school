@@ -23,12 +23,31 @@ app.http("studentParentLinks",{
       const body=await request.json();
       const originalParentEmail=clean(body.originalParentEmail,320).toLowerCase();
       const originalStudentId=clean(body.originalStudentId,120);
+      const action=clean(body.action,40);
+      if(!originalParentEmail||!originalStudentId)return json({error:"缺少原始家長 Gmail 或學生 ID"},400);
+
+      if(action==="remove_binding"){
+        let old;
+        try{old=await table("tenantUserStudentMap").getEntity(tenantParentPartition(schoolId,originalParentEmail),originalStudentId)}
+        catch(e){if(e.statusCode===404)return json({error:"找不到家長綁定，可能已經移除"},404);throw e}
+        const alias=await getStudentAliasInfo(originalStudentId,schoolId);
+        const studentId=alias.canonicalStudentId||originalStudentId;
+        const now=new Date().toISOString();
+        await table("tenantUserStudentMap").deleteEntity(tenantParentPartition(schoolId,originalParentEmail),originalStudentId);
+        await table("tenantStudentHistory").createEntity({
+          partitionKey:tenantStudentPartition(schoolId,studentId),rowKey:rowKey("hist"),schoolId,studentId,changeType:"parent_binding_removed",
+          changedAt:now,changedBy:access.email,
+          oldValue:JSON.stringify({parentEmail:originalParentEmail,studentId:originalStudentId,relationship:String(old.relationship||""),parentName:String(old.parentName||"")}),
+          newValue:JSON.stringify(null),registrationId:String(old.registrationId||"")
+        });
+        return json({ok:true,removed:true,parentEmail:originalParentEmail,studentId,removedAt:now,removedBy:access.email});
+      }
+
       const parentEmail=clean(body.parentEmail,320).toLowerCase();
       const targetStudentId=clean(body.studentId,20);
       const parentName=clean(body.parentName,80);
       const relationship=clean(body.relationship,30)||"家長";
 
-      if(!originalParentEmail||!originalStudentId)return json({error:"缺少原始家長 Gmail 或學生 ID"},400);
       if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail))return json({error:"家長 Gmail 格式不正確"},400);
       if(!/^\d{6}$/.test(targetStudentId))return json({error:"請選擇正式 6 碼學號的學生"},400);
 
