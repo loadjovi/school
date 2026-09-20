@@ -29,7 +29,7 @@
       },25);
     })();
   </script>
-  <script src="/schedule-admin.js?v=20260920-2350" defer></script>
+  <script>\n    (()=>{\n      let tries=0;\n      const timer=setInterval(()=>{\n        tries++;\n        try{\n          if(typeof state!=="undefined"&&typeof adminPage==="function"&&typeof render==="function"){\n            clearInterval(timer);\n            const s=document.createElement("script");s.src="/schedule-admin.js?v=20260921-1530";document.body.appendChild(s);\n          }else if(tries>400)clearInterval(timer);\n        }catch(e){if(tries>400)clearInterval(timer)}\n      },25);\n    })();\n  </script>
   <script src="/roster-cleanup-safety.js?v=20260915-1110" defer></script>
 </body>
 </html>
