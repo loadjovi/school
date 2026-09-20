@@ -13,7 +13,7 @@
     const statusText={present:"已出席",late:"遲到",leave:"請假",absent:"缺席",cancelled:"停課"};
     const statusClass={present:"ok",late:"warn",leave:"warn",absent:"bad",cancelled:"warn"};
     if(!courses.length)return `<div class="card"><h2>📅 今日課程提醒</h2><div class="notice"><b>${esc(shortDate(date))} 今天沒有固定團體課程</b><br>個別課仍依老師實際安排為準；如有自主練習，可完成後直接打卡。</div></div>`;
-    const rows=courses.map(x=>{const status=x.recorded?(statusText[x.status]||"已點名"):"待上課／待點名";const cls=x.recorded?(statusClass[x.status]||"ok"):"warn";return `<div class="item"><div><b>${esc(x.label||"課程")}</b><small>${esc(x.time||"")}</small></div><span class="badge ${cls}">${esc(status)}</span></div>`}).join("");
+    const rows=courses.map(x=>{const status=x.cancelled?"今日停課":x.recorded?(statusText[x.status]||"已點名"):"待上課／待點名";const cls=x.cancelled?"bad":x.recorded?(statusClass[x.status]||"ok"):"warn";const note=x.cancelled&&x.reason?`<small style="display:block;margin-top:4px">原因：${esc(x.reason)}</small>`:"";return `<div class="item"><div><b>${esc(x.label||"課程")}</b><small>${esc(x.time||"")}</small>${note}</div><span class="badge ${cls}">${esc(status)}</span></div>`}).join("");
     return `<div class="card"><h2>📅 今日課程提醒</h2><div class="notice" style="margin-bottom:10px"><b>${esc(state.student?.name||"學生")}今天有 ${courses.length} 堂固定課程</b><br>以下依目前弦樂團課表顯示；個別課另依老師安排。</div>${rows}</div>`;
   }
   function studentSwitcher(){
