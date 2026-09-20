@@ -44,18 +44,21 @@ app.http("studentRegistration",{
     if(request.method==="POST"){
       if(["sectionTeacher","privateTeacher","admin"].includes(access.role))return json({error:"此帳號角色不可提交家長學生登記"},403);
       const body=await request.json();
-      const studentName=clean(body.studentName,40),grade=clean(body.grade,20),groupName=clean(body.groupName,10),instrument=clean(body.instrument,20);
-      const parentName=clean(body.parentName||access.displayName,40),relationship=clean(body.relationship,20),schoolYear=clean(body.schoolYear,20);
-      const err=validateStudentFields({studentName,grade,groupName,instrument});if(err)return json({error:err},400);
-      if(!relationship)return json({error:"請填寫與學生關係"},400);
+      const studentName=clean(body.studentName,40);
+      const parentName=clean(access.displayName,40),relationship="家長";
+      if(studentName.length<2)return json({error:"請填寫學生姓名"},400);
       if(body.consent!==true)return json({error:"請勾選資料使用確認"},400);
 
       const existing=await getRegistrationsByEmail(access.email,schoolId);
       if(existing.find(x=>x.studentName===studentName&&["pending","approved"].includes(x.status)))return json({error:"此學生已有待審核或已核准的登記資料"},409);
 
+      const sameName=(await listStudentMaster("active",schoolId)).filter(x=>clean(x.studentName,40)===studentName&&/^\\d{6}$/.test(String(x.rowKey||"")));
+      if(!sameName.length)return json({error:"找不到這位學生，請確認姓名是否與學校名單完全相同"},404);
+      if(sameName.length>1)return json({error:"學校名單有同名學生，請聯絡管理員協助綁定"},409);
+      const matched=sameName[0],grade=clean(matched.grade,20),groupName=clean(matched.groupName,10),instrument=clean(matched.instrument,20),schoolYear=clean(matched.schoolYear,20);
       await ensureTenantTables();
       const registrationId=rowKey("reg");
-      const entity={partitionKey:tenantSchoolPartition(schoolId),rowKey:registrationId,schoolId,parentEmail:access.email,parentName,relationship,studentName,grade,groupName,instrument,schoolYear,status:"pending",consent:true,createdAt:new Date().toISOString(),googleSub:access.sub||""};
+      const entity={partitionKey:tenantSchoolPartition(schoolId),rowKey:registrationId,schoolId,parentEmail:access.email,parentName,relationship,studentName,grade,groupName,instrument,schoolYear,status:"pending",consent:true,createdAt:new Date().toISOString(),googleSub:access.sub||"",matchedStudentId:String(matched.rowKey||"")};
       await table("tenantRegistrations").createEntity(entity);
       return json({ok:true,registration:view(entity)},201);
     }
@@ -77,10 +80,8 @@ app.http("studentRegistration",{
       return json({ok:true,status:"rejected"});
     }
 
-    const studentName=clean(body.studentName||reg.studentName,40),grade=clean(body.grade||reg.grade,20),groupName=clean(body.groupName||reg.groupName,10),instrument=clean(body.instrument||reg.instrument,20),schoolYear=clean(body.schoolYear||reg.schoolYear,20);
-    const err=validateStudentFields({studentName,grade,groupName,instrument});if(err)return json({error:err},400);
-
-    let studentId=clean(body.studentId,20);
+    const studentName=clean(reg.studentName,40);
+    let studentId=clean(body.studentId||reg.matchedStudentId,20);
     let oldMaster=null;
     if(studentId){
       if(!/^\d{6}$/.test(studentId))return json({error:"請選擇正式 6 碼學號的學生主檔"},400);
@@ -97,15 +98,14 @@ app.http("studentRegistration",{
       }
     }
 
+    const grade=clean(oldMaster.grade,20),groupName=clean(oldMaster.groupName,10),instrument=clean(oldMaster.instrument,20),schoolYear=clean(oldMaster.schoolYear,20);
     const now=new Date().toISOString();
-    const master={...oldMaster,partitionKey:schoolPartition,rowKey:studentId,schoolId,studentId,studentNo:studentId,studentName,grade,groupName,instrument,schoolYear,status:"active",updatedAt:now,updatedBy:access.email};
-    await table("tenantStudentMaster").upsertEntity(master,"Merge");
 
     await table("tenantStudentHistory").createEntity({
-      partitionKey:tenantStudentPartition(schoolId,studentId),rowKey:rowKey("hist"),schoolId,studentId,changeType:"registration_link_update",
+      partitionKey:tenantStudentPartition(schoolId,studentId),rowKey:rowKey("hist"),schoolId,studentId,changeType:"parent_registration_link",
       changedAt:now,changedBy:access.email,
-      oldValue:JSON.stringify({studentName:oldMaster.studentName,grade:oldMaster.grade,groupName:oldMaster.groupName,instrument:oldMaster.instrument,schoolYear:oldMaster.schoolYear||""}),
-      newValue:JSON.stringify({studentName,grade,groupName,instrument,schoolYear,studentNo:studentId}),registrationId
+      oldValue:JSON.stringify(null),
+      newValue:JSON.stringify({parentEmail:reg.parentEmail,studentName,studentNo:studentId}),registrationId
     });
 
     await table("tenantUserStudentMap").upsertEntity({
