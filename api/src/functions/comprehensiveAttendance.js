@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
 import { ensureTenantTables, table, rowKey, getStudentMaster, getTeacherProfile, tenantStudentPartition, listActivityRange, activityStudentId } from "../lib/storage.js";
+import { enforceScheduledCourse } from "./schoolSchedule.js";
 
 const allowedGroups=new Set(["A","B","儲備"]);
 const safe=v=>String(v||"").replaceAll("'","''");
@@ -34,6 +35,8 @@ app.http("comprehensiveAttendance",{
     if(request.method==="GET"){
       const sessionDate=String(request.query.get("sessionDate")||"").trim();
       if(!sessionDate)return json({error:"缺少上課日期"},400);
+      const schedulePolicy=await enforceScheduledCourse(schoolId,sessionDate,"comprehensive");
+      if(schedulePolicy.enforced&&!schedulePolicy.allowed)return json({error:schedulePolicy.reason,scheduleBlocked:true},409);
       const latest=new Map();
       for(const e of await listActivityRange("comprehensive",schoolId,"","",sessionDate)){
         if(String(e.classType||"comprehensive")!=="comprehensive")continue;
@@ -50,6 +53,8 @@ app.http("comprehensiveAttendance",{
     const sessionDate=String(body.sessionDate||"").trim();
     const items=Array.isArray(body.items)?body.items:[];
     if(!sessionDate||!items.length)return json({error:"缺少日期或點名資料"},400);
+    const schedulePolicy=await enforceScheduledCourse(schoolId,sessionDate,"comprehensive");
+    if(schedulePolicy.enforced&&!schedulePolicy.allowed)return json({error:schedulePolicy.reason,scheduleBlocked:true},409);
     const now=new Date().toISOString();
     for(const item of items){
       const master=await getStudentMaster(item.studentId,schoolId);
