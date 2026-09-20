@@ -77,4 +77,5 @@
     if(state.me?.role==="admin"&&state.page==="specialCalendar"){document.getElementById("app").innerHTML=shell(calendarAdmin());return}
     return baseRender();
   };
+  if(state.me?.role==="parent"&&state.student)loadParentEvents().then(()=>render()).catch(()=>{});
 })();
