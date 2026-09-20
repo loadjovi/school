@@ -1,21 +1,17 @@
 import { app } from "@azure/functions";
 import { getTenantContext, ensureStudentAccess, getStudentIdAliases, json } from "../lib/auth.js";
 import { listByStudent, getStudentMaster, activityStudentId } from "../lib/storage.js";
+import { resolveSchoolCourses } from "./schoolSchedule.js";
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
 function latestForDate(rows,date){return [...(rows||[])].filter(x=>String(x.eventDate||"").slice(0,10)===date).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")))[0]||null}
-function todayCoursesFor(student,date,sectionRows,ensembleRows,comprehensiveRows){
-  const groupRaw=String(student?.groupName||""),group=groupRaw==="C"?"儲備":groupRaw;
-  const weekday=new Date(date+"T12:00:00+08:00").getDay();
-  const comprehensiveDates=new Set(["2026-09-18","2026-10-02","2026-10-16","2026-10-30","2026-11-20","2026-11-27","2026-12-04"]);
-  const courses=[];
-  const add=(key,label,time,rows)=>{const r=latestForDate(rows,date);courses.push({key,label,time,status:r?String(r.status||""):"",recorded:!!r})};
-  if(group==="A"&&(weekday===1||weekday===3))add("section","A團分部課","依分部課時段",sectionRows);
-  if(group==="B"&&(weekday===2||weekday===4))add("section","B團分部課","依分部課時段",sectionRows);
-  if(group==="儲備"&&weekday===5&&date>="2026-10-02")add("section","儲備團分部課","每週五｜10/2 起",sectionRows);
-  if(["A","B"].includes(group)&&weekday===2)add("ensemble","A、B團合奏課","12:30–13:20",ensembleRows);
-  if(["A","B","儲備"].includes(group)&&comprehensiveDates.has(date))add("comprehensive","弦樂團體課（綜合課）","08:45–10:15",comprehensiveRows);
-  return courses;
+async function todayCoursesFor(schoolId,student,date,sectionRows,ensembleRows,comprehensiveRows){
+  const schedules=await resolveSchoolCourses(schoolId,date,student),rowMap={section:sectionRows,ensemble:ensembleRows,comprehensive:comprehensiveRows};
+  return schedules.map(x=>{
+    const r=latestForDate(rowMap[x.courseType]||[],date),ex=x.exception||null,cancelled=x.effectiveStatus==="cancelled";
+    return {key:x.courseType,label:x.courseName,time:`${x.startTime}–${x.endTime}`,status:cancelled?"cancelled":r?String(r.status||""):"",recorded:cancelled||!!r,cancelled,reason:ex?.reason||"",scheduleId:x.scheduleId};
+  });
 }
+
 async function rowsForAliases(key,aliases,start,end,schoolId){
   const sets=await Promise.all(aliases.map(id=>listByStudent(key,id,start,end,schoolId))),latest=new Map();
   for(const row of sets.flat()){
@@ -57,7 +53,7 @@ app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handle
   const comprehensivePresent=comprehensiveEffective.filter(x=>["present","late"].includes(x.status)).length;
   const privatePresent=privateEffective.filter(x=>["present","late"].includes(x.status)).length;
   const master=await getStudentMaster(studentId,schoolId);
-  const todayCourses=todayCoursesFor(master,today,s,e,c);
+  const todayCourses=await todayCoursesFor(schoolId,master,today,s,e,c);
   return json({
     month,practiceQualifiedDays:qualifiedDays,practiceMinutes,practiceRate:Math.min(qualifiedDays/Math.max(targetDays,1),1),
     sectionPresent,sectionTotal:sectionEffective.length,

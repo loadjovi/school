@@ -32,9 +32,11 @@ const names={
   tenantUserRole:process.env.TENANT_USER_ROLE_TABLE||"TenantUserRole",
   tenantMigration:process.env.TENANT_MIGRATION_TABLE||"TenantMigration",
   globalAuditLog:process.env.GLOBAL_AUDIT_LOG_TABLE||"GlobalAuditLog",
-  userIdentity:process.env.USER_IDENTITY_TABLE||"UserIdentity"
+  userIdentity:process.env.USER_IDENTITY_TABLE||"UserIdentity",
+  tenantSchedule:process.env.TENANT_SCHEDULE_TABLE||"TenantSchedule",
+  tenantScheduleException:process.env.TENANT_SCHEDULE_EXCEPTION_TABLE||"TenantScheduleException"
 };
-const tenantDataKeys=["tenantPractice","tenantSection","tenantEnsemble","tenantComprehensive","tenantPrivateLesson","tenantRegistrations","tenantUserStudentMap","tenantStudentMaster","tenantStudentHistory","tenantSemesterEnrollment","tenantTeacherDirectory","tenantTeacherProfile","tenantAcademicYearBatch","tenantMigration"];
+const tenantDataKeys=["tenantPractice","tenantSection","tenantEnsemble","tenantComprehensive","tenantPrivateLesson","tenantRegistrations","tenantUserStudentMap","tenantStudentMaster","tenantStudentHistory","tenantSemesterEnrollment","tenantTeacherDirectory","tenantTeacherProfile","tenantAcademicYearBatch","tenantMigration","tenantSchedule","tenantScheduleException"];
 const tenantActivityKeys={practice:"tenantPractice",section:"tenantSection",ensemble:"tenantEnsemble",comprehensive:"tenantComprehensive",privateLesson:"tenantPrivateLesson"};
 
 let initialized=false,tenantInitialized=false,initializationPromise=null,tenantInitializationPromise=null;
