@@ -338,8 +338,8 @@ export async function getAccess(request){
     const dynamicStudents=roleTenantAvailable?await getMappedStudentsByEmail(email,roleSchoolId):[];
     if(dynamicStudents.length)return {authenticated:true,...identity,role:"parent",schoolId:roleSchoolId,schoolName:String(roleTenant?.schoolName||roleSchoolId),systemName:String(roleTenant?.systemName||roleTenant?.schoolName||roleSchoolId),students:await canonicalizeStudents(dynamicStudents,roleSchoolId),capabilities:{tenantOnboarding:roleTenantOnboarding}};
   }
-  const onboardingRegistration=requestedContext==="parent"&&roleTenantOnboarding;
-  return {authenticated:true,...identity,role:onboardingRegistration||!requestedContext?"unassigned":"contextDenied",schoolId:requestedSchoolId||defaultId,schoolName:String(roleTenant?.schoolName||defaultTenant.schoolName||"聖心小學"),systemName:String(roleTenant?.systemName||defaultTenant.systemName||"聖心小學弦樂團"),capabilities:onboardingRegistration?{tenantOnboarding:true}:requestedContext?{contextDenied:true}:{}};
+  const parentRegistration=requestedContext==="parent"&&roleTenantAvailable;
+  return {authenticated:true,...identity,role:parentRegistration||!requestedContext?"unassigned":"contextDenied",schoolId:requestedSchoolId||defaultId,schoolName:String(roleTenant?.schoolName||defaultTenant.schoolName||"聖心小學"),systemName:String(roleTenant?.systemName||defaultTenant.systemName||"聖心小學弦樂團"),capabilities:parentRegistration&&roleTenantOnboarding?{tenantOnboarding:true}:requestedContext&&!parentRegistration?{contextDenied:true}:{}};
 }
 
 export async function getTenantContext(request,{requireActive=true,allowUnassigned=false}={}){
