@@ -52,7 +52,32 @@ app.http("studentRegistration",{
       if(body.consent!==true)return json({error:"請勾選資料使用確認"},400);
 
       const existing=await getRegistrationsByEmail(access.email,schoolId);
-      if(existing.find(x=>x.studentName===studentName&&["pending","approved"].includes(x.status)))return json({error:"此學生已有待審核或已核准的登記資料"},409);
+      const sameStudent=existing.filter(x=>
+        clean(x.studentName,40)===studentName &&
+        clean(x.studentNo||x.studentId||x.matchedStudentId,20)===studentNo
+      );
+      const pending=sameStudent.find(x=>String(x.status||"")==="pending");
+      if(pending)return json({error:"此學生已有待審核的家長綁定申請，請等待學校管理員核准",registrationId:String(pending.rowKey||"")},409);
+
+      const approved=sameStudent.filter(x=>String(x.status||"")==="approved");
+      if(approved.length){
+        let activeMap=null;
+        try{
+          activeMap=await table("tenantUserStudentMap").getEntity(tenantParentPartition(schoolId,access.email),studentNo);
+        }catch(e){if(e.statusCode!==404)throw e}
+        if(activeMap&&String(activeMap.status||"active")==="active"){
+          return json({error:"此 Gmail 已完成此學生綁定，請重新登入或切換至家長身分",alreadyBound:true},409);
+        }
+        const now=new Date().toISOString();
+        const regClient=table("tenantRegistrations");
+        for(const old of approved){
+          await regClient.updateEntity({
+            partitionKey:tenantSchoolPartition(schoolId),rowKey:String(old.rowKey),schoolId,
+            status:"revoked",revokedAt:now,revokedBy:access.email,
+            revokeReason:"approved_registration_without_active_parent_mapping"
+          },"Merge");
+        }
+      }
 
       const matched=await getStudentMaster(studentNo,schoolId);
       if(!matched||matched.status==="inactive")return json({error:"找不到此學號，請確認學生學號是否正確"},404);
