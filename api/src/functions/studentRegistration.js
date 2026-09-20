@@ -18,7 +18,7 @@ function validateStudentFields({studentName,grade,groupName,instrument}){
 function view(e){
   return {
     registrationId:e.rowKey,parentEmail:e.parentEmail,parentName:e.parentName,relationship:e.relationship,
-    studentName:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,
+    studentName:e.studentName,classCode:e.classCode||"",grade:e.grade,groupName:e.groupName,instrument:e.instrument,
     schoolYear:e.schoolYear||"",status:e.status,studentId:e.studentId||null,createdAt:e.createdAt,
     reviewedAt:e.reviewedAt||null,reviewedBy:e.reviewedBy||null,note:e.note||"",
     notificationStatus:e.notificationStatus||"",notificationSentAt:e.notificationSentAt||null,notificationError:e.notificationError||""
@@ -44,9 +44,9 @@ app.http("studentRegistration",{
     if(request.method==="POST"){
       if(["sectionTeacher","privateTeacher","admin"].includes(access.role))return json({error:"此帳號角色不可提交家長學生登記"},403);
       const body=await request.json();
-      const studentName=clean(body.studentName,40);
+      const studentName=clean(body.studentName,40),classCode=clean(body.classCode,20);
       const parentName=clean(access.displayName,40),relationship="家長";
-      if(studentName.length<2)return json({error:"請填寫學生姓名"},400);
+      if(studentName.length<2)return json({error:"請填寫學生姓名"},400);\n      if(!classCode)return json({error:"請填寫學生班級"},400);
       if(body.consent!==true)return json({error:"請勾選資料使用確認"},400);
 
       const existing=await getRegistrationsByEmail(access.email,schoolId);
@@ -58,7 +58,7 @@ app.http("studentRegistration",{
       const matched=sameName[0],grade=clean(matched.grade,20),groupName=clean(matched.groupName,10),instrument=clean(matched.instrument,20),schoolYear=clean(matched.schoolYear,20);
       await ensureTenantTables();
       const registrationId=rowKey("reg");
-      const entity={partitionKey:tenantSchoolPartition(schoolId),rowKey:registrationId,schoolId,parentEmail:access.email,parentName,relationship,studentName,grade,groupName,instrument,schoolYear,status:"pending",consent:true,createdAt:new Date().toISOString(),googleSub:access.sub||"",matchedStudentId:String(matched.rowKey||"")};
+      const entity={partitionKey:tenantSchoolPartition(schoolId),rowKey:registrationId,schoolId,parentEmail:access.email,parentName,relationship,studentName,classCode,grade,groupName,instrument,schoolYear,status:"pending",consent:true,createdAt:new Date().toISOString(),googleSub:access.sub||"",matchedStudentId:String(matched.rowKey||"")};
       await table("tenantRegistrations").createEntity(entity);
       return json({ok:true,registration:view(entity)},201);
     }
