@@ -131,4 +131,55 @@
     }
     return baseRender();
   };
+  let attendanceSyncBusy=false,attendanceSyncNotice="";
+  function attendanceSyncSignature(d){
+    return JSON.stringify([d?.lastSavedAt||"",d?.recordedBy||"",d?.recordedByRole||"",...(d?.items||[]).map(x=>[String(x.studentId),String(x.status||""),String(x.createdAt||"")])]);
+  }
+  function attendanceSyncEditing(){
+    const e=document.activeElement;
+    return !!(e&&["SELECT","INPUT","TEXTAREA"].includes(e.tagName)&&e.closest(".main"));
+  }
+  async function liveAttendanceSync(){
+    if(state.me?.role==="admin"||!state.me?.capabilities?.teacherSettings||attendanceSyncBusy||attendanceSyncEditing()||document.hidden)return;
+    const p=state.page;if(!["section","ensemble","comprehensive"].includes(p))return;
+    let url="",current=null,key="";
+    if(p==="section"){
+      const a=Array.isArray(state.me.assignments)?state.me.assignments:[],x=a[Math.min(window.__sectionClassIndex||0,Math.max(a.length-1,0))]||a[0];
+      if(!x)return;
+      const date=document.getElementById("sDate")?.value||state.sectionSelectedDate||new Date().toLocaleDateString("sv-SE");
+      const g=String(x.groupName||x.group||"").replace(/團$/,""),s=String(x.section||"");
+      url="/api/section-attendance?sessionDate="+encodeURIComponent(date)+"&groupName="+encodeURIComponent(g)+"&section="+encodeURIComponent(s);
+      current=state.sectionExisting;key=[date,g,s].join("|");
+    }else if(p==="ensemble"){
+      const groups=Array.isArray(state.me.ensembleGroups)?state.me.ensembleGroups.filter(x=>["A","B"].includes(x)):[],g=groups[Math.min(window.__ensembleGroupIndex||0,Math.max(groups.length-1,0))];
+      if(!g)return;
+      const date=document.getElementById("eDate")?.value||new Date().toLocaleDateString("sv-SE");
+      url="/api/ensemble-attendance?sessionDate="+encodeURIComponent(date)+"&groupName="+encodeURIComponent(g);
+      current=state.ensembleExisting;key=[date,g].join("|");
+    }else{
+      const date=state.comprehensiveDate||document.getElementById("cmpDate")?.value||new Date().toLocaleDateString("sv-SE");
+      url="/api/comprehensive-attendance?sessionDate="+encodeURIComponent(date);current=state.comprehensiveExisting;key=date;
+    }
+    attendanceSyncBusy=true;
+    try{
+      const d=await api(url);
+      if(attendanceSyncSignature(d)!==attendanceSyncSignature(current)){
+        if(p==="section"){state.sectionExisting=d;state.sectionExistingKey=key}
+        else if(p==="ensemble"){state.ensembleExisting=d;state.ensembleExistingKey=key}
+        else state.comprehensiveExisting=d;
+        render();
+        const notice=[p,d.lastSavedAt,d.recordedBy].join("|");
+        if(d.recordedByRole==="admin"&&d.recordedBy&&notice!==attendanceSyncNotice){
+          attendanceSyncNotice=notice;
+          toast("🧑‍💼 "+d.recordedBy+" 已協助點名，畫面已同步");
+        }
+      }
+    }catch(e){
+      if(!/不是已啟用課表|已停課|已改期/.test(String(e?.message||"")))console.warn("attendance live sync failed",e);
+    }finally{attendanceSyncBusy=false}
+  }
+  setInterval(liveAttendanceSync,12000);
+  window.addEventListener("focus",()=>setTimeout(liveAttendanceSync,200));
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)setTimeout(liveAttendanceSync,200)});
+
 })();
