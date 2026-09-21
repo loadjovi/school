@@ -49,8 +49,8 @@ function makePresetRows(){
   const early=["2026-09-02","2026-09-03","2026-09-09","2026-09-10","2026-09-16","2026-09-17","2026-09-23","2026-09-24","2026-09-30","2026-10-07","2026-10-08","2026-10-15","2026-10-21","2026-10-22","2026-10-28","2026-10-29"];
   const sat=["2026-10-03","2026-10-17","2026-11-07","2026-11-14"];
   return [
-    ...early.map(eventDate=>({eventType:"competition_training",title:"A團比賽加練｜早自習",eventDate,startTime:"07:50",endTime:"08:35",timeLabel:"早自習",targetGroups:"A",teacherName:"陳宣文老師",note:"比賽加強練習",requiresAttendance:false,visibleToParents:true})),
-    ...sat.map(eventDate=>({eventType:"competition_training",title:"A團比賽加練｜週六加練",eventDate,startTime:"09:00",endTime:"11:00",timeLabel:"09:00–11:00",targetGroups:"A",teacherName:"",note:"比賽加強練習",requiresAttendance:false,visibleToParents:true}))
+    ...early.map(eventDate=>({eventType:"competition_training",title:"A團比賽加練｜早自習",eventDate,startTime:"07:50",endTime:"08:35",timeLabel:"早自習",targetGroups:"A",teacherName:"陳宣文老師",location:"聖家樓四樓團練教室",note:"比賽加強練習",requiresAttendance:false,visibleToParents:true})),
+    ...sat.map(eventDate=>({eventType:"competition_training",title:"A團比賽加練｜週六加練",eventDate,startTime:"09:00",endTime:"11:00",timeLabel:"09:00–11:00",targetGroups:"A",teacherName:"林逸旻老師",location:"聖家樓四樓團練教室",note:"比賽加強練習",requiresAttendance:false,visibleToParents:true}))
   ];
 }
 
