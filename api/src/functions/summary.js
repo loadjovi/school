@@ -8,7 +8,7 @@ async function todayCoursesFor(schoolId,student,date,sectionRows,ensembleRows,co
   const schedules=await resolveSchoolCourses(schoolId,date,student),rowMap={section:sectionRows,ensemble:ensembleRows,comprehensive:comprehensiveRows};
   return schedules.map(x=>{
     const r=latestForDate(rowMap[x.courseType]||[],date),ex=x.exception||null,cancelled=x.effectiveStatus==="cancelled";
-    return {key:x.courseType,label:x.courseName,time:`${x.startTime}–${x.endTime}`,status:cancelled?"cancelled":r?String(r.status||""):"",recorded:cancelled||!!r,cancelled,reason:ex?.reason||"",scheduleId:x.scheduleId};
+    return {key:x.courseType,label:x.courseName,time:`${x.startTime}–${x.endTime}`,location:String(x.location||""),status:cancelled?"cancelled":r?String(r.status||""):"",recorded:cancelled||!!r,cancelled,reason:ex?.reason||"",scheduleId:x.scheduleId};
   });
 }
 
