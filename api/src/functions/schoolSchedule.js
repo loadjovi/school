@@ -25,7 +25,7 @@ const scheduleView=e=>({
   groupName:String(e.groupName||""),section:String(e.section||""),recurrence:String(e.recurrence||"weekly"),
   weekday:Number(e.weekday||0),startDate:String(e.startDate||""),endDate:String(e.endDate||""),
   sessionDate:String(e.sessionDate||""),startTime:String(e.startTime||""),endTime:String(e.endTime||""),
-  status:String(e.status||"active"),note:String(e.note||"")
+  location:String(e.location||""),status:String(e.status||"active"),note:String(e.note||"")
 });
 const exceptionView=e=>({
   exceptionId:String(e.rowKey||""),scheduleId:String(e.scheduleId||""),sessionDate:String(e.sessionDate||""),
@@ -121,7 +121,7 @@ app.http("schoolSchedule",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
         if(recurrence==="weekly"&&(!Number.isInteger(Number(x.weekday))||Number(x.weekday)<0||Number(x.weekday)>6))return json({error:"每週課程需提供 weekday 0-6"},400);
         const normalized={...x,recurrence,startTime,endTime};
         const id=String(x.scheduleId||scheduleKey(normalized));
-        prepared.push({partitionKey:sid,rowKey:id,schoolId:sid,courseType:String(x.courseType||"other"),courseName:String(x.courseName||"課程").slice(0,100),groupName:String(x.groupName||"").slice(0,40),section:String(x.section||"").slice(0,60),recurrence,weekday:Number(x.weekday||0),startDate:String(x.startDate||""),endDate:String(x.endDate||""),sessionDate:String(x.sessionDate||""),startTime,endTime,status:x.status==="inactive"?"inactive":"active",note:String(x.note||"").slice(0,300),updatedAt:now,updatedBy:a.email});
+        prepared.push({partitionKey:sid,rowKey:id,schoolId:sid,courseType:String(x.courseType||"other"),courseName:String(x.courseName||"課程").slice(0,100),groupName:String(x.groupName||"").slice(0,40),section:String(x.section||"").slice(0,60),recurrence,weekday:Number(x.weekday||0),startDate:String(x.startDate||""),endDate:String(x.endDate||""),sessionDate:String(x.sessionDate||""),startTime,endTime,location:String(x.location||"").slice(0,200),status:x.status==="inactive"?"inactive":"active",note:String(x.note||"").slice(0,300),updatedAt:now,updatedBy:a.email});
       }
 
       const scheduleClient=table("tenantSchedule"),exceptionClient=table("tenantScheduleException");
