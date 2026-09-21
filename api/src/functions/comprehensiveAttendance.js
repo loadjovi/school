@@ -46,7 +46,8 @@ app.http("comprehensiveAttendance",{
         const oldStamp=old?`${String(old.createdAt||"")}|${String(old.rowKey||"")}`:"";
         if(!old||stamp>=oldStamp)latest.set(id,e);
       }
-      return json({sessionDate,items:[...latest.values()].map(e=>({studentId:activityStudentId(e),groupName:String(e.groupName||""),section:String(e.section||""),status:String(e.status||"present"),minutes:Number(e.minutes||0),teacher:String(e.teacher||""),createdAt:String(e.createdAt||"")}))});
+      const rows=[...latest.values()],last=rows.slice().sort((x,y)=>String(y.createdAt||"").localeCompare(String(x.createdAt||"")))[0];
+      return json({sessionDate,recordedBy:String(last?.teacherName||last?.teacher||""),recordedByEmail:String(last?.teacher||""),recordedByRole:String(last?.actorRole||"teacher"),lastSavedAt:String(last?.createdAt||""),items:rows.map(e=>({studentId:activityStudentId(e),groupName:String(e.groupName||""),section:String(e.section||""),status:String(e.status||"present"),minutes:Number(e.minutes||0),teacher:String(e.teacher||""),teacherName:String(e.teacherName||e.teacher||""),actorRole:String(e.actorRole||"teacher"),createdAt:String(e.createdAt||"")}))});
     }
 
     const body=await request.json();
@@ -67,7 +68,7 @@ app.http("comprehensiveAttendance",{
         partitionKey:tenantStudentPartition(schoolId,item.studentId),rowKey:rowKey("c"),schoolId,studentId:String(item.studentId),eventDate:sessionDate,
         groupName:String(master.groupName||""),section:String(master.section||"待確認"),
         status,minutes:Number(item.minutes??(["present","late"].includes(status)?90:0)),
-        teacher:access.email,classType:"comprehensive",createdAt:now
+        teacher:access.email,teacherName:String(access.displayName||access.email||""),actorRole:access.role==="admin"?"admin":"teacher",classType:"comprehensive",createdAt:now
       });
     }
     return json({ok:true,count:items.length,sessionDate},200);
