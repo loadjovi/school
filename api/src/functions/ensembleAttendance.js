@@ -41,7 +41,8 @@ app.http("ensembleAttendance",{
         const old=latest.get(id);
         if(!old||String(e.createdAt||"")>=String(old.createdAt||""))latest.set(id,e);
       }
-      return json({sessionDate,groupName,items:[...latest.values()].map(e=>({studentId:activityStudentId(e),status:String(e.status||"present"),minutes:Number(e.minutes||0),teacher:String(e.teacher||""),createdAt:String(e.createdAt||"")}))});
+      const rows=[...latest.values()],last=rows.slice().sort((x,y)=>String(y.createdAt||"").localeCompare(String(x.createdAt||"")))[0];
+      return json({sessionDate,groupName,recordedBy:String(last?.teacherName||last?.teacher||""),recordedByEmail:String(last?.teacher||""),recordedByRole:String(last?.actorRole||"teacher"),lastSavedAt:String(last?.createdAt||""),items:rows.map(e=>({studentId:activityStudentId(e),status:String(e.status||"present"),minutes:Number(e.minutes||0),teacher:String(e.teacher||""),teacherName:String(e.teacherName||e.teacher||""),actorRole:String(e.actorRole||"teacher"),createdAt:String(e.createdAt||"")}))});
     }
 
     const body=await request.json();
@@ -61,7 +62,7 @@ app.http("ensembleAttendance",{
       if(master.groupName!==groupName||!ensureEnsembleAccess(a,view))return json({error:`無此團體課權限：${master.studentName}`},403);
       const oldRows=await existingRows(client,schoolId,item.studentId,sessionDate,groupName);
       for(const old of oldRows)await client.deleteEntity(String(old.partitionKey),String(old.rowKey));
-      await client.createEntity({partitionKey:tenantStudentPartition(schoolId,item.studentId),rowKey:rowKey("e"),schoolId,studentId:String(item.studentId),eventDate:sessionDate,groupName:master.groupName,section:master.section||"待確認",status:String(item.status||"present"),minutes:Number(item.minutes||0),teacher:a.email,classType:"ensemble",createdAt:now});
+      await client.createEntity({partitionKey:tenantStudentPartition(schoolId,item.studentId),rowKey:rowKey("e"),schoolId,studentId:String(item.studentId),eventDate:sessionDate,groupName:master.groupName,section:master.section||"待確認",status:String(item.status||"present"),minutes:Number(item.minutes||0),teacher:a.email,teacherName:String(a.displayName||a.email||""),actorRole:a.role==="admin"?"admin":"teacher",classType:"ensemble",createdAt:now});
     }
     return json({ok:true,count:items.length,sessionDate,groupName},200);
   }
