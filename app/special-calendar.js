@@ -21,9 +21,20 @@
 
   function parentCalendarCard(){
     if(state.me?.role!=="parent"||!state.student)return "";
-    const rows=(state.specialEvents||[]).filter(x=>x.status==="active").slice(0,8);
-    if(!rows.length)return `<div class="card"><h2>🗓️ 近期行事曆</h2><div class="notice">未來 45 天目前沒有特殊活動或比賽加練。</div></div>`;
-    return `<div class="card"><h2>🗓️ 近期行事曆</h2><div class="notice" style="margin-bottom:10px">特殊活動不列入一般分部／合奏／綜合課全勤統計；若需點名會另行標示。</div>${rows.map(x=>`<div class="item"><div><b>${eventTypeText(x.eventType)}｜${esc(x.title)}</b><small>${esc(x.eventDate)}｜${esc(eventTime(x))}${x.teacherName?"｜"+esc(x.teacherName):""}${x.location?"｜"+esc(x.location):""}</small>${x.note?`<small style="display:block;margin-top:3px">${esc(x.note)}</small>`:""}</div><span class="badge ok">${esc(x.targetGroups||"全團")}</span></div>`).join("")}</div>`;
+    const now=new Date(),todayText=today(),nowHm=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
+    const rows=(state.specialEvents||[])
+      .filter(x=>{
+        if(x.status!=="active")return false;
+        const d=String(x.eventDate||"");
+        if(d>todayText)return true;
+        if(d<todayText)return false;
+        const end=String(x.endTime||x.startTime||"");
+        return !end||end>nowHm;
+      })
+      .sort((a,b)=>String(a.eventDate).localeCompare(String(b.eventDate))||String(a.startTime).localeCompare(String(b.startTime)))
+      .slice(0,2);
+    if(!rows.length)return "";
+    return `<div class="card"><h2>🗓️ 近期行事曆</h2><div class="notice" style="margin-bottom:10px">僅顯示最近 2 筆特殊活動；活動結束後會自動移除。特殊活動不列入一般分部／合奏／綜合課全勤統計。</div>${rows.map(x=>`<div class="item"><div><b>${eventTypeText(x.eventType)}｜${esc(x.title)}</b><small>${esc(x.eventDate)}｜${esc(eventTime(x))}${x.teacherName?"｜"+esc(x.teacherName):""}${x.location?"｜"+esc(x.location):""}</small>${x.note?`<small style="display:block;margin-top:3px">${esc(x.note)}</small>`:""}</div><span class="badge ok">${esc(x.targetGroups||"全團")}</span></div>`).join("")}</div>`;
   }
 
   const baseHome=typeof home==="function"?home:null;
