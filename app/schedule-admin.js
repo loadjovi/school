@@ -130,12 +130,17 @@
       const missing=requiredScheduleHeaders.filter(h=>!head.includes(h));
       if(missing.length)throw new Error("CSV 缺少欄位："+missing.join("、"));
       const items=rows.slice(1).map(r=>Object.fromEntries(head.map((h,i)=>[h,(r[i]||"").trim()])));
-      const validTime=v=>/^([01]\\d|2[0-3]):[0-5]\\d$/.test(String(v||""));
-      const validDate=v=>/^\\d{4}-\\d{2}-\\d{2}$/.test(String(v||""));
+      const normalizeTime=v=>{
+        const s=String(v||"").trim();
+        const m=s.match(/^([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/);
+        return m?String(m[1]).padStart(2,"0")+":"+m[2]:"";
+      };
+      const validDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||""));
       items.forEach((x,i)=>{
         const row=i+2;
         if(!x.courseType||!x.courseName||!x.groupName)throw new Error(`第 ${row} 列缺少課程類型、名稱或團別`);
-        if(!validTime(x.startTime)||!validTime(x.endTime))throw new Error(`第 ${row} 列上課時間未填完整，請使用 HH:mm 格式`);
+        x.startTime=normalizeTime(x.startTime);x.endTime=normalizeTime(x.endTime);
+        if(!x.startTime||!x.endTime)throw new Error(`第 ${row} 列上課時間格式不正確，請使用 HH:mm（例如 17:40）`);
         if(x.recurrence==="weekly"){
           const wd=Number(x.weekday);
           if(x.weekday===""||!Number.isInteger(wd)||wd<0||wd>6)throw new Error(`第 ${row} 列 weekday 請填 0–6（1=週一、2=週二…）`);
