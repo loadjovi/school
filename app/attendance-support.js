@@ -69,12 +69,22 @@
     if(!canView())return;
     state.attendanceData=await api(`/api/attendance-report?month=${encodeURIComponent(state.attendanceMonth)}`);
   }
-  window.changeAttendanceMonth=async function(v){state.attendanceMonth=String(v||new Date().toISOString().slice(0,7));try{await loadAttendance();render()}catch(e){toast("❌ "+e.message)}};
-  window.changeAttendanceGroup=function(v){state.attendanceGroup=String(v||"全部");render()};
+  window.changeAttendanceMonth=async function(v){state.attendanceMonth=String(v||new Date().toISOString().slice(0,7));state.attendancePageNum=1;state.attendanceSelected="";try{await loadAttendance();render()}catch(e){toast("❌ "+e.message)}};
+  window.changeAttendanceGroup=function(v){state.attendanceGroup=String(v||"全部");state.attendancePageNum=1;state.attendanceSelected="";render()};
+  window.changeAttendanceSearch=function(v){state.attendanceSearch=String(v||"").trim();state.attendancePageNum=1;state.attendanceSelected="";render()};
+  window.changeAttendanceView=function(v){state.attendanceView=String(v||"all");state.attendancePageNum=1;state.attendanceSelected="";render()};
+  window.changeAttendancePage=function(v){const total=Math.max(1,Math.ceil(filteredItems().length/state.attendancePageSize));state.attendancePageNum=Math.min(total,Math.max(1,Number(v)||1));state.attendanceSelected="";render();setTimeout(()=>document.getElementById("attendanceStudentList")?.scrollIntoView({behavior:"smooth",block:"start"}),20)};
   window.showAttendanceDetail=function(id){state.attendanceSelected=state.attendanceSelected===String(id)?"":String(id);render()};
   function filteredItems(){
-    const items=state.attendanceData?.items||[];
-    return items.filter(x=>state.attendanceGroup==="全部"||String(x.groupName)===state.attendanceGroup);
+    const q=String(state.attendanceSearch||"").toLowerCase();
+    return (state.attendanceData?.items||[]).filter(x=>{
+      if(state.attendanceGroup!=="全部"&&String(x.groupName)!==state.attendanceGroup)return false;
+      const unusual=Number(x.overall?.late||0)+Number(x.overall?.leave||0)+Number(x.overall?.absent||0);
+      if(state.attendanceView==="changes"&&unusual===0)return false;
+      if(state.attendanceView==="full"&&unusual>0)return false;
+      if(q){const hay=[x.name,x.groupName,x.section,x.instrument,x.grade].map(v=>String(v||"").toLowerCase()).join(" ");if(!hay.includes(q))return false;}
+      return true;
+    });
   }
   function rateBadge(rate){if(rate===null||rate===undefined)return `<span class="badge warn">—</span>`;const c=rate>=90?"ok":rate>=75?"warn":"bad";return `<span class="badge ${c}">${rate}%</span>`}
   function statLine(label,x){return `${label} ${x?.attended||0}/${x?.total||0}`}
