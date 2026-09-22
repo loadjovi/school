@@ -7,6 +7,10 @@
   state.attendanceData=state.attendanceData||null;
   state.attendanceGroup=state.attendanceGroup||"全部";
   state.attendanceSelected=state.attendanceSelected||"";
+  state.attendanceSearch=state.attendanceSearch||"";
+  state.attendanceView=state.attendanceView||"all";
+  state.attendancePageNum=state.attendancePageNum||1;
+  state.attendancePageSize=15;
 
   function csvCell(v){const s=String(v??"");return /[",\r\n]/.test(s)?`"${s.replaceAll('"','""')}"`:s}
   function downloadCsv(filename,rows){
