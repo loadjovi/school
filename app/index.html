@@ -57,6 +57,20 @@
       },25);
     })();
   </script>
+  <script>
+    (()=>{
+      let tries=0;
+      const timer=setInterval(()=>{
+        tries++;
+        try{
+          if(typeof state!=="undefined"&&typeof window.exportAttendanceReport==="function"&&typeof render==="function"){
+            clearInterval(timer);
+            const s=document.createElement("script");s.src="/admin-attendance-assist.js?v=20260922-2005";document.body.appendChild(s);
+          }else if(tries>400)clearInterval(timer);
+        }catch(e){if(tries>400)clearInterval(timer)}
+      },25);
+    })();
+  </script>
   <script src="/roster-cleanup-safety.js?v=20260915-1110" defer></script>
 </body>
 </html>
