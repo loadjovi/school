@@ -14,7 +14,7 @@
 <body>
   <div id="app"><div class="loading">🎻 系統載入中…</div></div>
   <div id="toast" class="toast"></div>
-  <script src="/webview-guard.js?v=20260922-2335" defer></script>
+  <script src="/webview-guard.js?v=20260922-2355" defer></script>
   <script>
     (()=>{
       let tries=0;
@@ -35,7 +35,7 @@
       const timer=setInterval(()=>{
         tries++;
         try{
-          if(typeof state!=="undefined"&&typeof adminPage==="function"&&typeof render==="function"){
+          if(typeof state!=="undefined"&&state.me?.role==="admin"&&typeof adminPage==="function"&&typeof render==="function"){
             clearInterval(timer);
             const s=document.createElement("script");s.src="/schedule-admin.js?v=20260921-2235";document.body.appendChild(s);
           }else if(tries>400)clearInterval(timer);
@@ -49,7 +49,7 @@
       const timer=setInterval(()=>{
         tries++;
         try{
-          if(typeof state!=="undefined"&&window.parentHomeSummaryReady===true&&typeof home==="function"&&typeof adminPage==="function"&&typeof render==="function"){
+          if(typeof state!=="undefined"&&((state.me?.role==="parent"&&window.parentHomeSummaryReady===true)||state.me?.role==="admin")&&typeof home==="function"&&typeof adminPage==="function"&&typeof render==="function"){
             clearInterval(timer);
             const s=document.createElement("script");s.src="/special-calendar.js?v=20260921-2345";document.body.appendChild(s);
           }else if(tries>400)clearInterval(timer);
@@ -63,7 +63,7 @@
       const timer=setInterval(()=>{
         tries++;
         try{
-          if(typeof state!=="undefined"&&typeof window.exportAttendanceReport==="function"&&typeof render==="function"){
+          if(typeof state!=="undefined"&&state.me?.role==="admin"&&typeof window.exportAttendanceReport==="function"&&typeof render==="function"){
             clearInterval(timer);
             const s=document.createElement("script");s.src="/admin-attendance-assist.js?v=20260922-2005";document.body.appendChild(s);
           }else if(tries>400)clearInterval(timer);
