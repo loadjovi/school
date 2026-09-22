@@ -69,3 +69,15 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
   .top>.userrow>.logout{padding:6px 9px}
 }
 @media(min-width:700px){body{padding:20px 0}.shell{border-radius:24px;overflow:hidden;min-height:calc(100vh - 40px)}}
+
+/* 個別課改期：提升手機版辨識與點擊範圍 */
+.private-reschedule{margin-top:10px;border:1px solid #e4a11b;border-radius:14px;background:#fffaf0;overflow:hidden}
+.private-reschedule-summary{list-style:none;display:flex;align-items:center;gap:10px;padding:12px 13px;cursor:pointer;color:#8a4b08;user-select:none}
+.private-reschedule-summary::-webkit-details-marker{display:none}
+.private-reschedule-summary b{display:block;font-size:14px}
+.private-reschedule-summary small{display:block;margin-top:2px;color:#9a6b2f;font-size:11px;font-weight:700}
+.private-reschedule-icon{font-size:20px;line-height:1}
+.private-reschedule-arrow{margin-left:auto;font-size:18px;font-weight:900;transition:transform .18s}
+.private-reschedule[open] .private-reschedule-arrow{transform:rotate(180deg)}
+.private-reschedule-body{padding:0 12px 12px;border-top:1px solid #f3d59a;background:#fff}
+.private-reschedule-save{width:100%;border:0;border-radius:12px;padding:12px 13px;margin-top:10px;background:#d97706;color:#fff;font-weight:900}
