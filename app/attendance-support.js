@@ -107,10 +107,32 @@
     const groups=["全部",...new Set((d.items||[]).map(x=>String(x.groupName)).filter(Boolean))];
     const items=filteredItems();
     const total=items.reduce((n,x)=>n+Number(x.overall.total||0),0),attended=items.reduce((n,x)=>n+Number(x.overall.attended||0),0),absent=items.reduce((n,x)=>n+Number(x.overall.absent||0),0),leave=items.reduce((n,x)=>n+Number(x.overall.leave||0),0);
-    const rate=total?Math.round(attended/total*1000)/10:null;
-    return `<div class="card hero"><h2>📋 學生出勤表</h2><div class="row2"><div><label>月份</label><input type="month" value="${esc(state.attendanceMonth)}" onchange="changeAttendanceMonth(this.value)"></div><div><label>團別</label><select onchange="changeAttendanceGroup(this.value)">${groups.map(g=>`<option value="${esc(g)}" ${g===state.attendanceGroup?"selected":""}>${esc(g==="全部"?"全部團別":g+"團")}</option>`).join("")}</select></div></div><div class="grid"><div class="kpi"><b>${items.length}</b><span>授課學生</span></div><div class="kpi"><b>${total}</b><span>點名人次</span></div><div class="kpi"><b>${attended}</b><span>實到人次</span></div><div class="kpi"><b>${rate==null?"—":rate+"%"}</b><span>到課率</span></div><div class="kpi"><b>${leave}</b><span>請假人次</span></div><div class="kpi"><b>${absent}</b><span>缺席人次</span></div></div><button class="secondary" style="width:100%;margin-top:12px" onclick="exportAttendanceReport()">匯出本月出勤表 CSV</button></div>
-      <div class="card"><h2>${esc(state.attendanceMonth)} 出勤概況</h2><div class="notice">統計單位：學生為人數；點名、實到、請假、缺席皆為「人次」。到課率＝（出席＋遲到）÷點名人次；停課不列入點名人次。分部課、合奏課、綜合課、個別課分開統計。</div></div>
-      ${items.map(x=>`<div class="card"><div class="student"><div class="studentleft"><div class="avatar">${esc(x.name?.[0]||"學")}</div><div><div class="name">${esc(x.name)}</div><div class="muted">${esc(x.groupName)}團｜${esc(x.section||"待確認")}｜${esc(x.instrument)}｜${esc(x.grade)}</div></div></div>${rateBadge(x.attendanceRate)}</div><div class="notice" style="margin-top:12px">${esc(statLine("分部課",x.sectionStats))}　｜　${esc(statLine("合奏課",x.ensembleStats))}<br>${esc(statLine("綜合課",x.comprehensiveStats))}　｜　${esc(statLine("個別課",x.privateStats))}<br><b>點名 ${x.overall.total||0}｜實到 ${x.overall.attended||0}</b><br>遲到 ${x.overall.late||0} 人次　請假 ${x.overall.leave||0} 人次　缺席 ${x.overall.absent||0} 人次</div><button class="secondary" style="width:100%;margin-top:10px" onclick="showAttendanceDetail('${esc(x.studentId)}')">${state.attendanceSelected===String(x.studentId)?"收合明細":"查看點名明細"}</button>${detailHtml(x.studentId)}</div>`).join("")||`<div class="card"><div class="notice">本月沒有可查看的學生資料。</div></div>`}`;
+    const rate=total?Math.round(attended/total*1000)/10:null,pageSize=state.attendancePageSize,totalPages=Math.max(1,Math.ceil(items.length/pageSize)),page=Math.min(totalPages,Math.max(1,state.attendancePageNum||1)),pageItems=items.slice((page-1)*pageSize,page*pageSize);
+    state.attendancePageNum=page;
+    const rows=pageItems.map(x=>{
+      const selected=state.attendanceSelected===String(x.studentId),late=Number(x.overall?.late||0),lv=Number(x.overall?.leave||0),ab=Number(x.overall?.absent||0),changes=late+lv+ab;
+      return `<div style="padding:11px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+          <div style="min-width:0;flex:1">
+            <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><b style="font-size:15px">${esc(x.name)}</b><span class="muted">${esc(x.groupName)}團｜${esc(x.section||"待確認")}｜${esc(x.instrument)}｜${esc(x.grade)}</span></div>
+            <small style="display:block;margin-top:5px;color:#52605a">${esc(statLine("分部",x.sectionStats))}｜${esc(statLine("合奏",x.ensembleStats))}｜${esc(statLine("綜合",x.comprehensiveStats))}｜${esc(statLine("個課",x.privateStats))}</small>
+            <small style="display:block;margin-top:4px;color:${changes?"#6b756f":"#166534"}">${changes?`遲到 ${late}｜請假 ${lv}｜缺席 ${ab}`:"本月無遲到／請假／缺席"}</small>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex:0 0 auto">${rateBadge(x.attendanceRate)}<button class="secondary" style="width:auto;padding:6px 9px;margin:0;font-size:11px" onclick="showAttendanceDetail('${esc(x.studentId)}')">${selected?"收合":"明細"}</button></div>
+        </div>
+        ${detailHtml(x.studentId)}
+      </div>`;
+    }).join("");
+    const pager=totalPages>1?`<div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;margin-top:14px"><button class="secondary" style="width:100%;margin:0" onclick="changeAttendancePage(${page-1})" ${page<=1?"disabled":""}>← 上一頁</button><span class="muted" style="white-space:nowrap">第 ${page} / ${totalPages} 頁</span><button class="secondary" style="width:100%;margin:0" onclick="changeAttendancePage(${page+1})" ${page>=totalPages?"disabled":""}>下一頁 →</button></div>`:`<div class="muted" style="text-align:center;margin-top:12px">共 ${items.length} 位學生</div>`;
+    return `<div class="card hero"><h2>📋 學生出勤表</h2>
+      <div class="row2"><div><label>月份</label><input type="month" value="${esc(state.attendanceMonth)}" onchange="changeAttendanceMonth(this.value)"></div><div><label>團別</label><select onchange="changeAttendanceGroup(this.value)">${groups.map(g=>`<option value="${esc(g)}" ${g===state.attendanceGroup?"selected":""}>${esc(g==="全部"?"全部團別":g+"團")}</option>`).join("")}</select></div></div>
+      <label>搜尋學生</label><input value="${esc(state.attendanceSearch||"")}" placeholder="姓名／分部／樂器／年級" onchange="changeAttendanceSearch(this.value)">
+      <label>顯示範圍</label><select onchange="changeAttendanceView(this.value)"><option value="all" ${state.attendanceView==="all"?"selected":""}>全部學生</option><option value="changes" ${state.attendanceView==="changes"?"selected":""}>有遲到／請假／缺席</option><option value="full" ${state.attendanceView==="full"?"selected":""}>本月無出勤異動</option></select>
+      <div class="grid"><div class="kpi"><b>${items.length}</b><span>學生</span></div><div class="kpi"><b>${total}</b><span>點名人次</span></div><div class="kpi"><b>${attended}</b><span>實到人次</span></div><div class="kpi"><b>${rate==null?"—":rate+"%"}</b><span>到課率</span></div><div class="kpi"><b>${leave}</b><span>請假人次</span></div><div class="kpi"><b>${absent}</b><span>缺席人次</span></div></div>
+      <button class="secondary" style="width:100%;margin-top:12px" onclick="exportAttendanceReport()">匯出目前篩選結果 CSV</button>
+    </div>
+    <div class="card"><h2>${esc(state.attendanceMonth)} 出勤概況</h2><div class="notice">統計單位：學生為人數；點名、實到、請假、缺席皆為「人次」。到課率＝（出席＋遲到）÷點名人次；停課不列入點名人次。</div></div>
+    <div class="card" id="attendanceStudentList"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h2 style="margin:0">學生出勤清單</h2><span class="muted">每頁最多 ${pageSize} 人</span></div>${rows||'<div class="notice" style="margin-top:12px">目前篩選條件沒有學生資料。</div>'}${pager}</div>`;
   }
 
   const baseNav=nav;
