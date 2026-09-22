@@ -28,11 +28,17 @@ async function loadProfile(){
   if(["globalAdmin","tenantPending"].includes(state.me.role)){
     state.students=[];state.student=null;state.page=state.me.role==="globalAdmin"?"global":"home";render();return;
   }
-  state.students=await api("/api/students");state.student=state.students[0]||null;
-  if(state.me.role==="admin"){state.page="admin";await loadAdmin()}
-  else if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me.role)||state.me?.capabilities?.teacherSettings)state.page="teacherHome";
-  else state.page="home";
-  if(state.me.role==="parent"&&state.student)await refreshStudent();
+  if(state.me.role==="admin"){
+    state.page="admin";
+    await loadAdmin();
+    state.students=Array.isArray(state.master)?state.master:[];
+    state.student=state.students[0]||null;
+  }else{
+    state.students=await api("/api/students");state.student=state.students[0]||null;
+    if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me.role)||state.me?.capabilities?.teacherSettings)state.page="teacherHome";
+    else state.page="home";
+    if(state.me.role==="parent"&&state.student)await refreshStudent();
+  }
   render()
 }
 async function loadAdmin(){const [r,m]=await Promise.all([api("/api/student-registration?status=pending"),api("/api/student-master")]);state.registrations=r.items||[];state.master=m.items||[]}
