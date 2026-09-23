@@ -136,10 +136,16 @@
   };
 
   if(teacherAccount()){
-    loadTeacherSettings().then(()=>{
+    if(state.teacherSetup){
       const c=state.me?.capabilities||{};
       if(!c.section&&!c.ensemble&&!c.private&&!state.teacherSetup?.profile?.comprehensiveEnabled)state.page="teacherSettings";
-      render();
-    });
+      if(!window.__roleModuleBootstrap)render();
+    }else{
+      state.teacherSetupInitPromise=state.teacherSetupInitPromise||loadTeacherSettings().then(()=>{
+        const c=state.me?.capabilities||{};
+        if(!c.section&&!c.ensemble&&!c.private&&!state.teacherSetup?.profile?.comprehensiveEnabled)state.page="teacherSettings";
+        if(!window.__roleModuleBootstrap)render();
+      });
+    }
   }
 })();
