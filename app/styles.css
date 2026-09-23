@@ -81,3 +81,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
 .private-reschedule[open] .private-reschedule-arrow{transform:rotate(180deg)}
 .private-reschedule-body{padding:0 12px 12px;border-top:1px solid #f3d59a;background:#fff}
 .private-reschedule-save{width:100%;border:0;border-radius:12px;padding:12px 13px;margin-top:10px;background:#d97706;color:#fff;font-weight:900}
+
+.teacher-boot-progress{height:8px;margin-top:14px;border-radius:999px;background:#e6ece9;overflow:hidden}
+.teacher-boot-progress i{display:block;width:38%;height:100%;border-radius:999px;background:var(--green2);animation:teacherBootMove 1.05s ease-in-out infinite}
+@keyframes teacherBootMove{0%{transform:translateX(-110%)}100%{transform:translateX(300%)}}
