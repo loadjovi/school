@@ -85,12 +85,38 @@
     ];
     return [];
   }
+  function preloadScripts(list){
+    for(const src of list){
+      if(document.querySelector('link[data-role-preload="'+CSS.escape(src)+'"]'))continue;
+      const l=document.createElement("link");l.rel="preload";l.as="script";l.href=src;l.dataset.rolePreload=src;document.head.appendChild(l);
+    }
+  }
+  function teacherWarmup(){
+    const role=String(state?.me?.role||""),cap=state?.me?.capabilities||{};
+    const isTeacher=["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings;
+    if(!isTeacher||typeof api!=="function")return Promise.resolve();
+    const date=new Date().toLocaleDateString("sv-SE"),month=date.slice(0,7);
+    const setup=api("/api/teacher-profile").then(v=>{state.teacherSetup=v}).catch(()=>{});
+    const status=Promise.all([
+      api("/api/attendance-report?month="+encodeURIComponent(month)),
+      api("/api/practice-progress?month="+encodeURIComponent(month))
+    ]).then(([att,practice])=>{
+      state.teacherTodayStatus=att;state.teacherAttention=practice;state.teacherTodayStatusDate=date;
+    }).catch(()=>{});
+    return Promise.allSettled([setup,status]);
+  }
   async function loadRoleModules(){
     await waitForProfileReady();
     if(typeof state==="undefined"||!state.me)return;
     const list=roleModules();
-    await loadSeries(list);
+    preloadScripts(list);
+    window.__roleModuleBootstrap=true;
+    document.documentElement.classList.add("role-modules-loading");
+    const warmup=teacherWarmup();
+    await Promise.all([loadSeries(list),warmup]);
+    window.__roleModuleBootstrap=false;
     window.__roleModulesReady=true;
+    document.documentElement.classList.remove("role-modules-loading");
     try{render()}catch(e){}
   }
   function loadApp(){
