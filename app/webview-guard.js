@@ -116,11 +116,13 @@
     await Promise.all([loadSeries(list),warmup]);
     window.__roleModuleBootstrap=false;
     window.__roleModulesReady=true;
+    window.__roleLoaderActive=false;
     document.documentElement.classList.remove("role-modules-loading");
     try{render()}catch(e){}
   }
   function loadApp(){
-    appendScript("/app-v3.js?v=20260922-2345",()=>{
+    window.__roleLoaderActive=true;window.__roleModulesReady=false;
+    appendScript("/app-v3.js?v=20260923-2128",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
