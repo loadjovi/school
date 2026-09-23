@@ -80,5 +80,5 @@
     document.getElementById("app").innerHTML=shell(c);
   };
 
-  if(state.me&&isTeacher())render();
+  if(state.me&&isTeacher()&&!window.__roleModuleBootstrap)render();
 })();
