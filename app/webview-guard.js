@@ -69,7 +69,7 @@
       "/attendance-support.js?v=20260922-2015",
       "/attendance-edit.js",
       "/practice-progress.js?v=20260924-2355",
-      "/teacher-navigation.js?v=20260924-2355",
+      "/teacher-navigation.js?v=20260924-2359",
       "/comprehensive-support.js?v=20260922-0715",
       "/private-lesson-confirmation.js?v=20260922-2335"
     ];
