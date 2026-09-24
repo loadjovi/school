@@ -10,6 +10,8 @@
   state.practiceProgressSelected=state.practiceProgressSelected||"";
   state.practiceProgressStatus=state.practiceProgressStatus||"全部";
   const practiceFeedbackLevels=[{level:1,icon:"🌱",label:"起步中"},{level:2,icon:"👍",label:"持續加油"},{level:3,icon:"🙂",label:"表現不錯"},{level:4,icon:"🌟",label:"很棒喔"},{level:5,icon:"🏆",label:"超級投入"}];
+  const practiceFeedbackPresets=["這週練習很穩定，繼續保持！","有進步，記得每天練一點點喔！","基本功有累積，繼續加油！","練習很投入，期待下次上課的表現！","很棒！保持規律練習會進步更快。"];
+  state.practiceFeedbackSaving=state.practiceFeedbackSaving||"";
 
   async function loadPracticeProgress(){
     if(!canView())return;
@@ -18,8 +20,9 @@
       api(`/api/practice-progress?month=${month}`),
       api(`/api/practice-feedback?month=${month}`).catch(()=>({items:[]}))
     ]);
-    const feedbackMap=new Map((feedback.items||[]).map(x=>[String(x.studentId),x]));
-    progress.items=(progress.items||[]).map(x=>({...x,feedback:feedbackMap.get(String(x.studentId))||null}));
+    const feedbackMap=new Map();
+    for(const x of (feedback.items||[])){const id=String(x.studentId),arr=feedbackMap.get(id)||[];arr.push(x);feedbackMap.set(id,arr)}
+    progress.items=(progress.items||[]).map(x=>{const history=(feedbackMap.get(String(x.studentId))||[]).sort((a,b)=>String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")));return {...x,feedback:history[0]||null,feedbackCount:history.length,feedbackHistory:history.slice(0,5)}});
     state.practiceProgressData=progress;
   }
 
@@ -52,18 +55,20 @@
 
   function feedbackLevelMeta(level){return practiceFeedbackLevels.find(x=>x.level===Number(level))||null}
   function feedbackPanel(x){
-    if(!isTeacher())return x.feedback?(()=>{const m=feedbackLevelMeta(x.feedback.level);return m?`<div class="notice" style="margin-top:10px"><b>${m.icon} ${esc(m.label)}</b>${x.feedback.comment?`<br>${esc(x.feedback.comment)}`:""}<small style="display:block;margin-top:5px">回饋老師：${esc(x.feedback.teacherName||"")}</small></div>`:""})():"";
-    const current=Number(x.feedback?.level||0),comment=String(x.feedback?.comment||"");
+    if(!isTeacher())return "";
+    const current=Number(x.feedback?.level||0),comment="",history=x.feedbackHistory||[];
     return `<div class="practice-feedback-box">
-      <div style="font-weight:900">💬 老師鼓勵回饋</div>
-      <small style="display:block;margin:4px 0 10px;color:var(--muted)">點選一個鼓勵圖示，可再留一句話給學生；這不是排名或考試分數。</small>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div style="font-weight:900">💬 老師鼓勵回饋</div><span class="practice-feedback-chip">本月 ${Number(x.feedbackCount||0)} 次</span></div>
+      <small style="display:block;margin:4px 0 10px;color:var(--muted)">可多次鼓勵；同一位老師同一天再次送出會更新當日回饋，不重複計次。</small>
       <div class="practice-feedback-options">${practiceFeedbackLevels.map(m=>`<input type="radio" id="pf_${esc(x.studentId)}_${m.level}" name="pf_${esc(x.studentId)}" value="${m.level}" ${current===m.level?"checked":""}><label for="pf_${esc(x.studentId)}_${m.level}"><span>${m.icon}</span><small>${esc(m.label)}</small></label>`).join("")}</div>
+      <div class="practice-feedback-presets">${practiceFeedbackPresets.map((t,i)=>`<button type="button" onclick="usePracticeFeedbackPreset('${esc(x.studentId)}',${i})">${esc(t)}</button>`).join("")}</div>
       <label style="margin-top:10px">老師留言（選填）</label>
       <textarea id="pfComment_${esc(x.studentId)}" rows="2" maxlength="120" placeholder="例如：這週練習很穩定，繼續保持！">${esc(comment)}</textarea>
-      <button class="primary" style="margin-top:8px" onclick="savePracticeFeedback('${esc(x.studentId)}')">💛 儲存鼓勵回饋</button>
-      ${x.feedback?`<small style="display:block;margin-top:7px;color:var(--muted)">目前回饋：${esc(x.feedback.teacherName||"老師")}｜${esc(String(x.feedback.updatedAt||"").slice(0,10))}</small>`:""}
+      <button id="pfSave_${esc(x.studentId)}" class="primary" style="margin-top:8px" onclick="savePracticeFeedback('${esc(x.studentId)}')" ${state.practiceFeedbackSaving===String(x.studentId)?"disabled":""}>${state.practiceFeedbackSaving===String(x.studentId)?"⏳ 儲存中…":"💛 儲存鼓勵回饋"}</button>
+      ${history.length?`<div class="practice-feedback-history"><b>最近回饋</b>${history.slice(0,3).map(h=>{const m=feedbackLevelMeta(h.level);return `<small>${m?m.icon:"💛"} ${esc(m?.label||"鼓勵")}｜${esc(h.teacherName||"老師")}｜${esc(String(h.updatedAt||"").slice(0,10))}${h.comment?`<br>　${esc(h.comment)}`:""}</small>`}).join("")}</div>`:""}
     </div>`;
   }
+
   function detailHtml(x){
     if(state.practiceProgressSelected!==String(x.studentId))return "";
     const rows=isAdmin()?(x.records||[]):(x.recent||[]);
@@ -102,7 +107,7 @@
     const all=(d.items||[]),items=filteredItems();
     const counts={none:all.filter(x=>Number(x.activeDays||0)===0).length,below:all.filter(x=>Number(x.activeDays||0)>0&&Number(x.practiceRatePercent||0)<80).length,ok:all.filter(x=>Number(x.practiceRatePercent||0)>=80).length};
     const filterBtn=(key,label,count)=>`<button class="secondary" style="width:100%;min-width:0;padding:9px 8px;margin:0;font-weight:800;white-space:nowrap;${state.practiceProgressStatus===key?'background:#eef2ff;border-width:2px':''}" onclick="changePracticeProgressStatus('${key}')">${label}${count==null?'':' '+count}</button>`;
-    const rows=items.map(x=>{const active=Number(x.activeDays||0),rate=Number(x.practiceRatePercent||0),gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),status=active===0?'⚪ 本月尚無紀錄':gap>=7?`🟡 距上次練習 ${gap} 天`:gap>=3?`🟡 距上次練習 ${gap} 天`:rate<80?'🟡 持續累積中':'🟢 本月練習目標已完成',fb=feedbackLevelMeta(x.feedback?.level),fbText=fb?`<span class="practice-feedback-chip">${fb.icon} ${esc(fb.label)}</span>`:"";return `<div class="item" style="align-items:center"><div style="min-width:0"><b>${esc(x.name)} <span style="font-size:13px">${status}</span></b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.instrument)}<br>${active} 天｜${Number(x.totalMinutes||0)} 分鐘｜最近 ${esc(x.lastPracticeDate||'尚無紀錄')}${x.lastPracticeDate&&x.daysSincePractice!=null?`｜距今 ${Number(x.daysSincePractice)} 天`:''}</small>${fbText}</div><button class="secondary" style="width:auto;padding:7px 10px;margin:0" onclick="togglePracticeProgressDetail('${esc(x.studentId)}')">›</button></div>${detailHtml(x)}`}).join("");
+    const rows=items.map(x=>{const active=Number(x.activeDays||0),rate=Number(x.practiceRatePercent||0),gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),status=active===0?'⚪ 本月尚無紀錄':gap>=7?`🟡 距上次練習 ${gap} 天`:gap>=3?`🟡 距上次練習 ${gap} 天`:rate<80?'🟡 持續累積中':'🟢 本月練習目標已完成',fb=feedbackLevelMeta(x.feedback?.level),fbText=fb?`<span class="practice-feedback-chip">💛 本月 ${Number(x.feedbackCount||0)} 次｜${fb.icon} ${esc(fb.label)}</span>`:"";return `<div class="item" style="align-items:center"><div style="min-width:0"><b>${esc(x.name)} <span style="font-size:13px">${status}</span></b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.instrument)}<br>${active} 天｜${Number(x.totalMinutes||0)} 分鐘｜最近 ${esc(x.lastPracticeDate||'尚無紀錄')}${x.lastPracticeDate&&x.daysSincePractice!=null?`｜距今 ${Number(x.daysSincePractice)} 天`:''}</small>${fbText}</div><button class="secondary" style="width:auto;padding:7px 10px;margin:0" onclick="togglePracticeProgressDetail('${esc(x.studentId)}')">›</button></div>${detailHtml(x)}`}).join("");
     return `${!isAdmin()?'<button class="secondary" style="width:auto;margin:0 0 12px;padding:9px 14px;border-radius:999px;font-weight:800" onclick="go(\'teacherHome\')">← 返回今日教學</button>':''}
     <div class="card hero"><h2>📚 自主練習${isAdmin()?'月報':'進度'}</h2>
       <div class="notice">練習進度依「截至目前日期」動態計算；主要用來了解孩子的練習習慣並提供適度提醒，不作排名或壓力式呈現。</div>
@@ -116,18 +121,22 @@
     <div class="card"><h2>學生列表 <span class="muted" style="font-size:14px">${items.length} 人</span></h2>${rows||'<div class="notice">目前沒有符合條件的學生。</div>'}</div>`;
   }
 
+  window.usePracticeFeedbackPreset=function(studentId,index){
+    const el=document.getElementById("pfComment_"+studentId),text=practiceFeedbackPresets[Number(index)]||"";
+    if(el){el.value=text;el.focus()}
+  };
   window.savePracticeFeedback=async function(studentId){
-    if(!isTeacher())return;
+    if(!isTeacher()||state.practiceFeedbackSaving)return;
     const selected=document.querySelector(`input[name="pf_${CSS.escape(String(studentId))}"]:checked`);
     if(!selected){toast("請先選擇一個鼓勵圖示");return}
     const comment=document.getElementById("pfComment_"+studentId)?.value?.trim()||"";
+    state.practiceFeedbackSaving=String(studentId);render();
     try{
-      const d=await api("/api/practice-feedback",{method:"POST",body:JSON.stringify({studentId,month:state.practiceProgressMonth,level:Number(selected.value),comment})});
-      const item=(state.practiceProgressData?.items||[]).find(x=>String(x.studentId)===String(studentId));
-      if(item)item.feedback=d.item;
+      await api("/api/practice-feedback",{method:"POST",body:JSON.stringify({studentId,month:state.practiceProgressMonth,level:Number(selected.value),comment})});
+      await loadPracticeProgress();
       toast("💛 已送出老師鼓勵回饋");
-      render();
     }catch(e){toast("❌ "+e.message)}
+    finally{state.practiceFeedbackSaving="";render()}
   };
   window.changePracticeProgressStatus=function(v){state.practiceProgressStatus=String(v||"全部");state.practiceProgressSelected="";render()};
   window.changePracticeProgressMonth=async function(v){state.practiceProgressMonth=String(v||new Date().toISOString().slice(0,7));try{await loadPracticeProgress();render()}catch(e){toast('❌ '+e.message)}};
