@@ -46,7 +46,7 @@
       "/student-number-support.js?v=20260918-1105",
       "/student-change-admin.js?v=20260918-1015",
       "/parent-link-admin.js?v=20260921-0135",
-      "/teacher-settings.js?v=20260915-1415",
+      "/teacher-settings.js?v=20260924-2245",
       "/teacher-admin.js?v=20260919-1715",
       "/batch-upgrade.js",
       "/roster-import.js?v=20260915-1135",
@@ -63,12 +63,12 @@
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
       "/roster-support.js",
       "/section-support.js?v=20260924-2238",
-      "/teacher-support.js?v=20260922-0715",
+      "/teacher-support.js?v=20260924-2245",
       "/teacher-settings.js?v=20260915-1415",
       "/private-student-bottom-back.js?v=20260915-1432",
       "/attendance-support.js?v=20260922-2015",
       "/attendance-edit.js",
-      "/teacher-navigation.js?v=20260920-0500",
+      "/teacher-navigation.js?v=20260924-2245",
       "/comprehensive-support.js?v=20260922-0715",
       "/private-lesson-confirmation.js?v=20260922-2335"
     ];
