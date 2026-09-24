@@ -62,7 +62,7 @@
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
       "/roster-support.js",
-      "/section-support.js?v=20260922-0715",
+      "/section-support.js?v=20260924-2238",
       "/teacher-support.js?v=20260922-0715",
       "/teacher-settings.js?v=20260915-1415",
       "/private-student-bottom-back.js?v=20260915-1432",
@@ -122,7 +122,7 @@
   }
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20260923-2128",()=>{
+    appendScript("/app-v3.js?v=20260924-2238",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
