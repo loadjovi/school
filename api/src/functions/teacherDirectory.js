@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
-import { listTeacherDirectory, saveTeacherDirectory, getTeacherProfile, saveTeacherProfile, listStudentMaster, listActivityRange } from "../lib/storage.js";
+import { sendTeacherAccessEnabledEmail } from "../lib/email.js";
+import { listTeacherDirectory, saveTeacherDirectory, getTeacherProfile, saveTeacherProfile, listStudentMaster, listActivityRange, getTenantDirectory } from "../lib/storage.js";
 
 function clean(v,max=120){return String(v||"").trim().slice(0,max)}
 function normalizeEmail(v){return clean(v,200).toLowerCase()}
@@ -8,6 +9,22 @@ function validEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)}
 function parse(raw,fallback=[]){try{return JSON.parse(String(raw||""))}catch{return fallback}}
 function uniq(list){return [...new Set((Array.isArray(list)?list:[]).map(String).map(x=>x.trim()).filter(Boolean))]}
 function studentView(e){return {studentId:String(e.rowKey),name:String(e.studentName||""),grade:String(e.grade||""),groupName:String(e.groupName||""),instrument:String(e.instrument||""),section:String(e.section||"待確認")}}
+
+function publicAppUrl(request){
+  const explicit=clean(process.env.APP_PUBLIC_URL||process.env.SWA_PUBLIC_URL||"",1000);
+  const candidates=[explicit,clean(request.headers.get("origin"),1000),clean(request.headers.get("referer"),1000)];
+  const forwardedHost=clean(request.headers.get("x-forwarded-host"),500),forwardedProto=clean(request.headers.get("x-forwarded-proto"),20)||"https";
+  if(forwardedHost)candidates.push(`${forwardedProto}://${forwardedHost}`);
+  for(const raw of candidates){
+    if(!raw||raw==="null")continue;
+    try{
+      const u=new URL(raw),host=String(u.hostname||"").toLowerCase();
+      if(!["http:","https:"].includes(u.protocol)||host.endsWith(".azurewebsites.net"))continue;
+      return u.origin+"/";
+    }catch{}
+  }
+  return "";
+}
 
 app.http("teacherDirectory",{
   methods:["GET","POST","PATCH"],authLevel:"anonymous",route:"teacher-directory",
@@ -55,6 +72,24 @@ app.http("teacherDirectory",{
       await saveTeacherProfile(email,{displayName:teacherName,sectionAssignments:[],ensembleGroups:[],comprehensiveEnabled:false,privateStudentIds},schoolId);
     }
 
-    return json({ok:true,teacher:{email:saved.rowKey,teacherName:saved.teacherName,status:saved.status}},request.method==="POST"?201:200);
+    let emailNotification=null;
+    if(request.method==="POST"&&status==="active"){
+      try{
+        const tenant=await getTenantDirectory(schoolId);
+        const schoolName=clean(tenant?.systemName||tenant?.schoolName||access.schoolName||"弦樂團管理系統",120);
+        emailNotification=await sendTeacherAccessEnabledEmail({
+          recipient:email,
+          teacherName,
+          schoolName,
+          appUrl:publicAppUrl(request),
+          privateOnly:body.privateOnly===true,
+          boundStudentCount:body.privateOnly===true?uniq(body.privateStudentIds).length:0
+        });
+      }catch(e){
+        console.error("Teacher access notification failed:",e);
+        emailNotification={status:"failed",recipientCount:1,sentCount:0,failedCount:1,error:clean(e?.message||e,300)};
+      }
+    }
+    return json({ok:true,teacher:{email:saved.rowKey,teacherName:saved.teacherName,status:saved.status},emailNotification},request.method==="POST"?201:200);
   }
 });
