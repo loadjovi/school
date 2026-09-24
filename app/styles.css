@@ -164,3 +164,25 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
 .private-history-detail>div+div{margin-top:5px}
 .private-history-older{margin-top:12px;border-top:1px dashed #d8dfdb;padding-top:10px}
 .private-history-older>summary{cursor:pointer;text-align:center;font-weight:900;color:#3155a4;padding:9px;border:1px solid #b8c7eb;border-radius:11px;background:#fff}
+
+/* 家長紀錄頁：清楚區隔出勤紀錄與個別課專區 */
+.record-overview{border:2px solid #dbe5ef}
+.record-section{margin:18px -2px 20px;padding:12px;border-radius:20px;border:2px solid transparent}
+.record-section-head{display:flex;align-items:center;gap:10px;padding:4px 3px 12px}
+.record-section-head .record-section-icon{width:38px;height:38px;display:grid;place-items:center;border-radius:12px;font-size:20px;background:#fff}
+.record-section-head b{display:block;font-size:17px}
+.record-section-head small{display:block;margin-top:3px;font-size:11px;color:var(--muted);line-height:1.4}
+.record-section .card{margin-bottom:10px;box-shadow:none}
+.record-section-attendance{background:#f4f8ff;border-color:#c9d7f6}
+.record-section-attendance>.record-section-head b{color:#294b9a}
+.record-section-attendance>.record-section-head .record-section-icon{box-shadow:0 0 0 1px #dce6fb inset}
+.record-section-private{background:#fff9ed;border-color:#efd497}
+.record-section-private>.record-section-head b{color:#8a5a00}
+.record-section-private>.record-section-head .record-section-icon{box-shadow:0 0 0 1px #f5dfad inset}
+.record-section-summary{margin-bottom:10px!important}
+.record-subcard{border-radius:14px!important}
+@media(max-width:420px){
+  .record-section{margin-left:-4px;margin-right:-4px;padding:9px}
+  .record-section-head b{font-size:16px}
+  .record-section-head small{font-size:10px}
+}
