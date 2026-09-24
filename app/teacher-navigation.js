@@ -18,7 +18,25 @@
     main.prepend(btn);
   }
 
-  function courseCard(page,icon,title,desc,enabled,progress=null){
+  window.openTeacherCourse=async function(page,targetGroup="",targetDate=""){
+    if(page==="section"){
+      const group=String(targetGroup||"").trim().replace(/團$/,"");
+      const date=String(targetDate||new Date().toLocaleDateString("sv-SE"));
+      const assignments=Array.isArray(state.me?.assignments)?state.me.assignments:[];
+      const current=assignments[Math.min(window.__sectionClassIndex||0,Math.max(assignments.length-1,0))]||assignments[0];
+      const currentSection=String(current?.section||"");
+      let idx=assignments.findIndex(x=>String(x.groupName||x.group||"").trim().replace(/團$/,"")===group&&String(x.section||"")===currentSection);
+      if(idx<0)idx=assignments.findIndex(x=>String(x.groupName||x.group||"").trim().replace(/團$/,"")===group);
+      if(idx>=0)window.__sectionClassIndex=idx;
+      state.sectionSelectedDate=date;
+      state.sectionManualOverride=true;
+      state.sectionExisting=null;
+      state.sectionExistingKey="";
+    }
+    await go(page);
+    if(page==="section"&&typeof loadSectionExisting==="function")setTimeout(()=>loadSectionExisting(),0);
+  };
+  function courseCard(page,icon,title,desc,enabled,progress=null,targetGroup="",targetDate=""){
     if(!enabled)return "";
     let badge="";
     if(progress){
@@ -28,7 +46,8 @@
       const label=done?`✅ 已完成 ${recorded}/${expected}`:started?`⚠️ 點名未完成 ${recorded}/${expected}`:`🔴 尚未點名 0/${expected}`;
       badge='<span class="badge '+cls+'" style="margin-left:8px">'+label+'</span>';
     }
-    return `<button class="item" style="width:100%;text-align:left;background:#fff;cursor:pointer" onclick="go('${page}')"><div><b>${icon} ${esc(title)}${badge}</b><small>${esc(desc)}</small></div><span style="font-size:22px">›</span></button>`;
+    const click=page==="section"&&targetGroup?`openTeacherCourse('section','${esc(targetGroup)}','${esc(targetDate)}')`:`go('${page}')`;
+    return `<button class="item" style="width:100%;text-align:left;background:#fff;cursor:pointer" onclick="${click}"><div><b>${icon} ${esc(title)}${badge}</b><small>${esc(desc)}</small></div><span style="font-size:22px">›</span></button>`;
   }
 
   function teacherHomePage(){
@@ -59,7 +78,7 @@
     const completedTasks=taskRows.filter(x=>x.done).length,totalTasks=taskRows.length,pct=totalTasks?Math.round(completedTasks/totalTasks*100):100;
     const taskHtml=taskRows.length?taskRows.map(x=>`<div class="item" style="padding:10px 12px"><div><b>${x.done?"✅":"🔴"} ${esc(x.title)}</b><small>${esc(x.text)}</small></div></div>`).join(""):`<div class="notice">今天沒有需要固定點名的團體課；個別課請先建立預約，上課後再送家長確認。</div>`;
     const teachingCards=[
-      courseCard("section","🎼",sectionGroup?sectionGroup+"團分部課":"分部課",sectionGroup?todayName+"｜依老師設定的團別＋分部帶入學生點名":"",c.section&&hasTodaySection,progress("section",sectionGroup,sectionExpected)),
+      courseCard("section","🎼",sectionGroup?sectionGroup+"團分部課":"分部課",sectionGroup?todayName+"｜依老師設定的團別＋分部帶入學生點名":"",c.section&&hasTodaySection,progress("section",sectionGroup,sectionExpected),sectionGroup,date),
       courseCard("ensemble","🎻","A／B團合奏課","今天 12:30–13:20｜依老師設定的 A／B 團帶入學生",c.ensemble&&hasTodayEnsemble,progress("ensemble","",ensembleExpected)),
       courseCard("comprehensive","🎶","弦樂團體課（綜合課）","今天 08:45–10:15｜A／B／儲備團共同參加",hasTodayComprehensive,progress("comprehensive","",comprehensiveExpected)),
       courseCard("private","👤","個別課","預約、改期／停課、老師完課與家長確認",c.private,null)
