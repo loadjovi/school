@@ -92,7 +92,7 @@
   function monthlyEvaluationPanel(x){
     const m=x.monthlyEvaluation||{},mine=m.myRating||null,score=x.monthlyScore||scoreParts(x,state.practiceProgressData),avg=Number(m.averageRating||0);
     if(!isTeacher()){
-      return `<div class="monthly-score-box"><div class="monthly-score-title"><b>📊 ${esc(state.practiceProgressMonth)} 月評比</b><span class="practice-feedback-chip">${score.total==null?"待評":score.total+"/10"}</span></div><small>有效練習：${score.qualified}/${score.target} 天 → ${score.practicePoints}/7｜老師月評：${avg?avg.toFixed(2)+"/5":"待評"} → ${score.teacherPoints==null?"—":score.teacherPoints+"/3"}</small></div>`;
+      return `<div class="monthly-score-box"><div class="monthly-score-title"><b>📊 ${esc(state.practiceProgressMonth)} 月評比</b><span class="practice-feedback-chip">${score.total==null?"待評":score.total+"/10"}</span></div><div class="monthly-score-formula">有效練習：${score.qualified}/${score.target} 天 → <b>${score.practicePoints}/7</b>｜老師月評：${avg?avg.toFixed(2)+"/5":"待評"} → <b>${score.teacherPoints==null?"—":score.teacherPoints+"/3"}</b></div>${m.ratings?.length?`<details class="monthly-rating-history"><summary>查看老師月評明細（${m.ratings.length}）</summary>${m.ratings.map(r=>`<div><b>${esc(r.teacherName||"老師")}｜${Number(r.rating||0)}/5</b>${r.comment?`<small>${esc(r.comment)}</small>`:""}</div>`).join("")}</details>`:""}</div>`;
     }
     const current=Number(mine?.rating||0),comment=String(mine?.comment||"");
     return `<div class="monthly-score-box">
@@ -122,17 +122,18 @@
   window.exportPracticeMonthlySummary=function(){
     const items=filteredItems();
     if(!items.length){toast("目前沒有可匯出的自主練習資料");return}
-    const rows=[["月份","學生姓名","年級","團別","分部","樂器","計入練習天數","建議目標天數","練習天數","總分鐘","平均分鐘/日","練習進度","自主練習10%換算"]];
-    for(const x of items)rows.push([state.practiceProgressMonth,x.name,x.grade,x.groupName,x.section,x.instrument,x.qualifiedDays,x.targetDays,x.activeDays,x.totalMinutes,x.averageMinutes,`${x.practiceRatePercent}%`,x.practiceScore10]);
+    const rows=[["月份","學生姓名","年級","團別","分部","樂器","有效練習天數","建議目標天數","練習天數","總分鐘","平均分鐘/日","練習進度"]];
+    for(const x of items)rows.push([state.practiceProgressMonth,x.name,x.grade,x.groupName,x.section,x.instrument,x.qualifiedDays,x.targetDays,x.activeDays,x.totalMinutes,x.averageMinutes,`${x.practiceRatePercent}%`]);
     downloadCsv(`${state.practiceProgressMonth}_自主練習月統計.csv`,rows);toast("📥 已匯出自主練習月統計");
   };
   window.exportPracticeMonthlyScore=function(){
     const items=filteredItems();
     if(!items.length){toast("目前沒有可匯出的月評比資料");return}
-    const rows=[["月份","學生姓名","年級","團別","分部","樂器","有效練習天數","當月目標天數","練習分(7分)","老師評比平均(5級)","參與月評老師數","老師分(3分)","月總分(10分)","狀態","期末10%換算"]];
+    const rows=[["月份","學生姓名","年級","團別","分部","樂器","有效練習天數","當月目標天數","練習分(7分)","老師評比平均(5級)","參與月評老師數","老師評比明細","老師分(3分)","月總分(10分)","狀態","期末10%換算"]];
     for(const x of items){
       const s=x.monthlyScore||scoreParts(x,state.practiceProgressData),m=x.monthlyEvaluation||{};
-      rows.push([state.practiceProgressMonth,x.name,x.grade,x.groupName,x.section,x.instrument,s.qualified,s.target,s.practicePoints,m.averageRating?Number(m.averageRating).toFixed(2):"",Number(m.ratingCount||0),s.teacherPoints==null?"":s.teacherPoints,s.total==null?"":s.total,s.status,s.total==null?"":s.total]);
+      const ratingDetail=(m.ratings||[]).map(r=>`${r.teacherName||"老師"}:${Number(r.rating||0)}/5`).join("；");
+      rows.push([state.practiceProgressMonth,x.name,x.grade,x.groupName,x.section,x.instrument,s.qualified,s.target,s.practicePoints,m.averageRating?Number(m.averageRating).toFixed(2):"",Number(m.ratingCount||0),ratingDetail,s.teacherPoints==null?"":s.teacherPoints,s.total==null?"":s.total,s.status,s.total==null?"":s.total]);
     }
     downloadCsv(`${state.practiceProgressMonth}_自主練習月總評比_期末10%.csv`,rows);toast("📥 已匯出自主練習月總評比");
   };
