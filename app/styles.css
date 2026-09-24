@@ -125,3 +125,27 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
 .parent-feedback-history small{display:block;margin-top:2px;color:var(--muted)}
 .parent-feedback-history p{margin:4px 0 0;font-size:11px;color:#52605a}
 @media(max-width:420px){.parent-feedback-badge small{font-size:8px}.parent-feedback-badge span{font-size:18px}.practice-feedback-presets button{max-width:165px}}
+
+/* 自主練習月總評比：公開透明計分 */
+.monthly-score-policy{margin-top:10px;padding:11px 12px;border:1px solid #cbd9ff;border-radius:12px;background:#f7f9ff}
+.monthly-score-policy b{display:block;color:#26489c;font-size:12px}
+.monthly-score-policy small{display:block;margin-top:6px;line-height:1.65;color:#53615a}
+.monthly-score-chip{display:inline-block;margin-top:6px;margin-right:6px;padding:4px 8px;border-radius:999px;background:#eaf0ff;color:#24469b;font-size:11px;font-weight:900}
+.monthly-score-box{margin-top:12px;padding:12px;border:1px solid #cbd9ff;border-radius:14px;background:#f8faff}
+.monthly-score-title{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.monthly-score-formula{margin-top:8px;padding:9px;border-radius:10px;background:#fff;font-size:11px;line-height:1.6;color:#53615a}
+.monthly-rating-options{display:grid;grid-template-columns:1fr;gap:6px;margin-top:8px}
+.monthly-rating-options input{position:absolute;opacity:0;pointer-events:none}
+.monthly-rating-options label{display:block;margin:0;padding:9px 10px;border:1px solid #d8dfec;border-radius:11px;background:#fff;cursor:pointer}
+.monthly-rating-options label b{display:block;font-size:12px}
+.monthly-rating-options label small{display:block;margin-top:3px;color:var(--muted);font-size:10px}
+.monthly-rating-options input:checked+label{border:2px solid #4664b8;background:#eef3ff}
+.monthly-rating-history{margin-top:9px;border-top:1px dashed #ccd5eb;padding-top:8px}
+.monthly-rating-history summary{cursor:pointer;font-size:11px;font-weight:900;color:#34509b}
+.monthly-rating-history>div{padding:7px 2px;border-bottom:1px solid #e8ecf5}
+.monthly-rating-history small{display:block;margin-top:3px;color:var(--muted)}
+.parent-monthly-score{margin-top:12px;padding:12px;border:1px solid #cbd9ff;border-radius:14px;background:#f7f9ff}
+.parent-monthly-score-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
+.parent-monthly-score-grid>div{padding:9px;border-radius:10px;background:#fff}
+.parent-monthly-score-grid b{display:block;font-size:17px;color:#284aa0}
+.parent-monthly-score-grid small{display:block;margin-top:3px;color:var(--muted);font-size:10px}
