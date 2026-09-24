@@ -166,12 +166,13 @@
     try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId:state.student.studentId,lessonId,action,note,teacherRating,teacherReview})});notifyToast(r,action==="confirmed"?"已確認完成上課，個課流程已結案":"問題已同步給老師");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
   };
 
-  function parentActivePanel(){
+  function parentActivePanel(location="home"){
     if(state.me?.role!=="parent"||!state.student)return "";
     const rows=sortedLessons().filter(x=>["scheduled","awaiting_parent","issue"].includes(workflow(x)));
     if(!rows.length)return "";
     const pending=rows.filter(x=>workflow(x)==="awaiting_parent").length,scheduled=rows.filter(x=>workflow(x)==="scheduled").length;
-    return `<div class="card"><h2>🎻 個別課預約與確認 ${pending?`<span class="badge warn">${pending} 待確認</span>`:""}</h2><div class="notice">${scheduled?`目前有 ${scheduled} 堂預約。`:""}預約、改期與停課會同步顯示；老師完成上課後，請家長在此確認。</div>${rows.map(parentLessonRow).join("")}</div>`;
+    const title=location==="record"?"⏳ 個別課待辦":"🎻 個別課預約與確認";
+    return `<div class="card record-subcard"><h2>${title} ${pending?`<span class="badge warn">${pending} 待確認</span>`:""}</h2><div class="notice">${scheduled?`目前有 ${scheduled} 堂預約。`:""}此區處理預約、改期、停課與家長確認；尚未結案的個別課都會顯示在這裡。</div>${rows.map(parentLessonRow).join("")}</div>`;
   }
   function parentHistoryRow(x){
     const w=workflow(x),rating=Number(x.teacherRating||0),isCompleted=w==="completed";
@@ -202,20 +203,31 @@
     if(!all.length)return "";
     const rows=all.slice(0,24),recent=rows.slice(0,3),older=rows.slice(3),month=today().slice(0,7),monthRows=all.filter(x=>String(x.lessonDate||"").startsWith(month)),completed=monthRows.filter(x=>workflow(x)==="completed").length,cancelled=monthRows.filter(x=>workflow(x)==="cancelled").length;
     return `<div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">👤 個別課紀錄</h2><span class="muted">最近 3 筆優先顯示</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">⭐ 個別課課後紀錄與評價</h2><span class="muted">最近 3 筆優先顯示</span></div>
       <div class="private-history-summary">
         <div><b>${completed}</b><span>本月完成</span></div>
         <div><b>${cancelled}</b><span>本月停課</span></div>
         <div><b>${all.length}</b><span>累計紀錄</span></div>
       </div>
-      <div class="notice" style="margin-top:10px">為避免紀錄過長，預設只顯示最近 3 筆；點選單筆可展開上課內容與評價。</div>
+      <div class="notice" style="margin-top:10px">此區查看已結案個別課的「上課內容、老師、家長星級評價與評論」。為避免畫面過長，預設只顯示最近 3 筆。</div>
       <div style="margin-top:10px">${recent.map(parentHistoryRow).join("")}</div>
       ${older.length?`<details class="private-history-older"><summary>查看較早個課紀錄（${older.length} 筆）</summary><div style="margin-top:8px">${older.map(parentHistoryRow).join("")}</div></details>`:""}
       ${all.length>24?`<div class="muted" style="text-align:center;margin-top:10px">目前先顯示最近 24 筆紀錄。</div>`:""}
     </div>`;
   }
-  window.privateLessonParentPanels=function(location="home"){return location==="record"?parentActivePanel()+parentHistoryPanel():parentActivePanel()};
-  const baseHome=home;home=function(){return parentActivePanel()+baseHome()};
+  window.privateLessonParentPanels=function(location="home"){
+    if(location!=="record")return parentActivePanel("home");
+    const active=parentActivePanel("record"),history=parentHistoryPanel();
+    if(!active&&!history)return "";
+    return `<section class="record-section record-section-private">
+      <div class="record-section-head">
+        <div class="record-section-icon">🎻</div>
+        <div><b>個別課專區</b><small>預約／待確認／完課內容／家長星級評價</small></div>
+      </div>
+      ${active}${history}
+    </section>`;
+  };
+  const baseHome=home;home=function(){return parentActivePanel("home")+baseHome()};
   const baseRecordPage=recordPage;recordPage=function(){const html=baseRecordPage();return state.me?.role==="parent"?html+parentActivePanel()+parentHistoryPanel():html};
 
   privatePage=function(){
