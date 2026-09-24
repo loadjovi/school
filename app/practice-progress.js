@@ -56,6 +56,8 @@
       if(status==="尚未練習"&&active!==0)return false;
       if(status==="未達標"&&!(active>0&&rate<80))return false;
       if(status==="已達標"&&rate<80)return false;
+      if(status==="待月評"&&x.monthlyScore?.total!=null)return false;
+      if(status==="已月評"&&x.monthlyScore?.total==null)return false;
       return true;
     }).sort((a,b)=>{
       const rank=x=>x.daysSincePractice==null?0:Number(x.daysSincePractice)>=7?1:Number(x.practiceRatePercent||0)<80?2:3;
@@ -153,7 +155,7 @@
     const groups=["全部",...new Set((d.items||[]).map(x=>String(x.groupName)).filter(Boolean))];
     const sections=["全部",...new Set((d.items||[]).map(x=>String(x.section)).filter(Boolean))];
     const all=(d.items||[]),items=filteredItems();
-    const counts={none:all.filter(x=>Number(x.activeDays||0)===0).length,below:all.filter(x=>Number(x.activeDays||0)>0&&Number(x.practiceRatePercent||0)<80).length,ok:all.filter(x=>Number(x.practiceRatePercent||0)>=80).length};
+    const counts={none:all.filter(x=>Number(x.activeDays||0)===0).length,below:all.filter(x=>Number(x.activeDays||0)>0&&Number(x.practiceRatePercent||0)<80).length,ok:all.filter(x=>Number(x.practiceRatePercent||0)>=80).length,pendingEval:all.filter(x=>x.monthlyScore?.total==null).length,doneEval:all.filter(x=>x.monthlyScore?.total!=null).length};
     const filterBtn=(key,label,count)=>`<button class="secondary" style="width:100%;min-width:0;padding:9px 8px;margin:0;font-weight:800;white-space:nowrap;${state.practiceProgressStatus===key?'background:#eef2ff;border-width:2px':''}" onclick="changePracticeProgressStatus('${key}')">${label}${count==null?'':' '+count}</button>`;
     const rows=items.map(x=>{const active=Number(x.activeDays||0),rate=Number(x.practiceRatePercent||0),gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),status=active===0?'⚪ 本月尚無紀錄':gap>=7?`🟡 距上次練習 ${gap} 天`:gap>=3?`🟡 距上次練習 ${gap} 天`:rate<80?'🟡 持續累積中':'🟢 本月練習目標已完成',fb=feedbackLevelMeta(x.feedback?.level),fbText=fb?`<span class="practice-feedback-chip">💛 本月 ${Number(x.feedbackCount||0)} 次｜${fb.icon} ${esc(fb.label)}</span>`:"",ms=x.monthlyScore||scoreParts(x,d),scoreText=`<span class="monthly-score-chip">${ms.total==null?"📊 待老師月評":`📊 月評 ${ms.total}/10｜${esc(ms.status)}`}</span>`;return `<div class="item" style="align-items:center"><div style="min-width:0"><b>${esc(x.name)} <span style="font-size:13px">${status}</span></b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.instrument)}<br>${active} 天｜${Number(x.totalMinutes||0)} 分鐘｜最近 ${esc(x.lastPracticeDate||'尚無紀錄')}${x.lastPracticeDate&&x.daysSincePractice!=null?`｜距今 ${Number(x.daysSincePractice)} 天`:''}</small>${scoreText}${fbText}</div><button class="secondary" style="width:auto;padding:7px 10px;margin:0" onclick="togglePracticeProgressDetail('${esc(x.studentId)}')">›</button></div>${detailHtml(x)}`}).join("");
     return `${!isAdmin()?'<button class="secondary" style="width:auto;margin:0 0 12px;padding:9px 14px;border-radius:999px;font-weight:800" onclick="go(\'teacherHome\')">← 返回今日教學</button>':''}
@@ -161,8 +163,8 @@
       <div class="notice">練習進度依「截至目前日期」動態計算；主要用來了解孩子的練習習慣並提供適度提醒。</div>
       <div class="monthly-score-policy"><b>📊 月總評比規則｜期末計分占比 10%</b><small>① 有效練習天數占 70%（7 分）：單日累計 ≥ ${d.qualifiedMinutes||15} 分鐘才計 1 天，練習分＝min（有效天數 ÷ 當月目標天數，1）× 7。<br>② 老師月評占 30%（3 分）：1～5 級固定量尺；多位授課老師取平均，老師分＝平均級分 ÷ 5 × 3。<br>③ 月總分＝練習分＋老師分，滿分 10 分；未完成老師月評時顯示「待評」，不先以 0 分計算。當月進行中顯示暫估，歷史月份為正式月分。</small></div>
       <label>月份</label><input type="month" value="${esc(state.practiceProgressMonth)}" onchange="changePracticeProgressMonth(this.value)">
-      <div class="grid"><div class="kpi"><b>${all.length}</b><span>授課學生</span></div><div class="kpi"><b>${all.length-counts.none}</b><span>已有練習</span></div><div class="kpi"><b>${counts.none}</b><span>本月尚無紀錄</span></div><div class="kpi"><b>${counts.ok}</b><span>已完成目標</span></div></div>
-      <div style="margin-top:10px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">${filterBtn('全部','全部',all.length)}${filterBtn('尚未練習','⚪ 本月尚無紀錄',counts.none)}${filterBtn('未達標','🟡 持續累積中',counts.below)}${filterBtn('已達標','🟢 已完成目標',counts.ok)}</div>
+      <div class="grid"><div class="kpi"><b>${all.length}</b><span>授課學生</span></div><div class="kpi"><b>${counts.doneEval}</b><span>已完成月評</span></div><div class="kpi"><b>${counts.pendingEval}</b><span>待老師月評</span></div><div class="kpi"><b>${all.length-counts.none}</b><span>已有練習</span></div></div>
+      <div style="margin-top:10px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">${filterBtn('全部','全部',all.length)}${filterBtn('待月評','📊 待老師月評',counts.pendingEval)}${filterBtn('已月評','✅ 已完成月評',counts.doneEval)}${filterBtn('尚未練習','⚪ 本月尚無紀錄',counts.none)}${filterBtn('未達標','🟡 持續累積中',counts.below)}${filterBtn('已達標','🟢 已完成目標',counts.ok)}</div>
       <div class="row2"><div><label>團別</label><select onchange="changePracticeProgressGroup(this.value)">${groups.map(g=>`<option value="${esc(g)}" ${g===state.practiceProgressGroup?'selected':''}>${esc(g==='全部'?'全部團別':g+'團')}</option>`).join('')}</select></div><div><label>分部</label><select onchange="changePracticeProgressSection(this.value)">${sections.map(v=>`<option value="${esc(v)}" ${v===state.practiceProgressSection?'selected':''}>${esc(v)}</option>`).join('')}</select></div></div>
       <label>搜尋學生</label><input value="${esc(state.practiceProgressSearch)}" placeholder="姓名／團別／分部／樂器" oninput="changePracticeProgressSearch(this.value)">
       <button class="secondary" style="width:100%;margin-top:10px" onclick="exportPracticeMonthlyScore()">📥 匯出月總評比 CSV（期末 10%）</button>${isAdmin()?'<button class="secondary" style="width:100%;margin-top:8px" onclick="exportPracticeMonthlySummary()">📥 匯出練習統計 CSV</button>':''}
