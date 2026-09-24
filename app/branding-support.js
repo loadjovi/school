@@ -23,6 +23,18 @@
     const x=a.map((v,i)=>Math.round(v+(b[i]-v)*amount));
     return `#${x.map(v=>v.toString(16).padStart(2,"0")).join("")}`;
   }
+  function patchShellBrand(){
+    const b=brand(),top=document.querySelector(".top");if(!top)return;
+    const brandEl=top.querySelector(".brand");
+    if(brandEl){
+      brandEl.innerHTML=`<span style="width:42px;height:42px;border-radius:10px;background:#fff;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 42px">${logoImg("","style=\"width:40px;height:40px;object-fit:contain;display:block\"")}</span><span>${esc(b.siteName||DEFAULTS.siteName)}</span>`;
+    }
+    let sub=top.querySelector(":scope > .sub");
+    if(b.schoolName){
+      if(!sub){sub=document.createElement("div");sub.className="sub";brandEl?.insertAdjacentElement("afterend",sub)}
+      if(sub)sub.textContent=b.schoolName;
+    }else if(sub)sub.remove();
+  }
   function applyTheme(){
     const b=brand(),color=/^#[0-9A-Fa-f]{6}$/.test(String(b.primaryColor||""))?b.primaryColor:DEFAULTS.primaryColor;
     const root=document.documentElement;
@@ -32,6 +44,7 @@
     root.style.setProperty("--text",mix(color,"#000000",.52));
     const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute("content",color);
     document.title=b.siteName||DEFAULTS.siteName;
+    patchShellBrand();
   }
   function logoImg(cls="",extra=""){const b=brand();return `<img class="${cls}" src="${esc(b.logoUrl)}" alt="${esc(b.logoAlt||"學校 Logo")}" ${extra} onerror="this.style.display='none';this.parentElement?.classList?.add('logo-fallback')">`}
   function patchLogin(){
@@ -48,7 +61,7 @@
       if(!r.ok)throw new Error(`HTTP ${r.status}`);
       state.branding={...tenantDefaults(),...await r.json()};state.brandingAdmin.error="";
     }catch(e){state.brandingAdmin.error=e.message||String(e);state.branding={...tenantDefaults(),...(state.branding||{})}}
-    applyTheme();patchLogin();return state.branding;
+    applyTheme();patchLogin();patchShellBrand();return state.branding;
   }
   window.reloadBranding=loadBranding;
   window.applyActiveBranding=function(){applyTheme();return brand()};
@@ -93,14 +106,15 @@
     try{
       const payload={siteName:document.getElementById("brandSiteName")?.value||"",schoolName:document.getElementById("brandSchoolName")?.value||"",loginSubtitle:document.getElementById("brandSubtitle")?.value||"",logoAlt:document.getElementById("brandLogoAlt")?.value||"",primaryColor:document.getElementById("brandColor")?.value||DEFAULTS.primaryColor};
       const saved=await api("/api/branding",{method:"PATCH",body:JSON.stringify(payload)});
-      state.branding={...tenantDefaults(),...state.branding,...saved};applyTheme();
+      state.branding={...tenantDefaults(),...state.branding,...saved};applyTheme();patchLogin();patchShellBrand();
       if(selectedLogoFile){
         const dataUrl=await readAsDataUrl(selectedLogoFile);
         await api("/api/branding-logo",{method:"POST",body:JSON.stringify({dataUrl})});
-        await loadBranding();
       }
+      await loadBranding();
       selectedLogoFile=null;if(previewObjectUrl){URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=""}
-      toast("✅ 品牌設定已儲存並立即套用");render();
+      render();patchShellBrand();
+      toast("✅ 品牌設定已儲存，網站名稱與頁首已同步更新");
     }catch(e){state.brandingAdmin.error=e.message||String(e);toast("❌ "+(e.message||e))}
     state.brandingAdmin.loading=false;mountBrandingAdmin();
   };
@@ -120,7 +134,7 @@
   }
 
   const baseRender=render;
-  render=function(){const r=baseRender();applyTheme();if(state.me?.role==="admin"&&state.page==="admin")setTimeout(mountBrandingAdmin,0);return r};
+  render=function(){const r=baseRender();applyTheme();patchShellBrand();if(state.me?.role==="admin"&&state.page==="admin")setTimeout(mountBrandingAdmin,0);return r};
   loadBranding();
   if(state.me?.role==="admin"&&state.page==="admin")setTimeout(mountBrandingAdmin,0);
 })();
