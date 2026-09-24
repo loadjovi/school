@@ -20,9 +20,9 @@
   window.__sectionClassIndex=0;
   state.sectionManualOverride=false;
   window.changeSectionClass=function(v){window.__sectionClassIndex=Number(v)||0;state.sectionManualOverride=true;state.sectionExisting=null;state.sectionExistingKey="";render();setTimeout(()=>loadSectionExisting(),0)};
-  state.sectionExisting=state.sectionExisting||null; state.sectionExistingKey=state.sectionExistingKey||""; state.sectionLoading=false;
+  state.sectionExisting=state.sectionExisting||null; state.sectionExistingKey=state.sectionExistingKey||""; state.sectionLoading=false; state.sectionSaving=false;
   function sectionContext(){const a=Array.isArray(state.me.assignments)?state.me.assignments:[],c=a[Math.min(window.__sectionClassIndex,Math.max(a.length-1,0))]||a[0];return c?{groupName:String(c.groupName||c.group||""),section:String(c.section||"")}:null}
-  window.loadSectionExisting=async function(){const c=sectionContext(),date=$("sDate")?.value;if(!c||!date)return;state.sectionLoading=true;state.sectionExistingKey=[date,c.groupName,c.section].join("|");render();try{state.sectionExisting=await api(`/api/section-attendance?sessionDate=${encodeURIComponent(date)}&groupName=${encodeURIComponent(c.groupName)}&section=${encodeURIComponent(c.section)}`)}catch(e){state.sectionExisting={items:[]};toast("❌ "+e.message)}state.sectionLoading=false;render()};
+  window.loadSectionExisting=async function(options={}){const c=sectionContext(),date=$("sDate")?.value||state.sectionSelectedDate;if(!c||!date)return;const silent=options?.silent===true,key=[date,c.groupName,c.section].join("|");if(!silent){state.sectionLoading=true;state.sectionExistingKey=key;render()}try{const fresh=await api(`/api/section-attendance?sessionDate=${encodeURIComponent(date)}&groupName=${encodeURIComponent(c.groupName)}&section=${encodeURIComponent(c.section)}&_=${Date.now()}`);state.sectionExisting=fresh;state.sectionExistingKey=key}catch(e){if(!silent){state.sectionExisting={items:[]};toast("❌ "+e.message)}}state.sectionLoading=false;if(!silent)render()};
   function sectionGroupForDate(date){
     const d=new Date(String(date||"")+"T12:00:00"),weekday=d.getDay();
     if(weekday===1||weekday===3)return "A";
@@ -76,17 +76,27 @@
     const statusBox=state.sectionLoading?'<div class="notice" style="margin-top:10px">⏳ 正在確認點名紀錄…</div>':loaded?(savedCount?`<div class="notice" style="margin-top:10px">✅ <b>已點名</b>｜已儲存 ${savedCount}/${students.length} 人${missing?`，⚠️ 尚有 ${missing} 人未有紀錄`:""}。可直接修改後重新儲存。${recorder}</div>`:'<div class="notice" style="margin-top:10px">⚠️ <b>尚未點名</b>｜此日期尚無儲存紀錄。</div>'):'<div class="notice" style="margin-top:10px">ℹ️ 正在確認是否已有點名紀錄。</div>';
     const selector=assignments.length>1?`<label>本次分部課</label><select onchange="changeSectionClass(this.value)">${assignments.map((x,i)=>`<option value="${i}" ${i===idx?"selected":""}>${esc(String(x.groupName||x.group||"").replace(/團$/,""))}團｜${esc(x.section)}</option>`).join("")}</select>`:`<div class="notice"><b>${esc(groupName)}團｜${esc(section)}</b></div>`;
     return `<div class="card"><h2>分部團練點名</h2><label>上課日期</label><input id="sDate" type="date" value="${today}"><div class="notice" style="margin-top:10px">${scheduleHint}</div>${statusBox}${selector}<input id="sSection" type="hidden" value="${esc(section)}"><input id="sGroup" type="hidden" value="${esc(groupName)}"></div>
-      <div class="card"><h2>${esc(groupName)}團｜${esc(section)}學生名單</h2>${students.length?students.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.grade)}｜${esc(s.instrument)}</small></div><select id="att_${s.studentId}" class="status-select"><option value="present" ${saved.get(String(s.studentId))==="present"?"selected":""}>出席</option><option value="late" ${saved.get(String(s.studentId))==="late"?"selected":""}>遲到</option><option value="leave" ${saved.get(String(s.studentId))==="leave"?"selected":""}>請假</option><option value="absent" ${saved.get(String(s.studentId))==="absent"?"selected":""}>缺席</option><option value="cancelled" ${saved.get(String(s.studentId))==="cancelled"?"selected":""}>停課</option></select></div>`).join(""):`<div class="notice">目前沒有符合此團別／分部的學生。請確認學生主檔中的「團別」與「分部」。</div>`}${students.length?`<button class="primary" onclick="saveSection()">儲存本次點名</button>`:""}</div>`;
+      <div class="card"><h2>${esc(groupName)}團｜${esc(section)}學生名單</h2>${students.length?students.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.grade)}｜${esc(s.instrument)}</small></div><select id="att_${s.studentId}" class="status-select"><option value="present" ${saved.get(String(s.studentId))==="present"?"selected":""}>出席</option><option value="late" ${saved.get(String(s.studentId))==="late"?"selected":""}>遲到</option><option value="leave" ${saved.get(String(s.studentId))==="leave"?"selected":""}>請假</option><option value="absent" ${saved.get(String(s.studentId))==="absent"?"selected":""}>缺席</option><option value="cancelled" ${saved.get(String(s.studentId))==="cancelled"?"selected":""}>停課</option></select></div>`).join(""):`<div class="notice">目前沒有符合此團別／分部的學生。請確認學生主檔中的「團別」與「分部」。</div>`}${students.length?`<button id="sectionSaveBtn" class="primary" onclick="saveSection()" ${state.sectionSaving?"disabled":""}>${state.sectionSaving?"⏳ 儲存中…":(savedCount?"更新本次點名":"儲存本次點名")}</button>`:""}</div>`;
   };
 
   saveSection=async function(){
+    if(state.sectionSaving)return;
     const assignments=Array.isArray(state.me.assignments)?state.me.assignments:[];
     const current=assignments[Math.min(window.__sectionClassIndex,assignments.length-1)]||assignments[0];
     if(!current){toast("尚未設定分部課權限");return}
     const groupName=String(current.groupName||current.group||"").trim().replace(/團$/,"");
     const section=String(current.section||"");
+    const sessionDate=$("sDate")?.value||state.sectionSelectedDate;
     const students=state.students.filter(s=>String(s.groupName)===groupName&&String(s.section||"待確認")===section);
-    const items=students.map(s=>({studentId:s.studentId,status:$(`att_${s.studentId}`).value,minutes:$(`att_${s.studentId}`).value==="absent"?0:45}));
-    try{await api("/api/section-attendance",{method:"POST",body:JSON.stringify({sessionDate:$("sDate").value,section,groupName,items})});toast(`✅ ${groupName}團｜${section} 點名已儲存`);await loadSectionExisting()}catch(e){toast("❌ "+e.message)}
+    const items=students.map(s=>{const el=$(`att_${s.studentId}`),status=el?.value||"present";return {studentId:s.studentId,status,minutes:["present","late"].includes(status)?45:0}});
+    const btn=document.getElementById("sectionSaveBtn");state.sectionSaving=true;if(btn){btn.disabled=true;btn.textContent="⏳ 儲存中…"}
+    try{
+      const saved=await api("/api/section-attendance",{method:"POST",body:JSON.stringify({sessionDate,section,groupName,items})});
+      state.sectionExisting=saved;state.sectionExistingKey=[sessionDate,groupName,section].join("|");state.sectionLoading=false;
+      render();
+      toast(`✅ ${groupName}團｜${section} 已儲存 ${saved.count||items.length} 人`);
+      setTimeout(()=>loadSectionExisting({silent:true}),250);
+    }catch(e){toast("❌ "+e.message)}
+    finally{state.sectionSaving=false}
   };
 })();
