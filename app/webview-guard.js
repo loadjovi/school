@@ -71,12 +71,12 @@
       "/practice-progress.js?v=20260925-0205",
       "/teacher-navigation.js?v=20260924-2359",
       "/comprehensive-support.js?v=20260922-0715",
-      "/private-lesson-confirmation.js?v=20260925-0345"
+      "/private-lesson-confirmation.js?v=20260925-0415"
     ];
     if(role==="parent")return [
       "/practice-timer.js?v=20260918-0725",
-      "/private-lesson-confirmation.js?v=20260925-0345",
-      "/parent-semester-attendance.js?v=20260917-0300",
+      "/private-lesson-confirmation.js?v=20260925-0415",
+      "/parent-semester-attendance.js?v=20260925-0415",
       "/parent-home-summary.js?v=20260925-0205"
     ];
     if(role==="globalAdmin")return [
@@ -123,7 +123,7 @@
   }
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20260924-2238",()=>{
+    appendScript("/app-v3.js?v=20260925-0415",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
