@@ -149,3 +149,18 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
 .parent-monthly-score-grid>div{padding:9px;border-radius:10px;background:#fff}
 .parent-monthly-score-grid b{display:block;font-size:17px;color:#284aa0}
 .parent-monthly-score-grid small{display:block;margin-top:3px;color:var(--muted);font-size:10px}
+
+/* 家長個別課紀錄：精簡顯示，避免歷史紀錄過長 */
+.private-history-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.private-history-summary>div{padding:10px;border:1px solid #dde5e0;border-radius:12px;background:#f8faf9;text-align:center}
+.private-history-summary b{display:block;font-size:18px;color:#3155a4}
+.private-history-summary span{display:block;margin-top:3px;font-size:10px;color:var(--muted)}
+.private-history-row{border:1px solid #dde5e0;border-radius:12px;background:#fff;margin-top:8px;overflow:hidden}
+.private-history-row>summary{list-style:none;display:flex;align-items:flex-start;gap:10px;padding:11px 12px;cursor:pointer}
+.private-history-row>summary::-webkit-details-marker{display:none}
+.private-history-row>summary small{display:block;margin-top:4px;line-height:1.5;color:var(--muted)}
+.private-history-row[open]>summary{background:#f8faf9;border-bottom:1px solid #e5ebe7}
+.private-history-detail{padding:10px 12px;font-size:11px;line-height:1.65;color:#53615a}
+.private-history-detail>div+div{margin-top:5px}
+.private-history-older{margin-top:12px;border-top:1px dashed #d8dfdb;padding-top:10px}
+.private-history-older>summary{cursor:pointer;text-align:center;font-weight:900;color:#3155a4;padding:9px;border:1px solid #b8c7eb;border-radius:11px;background:#fff}
