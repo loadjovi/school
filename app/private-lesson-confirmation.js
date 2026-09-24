@@ -173,10 +173,46 @@
     const pending=rows.filter(x=>workflow(x)==="awaiting_parent").length,scheduled=rows.filter(x=>workflow(x)==="scheduled").length;
     return `<div class="card"><h2>🎻 個別課預約與確認 ${pending?`<span class="badge warn">${pending} 待確認</span>`:""}</h2><div class="notice">${scheduled?`目前有 ${scheduled} 堂預約。`:""}預約、改期與停課會同步顯示；老師完成上課後，請家長在此確認。</div>${rows.map(parentLessonRow).join("")}</div>`;
   }
+  function parentHistoryRow(x){
+    const w=workflow(x),rating=Number(x.teacherRating||0),isCompleted=w==="completed";
+    const ratingText=rating?`<span style="color:#d5a100;font-weight:900">${ratingStars(rating)}</span> ${rating}/5`:"";
+    const statusBadge=`<span class="badge ${workflowClass[w]||""}">${isCompleted?"已完成":"已停課"}</span>`;
+    const detailBits=[
+      x.lessonContent?`<div><b>上課內容：</b>${esc(x.lessonContent)}</div>`:"",
+      rating?`<div><b>師資評價：</b>${ratingText}</div>`:"",
+      x.teacherReview?`<div><b>家長評論：</b>${esc(x.teacherReview)}</div>`:"",
+      x.parentNote?`<div><b>家長備註：</b>${esc(x.parentNote)}</div>`:"",
+      w==="cancelled"&&x.cancelReason?`<div><b>停課原因：</b>${esc(x.cancelReason)}</div>`:"",
+      x.rescheduleCount?`<div><b>改期次數：</b>${Number(x.rescheduleCount)} 次</div>`:""
+    ].filter(Boolean).join("");
+    return `<details class="private-history-row">
+      <summary>
+        <div style="min-width:0;flex:1">
+          <b>${esc(x.lessonDate)}｜${esc(x.startTime||"")}～${esc(x.endTime||"")}</b>
+          <small>${esc(teacherLabel(x))}｜${Number(x.minutes||0)} 分鐘${rating?`｜${ratingText}`:""}</small>
+        </div>
+        ${statusBadge}
+      </summary>
+      <div class="private-history-detail">${detailBits||'<div class="muted">此筆沒有其他補充內容。</div>'}</div>
+    </details>`;
+  }
   function parentHistoryPanel(){
     if(state.me?.role!=="parent"||!state.student)return "";
-    const rows=sortedLessons().filter(x=>["completed","cancelled"].includes(workflow(x))).slice(0,12);
-    return rows.length?`<div class="card"><h2>👤 個別課最近紀錄</h2>${rows.map(parentLessonRow).join("")}</div>`:"";
+    const all=sortedLessons().filter(x=>["completed","cancelled"].includes(workflow(x)));
+    if(!all.length)return "";
+    const rows=all.slice(0,24),recent=rows.slice(0,3),older=rows.slice(3),month=today().slice(0,7),monthRows=all.filter(x=>String(x.lessonDate||"").startsWith(month)),completed=monthRows.filter(x=>workflow(x)==="completed").length,cancelled=monthRows.filter(x=>workflow(x)==="cancelled").length;
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">👤 個別課紀錄</h2><span class="muted">最近 3 筆優先顯示</span></div>
+      <div class="private-history-summary">
+        <div><b>${completed}</b><span>本月完成</span></div>
+        <div><b>${cancelled}</b><span>本月停課</span></div>
+        <div><b>${all.length}</b><span>累計紀錄</span></div>
+      </div>
+      <div class="notice" style="margin-top:10px">為避免紀錄過長，預設只顯示最近 3 筆；點選單筆可展開上課內容與評價。</div>
+      <div style="margin-top:10px">${recent.map(parentHistoryRow).join("")}</div>
+      ${older.length?`<details class="private-history-older"><summary>查看較早個課紀錄（${older.length} 筆）</summary><div style="margin-top:8px">${older.map(parentHistoryRow).join("")}</div></details>`:""}
+      ${all.length>24?`<div class="muted" style="text-align:center;margin-top:10px">目前先顯示最近 24 筆紀錄。</div>`:""}
+    </div>`;
   }
   window.privateLessonParentPanels=function(location="home"){return location==="record"?parentActivePanel()+parentHistoryPanel():parentActivePanel()};
   const baseHome=home;home=function(){return parentActivePanel()+baseHome()};
