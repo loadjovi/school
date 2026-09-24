@@ -147,3 +147,59 @@ export async function sendParentApprovalEmail({recipient="",parentName="",studen
     return {status:"failed",recipientCount:1,sentCount:0,failedCount:1,error:clean(e?.message||e,500)};
   }
 }
+
+
+export async function sendTeacherAccessEnabledEmail({
+  recipient="",teacherName="",schoolName="",appUrl="",privateOnly=false,boundStudentCount=0
+}={}){
+  const address=clean(recipient,320).toLowerCase();
+  if(!address)return {status:"no_recipient",recipientCount:0,sentCount:0,failedCount:0};
+  const cfg=config();
+  if(!cfg.connectionString||!cfg.senderAddress)return {status:"not_configured",recipientCount:1,sentCount:0,failedCount:0};
+
+  const teacher=clean(teacherName,80)||"老師";
+  const school=clean(schoolName,120)||"弦樂團管理系統";
+  const link=clean(appUrl,1000);
+  const permissionText=privateOnly
+    ? `個別課老師權限已開通，目前綁定 ${Number(boundStudentCount||0)} 位學生；登入後僅會看到已授權的個別課學生與功能。`
+    : "教學老師帳號已開通；登入後可依管理員已設定的教學範圍使用點名、教學、自主練習與相關功能。";
+  const subject=`【${school}】老師帳號權限已開通`;
+  const plainText=[
+    `${school}｜老師帳號權限已開通`,
+    "",
+    `${teacher} 老師您好：`,
+    "您的老師帳號已由學校管理員完成建立並啟用。",
+    "",
+    `登入帳號：${address}`,
+    `權限說明：${permissionText}`,
+    "",
+    "請使用以上 Google / Gmail 帳號登入系統。",
+    link?`系統登入：${link}`:"",
+    "",
+    "若登入後看不到應有的學生或課程，請聯繫學校管理員協助確認。",
+    "此信由系統自動寄出，請勿直接回覆。"
+  ].filter(Boolean).join("\n");
+  const html=`<div style="font-family:Arial,'Noto Sans TC','Microsoft JhengHei',sans-serif;line-height:1.7;color:#173d31;max-width:620px">
+    <h2 style="color:#3155a4;margin-bottom:6px">🎻 ${esc(school)}</h2>
+    <h3 style="margin-top:0">老師帳號權限已開通</h3>
+    <p>${esc(teacher)} 老師您好：</p>
+    <p>您的老師帳號已由學校管理員完成建立並啟用。</p>
+    <div style="padding:14px 16px;border:1px solid #d8e0f2;border-radius:10px;background:#f7f9ff">
+      <b>登入帳號：</b>${esc(address)}<br>
+      <b>權限說明：</b>${esc(permissionText)}
+    </div>
+    <p>請使用以上 Google / Gmail 帳號登入系統。</p>
+    ${link?`<p><a href="${esc(link)}" style="display:inline-block;background:#3155a4;color:#fff;text-decoration:none;padding:10px 18px;border-radius:9px;font-weight:700">登入弦樂團系統</a></p>`:""}
+    <p style="font-size:12px;color:#6c7f77">若登入後看不到應有的學生或課程，請聯繫學校管理員協助確認。此信由系統自動寄出，請勿直接回覆。</p>
+  </div>`;
+
+  try{
+    const client=new EmailClient(cfg.connectionString);
+    const result=await sendOne(client,cfg.senderAddress,address,{subject,plainText,html});
+    const ok=String(result?.status||"").toLowerCase()==="succeeded";
+    return {status:ok?"sent":"failed",recipientCount:1,sentCount:ok?1:0,failedCount:ok?0:1,messageId:result?.id||"",rawStatus:result?.status||""};
+  }catch(e){
+    console.error("teacher access email failed",e);
+    return {status:"failed",recipientCount:1,sentCount:0,failedCount:1,error:clean(e?.message||e,500)};
+  }
+}
