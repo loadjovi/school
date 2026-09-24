@@ -6,6 +6,7 @@ const safe=v=>String(v||"").replaceAll("'","''");
 const currentMonth=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit"}).format(new Date()).slice(0,7);
 const monthValue=v=>/^\d{4}-\d{2}$/.test(String(v||"").trim())?String(v).trim():currentMonth();
 const view=e=>({
+  feedbackId:String(e.rowKey||""),
   studentId:String(e.studentId||""),
   month:String(e.feedbackMonth||""),
   level:Number(e.level||0),
@@ -39,8 +40,11 @@ app.http("practiceFeedback",{
 
       if(studentId){
         if(!ensureStudentAccess(a,studentId))return json({error:"無此學生存取權限"},403);
-        const rows=await listRows(schoolId,{studentId,month});
-        return json({items:rows.map(view),latest:rows.length?view(rows[0]):null});
+        const rows=await listRows(schoolId,{studentId,month}),views=rows.map(view);
+        const targetMonth=month||currentMonth(),monthItems=views.filter(x=>x.month===targetMonth);
+        const badgeCounts={1:0,2:0,3:0,4:0,5:0};
+        for(const x of views)if(badgeCounts[x.level]!=null)badgeCounts[x.level]++;
+        return json({items:views,latest:views[0]||null,totalCount:views.length,currentMonth:targetMonth,currentMonthCount:monthItems.length,badgeCounts,recent:views.slice(0,5)});
       }
 
       const isTeacher=!!a.capabilities?.teacherSettings;
@@ -65,13 +69,16 @@ app.http("practiceFeedback",{
     if(!master)return json({error:"找不到學生資料"},404);
 
     const now=new Date().toISOString();
+    const taipeiDate=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+    const teacherKey=String(a.email||"teacher").toLowerCase().replace(/[^a-z0-9]/g,"-").replace(/-+/g,"-").slice(0,48)||"teacher";
     const entity={
       partitionKey:tenantStudentPartition(schoolId,studentId),
-      rowKey:`month_${month}`,
+      rowKey:`fb_${taipeiDate.replaceAll("-","")}_${teacherKey}`,
       schoolId:tenantSchoolPartition(schoolId),
       studentId,
       studentName:String(master.studentName||""),
       feedbackMonth:month,
+      feedbackDate:taipeiDate,
       level,
       comment,
       teacherName:String(a.displayName||a.email||"老師"),
@@ -79,6 +86,7 @@ app.http("practiceFeedback",{
       updatedAt:now
     };
     await table("tenantPracticeFeedback").upsertEntity(entity,"Replace");
-    return json({ok:true,item:view(entity)});
+    const monthRows=await listRows(schoolId,{studentId,month});
+    return json({ok:true,item:view(entity),monthCount:monthRows.length});
   }
 });
