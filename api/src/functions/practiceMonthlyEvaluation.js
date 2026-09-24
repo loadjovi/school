@@ -32,23 +32,29 @@ app.http("practiceMonthlyEvaluation",{
     const month=monthValue(request.method==="GET"?request.query.get("month"):undefined);
 
     if(request.method==="GET"){
-      const rawMonth=String(request.query.get("month")||"").trim();
+      const rawMonth=String(request.query.get("month")||"").trim(),studentId=String(request.query.get("studentId")||"").trim();
       if(rawMonth&&!/^\d{4}-\d{2}$/.test(rawMonth))return json({error:"月份格式錯誤"},400);
       const rows=await listRows(schoolId,month);
-      const allowed=a.role==="admin"?null:new Set((a.students||[]).map(x=>String(x?.studentId||x||"")).filter(Boolean));
-      if(a.role!=="admin"&&!isTeacher)return json({error:"Forbidden"},403);
-      const filtered=rows.filter(e=>!allowed||allowed.has(String(e.studentId||"")));
+      let filtered=[];
+      if(studentId){
+        if(!ensureStudentAccess(a,studentId))return json({error:"無此學生存取權限"},403);
+        filtered=rows.filter(e=>String(e.studentId||"")===studentId);
+      }else{
+        if(a.role!=="admin"&&!isTeacher)return json({error:"Forbidden"},403);
+        const allowed=a.role==="admin"?null:new Set((a.students||[]).map(x=>String(x?.studentId||x||"")).filter(Boolean));
+        filtered=rows.filter(e=>!allowed||allowed.has(String(e.studentId||"")));
+      }
       const grouped=new Map();
       for(const e of filtered){
         const id=String(e.studentId||"");
         const arr=grouped.get(id)||[];arr.push(view(e));grouped.set(id,arr);
       }
-      const items=[...grouped.entries()].map(([studentId,ratings])=>{
+      const items=[...grouped.entries()].map(([id,ratings])=>{
         const avg=ratings.length?ratings.reduce((n,x)=>n+Number(x.rating||0),0)/ratings.length:0;
-        const mine=ratings.find(x=>String(x.teacherEmail||"").toLowerCase()===String(a.email||"").toLowerCase())||null;
-        return {studentId,averageRating:Math.round(avg*100)/100,ratingCount:ratings.length,myRating:mine,ratings};
+        const mine=isTeacher?ratings.find(x=>String(x.teacherEmail||"").toLowerCase()===String(a.email||"").toLowerCase())||null:null;
+        return {studentId:id,averageRating:Math.round(avg*100)/100,ratingCount:ratings.length,myRating:mine,ratings};
       });
-      return json({month,items});
+      return json({month,items,item:studentId?(items[0]||null):null});
     }
 
     if(!isTeacher||a.role==="admin")return json({error:"只有教學老師可進行月評比"},403);
