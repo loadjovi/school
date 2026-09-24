@@ -57,6 +57,7 @@ app.http("sectionAttendance",{
     if(schedulePolicy.enforced&&!schedulePolicy.allowed)return json({error:schedulePolicy.reason,scheduleBlocked:true},409);
 
     const now=new Date().toISOString();
+    const savedItems=[];
     for(const item of items){
       const master=await getStudentMaster(item.studentId,schoolId);
       if(!master)return json({error:`找不到學生 ${item.studentId}`},404);
@@ -66,8 +67,10 @@ app.http("sectionAttendance",{
       if(groupName!==requestedGroup||section!==requestedSection||!ensureSectionAccess(a,view))return json({error:`無此分部課權限：${master.studentName}`},403);
       const oldRows=await existingRows(client,schoolId,item.studentId,sessionDate,groupName,section);
       for(const old of oldRows)await client.deleteEntity(String(old.partitionKey),String(old.rowKey));
-      await client.createEntity({partitionKey:tenantStudentPartition(schoolId,item.studentId),rowKey:rowKey("s"),schoolId,studentId:String(item.studentId),eventDate:sessionDate,section,groupName,status:String(item.status||"present"),minutes:Number(item.minutes||0),teacher:a.email,teacherName:String(a.displayName||a.email||""),actorRole:a.role==="admin"?"admin":"teacher",classType:"section",createdAt:now});
+      const saved={studentId:String(item.studentId),status:String(item.status||"present"),minutes:Number(item.minutes||0),teacher:a.email,teacherName:String(a.displayName||a.email||""),actorRole:a.role==="admin"?"admin":"teacher",createdAt:now};
+      await client.createEntity({partitionKey:tenantStudentPartition(schoolId,item.studentId),rowKey:rowKey("s"),schoolId,studentId:String(item.studentId),eventDate:sessionDate,section,groupName,...saved,classType:"section"});
+      savedItems.push(saved);
     }
-    return json({ok:true,count:items.length,sessionDate,groupName:requestedGroup,section:requestedSection},200);
+    return json({ok:true,count:savedItems.length,sessionDate,groupName:requestedGroup,section:requestedSection,recordedBy:String(a.displayName||a.email||""),recordedByEmail:String(a.email||""),recordedByRole:a.role==="admin"?"admin":"teacher",lastSavedAt:now,items:savedItems},200);
   }
 });
