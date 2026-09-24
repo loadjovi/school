@@ -5,7 +5,7 @@
   state.teacherTodayStatusDate=state.teacherTodayStatusDate||"";
   state.teacherAttention=state.teacherAttention||null;
   async function loadTeacherTodayStatus(date){try{const [att,practice]=await Promise.all([api(`/api/attendance-report?month=${encodeURIComponent(date.slice(0,7))}`),api(`/api/practice-progress?month=${encodeURIComponent(date.slice(0,7))}`)]);state.teacherTodayStatus=att;state.teacherAttention=practice;state.teacherTodayStatusDate=date;render()}catch{state.teacherTodayStatus=null;state.teacherAttention=null;state.teacherTodayStatusDate=date}}
-  const detailPages=new Set(["section","ensemble","comprehensive","private","practiceProgress"]);
+  const detailPages=new Set(["section","ensemble","comprehensive","private"]);
   function mountTeacherBack(){
     if(!teacherAccount()||!detailPages.has(state.page)||document.getElementById("teacherHomeBack"))return;
     const main=document.querySelector(".main");if(!main)return;
