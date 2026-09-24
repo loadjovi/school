@@ -47,7 +47,7 @@
       "/student-change-admin.js?v=20260918-1015",
       "/parent-link-admin.js?v=20260921-0135",
       "/teacher-settings.js?v=20260924-2245",
-      "/teacher-admin.js?v=20260919-1715",
+      "/teacher-admin.js?v=20260925-0315",
       "/batch-upgrade.js",
       "/roster-import.js?v=20260915-1135",
       "/attendance-support.js?v=20260922-2015",
