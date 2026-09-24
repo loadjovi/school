@@ -77,7 +77,7 @@
       "/practice-timer.js?v=20260918-0725",
       "/private-lesson-confirmation.js?v=20260922-2335",
       "/parent-semester-attendance.js?v=20260917-0300",
-      "/parent-home-summary.js?v=20260925-0015"
+      "/parent-home-summary.js?v=20260925-0025"
     ];
     if(role==="globalAdmin")return [
       "/school-access.js?v=20260920-0010",
