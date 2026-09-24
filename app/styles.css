@@ -96,3 +96,32 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
 .practice-feedback-options input:checked+label{border:2px solid #d69b12;background:#fff6d8;box-shadow:0 0 0 2px rgba(214,155,18,.08)}
 .practice-feedback-chip{display:inline-block;margin-top:6px;padding:4px 8px;border-radius:999px;background:#fff3c4;color:#6d4d00;font-size:11px;font-weight:900}
 @media(max-width:420px){.practice-feedback-options{gap:4px}.practice-feedback-options label{padding:8px 2px}.practice-feedback-options label small{font-size:9px}}
+
+/* Phase 2：自主練習互動、徽章牆與連續練習獎勵 */
+.practice-feedback-presets{display:flex;gap:6px;overflow-x:auto;padding:9px 0 2px;scrollbar-width:none}
+.practice-feedback-presets::-webkit-scrollbar{display:none}
+.practice-feedback-presets button{flex:0 0 auto;max-width:190px;border:1px solid #d7dfdb;border-radius:999px;background:#fff;color:#53615a;padding:7px 10px;font-size:10px;font-weight:800;text-align:left}
+.practice-feedback-history{margin-top:10px;padding-top:9px;border-top:1px dashed #dfd5ad}
+.practice-feedback-history>b{display:block;font-size:12px;margin-bottom:5px}
+.practice-feedback-history small{display:block;padding:5px 0;line-height:1.5;color:var(--muted)}
+.parent-practice-feedback{margin-top:12px;padding:12px;border:1px solid #f0d98a;border-radius:14px;background:#fffaf0}
+.parent-practice-feedback-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.parent-feedback-latest{margin-top:9px;padding:10px;border-radius:12px;background:#fff}
+.parent-feedback-latest small{display:block;margin-top:7px;color:var(--muted)}
+.parent-feedback-section-title{margin-top:12px;margin-bottom:7px;font-size:12px;font-weight:900;color:#5e5540}
+.parent-feedback-badges{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
+.parent-feedback-badge{padding:7px 2px;border:1px solid #e5e0cf;border-radius:11px;background:#f7f6f1;text-align:center;opacity:.5}
+.parent-feedback-badge.earned{background:#fff3c4;border-color:#e4c762;opacity:1}
+.parent-feedback-badge span{display:block;font-size:20px;line-height:1}
+.parent-feedback-badge small{display:block;margin-top:4px;font-size:9px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.parent-feedback-badge b{display:block;margin-top:3px;font-size:10px}
+.practice-streak-earned{display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;background:#fff}
+.practice-streak-earned>span{font-size:26px}
+.practice-streak-earned b{display:block;font-size:13px}
+.practice-streak-earned small{display:block;margin-top:3px;color:var(--muted)}
+.parent-feedback-history{margin-top:10px;border-top:1px dashed #dfd5ad;padding-top:8px}
+.parent-feedback-history summary{cursor:pointer;font-size:11px;font-weight:900;color:#705b1f}
+.parent-feedback-history>div{padding:8px 2px;border-bottom:1px solid #eee7d1}
+.parent-feedback-history small{display:block;margin-top:2px;color:var(--muted)}
+.parent-feedback-history p{margin:4px 0 0;font-size:11px;color:#52605a}
+@media(max-width:420px){.parent-feedback-badge small{font-size:8px}.parent-feedback-badge span{font-size:18px}.practice-feedback-presets button{max-width:165px}}
