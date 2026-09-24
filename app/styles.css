@@ -85,3 +85,14 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
 .teacher-boot-progress{height:8px;margin-top:14px;border-radius:999px;background:#e6ece9;overflow:hidden}
 .teacher-boot-progress i{display:block;width:38%;height:100%;border-radius:999px;background:var(--green2);animation:teacherBootMove 1.05s ease-in-out infinite}
 @keyframes teacherBootMove{0%{transform:translateX(-110%)}100%{transform:translateX(300%)}}
+
+/* 自主練習：老師 5 級鼓勵回饋 */
+.practice-feedback-box{margin-top:12px;padding:12px;border:1px solid #d9e2dc;border-radius:14px;background:#fffdf6}
+.practice-feedback-options{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.practice-feedback-options input{position:absolute;opacity:0;pointer-events:none}
+.practice-feedback-options label{min-width:0;padding:9px 3px;border:1px solid #d6dfda;border-radius:12px;background:#fff;text-align:center;cursor:pointer;transition:.15s ease}
+.practice-feedback-options label span{display:block;font-size:23px;line-height:1.1}
+.practice-feedback-options label small{display:block;margin-top:5px;font-size:10px;font-weight:800;color:#5d6863;white-space:nowrap}
+.practice-feedback-options input:checked+label{border:2px solid #d69b12;background:#fff6d8;box-shadow:0 0 0 2px rgba(214,155,18,.08)}
+.practice-feedback-chip{display:inline-block;margin-top:6px;padding:4px 8px;border-radius:999px;background:#fff3c4;color:#6d4d00;font-size:11px;font-weight:900}
+@media(max-width:420px){.practice-feedback-options{gap:4px}.practice-feedback-options label{padding:8px 2px}.practice-feedback-options label small{font-size:9px}}
