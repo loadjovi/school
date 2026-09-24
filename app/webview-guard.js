@@ -52,7 +52,7 @@
       "/roster-import.js?v=20260915-1135",
       "/attendance-support.js?v=20260922-2015",
       "/attendance-edit.js",
-      "/practice-progress.js?v=20260925-0015",
+      "/practice-progress.js?v=20260925-0105",
       "/admin-operations.js?v=20260920-0500",
       "/admin-followup-summary-fix.js?v=20260917-1320",
       "/system-backup.js?v=20260919-2305",
@@ -68,7 +68,7 @@
       "/private-student-bottom-back.js?v=20260915-1432",
       "/attendance-support.js?v=20260922-2015",
       "/attendance-edit.js",
-      "/practice-progress.js?v=20260925-0015",
+      "/practice-progress.js?v=20260925-0105",
       "/teacher-navigation.js?v=20260924-2359",
       "/comprehensive-support.js?v=20260922-0715",
       "/private-lesson-confirmation.js?v=20260922-2335"
@@ -77,7 +77,7 @@
       "/practice-timer.js?v=20260918-0725",
       "/private-lesson-confirmation.js?v=20260922-2335",
       "/parent-semester-attendance.js?v=20260917-0300",
-      "/parent-home-summary.js?v=20260925-0025"
+      "/parent-home-summary.js?v=20260925-0105"
     ];
     if(role==="globalAdmin")return [
       "/school-access.js?v=20260920-0010",
