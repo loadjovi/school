@@ -4,6 +4,7 @@
   const baseNav=typeof nav==="function"?nav:null;
   const feedbackLevels=[null,{icon:"🌱",label:"起步中"},{icon:"👍",label:"持續加油"},{icon:"🙂",label:"表現不錯"},{icon:"🌟",label:"很棒喔"},{icon:"🏆",label:"超級投入"}];
   state.parentPracticeFeedback=state.parentPracticeFeedback||null;
+  state.parentPracticeFeedbackData=state.parentPracticeFeedbackData||null;
   state.parentPracticeFeedbackStudentId=state.parentPracticeFeedbackStudentId||"";
   state.parentPracticeFeedbackLoading=false;
 
@@ -12,28 +13,45 @@
   function attendanceKpi(label,present,total,sub=""){const p=Number(present||0),t=Number(total||0);if(t===0)return `<div class="kpi"><b style="font-size:18px">尚無課程</b><span>${esc(label)}</span>${sub?`<small style="display:block;margin-top:3px;color:var(--muted);font-weight:700">${esc(sub)}</small>`:""}</div>`;const missed=Math.max(0,t-p),status=missed===0?"🟢 全勤":`🟡 缺席 ${missed} 次`;return `<div class="kpi"><b>${p} / ${t}</b><span>${esc(label)}</span><small style="display:block;margin-top:3px;color:var(--muted);font-weight:700">${status}${sub?`｜${esc(sub)}`:""}</small></div>`}
   function latestPractice(){const rows=[...(state.practice||[])].filter(x=>x?.practiceDate).sort((a,b)=>String(b.practiceDate).localeCompare(String(a.practiceDate))||String(b.endTime||b.startTime||"").localeCompare(String(a.endTime||a.startTime||"")));return rows[0]||null}
   function todayPractices(){const today=localDate();return (state.practice||[]).filter(x=>String(x.practiceDate||"").slice(0,10)===today)}
+  function practiceStreakInfo(){
+    const dates=[...new Set((state.practice||[]).map(x=>String(x.practiceDate||"").slice(0,10)).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)))].sort();
+    if(!dates.length)return {longest:0,current:0,reward:null,next:3};
+    const day=n=>Math.floor(new Date(n+"T12:00:00Z").getTime()/86400000);
+    let longest=1,run=1;
+    for(let i=1;i<dates.length;i++){if(day(dates[i])-day(dates[i-1])===1){run++;longest=Math.max(longest,run)}else run=1}
+    const today=localDate(),latest=dates[dates.length-1],gap=day(today)-day(latest);
+    let current=gap<=1?1:0;
+    if(current){for(let i=dates.length-1;i>0;i--){if(day(dates[i])-day(dates[i-1])===1)current++;else break}}
+    const levels=[{days:3,icon:"🔥",label:"3日連續"},{days:5,icon:"⭐",label:"5日穩定"},{days:7,icon:"🏆",label:"一週連續"},{days:14,icon:"🎖️",label:"兩週堅持"},{days:21,icon:"👑",label:"21日練習之星"}];
+    const reward=[...levels].reverse().find(x=>longest>=x.days)||null,next=(levels.find(x=>longest<x.days)||{}).days||null;
+    return {longest,current,reward,next};
+  }
   async function loadParentPracticeFeedback(studentId){
     if(!studentId||state.parentPracticeFeedbackLoading)return;
     state.parentPracticeFeedbackLoading=true;
     try{
       const d=await api("/api/practice-feedback?studentId="+encodeURIComponent(studentId));
-      if(String(state.student?.studentId)===String(studentId))state.parentPracticeFeedback=d.latest||null;
-    }catch(e){state.parentPracticeFeedback=null}
+      if(String(state.student?.studentId)===String(studentId)){state.parentPracticeFeedback=d.latest||null;state.parentPracticeFeedbackData=d;}
+    }catch(e){state.parentPracticeFeedback=null;state.parentPracticeFeedbackData=null}
     finally{state.parentPracticeFeedbackLoading=false;if(String(state.student?.studentId)===String(studentId))render()}
   }
   function parentFeedbackCard(){
-    const f=state.parentPracticeFeedback,m=feedbackLevels[Number(f?.level||0)];
+    const f=state.parentPracticeFeedback,d=state.parentPracticeFeedbackData||{},m=feedbackLevels[Number(f?.level||0)];
     if(!f||!m)return "";
-    return `<div style="margin-top:12px;padding:12px;border:1px solid #f0d98a;border-radius:14px;background:#fffaf0">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <b style="font-size:14px">💛 自主練習｜老師鼓勵回饋</b>
-        <span class="badge warn">${esc(f.month||"本月")}</span>
-      </div>
-      <div style="margin-top:9px;font-size:20px;font-weight:900">${m.icon} ${esc(m.label)}</div>
-      ${f.comment?`<div style="margin-top:7px;font-size:14px;font-weight:800">${esc(f.comment)}</div>`:""}
-      <small style="display:block;margin-top:8px;color:var(--muted)">此回饋針對「${esc(f.month||"本月")} 自主練習」｜${esc(f.teacherName||"老師")}${f.updatedAt?`｜${esc(String(f.updatedAt).slice(0,10))}`:""}</small>
+    const counts=d.badgeCounts||{},monthCount=Number(d.currentMonthCount||0),recent=Array.isArray(d.recent)?d.recent:[],streak=practiceStreakInfo();
+    const badges=feedbackLevels.slice(1).map((meta,i)=>`<div class="parent-feedback-badge ${Number(counts[i+1]||0)>0?"earned":""}"><span>${meta.icon}</span><small>${esc(meta.label)}</small><b>×${Number(counts[i+1]||0)}</b></div>`).join("");
+    const reward=streak.reward?`<div class="practice-streak-earned"><span>${streak.reward.icon}</span><div><b>${esc(streak.reward.label)}</b><small>本月最長連續練習 ${streak.longest} 天</small></div></div>`:`<div class="practice-streak-earned"><span>🌱</span><div><b>連續練習挑戰</b><small>目前最長 ${streak.longest} 天${streak.next?`｜達 ${streak.next} 天可獲得第一枚徽章`:""}</small></div></div>`;
+    return `<div class="parent-practice-feedback">
+      <div class="parent-practice-feedback-head"><b>💛 自主練習｜老師鼓勵回饋</b><span class="practice-feedback-chip">本月 ${monthCount} 次</span></div>
+      <div class="parent-feedback-latest"><div style="font-size:20px;font-weight:900">${m.icon} ${esc(m.label)}</div>${f.comment?`<div style="margin-top:6px;font-size:14px;font-weight:800">${esc(f.comment)}</div>`:""}<small>最近回饋｜${esc(f.teacherName||"老師")}${f.updatedAt?`｜${esc(String(f.updatedAt).slice(0,10))}`:""}</small></div>
+      <div class="parent-feedback-section-title">🏅 鼓勵徽章牆</div>
+      <div class="parent-feedback-badges">${badges}</div>
+      <div class="parent-feedback-section-title">🔥 連續練習獎勵</div>
+      ${reward}
+      ${recent.length>1?`<details class="parent-feedback-history"><summary>查看最近老師鼓勵（${Math.min(recent.length,5)}）</summary>${recent.slice(0,5).map(h=>{const hm=feedbackLevels[Number(h.level||0)];return `<div><b>${hm?hm.icon:"💛"} ${esc(hm?.label||"鼓勵")}</b><small>${esc(h.teacherName||"老師")}｜${esc(String(h.updatedAt||"").slice(0,10))}</small>${h.comment?`<p>${esc(h.comment)}</p>`:""}</div>`}).join("")}</details>`:""}
     </div>`;
   }
+
   function todayCourseReminder(){
     const s=state.summary||{},courses=Array.isArray(s.todayCourses)?s.todayCourses:[],date=String(s.today||localDate());
     const statusText={present:"已出席",late:"遲到",leave:"請假",absent:"缺席",cancelled:"停課"};
@@ -50,7 +68,7 @@
   window.switchParentStudent=async function(studentId){
     const next=(state.students||[]).find(s=>String(s.studentId)===String(studentId));
     if(!next||String(next.studentId)===String(state.student?.studentId))return;
-    state.student=next;state.summary=null;state.practice=[];state.parentPracticeFeedback=null;state.parentPracticeFeedbackStudentId="";
+    state.student=next;state.summary=null;state.practice=[];state.parentPracticeFeedback=null;state.parentPracticeFeedbackData=null;state.parentPracticeFeedbackStudentId="";
     try{await refreshStudent();render();toast(`已切換為 ${next.name}`)}catch(e){toast("❌ "+e.message)}
   };
 
