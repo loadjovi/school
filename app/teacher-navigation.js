@@ -4,7 +4,8 @@
   state.teacherTodayStatus=state.teacherTodayStatus||null;
   state.teacherTodayStatusDate=state.teacherTodayStatusDate||"";
   state.teacherAttention=state.teacherAttention||null;
-  async function loadTeacherTodayStatus(date){try{const [att,practice]=await Promise.all([api(`/api/attendance-report?month=${encodeURIComponent(date.slice(0,7))}`),api(`/api/practice-progress?month=${encodeURIComponent(date.slice(0,7))}`)]);state.teacherTodayStatus=att;state.teacherAttention=practice;state.teacherTodayStatusDate=date;render()}catch{state.teacherTodayStatus=null;state.teacherAttention=null;state.teacherTodayStatusDate=date}}
+  state.teacherTodayCourses=state.teacherTodayCourses||[];
+  async function loadTeacherTodayStatus(date){try{const [att,practice,schedule]=await Promise.all([api(`/api/attendance-report?month=${encodeURIComponent(date.slice(0,7))}`),api(`/api/practice-progress?month=${encodeURIComponent(date.slice(0,7))}`),api(`/api/school-schedule?date=${encodeURIComponent(date)}`)]);state.teacherTodayStatus=att;state.teacherAttention=practice;state.teacherTodayCourses=(schedule?.items||[]).filter(x=>String(x.effectiveStatus||"active")!=="cancelled");state.teacherTodayStatusDate=date;render()}catch{state.teacherTodayStatus=null;state.teacherAttention=null;state.teacherTodayCourses=[];state.teacherTodayStatusDate=date}}
   const detailPages=new Set(["section","ensemble","comprehensive","private"]);
   function mountTeacherBack(){
     if(!teacherAccount()||!detailPages.has(state.page)||document.getElementById("teacherHomeBack"))return;
@@ -54,13 +55,19 @@
     const c=cap(),comprehensive=!!state.teacherSetup?.profile?.comprehensiveEnabled;
     const now=new Date(),weekday=now.getDay(),date=now.toLocaleDateString("sv-SE");
     const dayNames=["週日","週一","週二","週三","週四","週五","週六"],todayName=dayNames[weekday];
-    const sectionGroup=(weekday===1||weekday===3)?"A":(weekday===2||weekday===4)?"B":weekday===5?"儲備":"";
     const sectionAssignments=Array.isArray(state.me?.assignments)?state.me.assignments:[];
-    const hasTodaySection=!!sectionGroup&&sectionAssignments.some(x=>String(x.groupName||x.group||"")===sectionGroup);
     const ensembleGroups=Array.isArray(state.me?.ensembleGroups)?state.me.ensembleGroups:[];
-    const hasTodayEnsemble=weekday===2&&ensembleGroups.some(x=>["A","B"].includes(String(x)));
-    const comprehensiveDates=new Set(["2026-09-18","2026-10-02","2026-10-16","2026-10-30","2026-11-20","2026-11-27","2026-12-04"]);
-    const hasTodayComprehensive=comprehensive&&comprehensiveDates.has(date);
+    const todayCourses=Array.isArray(state.teacherTodayCourses)?state.teacherTodayCourses:[];
+    const normGroup=v=>String(v||"").trim().replace(/團$/,"");
+    const sectionCourse=todayCourses.find(x=>String(x.courseType)==="section"&&sectionAssignments.some(a=>{
+      const target=normGroup(x.groupName),g=normGroup(a.groupName||a.group);
+      const section=String(x.section||"").trim(),assignedSection=String(a.section||"").trim();
+      return (!target||target==="ALL"||target.split(",").map(normGroup).includes(g))&&(!section||!assignedSection||section===assignedSection);
+    }));
+    const sectionGroup=normGroup(sectionCourse?.groupName||"");
+    const hasTodaySection=!!sectionCourse;
+    const hasTodayEnsemble=todayCourses.some(x=>String(x.courseType)==="ensemble"&&(!x.groupName||String(x.groupName)==="ALL"||String(x.groupName).split(",").map(normGroup).some(g=>ensembleGroups.map(normGroup).includes(g))));
+    const hasTodayComprehensive=comprehensive&&todayCourses.some(x=>String(x.courseType)==="comprehensive");
     if(state.teacherTodayStatusDate!==date)setTimeout(()=>loadTeacherTodayStatus(date),0);
     const todayRecords=(state.teacherTodayStatus?.records||[]).filter(x=>String(x.eventDate)===date);
     const scoped=(type,group)=>todayRecords.filter(x=>(type==="private"?["private","privateLesson"].includes(String(x.classType)):String(x.classType)===type)&&(!group||String(x.groupName)===group));
@@ -83,7 +90,7 @@
       courseCard("comprehensive","🎶","弦樂團體課（綜合課）","今天 08:45–10:15｜A／B／儲備團共同參加",hasTodayComprehensive,progress("comprehensive","",comprehensiveExpected)),
       courseCard("private","👤","個別課","預約、改期／停課、老師完課與家長確認",c.private,null)
     ].filter(Boolean).join("");
-    const groupSchedule=weekday===1||weekday===3?"A團分部課":weekday===2?"B團分部課＋A／B團合奏課":weekday===4?"B團分部課":weekday===5?"儲備團分部課":"無固定團體課";
+    const todayLabels=todayCourses.filter(x=>["section","ensemble","comprehensive"].includes(String(x.courseType||""))).map(x=>String(x.courseName||"課程")).filter(Boolean);const groupSchedule=todayLabels.length?[...new Set(todayLabels)].join("＋"):"無固定團體課";
     const practiceAll=(state.teacherAttention?.items||[]).map(x=>{const gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),rate=Number(x.practiceRatePercent||0),active=Number(x.activeDays||0);return {...x,_gap:gap,_rate:rate,_active:active}});
     // 關注排序：優先抓出「原本有練習、但近期中斷」的學生，避免本月從未練習者長期佔滿首頁。
     // 權重：有練習且 >=7 天未練 > 有練習且 3–6 天未練 > 本月尚未練習 > 其他未達標。
