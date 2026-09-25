@@ -11,9 +11,9 @@ const DEFAULT_LOGO_WEBP_BASE64="UklGRlgZAABXRUJQVlA4IEwZAABQbgCdASpAAUABPmEulEck
 
 const defaults=(schoolId=defaultTenantId(),tenant=null)=>{
   const sid=tenantIdValue(schoolId)||defaultTenantId();
-  if(sid===defaultTenantId())return {siteName:"聖心小學弦樂團",schoolName:"輔大聖心國小",loginSubtitle:"家長、老師與管理員共用入口",logoAlt:"聖心 Logo",primaryColor:"#245C49",logoBlobName:"",logoContentType:"image/webp",updatedAt:"",updatedBy:""};
+  if(sid===defaultTenantId())return {siteName:"聖心弦樂成長平台",schoolName:"輔大聖心國小",loginSubtitle:"家長、老師與管理員共用入口",shareTitle:"聖心弦樂成長平台",shareDescription:"陪伴孩子累積每一次練習與成長｜課程、出缺勤、自主練習與學習紀錄",logoAlt:"聖心 Logo",primaryColor:"#245C49",logoBlobName:"",logoContentType:"image/webp",updatedAt:"",updatedBy:""};
   const schoolName=String(tenant?.schoolName||sid),siteName=String(tenant?.systemName||schoolName+" 弦樂團");
-  return {siteName,schoolName,loginSubtitle:"家長、老師與管理員共用入口",logoAlt:schoolName+" Logo",primaryColor:"#3155A4",logoBlobName:"",logoContentType:"image/svg+xml",updatedAt:"",updatedBy:""};
+  return {siteName,schoolName,loginSubtitle:"家長、老師與管理員共用入口",shareTitle:siteName,shareDescription:`${schoolName}｜課程、出缺勤、自主練習與學習紀錄`,logoAlt:schoolName+" Logo",primaryColor:"#3155A4",logoBlobName:"",logoContentType:"image/svg+xml",updatedAt:"",updatedBy:""};
 };
 const genericLogo=(schoolName="學校")=>Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" rx="48" fill="#3155A4"/><circle cx="128" cy="128" r="76" fill="#fff" opacity=".16"/><path d="M83 151c18-8 34-9 48-3V86l49-10v61c0 18-14 30-31 30-15 0-25-9-25-20 0-13 12-23 28-23 5 0 9 1 13 2V96l-34 7v61c0 18-14 30-31 30-15 0-25-9-25-20 0-10 7-19 18-23z" fill="#fff"/></svg>`,"utf8");
 
@@ -28,13 +28,13 @@ async function getBranding(schoolId=defaultTenantId(),create=true){
   const client=await settingsClient(),partition=tenantSchoolPartition(sid);
   try{
     const e=await client.getEntity(partition,"branding");
-    return {...d,siteName:String(e.siteName||d.siteName),schoolName:String(e.schoolName||d.schoolName),loginSubtitle:String(e.loginSubtitle||d.loginSubtitle),logoAlt:String(e.logoAlt||d.logoAlt),primaryColor:String(e.primaryColor||d.primaryColor),logoBlobName:String(e.logoBlobName||""),logoContentType:String(e.logoContentType||d.logoContentType),updatedAt:String(e.updatedAt||""),updatedBy:String(e.updatedBy||"")};
+    return {...d,siteName:String(e.siteName||d.siteName),schoolName:String(e.schoolName||d.schoolName),loginSubtitle:String(e.loginSubtitle||d.loginSubtitle),shareTitle:String(e.shareTitle||e.siteName||d.shareTitle),shareDescription:String(e.shareDescription||d.shareDescription),logoAlt:String(e.logoAlt||d.logoAlt),primaryColor:String(e.primaryColor||d.primaryColor),logoBlobName:String(e.logoBlobName||""),logoContentType:String(e.logoContentType||d.logoContentType),updatedAt:String(e.updatedAt||""),updatedBy:String(e.updatedBy||"")};
   }catch(e){
     if(e.statusCode!==404)throw e;
     if(sid===defaultTenantId()){
       try{
         const legacy=await client.getEntity("SYSTEM","BRANDING");
-        const migrated={partitionKey:partition,rowKey:"branding",schoolId:sid,siteName:String(legacy.siteName||d.siteName),schoolName:String(legacy.schoolName||d.schoolName),loginSubtitle:String(legacy.loginSubtitle||d.loginSubtitle),logoAlt:String(legacy.logoAlt||d.logoAlt),primaryColor:String(legacy.primaryColor||d.primaryColor),logoBlobName:String(legacy.logoBlobName||""),logoContentType:String(legacy.logoContentType||d.logoContentType),updatedAt:String(legacy.updatedAt||new Date().toISOString()),updatedBy:String(legacy.updatedBy||"legacy-migration")};
+        const migrated={partitionKey:partition,rowKey:"branding",schoolId:sid,siteName:String(legacy.siteName||d.siteName),schoolName:String(legacy.schoolName||d.schoolName),loginSubtitle:String(legacy.loginSubtitle||d.loginSubtitle),shareTitle:String(legacy.shareTitle||legacy.siteName||d.shareTitle),shareDescription:String(legacy.shareDescription||d.shareDescription),logoAlt:String(legacy.logoAlt||d.logoAlt),primaryColor:String(legacy.primaryColor||d.primaryColor),logoBlobName:String(legacy.logoBlobName||""),logoContentType:String(legacy.logoContentType||d.logoContentType),updatedAt:String(legacy.updatedAt||new Date().toISOString()),updatedBy:String(legacy.updatedBy||"legacy-migration")};
         if(create)await client.upsertEntity(migrated,"Merge");
         return {...d,...migrated};
       }catch(legacyError){if(legacyError.statusCode!==404)throw legacyError}
@@ -48,11 +48,13 @@ async function saveBranding(input,updatedBy,schoolId=defaultTenantId()){
   const siteName=String(input.siteName??current.siteName).trim().slice(0,80)||d.siteName;
   const schoolName=String(input.schoolName??current.schoolName).trim().slice(0,120)||d.schoolName;
   const loginSubtitle=String(input.loginSubtitle??current.loginSubtitle).trim().slice(0,160);
+  const shareTitle=String(input.shareTitle??current.shareTitle??siteName).trim().slice(0,120)||siteName;
+  const shareDescription=String(input.shareDescription??current.shareDescription??d.shareDescription).trim().slice(0,240)||d.shareDescription;
   const logoAlt=String(input.logoAlt??current.logoAlt).trim().slice(0,120)||"學校 Logo";
   let primaryColor=String(input.primaryColor??current.primaryColor).trim();
   if(!/^#[0-9A-Fa-f]{6}$/.test(primaryColor))primaryColor=current.primaryColor||d.primaryColor;
   const now=new Date().toISOString();
-  const entity={partitionKey:tenantSchoolPartition(sid),rowKey:"branding",schoolId:sid,siteName,schoolName,loginSubtitle,logoAlt,primaryColor,logoBlobName:current.logoBlobName||"",logoContentType:current.logoContentType||d.logoContentType,updatedAt:now,updatedBy:String(updatedBy||"").slice(0,160)};
+  const entity={partitionKey:tenantSchoolPartition(sid),rowKey:"branding",schoolId:sid,siteName,schoolName,loginSubtitle,shareTitle,shareDescription,logoAlt,primaryColor,logoBlobName:current.logoBlobName||"",logoContentType:current.logoContentType||d.logoContentType,updatedAt:now,updatedBy:String(updatedBy||"").slice(0,160)};
   const client=await settingsClient();await client.upsertEntity(entity,"Merge");return entity;
 }
 async function blobContainer(){
@@ -98,7 +100,7 @@ async function publicBrandingSchoolId(request){
   const access=await getAccess(request);
   return tenantIdValue(access?.schoolId)||defaultTenantId();
 }
-function publicView(b,schoolId=defaultTenantId()){const sid=tenantIdValue(schoolId)||defaultTenantId();return {schoolId:sid,siteName:b.siteName,schoolName:b.schoolName,loginSubtitle:b.loginSubtitle,logoAlt:b.logoAlt,primaryColor:b.primaryColor,logoUrl:`/api/branding-logo?schoolId=${encodeURIComponent(sid)}&v=${encodeURIComponent(b.updatedAt||"default")}`,updatedAt:b.updatedAt||""}}
+function publicView(b,schoolId=defaultTenantId()){const sid=tenantIdValue(schoolId)||defaultTenantId();return {schoolId:sid,siteName:b.siteName,schoolName:b.schoolName,loginSubtitle:b.loginSubtitle,shareTitle:b.shareTitle||b.siteName,shareDescription:b.shareDescription||"",logoAlt:b.logoAlt,primaryColor:b.primaryColor,logoUrl:`/api/branding-logo?schoolId=${encodeURIComponent(sid)}&v=${encodeURIComponent(b.updatedAt||"default")}`,updatedAt:b.updatedAt||""}}
 
 app.http("branding",{methods:["GET","PATCH"],authLevel:"anonymous",route:"branding",handler:async request=>{
   if(request.method==="GET"){
