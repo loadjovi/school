@@ -102,19 +102,35 @@
   };
   window.saveBrandingAdmin=async function(){
     if(state.brandingAdmin.loading)return;
+    // 先讀取使用者目前輸入值，再切換 loading 畫面。
+    // 舊流程會先 mountBrandingAdmin()，因此把尚未儲存的名稱重畫成舊值後才送 API。
+    const payload={
+      siteName:String(document.getElementById("brandSiteName")?.value||"").trim(),
+      schoolName:String(document.getElementById("brandSchoolName")?.value||"").trim(),
+      loginSubtitle:String(document.getElementById("brandSubtitle")?.value||"").trim(),
+      logoAlt:String(document.getElementById("brandLogoAlt")?.value||"").trim(),
+      primaryColor:document.getElementById("brandColor")?.value||DEFAULTS.primaryColor
+    };
+    if(!payload.siteName){toast("❌ 網站名稱不可空白");return}
+    if(!payload.schoolName){toast("❌ 學校名稱不可空白");return}
     state.brandingAdmin.loading=true;state.brandingAdmin.error="";mountBrandingAdmin();
     try{
-      const payload={siteName:document.getElementById("brandSiteName")?.value||"",schoolName:document.getElementById("brandSchoolName")?.value||"",loginSubtitle:document.getElementById("brandSubtitle")?.value||"",logoAlt:document.getElementById("brandLogoAlt")?.value||"",primaryColor:document.getElementById("brandColor")?.value||DEFAULTS.primaryColor};
       const saved=await api("/api/branding",{method:"PATCH",body:JSON.stringify(payload)});
+      if(String(saved?.siteName||"").trim()!==payload.siteName||String(saved?.schoolName||"").trim()!==payload.schoolName){
+        throw new Error("品牌名稱儲存驗證失敗，請重新操作");
+      }
       state.branding={...tenantDefaults(),...state.branding,...saved};applyTheme();patchLogin();patchShellBrand();
       if(selectedLogoFile){
         const dataUrl=await readAsDataUrl(selectedLogoFile);
         await api("/api/branding-logo",{method:"POST",body:JSON.stringify({dataUrl})});
       }
-      await loadBranding();
+      const fresh=await loadBranding();
+      if(String(fresh?.siteName||"").trim()!==payload.siteName){
+        throw new Error("品牌設定已送出，但重新讀取仍不是新名稱");
+      }
       selectedLogoFile=null;if(previewObjectUrl){URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=""}
       render();patchShellBrand();
-      toast("✅ 品牌設定已儲存，網站名稱與頁首已同步更新");
+      toast("✅ 已更新網站名稱："+payload.siteName);
     }catch(e){state.brandingAdmin.error=e.message||String(e);toast("❌ "+(e.message||e))}
     state.brandingAdmin.loading=false;mountBrandingAdmin();
   };
