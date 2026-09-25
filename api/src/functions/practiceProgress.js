@@ -110,6 +110,6 @@ app.http("practiceProgress",{
     }));
 
     items.sort((a,b)=>a.practiceRate-b.practiceRate||String(a.groupName).localeCompare(String(b.groupName),"zh-Hant")||String(a.section).localeCompare(String(b.section),"zh-Hant")||String(a.name).localeCompare(String(b.name),"zh-Hant"));
-    return json({month,qualifiedMinutes,targetDays,effectiveTargetDays,taipeiToday,scoreWeight:20,items});
+    return json({month,qualifiedMinutes,targetDays,effectiveTargetDays,taipeiToday,scoreWeight:10,items});
   }
 });
