@@ -16,13 +16,13 @@
   function scoreRound(v){return Math.round(Number(v||0)*100)/100}
   function scoreParts(x,progress){
     const target=Math.max(1,Number(x.effectiveTargetDays||progress?.effectiveTargetDays||1));
-    const qualified=Number(x.qualifiedDays||0);
-    const practicePoints=scoreRound(Math.min(qualified/target,1)*7);
+    const practiceDays=Number(x.activeDays||0);
+    const practicePoints=scoreRound(Math.min(practiceDays/target,1)*7);
     const avg=Number(x.monthlyEvaluation?.averageRating||0);
     const teacherPoints=avg>0?scoreRound(avg/5*3):null;
     const total=teacherPoints==null?null:scoreRound(practicePoints+teacherPoints);
     const current=String(progress?.month||"")===String(progress?.taipeiToday||"").slice(0,7);
-    return {practicePoints,teacherPoints,total,target,qualified,current,status:teacherPoints==null?"待老師月評":current?"暫估":"正式"};
+    return {practicePoints,teacherPoints,total,target,practiceDays,current,status:teacherPoints==null?"待老師月評":current?"暫估":"正式"};
   }
   async function loadPracticeProgress(){
     if(!canView())return;
@@ -161,7 +161,7 @@
     return `${!isAdmin()?'<button class="secondary" style="width:auto;margin:0 0 12px;padding:9px 14px;border-radius:999px;font-weight:800" onclick="go(\'teacherHome\')">← 返回今日教學</button>':''}
     <div class="card hero"><h2>📚 自主練習${isAdmin()?'月報':'進度'}</h2>
       <div class="notice">練習進度依「截至目前日期」動態計算；主要用來了解孩子的練習習慣並提供適度提醒。</div>
-      <div class="monthly-score-policy"><b>📊 月總評比規則｜期末計分占比 10%</b><small>① 有效練習天數占 70%（7 分）：單日累計 ≥ ${d.qualifiedMinutes||15} 分鐘才計 1 天，練習分＝min（有效天數 ÷ 當月目標天數，1）× 7。<br>② 老師月評占 30%（3 分）：1～5 級固定量尺；多位授課老師取平均，老師分＝平均級分 ÷ 5 × 3。<br>③ 月總分＝練習分＋老師分，滿分 10 分；未完成老師月評時顯示「待評」，不先以 0 分計算。當月進行中顯示暫估，歷史月份為正式月分。</small></div>
+      <div class="monthly-score-policy"><b>📊 月總評比規則｜期末計分占比 10%</b><small>① 練習日期占 70%（7 分）：每天有完成自主練習紀錄即計 1 天，同一天多筆紀錄仍只計 1 天；分鐘數僅供紀錄，不列入分數。練習分＝min（練習天數 ÷ 當月目標天數，1）× 7。<br>② 老師月評占 30%（3 分）：1～5 級固定量尺；多位授課老師取平均，老師分＝平均級分 ÷ 5 × 3。<br>③ 月總分＝練習分＋老師分，滿分 10 分；未完成老師月評時顯示「待評」，不先以 0 分計算。當月進行中顯示暫估，歷史月份為正式月分。</small></div>
       <label>月份</label><input type="month" value="${esc(state.practiceProgressMonth)}" onchange="changePracticeProgressMonth(this.value)">
       <div class="grid"><div class="kpi"><b>${all.length}</b><span>授課學生</span></div><div class="kpi"><b>${counts.doneEval}</b><span>已完成月評</span></div><div class="kpi"><b>${counts.pendingEval}</b><span>待老師月評</span></div><div class="kpi"><b>${all.length-counts.none}</b><span>已有練習</span></div></div>
       <div style="margin-top:10px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">${filterBtn('全部','全部',all.length)}${filterBtn('待月評','📊 待老師月評',counts.pendingEval)}${filterBtn('已月評','✅ 已完成月評',counts.doneEval)}${filterBtn('尚未練習','⚪ 本月尚無紀錄',counts.none)}${filterBtn('未達標','🟡 持續累積中',counts.below)}${filterBtn('已達標','🟢 已完成目標',counts.ok)}</div>
@@ -211,7 +211,7 @@
   if(typeof adminPage==="function"){
     const baseAdminPage=adminPage;
     adminPage=function(){
-      return baseAdminPage()+`<div class="card"><h2>📚 自主練習月報</h2><div class="notice">查看全團學生每月自主練習天數、分鐘與練習明細，協助了解練習習慣與提供適度提醒；相關資料仍可供後續 10% 成績統計使用。</div><button class="primary" onclick="go('practiceProgress')">查看自主練習月報</button></div>`;
+      return baseAdminPage()+`<div class="card"><h2>📚 自主練習月報</h2><div class="notice">查看全團學生每月自主練習日期與練習明細，協助了解是否養成每日練習習慣；分鐘數僅供紀錄，不作為分數依據。</div><button class="primary" onclick="go('practiceProgress')">查看自主練習月報</button></div>`;
     };
   }
 
