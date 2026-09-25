@@ -1,12 +1,12 @@
 (()=>{
-  const DEFAULTS={siteName:"聖心小學弦樂團",schoolName:"輔大聖心國小",loginSubtitle:"家長、老師與管理員共用入口",logoAlt:"聖心 Logo",primaryColor:"#245C49",logoUrl:"/api/branding-logo?schoolId=sacred-heart&v=default",updatedAt:""};
+  const DEFAULTS={siteName:"聖心弦樂成長平台",schoolName:"輔大聖心國小",loginSubtitle:"家長、老師與管理員共用入口",shareTitle:"聖心弦樂成長平台",shareDescription:"陪伴孩子累積每一次練習與成長｜課程、出缺勤、自主練習與學習紀錄",logoAlt:"聖心 Logo",primaryColor:"#245C49",logoUrl:"/api/branding-logo?schoolId=sacred-heart&v=default",updatedAt:""};
   const GLOBAL_DEFAULTS={siteName:"校務整合平台",schoolName:"Global 管理中心",loginSubtitle:"跨校營運、權限與服務治理",logoAlt:"Global Logo",primaryColor:"#3155A4",logoUrl:"/api/global-branding-logo?v=default",updatedAt:""};
   function activeSchoolId(){return String(state.me?.schoolId||sessionStorage.getItem("school_context_id")||"").trim()}
   function tenantDefaults(){
     const sid=activeSchoolId();
     if(!sid||sid==="sacred-heart")return DEFAULTS;
     const schoolName=String(state.me?.schoolName||"學校"),siteName=String(state.me?.systemName||schoolName+" 弦樂團");
-    return {...DEFAULTS,siteName,schoolName,logoAlt:schoolName+" Logo",primaryColor:"#3155A4",logoUrl:"/api/branding-logo?schoolId="+encodeURIComponent(sid)+"&v=default"};
+    return {...DEFAULTS,siteName,schoolName,shareTitle:siteName,shareDescription:schoolName+"｜課程、出缺勤、自主練習與學習紀錄",logoAlt:schoolName+" Logo",primaryColor:"#3155A4",logoUrl:"/api/branding-logo?schoolId="+encodeURIComponent(sid)+"&v=default"};
   }
   state.branding={...tenantDefaults(),...(state.branding||{})};
   state.globalBranding={...GLOBAL_DEFAULTS,...(state.globalBranding||{})};
@@ -35,6 +35,8 @@
       if(sub)sub.textContent=b.schoolName;
     }else if(sub)sub.remove();
   }
+  function setMeta(selector,attr,value){let el=document.head.querySelector(selector);if(!el){el=document.createElement("meta");const m=/^meta\[(name|property)="([^"]+)"\]$/.exec(selector);if(m)el.setAttribute(m[1],m[2]);document.head.appendChild(el)}el.setAttribute(attr,value)}
+  function applySocialMeta(){const b=brand(),title=b.shareTitle||b.siteName||DEFAULTS.shareTitle,desc=b.shareDescription||DEFAULTS.shareDescription;document.title=b.siteName||DEFAULTS.siteName;setMeta('meta[name="description"]',"content",desc);setMeta('meta[property="og:title"]',"content",title);setMeta('meta[property="og:description"]',"content",desc);setMeta('meta[property="og:type"]',"content","website");setMeta('meta[property="og:url"]',"content",location.origin+location.pathname);setMeta('meta[property="og:image"]',"content",new URL(b.logoUrl,location.origin).href)}
   function applyTheme(){
     const b=brand(),color=/^#[0-9A-Fa-f]{6}$/.test(String(b.primaryColor||""))?b.primaryColor:DEFAULTS.primaryColor;
     const root=document.documentElement;
@@ -43,7 +45,7 @@
     root.style.setProperty("--mint",mix(color,"#ffffff",.91));
     root.style.setProperty("--text",mix(color,"#000000",.52));
     const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute("content",color);
-    document.title=b.siteName||DEFAULTS.siteName;
+    applySocialMeta();
     patchShellBrand();
   }
   function logoImg(cls="",extra=""){const b=brand();return `<img class="${cls}" src="${esc(b.logoUrl)}" alt="${esc(b.logoAlt||"學校 Logo")}" ${extra} onerror="this.style.display='none';this.parentElement?.classList?.add('logo-fallback')">`}
@@ -108,6 +110,8 @@
       siteName:String(document.getElementById("brandSiteName")?.value||"").trim(),
       schoolName:String(document.getElementById("brandSchoolName")?.value||"").trim(),
       loginSubtitle:String(document.getElementById("brandSubtitle")?.value||"").trim(),
+      shareTitle:String(document.getElementById("brandShareTitle")?.value||"").trim(),
+      shareDescription:String(document.getElementById("brandShareDescription")?.value||"").trim(),
       logoAlt:String(document.getElementById("brandLogoAlt")?.value||"").trim(),
       primaryColor:document.getElementById("brandColor")?.value||DEFAULTS.primaryColor
     };
@@ -146,7 +150,7 @@
     const main=document.querySelector(".main");if(!main)return;
     let root=document.getElementById("brandingAdminPanel");if(!root){root=document.createElement("div");root.id="brandingAdminPanel";main.prepend(root)}
     const b=brand();
-    root.innerHTML=`<div class="card"><h2>🎨 系統品牌設定</h2><div class="notice">首頁名稱、學校名稱、Logo 與主題色都由後台管理。主題色選擇時會立即預覽，按儲存後登入頁與登入後頁首會同步套用。</div>${state.brandingAdmin.error?`<div class="error" style="margin-top:10px">${esc(state.brandingAdmin.error)}</div>`:""}<div style="display:flex;gap:14px;align-items:center;margin-top:14px"><div style="width:92px;height:92px;border:1px solid var(--line);border-radius:18px;background:#fff;display:grid;place-items:center;overflow:hidden"><img id="brandingPreview" src="${esc(b.logoUrl)}" alt="${esc(b.logoAlt)}" style="width:88px;height:88px;object-fit:contain"></div><div style="flex:1"><b>目前 Logo</b><small style="display:block;color:var(--muted);margin-top:4px">PNG／JPG／WebP，最大 2MB</small><input type="file" accept="image/png,image/jpeg,image/webp" onchange="previewBrandingLogo(this)" ${state.brandingAdmin.loading?"disabled":""}></div></div><label>網站名稱</label><input id="brandSiteName" value="${esc(b.siteName)}" maxlength="80"><label>學校名稱</label><input id="brandSchoolName" value="${esc(b.schoolName)}" maxlength="120"><label>登入頁說明文字</label><input id="brandSubtitle" value="${esc(b.loginSubtitle)}" maxlength="160"><div class="row2"><div><label>Logo 替代文字</label><input id="brandLogoAlt" value="${esc(b.logoAlt)}" maxlength="120"></div><div><label>主題色（即時預覽）</label><input id="brandColor" type="color" value="${esc(/^#[0-9A-Fa-f]{6}$/.test(b.primaryColor)?b.primaryColor:DEFAULTS.primaryColor)}" style="height:48px;padding:6px" oninput="previewBrandingColor(this.value)"></div></div><button class="primary" onclick="saveBrandingAdmin()" ${state.brandingAdmin.loading?"disabled":""}>${state.brandingAdmin.loading?"正在儲存…":"💾 儲存品牌設定"}</button><button class="secondary" style="width:100%;margin-top:8px" onclick="restoreDefaultBrandingLogo()" ${state.brandingAdmin.loading?"disabled":""}>↩️ 恢復此校預設 Logo</button><div class="notice" style="margin-top:10px">系統會自動使用 <b>SystemSettings / SYSTEM / BRANDING</b> 保存文字與主題色設定；Logo 存在同一個 Azure Storage Account 的 <b>branding</b> Blob Container。</div></div>`;
+    root.innerHTML=`<div class="card"><h2>🎨 系統品牌設定</h2><div class="notice">首頁名稱、學校名稱、Logo 與主題色都由後台管理。主題色選擇時會立即預覽，按儲存後登入頁與登入後頁首會同步套用。</div>${state.brandingAdmin.error?`<div class="error" style="margin-top:10px">${esc(state.brandingAdmin.error)}</div>`:""}<div style="display:flex;gap:14px;align-items:center;margin-top:14px"><div style="width:92px;height:92px;border:1px solid var(--line);border-radius:18px;background:#fff;display:grid;place-items:center;overflow:hidden"><img id="brandingPreview" src="${esc(b.logoUrl)}" alt="${esc(b.logoAlt)}" style="width:88px;height:88px;object-fit:contain"></div><div style="flex:1"><b>目前 Logo</b><small style="display:block;color:var(--muted);margin-top:4px">PNG／JPG／WebP，最大 2MB</small><input type="file" accept="image/png,image/jpeg,image/webp" onchange="previewBrandingLogo(this)" ${state.brandingAdmin.loading?"disabled":""}></div></div><label>網站名稱</label><input id="brandSiteName" value="${esc(b.siteName)}" maxlength="80"><label>學校名稱</label><input id="brandSchoolName" value="${esc(b.schoolName)}" maxlength="120"><label>登入頁說明文字</label><input id="brandSubtitle" value="${esc(b.loginSubtitle)}" maxlength="160"><label>LINE／社群分享標題</label><input id="brandShareTitle" value="${esc(b.shareTitle||b.siteName)}" maxlength="120"><label>LINE／社群分享說明</label><textarea id="brandShareDescription" maxlength="240" rows="3">${esc(b.shareDescription||"")}</textarea><small style="display:block;color:var(--muted);margin-top:-6px;margin-bottom:10px">此設定依目前學校 Tenant 儲存，不會與其他學校共用。</small><div class="row2"><div><label>Logo 替代文字</label><input id="brandLogoAlt" value="${esc(b.logoAlt)}" maxlength="120"></div><div><label>主題色（即時預覽）</label><input id="brandColor" type="color" value="${esc(/^#[0-9A-Fa-f]{6}$/.test(b.primaryColor)?b.primaryColor:DEFAULTS.primaryColor)}" style="height:48px;padding:6px" oninput="previewBrandingColor(this.value)"></div></div><button class="primary" onclick="saveBrandingAdmin()" ${state.brandingAdmin.loading?"disabled":""}>${state.brandingAdmin.loading?"正在儲存…":"💾 儲存品牌設定"}</button><button class="secondary" style="width:100%;margin-top:8px" onclick="restoreDefaultBrandingLogo()" ${state.brandingAdmin.loading?"disabled":""}>↩️ 恢復此校預設 Logo</button><div class="notice" style="margin-top:10px">品牌與分享文字依目前學校 Tenant Scope 儲存於 <b>SystemSettings / SCHOOL#${esc(activeSchoolId()||"目前學校")} / branding</b>；不使用 Global 共用設定。Logo 存在同一個 Azure Storage Account 的 <b>branding</b> Blob Container。</div></div>`;
   }
 
   const baseRender=render;
