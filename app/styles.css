@@ -186,3 +186,32 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
   .record-section-head b{font-size:16px}
   .record-section-head small{font-size:10px}
 }
+
+
+.private-student-card{margin-top:14px;border:2px solid #d9e0ea;border-radius:16px;background:#fff;overflow:hidden;box-shadow:0 2px 8px rgba(15,23,42,.06)}
+.private-student-card.is-expanded{border-color:#9db2dc;box-shadow:0 4px 14px rgba(49,85,164,.12)}
+.private-student-card.is-active{border-color:#3155a4}
+.private-student-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 14px 12px;background:#f4f7fc;cursor:pointer;user-select:none}
+.private-student-card.is-expanded .private-student-card-head,.private-student-card.is-active .private-student-card-head{background:#eaf0fb}
+.private-student-card-main{min-width:0;flex:1}
+.private-student-name{font-size:20px;line-height:1.25;font-weight:900;color:#172554;letter-spacing:.2px}
+.private-student-meta{margin-top:4px;font-size:12px;line-height:1.5;font-weight:800;color:#3155a4}
+.private-student-time{margin-top:5px;font-size:12px;line-height:1.5;color:#667085;font-weight:700;word-break:break-word}
+.private-student-card-status{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.private-student-card-arrow{font-size:20px;font-weight:900;color:#3155a4;line-height:1}
+.private-student-card-body{padding:12px 14px 14px;border-top:1px solid #dce5f3;background:#fff}
+.private-editing-banner{padding:10px 12px;border:1px solid #b8c7eb;border-radius:11px;background:#eef3ff;color:#203a75;font-size:13px;line-height:1.5;margin-bottom:10px}
+.private-student-summary{padding:10px 11px;border-radius:11px;background:#f8fafc;border:1px solid #e5e7eb}
+.private-completed-state{border-color:#b7dfc8;background:#f1fbf5;color:#1f6b3b}
+.private-active-student{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:13px 14px;border:2px solid #9db2dc;border-radius:14px;background:#eef3ff;margin-top:6px}
+.private-active-student b{display:block;font-size:20px;color:#172554}
+.private-active-student small{display:block;margin-top:4px;color:#596579;font-weight:700;line-height:1.45}
+@media(max-width:640px){
+  .private-student-card{margin-top:16px;border-width:2px}
+  .private-student-card-head{padding:14px 12px}
+  .private-student-name{font-size:21px}
+  .private-student-card-status{gap:6px}
+  .private-student-card-body{padding:12px}
+  .private-editing-banner{position:sticky;top:0;z-index:3;box-shadow:0 2px 6px rgba(15,23,42,.08)}
+  .private-active-student{padding:13px 12px}
+}
