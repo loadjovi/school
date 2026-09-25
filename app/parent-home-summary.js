@@ -45,11 +45,11 @@
     finally{state.parentPracticeFeedbackLoading=false;if(String(state.student?.studentId)===String(studentId))render()}
   }
   function parentMonthlyScoreCard(){
-    const s=state.summary||{},m=state.parentMonthlyEvaluation,practiceDays=Number(s.practiceActiveDays??s.practiceQualifiedDays??0),target=Math.max(1,Number(s.practiceEffectiveTargetDays||s.practiceTargetDays||30)),practicePoints=Math.round(Math.min(practiceDays/target,1)*700)/100,avg=Number(m?.averageRating||0),teacherPoints=avg>0?Math.round((avg/5*3)*100)/100:null,total=teacherPoints==null?null:Math.round((practicePoints+teacherPoints)*100)/100,current=String(s.month||"")===localDate().slice(0,7);
+    const s=state.summary||{},practiceDays=Number(s.practiceActiveDays??s.practiceQualifiedDays??0),target=Math.max(1,Number(s.practiceEffectiveTargetDays||s.practiceTargetDays||30)),practicePoints=Math.round(Math.min(practiceDays/target,1)*1000)/100,current=String(s.month||"")===localDate().slice(0,7);
     return `<div class="parent-monthly-score">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b>📊 自主練習月評比｜期末占比 20%</b><span class="practice-feedback-chip">${total==null?"待老師月評":total+"/10"}</span></div>
-      <div class="parent-monthly-score-grid"><div><b>${practicePoints}/7</b><small>有練習 ${practiceDays}/${target} 天</small></div><div><b>${teacherPoints==null?"—":teacherPoints+"/3"}</b><small>老師平均 ${avg?avg.toFixed(2)+"/5":"待評"}</small></div></div>
-      <small style="display:block;margin-top:8px;color:var(--muted)">計分公開：本項月評滿分 10 分，學期末升級評量占比 20%；其中練習日期占本項 70%，老師月評占 30%。每日有完成自主練習紀錄即計 1 天，練習分鐘數不列入分數；多位授課老師取平均。${current?"本月進行中，目前為暫估分數。":"此月份為正式月評結果。"}</small>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b>📊 自主練習月統計</b><span class="practice-feedback-chip">${practicePoints}/10</span></div>
+      <div class="parent-monthly-score-grid"><div><b>${practiceDays} 天</b><small>本月有練習日期</small></div><div><b>${practicePoints}/10</b><small>本月自主練習分數</small></div></div>
+      <small style="display:block;margin-top:8px;color:var(--muted)">每月分數僅用來呈現目前進度；期末以整個學期統計，自主練習最高 10 分。每日有完成自主練習紀錄即計 1 天，同一天多筆仍只計 1 天，練習分鐘數不列入分數。${current?"本月進行中，目前為暫估分數。":"此月份已結算。"}</small>
     </div>`;
   }
   function parentFeedbackCard(){
