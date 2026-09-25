@@ -43,6 +43,20 @@
     const x=d.stats?.[type]||{};
     return `<div class="card record-subcard"><div class="section-title"><h2>${icon} ${label}</h2><span class="badge ${!Number(x.total||0)?"":(Number(x.absent||0)||Number(x.leave||0)||Number(x.late||0))?"warn":"ok"}">${!Number(x.total||0)?"尚無課程":Number(x.absent||0)||Number(x.leave||0)||Number(x.late||0)?"非全勤":"全勤"}</span></div>${desc?`<div class="muted" style="margin:-4px 0 9px">${esc(desc)}</div>`:""}<div class="notice">${esc(statsLine(x))}</div><button class="secondary" style="width:100%;margin-top:10px" onclick="toggleParentSemesterClass('${type}')">${state.parentSemesterExpanded===type?"收合日期明細":"查看整學期日期明細"}</button>${detailRows(type,d)}</div>`;
   }
+  function semesterScoreCard(d){
+    const s=d.semesterScore||{},p=s.practice||{},sec=s.sectionAttendance||{},priv=s.privateLessonBonus||{};
+    const privateText=Number(priv.total||0)?`${priv.score||0}/5｜到課 ${priv.attended||0}/${priv.total||0}`:"未參加｜0 分（不扣分）";
+    return `<div class="card hero"><div class="section-title"><h2>📊 期末成長評量｜20 分</h2><span class="badge ok">${Number(s.total||0).toFixed(2)} / 20</span></div>
+      <div class="notice"><b>本學期採整學期累計，不以單一月份決定期末成績。</b><br><br>
+      🎻 自主練習：${Number(p.score||0).toFixed(2)} / 10<br>
+      <span class="muted">練習日期 ${p.days||0} / ${p.targetDays||0} 天；分鐘數不計分</span><br><br>
+      🎼 分部課出席：${Number(sec.score||0).toFixed(2)} / 5<br>
+      <span class="muted">到課 ${sec.attended||0} / ${sec.total||0}${sec.rate==null?"":`｜${sec.rate}%`}</span><br><br>
+      🧾 個別課加分：${privateText}<br>
+      <span class="muted">個別課非強制，未參加不扣分；有參加者依到課率最高加 5 分。</span></div>
+      <small style="display:block;margin-top:10px;color:var(--muted)">期末成長評量最高 20 分＝自主練習 10 分＋分部課出席 5 分＋個別課加分最高 5 分。</small>
+    </div>`;
+  }
   function semesterAttendanceHtml(){
     if(!state.student)return "";
     if(state.parentSemesterLoading)return `<div class="card"><h2>📅 本學期出勤摘要</h2><div class="notice">正在整理本學期出勤資料…</div></div>`;
@@ -53,7 +67,7 @@
       return `<div class="card"><h2>📅 本學期出勤紀錄</h2><div class="notice">正在整理本學期出勤資料…</div></div>`;
     }
     const o=d.stats?.overall||{};
-    return `<section class="record-section record-section-attendance">
+    return `<section class="record-section record-section-attendance">${semesterScoreCard(d)}
       <div class="record-section-head">
         <div class="record-section-icon">📅</div>
         <div><b>本學期出勤紀錄</b><small>只看點名與到課狀態：分部、合奏、綜合課與個別課出勤</small></div>
