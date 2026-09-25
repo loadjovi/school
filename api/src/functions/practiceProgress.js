@@ -84,11 +84,12 @@ app.http("practiceProgress",{
       const activeDates=new Set(records.map(r=>r.practiceDate).filter(Boolean));
       const totalMinutes=records.reduce((n,r)=>n+r.minutes,0);
       const qualifiedDays=qualifiedDates.size;
-      const rate=Math.min(qualifiedDays/effectiveTargetDays,1);
+      const activeDays=activeDates.size;
+      const rate=Math.min(activeDays/effectiveTargetDays,1);
       const score10=Math.round(rate*100)/10;
       return {
         ...s,
-        activeDays:activeDates.size,
+        activeDays,
         qualifiedDays,
         totalMinutes,
         averageMinutes:activeDates.size?Math.round(totalMinutes/activeDates.size):0,
