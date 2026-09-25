@@ -20,35 +20,49 @@
   window.__sectionClassIndex=0;
   state.sectionManualOverride=false;
   window.changeSectionClass=function(v){window.__sectionClassIndex=Number(v)||0;state.sectionManualOverride=true;state.sectionExisting=null;state.sectionExistingKey="";render();setTimeout(()=>loadSectionExisting(),0)};
-  state.sectionExisting=state.sectionExisting||null; state.sectionExistingKey=state.sectionExistingKey||""; state.sectionLoading=false; state.sectionSaving=false;
+  state.sectionExisting=state.sectionExisting||null; state.sectionExistingKey=state.sectionExistingKey||""; state.sectionLoading=false; state.sectionSaving=false; state.sectionScheduleDate=state.sectionScheduleDate||""; state.sectionScheduleItems=state.sectionScheduleItems||[];
   function sectionContext(){const a=Array.isArray(state.me.assignments)?state.me.assignments:[],c=a[Math.min(window.__sectionClassIndex,Math.max(a.length-1,0))]||a[0];return c?{groupName:String(c.groupName||c.group||""),section:String(c.section||"")}:null}
   window.loadSectionExisting=async function(options={}){const c=sectionContext(),date=$("sDate")?.value||state.sectionSelectedDate;if(!c||!date)return;const silent=options?.silent===true,key=[date,c.groupName,c.section].join("|");if(!silent){state.sectionLoading=true;state.sectionExistingKey=key;render()}try{const fresh=await api(`/api/section-attendance?sessionDate=${encodeURIComponent(date)}&groupName=${encodeURIComponent(c.groupName)}&section=${encodeURIComponent(c.section)}&_=${Date.now()}`);state.sectionExisting=fresh;state.sectionExistingKey=key}catch(e){if(!silent){state.sectionExisting={items:[]};toast("❌ "+e.message)}}state.sectionLoading=false;if(!silent)render()};
+  function normSectionGroup(v){return String(v||"").trim().replace(/團$/,"")}
+  function scheduledSectionCourses(date){
+    if(String(state.sectionScheduleDate||"")!==String(date||""))return [];
+    return (state.sectionScheduleItems||[]).filter(x=>String(x.courseType||"")==="section"&&String(x.effectiveStatus||"active")!=="cancelled");
+  }
+  async function loadSectionScheduleDate(date,{rerender=true}={}){
+    const d=String(date||"");if(!d)return;
+    try{
+      const r=await api(`/api/school-schedule?date=${encodeURIComponent(d)}`);
+      state.sectionScheduleDate=d;state.sectionScheduleItems=r.items||[];
+    }catch{state.sectionScheduleDate=d;state.sectionScheduleItems=[]}
+    if(rerender)render();
+  }
   function sectionGroupForDate(date){
-    const d=new Date(String(date||"")+"T12:00:00"),weekday=d.getDay();
-    if(weekday===1||weekday===3)return "A";
-    if(weekday===2||weekday===4)return "B";
-    if(weekday===5)return "儲備";
-    return "";
+    const c=scheduledSectionCourses(date)[0];
+    return normSectionGroup(c?.groupName||"");
   }
   function assignmentIndexForDate(date){
-    const target=sectionGroupForDate(date),a=Array.isArray(state.me.assignments)?state.me.assignments:[];
-    if(!target)return -1;
+    const courses=scheduledSectionCourses(date),a=Array.isArray(state.me.assignments)?state.me.assignments:[];
+    if(!courses.length)return -1;
     const current=a[Math.min(window.__sectionClassIndex||0,Math.max(a.length-1,0))]||a[0];
     const currentSection=String(current?.section||"");
-    let i=a.findIndex(x=>{
-      const g=String(x.groupName||x.group||"").trim().replace(/團$/,"");
-      return g===target&&String(x.section||"")===currentSection;
-    });
-    if(i<0)i=a.findIndex(x=>String(x.groupName||x.group||"").trim().replace(/團$/,"")===target);
+    let i=a.findIndex(x=>courses.some(c=>{
+      const target=normSectionGroup(c.groupName),g=normSectionGroup(x.groupName||x.group),section=String(c.section||"").trim();
+      return (!target||target==="ALL"||target.split(",").map(normSectionGroup).includes(g))&&(!section||String(x.section||"")===section)&&(!currentSection||String(x.section||"")===currentSection);
+    }));
+    if(i<0)i=a.findIndex(x=>courses.some(c=>{
+      const target=normSectionGroup(c.groupName),g=normSectionGroup(x.groupName||x.group),section=String(c.section||"").trim();
+      return (!target||target==="ALL"||target.split(",").map(normSectionGroup).includes(g))&&(!section||String(x.section||"")===section);
+    }));
     return i;
   }
-  window.changeSectionDate=function(v){
+  window.changeSectionDate=async function(v){
     const date=String(v||$("sDate")?.value||"");
     state.sectionSelectedDate=date;
     state.sectionManualOverride=false;
+    state.sectionExisting=null;state.sectionExistingKey="";
+    await loadSectionScheduleDate(date,{rerender:false});
     const next=assignmentIndexForDate(date);
     if(next>=0)window.__sectionClassIndex=next;
-    state.sectionExisting=null;state.sectionExistingKey="";
     render();setTimeout(()=>loadSectionExisting(),0);
   };
   document.addEventListener("change",function(e){
@@ -69,8 +83,9 @@
     const students=state.students.filter(s=>String(s.groupName)===groupName&&String(s.section||"待確認")===section);
     const loaded=state.sectionExistingKey===[today,groupName,section].join("|")?state.sectionExisting:null;
     const weekday=["週日","週一","週二","週三","週四","週五","週六"][new Date(today+"T12:00:00").getDay()];
-    const expectedGroup=sectionGroupForDate(today);
-    const scheduleHint=expectedGroup?`📅 ${weekday}固定分部課：<b>${esc(expectedGroup)}團</b>｜已依日期自動切換`:`📅 ${weekday}沒有固定分部課；如為補課／調課，可手動選擇授課分部。`;
+    if(String(state.sectionScheduleDate||"")!==String(today))setTimeout(()=>loadSectionScheduleDate(today),0);
+    const scheduledCourses=scheduledSectionCourses(today),expectedGroup=sectionGroupForDate(today);
+    const scheduleHint=scheduledCourses.length?`📅 ${weekday}已啟用課表：<b>${esc(scheduledCourses.map(x=>x.courseName||((normSectionGroup(x.groupName)||"")+"團分部課")).join("、"))}</b>｜依後台正式課表顯示`:`📅 ${weekday}目前沒有已啟用的分部課；尚未到開課日不會列入點名。`;
     const saved=new Map((loaded?.items||[]).map(x=>[String(x.studentId),String(x.status||"present")]));
     const savedCount=saved.size,missing=Math.max(students.length-savedCount,0),recorder=loaded?.recordedBy?`<br>點名：<b>${esc(loaded.recordedBy)}</b>${loaded.recordedByRole==="admin"?"（行政協助）":""}`:"";
     const statusBox=state.sectionLoading?'<div class="notice" style="margin-top:10px">⏳ 正在確認點名紀錄…</div>':loaded?(savedCount?`<div class="notice" style="margin-top:10px">✅ <b>已點名</b>｜已儲存 ${savedCount}/${students.length} 人${missing?`，⚠️ 尚有 ${missing} 人未有紀錄`:""}。可直接修改後重新儲存。${recorder}</div>`:'<div class="notice" style="margin-top:10px">⚠️ <b>尚未點名</b>｜此日期尚無儲存紀錄。</div>'):'<div class="notice" style="margin-top:10px">ℹ️ 正在確認是否已有點名紀錄。</div>';
