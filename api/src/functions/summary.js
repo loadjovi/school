@@ -40,6 +40,7 @@ app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handle
     rowsForAliases("privateLesson",aliases,start,end,schoolId)
   ]);
   const qualifiedMinutes=Number(process.env.PRACTICE_QUALIFIED_MINUTES||15);
+  const activeDays=new Set(p.map(x=>String(x.eventDate||"").slice(0,10)).filter(Boolean)).size;
   const qualifiedDays=new Set(p.filter(x=>x.qualified===true||Number(x.minutes||0)>=qualifiedMinutes).map(x=>x.eventDate)).size;
   const practiceMinutes=p.reduce((n,x)=>n+Number(x.minutes||0),0);
   const targetDays=Number(process.env.PRACTICE_TARGET_DAYS||30);
@@ -60,7 +61,7 @@ app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handle
   const master=await getStudentMaster(studentId,schoolId);
   const todayCourses=await todayCoursesFor(schoolId,master,today,s,e,c);
   return json({
-    month,practiceQualifiedDays:qualifiedDays,practiceMinutes,practiceRate:Math.min(qualifiedDays/Math.max(effectiveTargetDays,1),1),practiceTargetDays:targetDays,practiceEffectiveTargetDays:effectiveTargetDays,practiceQualifiedMinutes:qualifiedMinutes,
+    month,practiceActiveDays:activeDays,practiceQualifiedDays:qualifiedDays,practiceMinutes,practiceRate:Math.min(activeDays/Math.max(effectiveTargetDays,1),1),practiceTargetDays:targetDays,practiceEffectiveTargetDays:effectiveTargetDays,practiceQualifiedMinutes:qualifiedMinutes,
     sectionPresent,sectionTotal:sectionEffective.length,
     ensemblePresent,ensembleTotal:ensembleEffective.length,
     comprehensivePresent,comprehensiveTotal:comprehensiveEffective.length,
