@@ -21,8 +21,8 @@
     const avg=Number(x.monthlyEvaluation?.averageRating||0);
     const teacherPoints=avg>0?scoreRound(avg/5*3):null;
     const total=teacherPoints==null?null:scoreRound(practicePoints+teacherPoints);
-    const current=String(progress?.month||"")===String(progress?.taipeiToday||"").slice(0,7);
-    return {practicePoints,teacherPoints,total,target,qualified,current,status:teacherPoints==null?"待老師月評":current?"暫估":"正式"};
+    const current=String(progress?.month||"")===String(progress?.taipeiToday||"").slice(0,7),trial=/^\d{4}-09$/.test(String(progress?.month||""));
+    return {practicePoints,teacherPoints,total,target,qualified,current,trial,status:teacherPoints==null?"待老師月評":trial?"試營運":current?"暫估":"正式"};
   }
   async function loadPracticeProgress(){
     if(!canView())return;
