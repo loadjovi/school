@@ -36,17 +36,6 @@ async function practiceForAliases(aliases,start,end,schoolId){
   }
   return [...latest.values()];
 }
-async function monthlyEvaluationsForAliases(aliases,schoolId){
-  const rows=[],seen=new Set();
-  for(const id of aliases){
-    const partition=tenantStudentPartition(schoolId,id);
-    for await(const e of table("tenantPracticeMonthlyEvaluation").listEntities({queryOptions:{filter:`PartitionKey eq '${String(partition).replaceAll("'","''")}'`}})){
-      const key=`${e.partitionKey}|${e.rowKey}`;if(seen.has(key))continue;seen.add(key);
-      rows.push({month:String(e.evaluationMonth||""),rating:Number(e.rating||0),teacherEmail:String(e.teacherEmail||"")});
-    }
-  }
-  return rows;
-}
 async function learningEvaluationsForAliases(aliases,schoolId){
   const rows=[],seen=new Set();
   for(const id of aliases){
@@ -112,13 +101,12 @@ app.http("parentSemesterAttendance",{
     const today=taipeiDate(),end=today<range.end?today:range.end;
     const aliases=await getStudentIdAliases(studentId,schoolId);
     await ensureTenantTables();
-    const [sectionRows,ensembleRows,comprehensiveRows,privateRows,practiceRows,monthlyEvaluations,learningEvaluations]=await Promise.all([
+    const [sectionRows,ensembleRows,comprehensiveRows,privateRows,practiceRows,learningEvaluations]=await Promise.all([
       recordsForAliases("section",aliases,range.start,end,schoolId),
       recordsForAliases("ensemble",aliases,range.start,end,schoolId),
       recordsForAliases("comprehensive",aliases,range.start,end,schoolId),
       recordsForAliases("privateLesson",aliases,range.start,end,schoolId),
       practiceForAliases(aliases,range.start,end,schoolId),
-      monthlyEvaluationsForAliases(aliases,schoolId),
       learningEvaluationsForAliases(aliases,schoolId)
     ]);
     const records=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows.filter(r=>["present","late","leave","absent","cancelled"].includes(r.status))]
@@ -141,11 +129,7 @@ app.http("parentSemesterAttendance",{
       const qualifiedDays=new Set(p.filter(x=>x.qualified===true||Number(x.minutes||0)>=qualifiedMinutes).map(x=>String(x.eventDate||""))).size;
       const days=monthDays(month),elapsed=month===currentMonth?Number(today.slice(8,10)):days;
       const targetDays=Math.max(1,Math.min(practiceTargetDays,elapsed));
-      const practicePoints=round2(Math.min(qualifiedDays/targetDays,1)*7);
-      const evalRows=monthlyEvaluations.filter(x=>x.month===month&&x.rating>=1&&x.rating<=5);
-      const teacherAverage=evalRows.length?round2(evalRows.reduce((n,x)=>n+x.rating,0)/evalRows.length):null;
-      const teacherPoints=teacherAverage==null?null:round2(teacherAverage/5*3);
-      const practiceScore10=future||teacherPoints==null?null:round2(practicePoints+teacherPoints);
+      const practiceScore10=future?null:round2(Math.min(qualifiedDays/targetDays,1)*10);
 
       // 核准請假與停課不列入出勤分母；遲到仍計入到課；缺席才影響分數。
       const groupRows=[...sectionRows,...ensembleRows,...comprehensiveRows].filter(x=>String(x.eventDate||"").startsWith(month)&&x.status!=="cancelled");
@@ -167,7 +151,7 @@ app.http("parentSemesterAttendance",{
       const total20=practiceScore10==null||attendanceScore5==null||learningScore5==null?null:round2(practiceScore10+attendanceScore5+learningScore5);
       return {
         month,future,status:future?"future":month===currentMonth?"provisional":"final",
-        practice:{qualifiedDays,targetDays,practicePoints,teacherAverage,teacherCount:evalRows.length,teacherPoints,score10:practiceScore10},
+        practice:{qualifiedDays,targetDays,score10:practiceScore10,source:"system"},
         attendance:{present:attendancePresent,total:attendanceTotal,leave:attendanceLeave,absent:attendanceAbsent,rate:attendanceTotal?round2(attendancePresent/attendanceTotal*100):null,score5:attendanceScore5},
         learning:{score5:learningScore5,teacherCount:learnRows.length,average:{attitude:avgCriterion("attitude"),preparation:avgCriterion("preparation"),progress:avgCriterion("progress"),teamwork:avgCriterion("teamwork")}},
         privateLesson:{completed:privateCompleted,cancelled:privateCancelled,score5:null,referenceOnly:true},
@@ -201,7 +185,7 @@ app.http("parentSemesterAttendance",{
       studentId,schoolYear,semester,semesterName:semesterLabel(semester)||`${semester}學期`,
       start:range.start,end,termEnd:range.end,asOf:today,
       student:master?{name:String(master.studentName||""),grade:String(master.grade||""),groupName:String(master.groupName||""),section:String(master.section||"待確認"),instrument:String(master.instrument||"")}:null,
-      scorePolicy:{practiceWeight:10,attendanceWeight:5,learningWeight:5,privateLessonWeight:0,totalWeight:20,months,trialMonth:String(semester)==="1"?`${safeInt(schoolYear)+1911}-09`:"",attendanceLeaveExcluded:true,privateLessonReferenceOnly:true,learningWeights:{attitude:1,preparation:1,progress:2,teamwork:1}},
+      scorePolicy:{practiceWeight:10,attendanceWeight:5,learningWeight:5,privateLessonWeight:0,totalWeight:20,months,trialMonth:String(semester)==="1"?`${safeInt(schoolYear)+1911}-09`:"",practiceSource:"system",attendanceLeaveExcluded:true,privateLessonReferenceOnly:true,learningWeights:{attitude:1,preparation:1,progress:2,teamwork:1}},
       monthlyScores,semesterScore,
       stats,records
     });
