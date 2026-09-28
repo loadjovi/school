@@ -55,28 +55,28 @@
         <b>${esc(String(x.month||"").slice(5))}月</b>
         <span>自主 ${scoreText(p.score10,10)}</span>
         <span>出勤 ${scoreText(a.score5,5)}</span>
-        <span>學習 ${scoreText(l.score5,5)}</span>
+        <span>老師 ${scoreText(l.score5,5)}</span>
         <strong>${x.total20==null?"—":(Math.round(Number(x.total20)*100)/100)+"/20"}</strong>
       </div>`;
     }).join("");
     return `<section class="semester-score-panel">
       <div class="semester-score-head">
-        <div><b>🏅 本學期 20% 成績總覽</b><small>自主練習 10%＋日常上課出勤 5%＋學習參與與進步 5%</small></div>
+        <div><b>🏅 本學期 20% 成績總覽</b><small>自主練習 10%（系統）＋日常上課出勤 5%（系統）＋月底正式評量 5%（老師）</small></div>
         <span class="semester-score-total">${total}</span>
       </div>
       <div class="semester-score-components">
         <div><b>${scoreText(s.practice10,10)}</b><small>自主練習平均</small></div>
         <div><b>${scoreText(s.attendance5,5)}</b><small>日常出勤平均</small></div>
-        <div><b>${scoreText(s.learning5,5)}</b><small>學習參與與進步平均</small></div>
+        <div><b>${scoreText(s.learning5,5)}</b><small>月底正式評量平均</small></div>
       </div>
       <div class="notice" style="margin-top:10px">
-        正式計分月份：${(policy.months||[]).map(m=>String(m).slice(5)+"月").join("、")}。9 月為平台試營運，不列入正式平均。<br>
+        正式計分月份：${(policy.months||[]).map(m=>String(m).slice(5)+"月").join("、")}。9 月為平台試營運，不列入正式平均。<br>自主練習 10% 由系統依有效練習天數自動換算，老師不需另外評分。<br>
         日常出勤：停課與核准請假不列入扣分分母，遲到仍算到課，無故缺席才影響分數。<br>
-        學習參與與進步：學習態度 1 分＋課堂準備 1 分＋技巧／曲目進步 2 分＋團體配合 1 分，多位授課老師取平均。<br>
+        月底正式評量：這是老師每月唯一需要完成的正式評分，內容為學習態度 1 分＋課堂準備 1 分＋技巧／曲目進步 2 分＋團體配合 1 分，多位授課老師取平均。<br>
         個別課屬延伸學習與升等參考，不因未參加個別課而扣分。
       </div>
       <details class="semester-score-months"><summary>查看各月正式分數</summary>${rows}</details>
-      <small class="semester-score-foot">${s.status==="final"?(s.complete?"本學期正式計分月份已結束，以上為正式成績。":"正式計分月份已結束，但仍有月份缺少老師評量或出勤資料，因此總分暫不定案。"):`本學期進行中，目前為暫估成績；自主練習已計 ${Number(s.practiceMonths||0)}/${Number(s.monthsPlanned||3)} 月、日常出勤已計 ${Number(s.attendanceMonths||0)}/${Number(s.monthsPlanned||3)} 月、學習參與與進步已計 ${Number(s.learningMonths||0)}/${Number(s.monthsPlanned||3)} 月。`}</small>
+      <small class="semester-score-foot">${s.status==="final"?(s.complete?"本學期正式計分月份已結束，以上為正式成績。":"正式計分月份已結束，但仍有月份缺少老師評量或出勤資料，因此總分暫不定案。"):`本學期進行中，目前為暫估成績；自主練習已計 ${Number(s.practiceMonths||0)}/${Number(s.monthsPlanned||3)} 月、日常出勤已計 ${Number(s.attendanceMonths||0)}/${Number(s.monthsPlanned||3)} 月、月底正式評量已計 ${Number(s.learningMonths||0)}/${Number(s.monthsPlanned||3)} 月。`}</small>
     </section>`;
   }
   window.parentSemesterScorePanel=semesterScoreHtml;
