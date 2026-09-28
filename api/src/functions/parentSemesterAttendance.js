@@ -171,7 +171,7 @@ app.http("parentSemesterAttendance",{
     const fallbackRows=learningEvaluations.filter(x=>x.month===lastScoreMonth&&x.evaluationMode==="semesterFallback"&&x.score5>0);
     const sectionFinal5=!hasPrivateLesson&&fallbackRows.length?average(fallbackRows.map(x=>x.score5)):null;
     const performance5=hasPrivateLesson?privateLessonScore5:sectionFinal5;
-    const performanceSource=hasPrivateLesson?"privateLessonFrequency":"sectionFinal";
+    const performanceSource=hasPrivateLesson?"privateLessonFrequency":sectionFinal5!=null?"sectionFinal":"pending";
 
     const semesterScore={
       practice10:average(practiceValues),
