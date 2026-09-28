@@ -10,7 +10,6 @@ import { getSystemSettings } from "../lib/settings.js";
 const attendanceStatuses=new Set(["present","late","leave","absent"]);
 const teacherCompletionStatuses=new Set(["scheduled","completion_issue"]);
 function clean(v,max=300){return String(v??"").trim().slice(0,max)}
-function studentPerformanceValue(v){const n=Number(v||0);return Number.isInteger(n)&&n>=1&&n<=5?n:0}
 export function validateParentLessonReview(ratingValue,reviewValue){
   const rating=Number(ratingValue||0),review=clean(reviewValue,800);
   if(rating&&(!Number.isInteger(rating)||rating<1||rating>5))return {error:"老師評價必須為 1～5 顆星"};
@@ -252,12 +251,9 @@ app.http("privateLesson",{
         if(!lessonEnded(entity,clock))return json({error:`尚未到預約結束時間（${entity.eventDate} ${entity.endTime}），不能提前完成上課`},409);
         const attendanceStatus=clean(body.attendanceStatus||entity.actualAttendanceStatus||"present",20);
         if(!["present","late"].includes(attendanceStatus))return json({error:"完成上課狀態只能是出席或遲到"},400);
-        const studentPerformanceRating=studentPerformanceValue(body.studentPerformanceRating||entity.studentPerformanceRating);
-        if(!studentPerformanceRating)return json({error:"請先完成本次學生學習表現 1～5 級評分；此評分將作為期末 5% 個課依據"},400);
         const now=new Date().toISOString();
         entity.status="teacher_completed";entity.actualAttendanceStatus=attendanceStatus;entity.parentConfirmation="pending";entity.parentConfirmedAt="";entity.parentConfirmedBy="";entity.parentNote="";
         if(Object.hasOwn(body,"lessonContent"))entity.lessonContent=clean(body.lessonContent,500);
-        entity.studentPerformanceRating=studentPerformanceRating;entity.studentPerformanceRatedAt=now;entity.studentPerformanceRatedBy=a.email;
         entity.completedAt=now;entity.completedBy=a.email;entity.updatedAt=now;
         await table("tenantPrivateLesson").updateEntity(entity,"Merge");
         const result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"completed",target:"parents",actorEmail:a.email,actorName:a.displayName||teacherName});
