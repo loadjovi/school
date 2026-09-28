@@ -143,7 +143,7 @@ app.http("parentSemesterAttendance",{
       const attendanceScore5=future||!attendanceTotal?null:round2(Math.min(attendancePresent/attendanceTotal,1)*5);
 
       const monthPrivate=privateRows.filter(x=>String(x.eventDate||"").startsWith(month));
-      const privateCompletedRows=monthPrivate.filter(x=>["present","late"].includes(String(x.status||"")));
+      const privateCompletedRows=monthPrivate.filter(x=>["teacher_completed","present","late"].includes(String(x.status||""))&&Number(x.studentPerformanceRating||0)>0);
       const privateRatings=privateCompletedRows.map(x=>Number(x.studentPerformanceRating||0)).filter(v=>v>=1&&v<=5);
       const privateCompleted=privateCompletedRows.length;
       const privateCancelled=monthPrivate.filter(x=>String(x.status||"")==="cancelled").length;
@@ -164,7 +164,7 @@ app.http("parentSemesterAttendance",{
     const practiceValues=activeMonths.map(x=>x.practice.score10).filter(v=>v!=null);
     const attendanceValues=activeMonths.map(x=>x.attendance.score5).filter(v=>v!=null);
 
-    const formalPrivateRows=privateRows.filter(x=>months.some(month=>String(x.eventDate||"").startsWith(month))&&["present","late"].includes(String(x.status||"")));
+    const formalPrivateRows=privateRows.filter(x=>months.some(month=>String(x.eventDate||"").startsWith(month))&&["teacher_completed","present","late"].includes(String(x.status||""))&&Number(x.studentPerformanceRating||0)>0);
     const privatePerformanceValues=formalPrivateRows.map(x=>Number(x.studentPerformanceRating||0)).filter(v=>v>=1&&v<=5);
     const hasPrivateLesson=formalPrivateRows.length>0;
     const privateRatingsComplete=hasPrivateLesson&&privatePerformanceValues.length===formalPrivateRows.length;
