@@ -43,7 +43,7 @@ async function listRows(schoolId,month,{fallbackOnly=false}={}){
 
 async function completedPrivateForStudent(schoolId,studentId,start,end,rows){
   const alias=await getStudentAliasInfo(studentId,schoolId),ids=new Set((alias.aliases||[studentId]).map(String));
-  return rows.filter(r=>ids.has(String(activityStudentId(r)))&&["teacher_completed","present","late"].includes(String(r.status||""))&&Number(r.studentPerformanceRating||0)>0).length;
+  return rows.filter(r=>ids.has(String(activityStudentId(r)))&&["teacher_completed","present","late"].includes(String(r.status||""))).length;
 }
 
 function aggregateRatings(ratings,isTeacher,email){
@@ -111,7 +111,7 @@ app.http("learningMonthlyEvaluation",{
     const studentView={studentId:String(master.rowKey),groupName:String(master.groupName||""),section:String(master.section||"待確認")};
     if(!ensureSectionAccess(a,studentView))return json({error:"只有該學生的分部老師可進行學期末評量"},403);
     const privateRows=await listActivityRange("privateLesson",schoolId,window.start,window.end),completed=await completedPrivateForStudent(schoolId,studentId,window.start,window.end,privateRows);
-    if(completed>0)return json({error:`此學生本學期已有 ${completed} 堂完成個課，期末 5% 將採個課老師的學生學習表現平均，不需分部老師另評`},409);
+    if(completed>0)return json({error:`此學生本學期已有 ${completed} 堂完成個課，期末 5% 將依正式月份每月完成個課次數換算（每月 4 次 = 5 分）後取學期平均，不需分部老師另評`},409);
 
     const now=new Date().toISOString(),email=String(a.email||"");
     const entity={
