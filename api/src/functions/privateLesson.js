@@ -10,6 +10,7 @@ import { getSystemSettings } from "../lib/settings.js";
 const attendanceStatuses=new Set(["present","late","leave","absent"]);
 const teacherCompletionStatuses=new Set(["scheduled","completion_issue"]);
 function clean(v,max=300){return String(v??"").trim().slice(0,max)}
+function studentPerformanceValue(v){const n=Number(v||0);return Number.isInteger(n)&&n>=1&&n<=5?n:0}
 export function validateParentLessonReview(ratingValue,reviewValue){
   const rating=Number(ratingValue||0),review=clean(reviewValue,800);
   if(rating&&(!Number.isInteger(rating)||rating<1||rating>5))return {error:"老師評價必須為 1～5 顆星"};
@@ -61,6 +62,7 @@ function view(e,teacherNameOverride=""){
     parentConfirmation:String(e.parentConfirmation||(["present","late"].includes(status)?"pending":"not_required")),
     parentConfirmedAt:String(e.parentConfirmedAt||""),parentConfirmedBy:String(e.parentConfirmedBy||""),parentNote:String(e.parentNote||""),
     teacherRating:Number(e.teacherRating||0),teacherReview:String(e.teacherReview||""),teacherRatedAt:String(e.teacherRatedAt||""),teacherRatedBy:String(e.teacherRatedBy||""),
+    studentPerformanceRating:Number(e.studentPerformanceRating||0),studentPerformanceRatedAt:String(e.studentPerformanceRatedAt||""),studentPerformanceRatedBy:String(e.studentPerformanceRatedBy||""),
     emailNotificationType:String(e.emailNotificationType||""),emailNotificationStatus:String(e.emailNotificationStatus||""),emailNotificationAt:String(e.emailNotificationAt||""),
     emailNotificationRecipients:Number(e.emailNotificationRecipients||0),emailNotificationSentCount:Number(e.emailNotificationSentCount||0),emailNotificationFailedCount:Number(e.emailNotificationFailedCount||0),
     emailNotificationResendCount:Number(e.emailNotificationResendCount||0),emailNotificationLastResentAt:String(e.emailNotificationLastResentAt||""),emailNotificationLastResentBy:String(e.emailNotificationLastResentBy||""),
@@ -250,9 +252,12 @@ app.http("privateLesson",{
         if(!lessonEnded(entity,clock))return json({error:`尚未到預約結束時間（${entity.eventDate} ${entity.endTime}），不能提前完成上課`},409);
         const attendanceStatus=clean(body.attendanceStatus||entity.actualAttendanceStatus||"present",20);
         if(!["present","late"].includes(attendanceStatus))return json({error:"完成上課狀態只能是出席或遲到"},400);
+        const studentPerformanceRating=studentPerformanceValue(body.studentPerformanceRating||entity.studentPerformanceRating);
+        if(!studentPerformanceRating)return json({error:"請先完成本次學生學習表現 1～5 級評分；此評分將作為期末 5% 個課依據"},400);
         const now=new Date().toISOString();
         entity.status="teacher_completed";entity.actualAttendanceStatus=attendanceStatus;entity.parentConfirmation="pending";entity.parentConfirmedAt="";entity.parentConfirmedBy="";entity.parentNote="";
         if(Object.hasOwn(body,"lessonContent"))entity.lessonContent=clean(body.lessonContent,500);
+        entity.studentPerformanceRating=studentPerformanceRating;entity.studentPerformanceRatedAt=now;entity.studentPerformanceRatedBy=a.email;
         entity.completedAt=now;entity.completedBy=a.email;entity.updatedAt=now;
         await table("tenantPrivateLesson").updateEntity(entity,"Merge");
         const result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"completed",target:"parents",actorEmail:a.email,actorName:a.displayName||teacherName});
@@ -308,7 +313,7 @@ app.http("privateLesson",{
     const entity={
       partitionKey:tenantStudentPartition(schoolId,canonicalStudentId),rowKey:lessonId,schoolId,studentId:canonicalStudentId,sessionId,eventDate:lessonDate,startTime,endTime,status:"scheduled",actualAttendanceStatus:"present",minutes,
       lessonContent:clean(body.lessonContent,500),teacher:a.email,teacherName,parentConfirmation:"not_required",parentConfirmedAt:"",parentConfirmedBy:"",parentNote:"",
-      teacherRating:0,teacherReview:"",teacherRatedAt:"",teacherRatedBy:"",scheduledAt:now,scheduledBy:a.email,rescheduledAt:"",rescheduledBy:"",rescheduleReason:"",rescheduleCount:0,scheduleHistory:"[]",
+      teacherRating:0,teacherReview:"",teacherRatedAt:"",teacherRatedBy:"",studentPerformanceRating:0,studentPerformanceRatedAt:"",studentPerformanceRatedBy:"",scheduledAt:now,scheduledBy:a.email,rescheduledAt:"",rescheduledBy:"",rescheduleReason:"",rescheduleCount:0,scheduleHistory:"[]",
       completedAt:"",completedBy:"",finalizedAt:"",createdAt:now,updatedAt:now,
       emailNotificationType:"scheduled",emailNotificationStatus:"pending",emailNotificationAt:"",emailNotificationRecipients:0,emailNotificationSentCount:0,emailNotificationFailedCount:0,
       emailNotificationResendCount:0,emailNotificationLastResentAt:"",emailNotificationLastResentBy:"",cancelledAt:"",cancelledBy:"",cancelReason:""
