@@ -76,7 +76,7 @@
     if(role==="parent")return [
       "/practice-timer.js?v=20260918-0725",
       "/private-lesson-confirmation.js?v=20260928-1615",
-      "/parent-semester-attendance.js?v=20260928-1615",
+      "/parent-semester-attendance.js?v=20260928-1625",
       "/parent-home-summary.js?v=20260928-1545"
     ];
     if(role==="globalAdmin")return [
