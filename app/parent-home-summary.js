@@ -5,7 +5,6 @@
   const feedbackLevels=[null,{icon:"🌱",label:"起步中"},{icon:"👍",label:"持續加油"},{icon:"🙂",label:"表現不錯"},{icon:"🌟",label:"很棒喔"},{icon:"🏆",label:"超級投入"}];
   state.parentPracticeFeedback=state.parentPracticeFeedback||null;
   state.parentPracticeFeedbackData=state.parentPracticeFeedbackData||null;
-  state.parentMonthlyEvaluation=state.parentMonthlyEvaluation||null;
   state.parentLearningEvaluation=state.parentLearningEvaluation||null;
   state.parentPracticeFeedbackStudentId=state.parentPracticeFeedbackStudentId||"";
   state.parentPracticeFeedbackLoading=false;
@@ -33,26 +32,25 @@
     state.parentPracticeFeedbackLoading=true;
     try{
       const month=String(state.summary?.month||new Date().toISOString().slice(0,7));
-      const [d,evaluation,learning]=await Promise.all([
+      const [d,learning]=await Promise.all([
         api("/api/practice-feedback?studentId="+encodeURIComponent(studentId)),
-        api("/api/practice-monthly-evaluation?studentId="+encodeURIComponent(studentId)+"&month="+encodeURIComponent(month)).catch(()=>({item:null})),
         api("/api/learning-monthly-evaluation?studentId="+encodeURIComponent(studentId)+"&month="+encodeURIComponent(month)).catch(()=>({item:null}))
       ]);
       if(String(state.student?.studentId)===String(studentId)){
         state.parentPracticeFeedback=d.latest||null;
         state.parentPracticeFeedbackData=d;
-        state.parentMonthlyEvaluation=evaluation.item||null;
         state.parentLearningEvaluation=learning.item||null;
       }
-    }catch(e){state.parentPracticeFeedback=null;state.parentPracticeFeedbackData=null;state.parentMonthlyEvaluation=null;state.parentLearningEvaluation=null}
+    }catch(e){state.parentPracticeFeedback=null;state.parentPracticeFeedbackData=null;state.parentLearningEvaluation=null}
     finally{state.parentPracticeFeedbackLoading=false;if(String(state.student?.studentId)===String(studentId))render()}
   }
   function parentMonthlyScoreCard(){
-    const s=state.summary||{},m=state.parentMonthlyEvaluation,qualified=Number(s.practiceQualifiedDays||0),target=Math.max(1,Number(s.practiceEffectiveTargetDays||s.practiceTargetDays||30)),practicePoints=Math.round(Math.min(qualified/target,1)*700)/100,avg=Number(m?.averageRating||0),teacherPoints=avg>0?Math.round((avg/5*3)*100)/100:null,total=teacherPoints==null?null:Math.round((practicePoints+teacherPoints)*100)/100,current=String(s.month||"")===localDate().slice(0,7),trial=/^\d{4}-09$/.test(String(s.month||""));
+    const s=state.summary||{},qualified=Number(s.practiceQualifiedDays||0),target=Math.max(1,Number(s.practiceEffectiveTargetDays||s.practiceTargetDays||30)),total=Math.round(Math.min(qualified/target,1)*1000)/100,trial=/^\d{4}-09$/.test(String(s.month||"")),current=String(s.month||"")===localDate().slice(0,7);
     return `<div class="parent-monthly-score">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b>📊 自主練習月評比｜期末 10%</b><span class="practice-feedback-chip">${trial?"9月試營運｜":""}${total==null?"待老師月評":total+"/10"}</span></div>
-      <div class="parent-monthly-score-grid"><div><b>${practicePoints}/7</b><small>有效練習 ${qualified}/${target} 天</small></div><div><b>${teacherPoints==null?"—":teacherPoints+"/3"}</b><small>老師平均 ${avg?avg.toFixed(2)+"/5":"待評"}</small></div></div>
-      <small style="display:block;margin-top:8px;color:var(--muted)">計分公開：有效練習占 70%，老師月評占 30%；多位授課老師取平均。${trial?"9 月僅供試算與熟悉平台，正式計分自 10 月開始。":current?"本月進行中，目前為暫估分數。":"此月份為正式月評結果。"}</small>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><b>🎯 自主練習｜期末 10%</b><span class="practice-feedback-chip">${trial?"9月試營運｜":""}${total}/10</span></div>
+      <div class="parent-monthly-score-grid"><div><b>${qualified} / ${target}</b><small>有效練習日 / 月目標</small></div><div><b>${total}/10</b><small>系統自動換算</small></div></div>
+      <div class="monthly-score-formula">換算：${qualified} ÷ ${target} × 10 ＝ <b>${total}/10</b></div>
+      <small style="display:block;margin-top:8px;color:var(--muted)">此項由系統依有效練習天數自動計算，老師不需另外評分。${trial?"9 月僅試算，正式計分自 10 月開始。":current?"本月進行中，目前為暫估分數。":"此月份為正式結果。"}</small>
     </div>`;
   }
   function parentAttendanceScoreCard(){
@@ -76,9 +74,9 @@
   function parentLearningScoreCard(){
     const s=state.summary||{},e=state.parentLearningEvaluation||{},score=Number(e.score5||0),a=e.average||{},trial=/^\d{4}-09$/.test(String(s.month||""));
     return `<div class="parent-attendance-score learning-score-box">
-      <div class="parent-attendance-score-head"><b>🌱 學習參與與進步｜期末 5%</b><span class="practice-feedback-chip">${trial?"9月試營運｜":""}${score>0?score.toFixed(2).replace(/\.00$/,"")+"/5":"待老師評量"}</span></div>
+      <div class="parent-attendance-score-head"><b>📊 月底正式評量｜期末 5%</b><span class="practice-feedback-chip">${trial?"9月試營運｜":""}${score>0?score.toFixed(2).replace(/\.00$/,"")+"/5":"待老師評量"}</span></div>
       ${score>0?`<div class="parent-attendance-score-grid"><div><b>${a.progress??"—"} / 5</b><small>技巧／曲目進步（權重 2）</small></div><div><b>${Number(e.ratingCount||0)}</b><small>參與評量老師數</small></div></div>`:""}
-      <small style="display:block;margin-top:8px;color:var(--muted)">統一標準：學習態度 1 分＋課堂準備 1 分＋技巧／曲目進步 2 分＋團體配合 1 分；多位授課老師取平均。個別課僅作升等參考，不因未參加而扣分。${trial?"9 月僅試評，正式計分自 10 月開始。":""}</small>
+      <small style="display:block;margin-top:8px;color:var(--muted)">這是老師每月唯一的正式評量：學習態度 1 分＋課堂準備 1 分＋技巧／曲目進步 2 分＋團體配合 1 分；多位授課老師取平均。個別課僅作升等參考，不因未參加而扣分。${trial?"9 月僅試評，正式計分自 10 月開始。":""}</small>
     </div>`;
   }
   function parentFeedbackCard(){
@@ -88,9 +86,9 @@
     const badges=feedbackLevels.slice(1).map((meta,i)=>`<div class="parent-feedback-badge ${Number(counts[i+1]||0)>0?"earned":""}"><span>${meta.icon}</span><small>${esc(meta.label)}</small><b>×${Number(counts[i+1]||0)}</b></div>`).join("");
     const reward=streak.reward?`<div class="practice-streak-earned"><span>${streak.reward.icon}</span><div><b>${esc(streak.reward.label)}</b><small>本月最長連續練習 ${streak.longest} 天</small></div></div>`:`<div class="practice-streak-earned"><span>🌱</span><div><b>連續練習挑戰</b><small>目前最長 ${streak.longest} 天${streak.next?`｜達 ${streak.next} 天可獲得第一枚徽章`:""}</small></div></div>`;
     return `<div class="parent-practice-feedback">
-      <div class="parent-practice-feedback-head"><b>💛 自主練習｜老師鼓勵回饋</b><span class="practice-feedback-chip">本月 ${monthCount} 次</span></div>
+      <div class="parent-practice-feedback-head"><b>💛 日常鼓勵｜不計分</b><span class="practice-feedback-chip">本月 ${monthCount} 次</span></div>
       <div class="parent-feedback-latest"><div style="font-size:20px;font-weight:900">${m.icon} ${esc(m.label)}</div>${f.comment?`<div style="margin-top:6px;font-size:14px;font-weight:800">${esc(f.comment)}</div>`:""}<small>最近回饋｜${esc(f.teacherName||"老師")}${f.updatedAt?`｜${esc(String(f.updatedAt).slice(0,10))}`:""}</small></div>
-      <div class="parent-feedback-section-title">🏅 鼓勵徽章牆</div>
+      <small style="display:block;margin:7px 0;color:var(--muted)">此區為老師平時鼓勵互動，不列入任何成績。</small><div class="parent-feedback-section-title">🏅 鼓勵徽章牆</div>
       <div class="parent-feedback-badges">${badges}</div>
       <div class="parent-feedback-section-title">🔥 連續練習獎勵</div>
       ${reward}
