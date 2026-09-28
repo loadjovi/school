@@ -59,8 +59,12 @@ app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handle
   const privatePresent=privateEffective.filter(x=>["present","late"].includes(x.status)).length;
   // 日常團體課期末 5%：分部＋合奏＋綜合課；個別課維持獨立紀錄，不納入此 5%。
   // 遲到仍視為到課；請假與缺席依比例扣分。當月進行中為暫估，歷史月份為正式結果。
-  const attendancePresent=sectionPresent+ensemblePresent+comprehensivePresent;
-  const attendanceTotal=sectionEffective.length+ensembleEffective.length+comprehensiveEffective.length;
+  const groupEffective=[...sectionEffective,...ensembleEffective,...comprehensiveEffective];
+  const attendanceEligible=groupEffective.filter(x=>String(x.status||"")!=="leave");
+  const attendancePresent=attendanceEligible.filter(x=>["present","late"].includes(String(x.status||""))).length;
+  const attendanceLeave=groupEffective.filter(x=>String(x.status||"")==="leave").length;
+  const attendanceAbsent=attendanceEligible.filter(x=>String(x.status||"")==="absent").length;
+  const attendanceTotal=attendanceEligible.length;
   const attendanceRate=attendanceTotal?Math.min(attendancePresent/attendanceTotal,1):null;
   const attendanceScore5=attendanceRate==null?null:Math.round(attendanceRate*500)/100;
   const master=await getStudentMaster(studentId,schoolId);
@@ -71,7 +75,7 @@ app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handle
     ensemblePresent,ensembleTotal:ensembleEffective.length,
     comprehensivePresent,comprehensiveTotal:comprehensiveEffective.length,
     privatePresent,privateTotal:privateEffective.length,
-    attendancePresent,attendanceTotal,attendanceRate:attendanceRate==null?null:Math.round(attendanceRate*1000)/10,attendanceScore5,
+    attendancePresent,attendanceTotal,attendanceLeave,attendanceAbsent,attendanceRate:attendanceRate==null?null:Math.round(attendanceRate*1000)/10,attendanceScore5,
     today,todayCourses,
     weightedScore:null
   });
