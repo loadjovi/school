@@ -215,3 +215,11 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
   .private-editing-banner{position:sticky;top:0;z-index:3;box-shadow:0 2px 6px rgba(15,23,42,.08)}
   .private-active-student{padding:13px 12px}
 }
+
+/* 家長首頁：日常上課出勤期末 5% 月分數 */
+.parent-attendance-score{margin-top:10px;padding:12px;border:1px solid #c9d7f6;border-radius:14px;background:#f7f9ff}
+.parent-attendance-score-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.parent-attendance-score-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
+.parent-attendance-score-grid>div{padding:10px;border-radius:11px;background:#fff}
+.parent-attendance-score-grid b{display:block;font-size:18px;color:#284aa0}
+.parent-attendance-score-grid small{display:block;margin-top:3px;color:var(--muted);font-size:10px}
