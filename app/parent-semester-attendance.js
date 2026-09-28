@@ -49,11 +49,11 @@
     if(!d||String(d.studentId)!==String(state.student?.studentId||""))return "";
     const s=d.semesterScore||{},months=Array.isArray(d.monthlyScores)?d.monthlyScores:[],policy=d.scorePolicy||{};
     const total=s.total20==null?"待完成":`${Math.round(Number(s.total20)*100)/100}/20`;
-    const privateBased=s.performanceSource==="privateLessonFrequency";
-    const source=privateBased?"個課月次數平均":"分部老師學期末評量";
+    const privateBased=s.performanceSource==="privateLessonFrequency",sectionFallback=s.performanceSource==="sectionFinal";
+    const source=privateBased?"個課月次數平均":sectionFallback?"分部老師學期末評量":"學期進行中";
     const performanceNote=privateBased
       ?`本學期正式月份共完成個課 ${Number(s.privateLessonCompleted||0)} 堂；每月完成 4 次 = 5 分，再將各月分數做學期平均。`
-      :`本學期沒有完成個課，最後 5% 由分部老師於學期末評量一次。`;
+      :sectionFallback?`本學期沒有完成個課，最後 5% 由分部老師於學期末評量一次。`:`目前尚未完成個課；若學期結束時仍沒有完成個課，才改由分部老師進行一次學期末評量。`;
     const rows=months.map(x=>{
       const p=x.practice||{},a=x.attendance||{},pl=x.privateLesson||{};
       const monthTotal=p.score10==null||a.score5==null||pl.score5==null?null:Math.round((Number(p.score10)+Number(a.score5)+Number(pl.score5))*100)/100;
