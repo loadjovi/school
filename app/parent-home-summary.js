@@ -53,7 +53,7 @@
     const current=String(s.month||"")===localDate().slice(0,7),full=total>0&&present>=total,trial=/^\d{4}-09$/.test(String(s.month||""));
     return `<div class="parent-attendance-score">
       <div class="parent-attendance-score-head">
-        <b>📘 日常上課出勤｜期末 5%</b>
+        <b>📘 課程點名｜期末 5%</b>
         <span class="practice-feedback-chip">${trial?"9月試營運｜":""}${score==null?"尚無點名":(Math.round(score*100)/100)+"/5"}</span>
       </div>
       ${total? `<div class="parent-attendance-score-grid">
@@ -61,30 +61,30 @@
         <div><b>${rate==null?"—":rate+"%"}</b><small>${full?"全勤":"出席比例"}${leave?"｜核准請假 "+leave+" 次不扣分":""}</small></div>
       </div>
       <div class="monthly-score-formula">換算：${present} ÷ ${total} × 5 ＝ <b>${Math.round(score*100)/100}/5</b></div>`
-      : `<div class="notice" style="margin-top:8px">本月尚無可計分的上課點名紀錄，因此暫不產生出勤分數。</div>`}
-      <small style="display:block;margin-top:8px;color:var(--muted)">計分公開：分部課＋合奏課＋綜合課＋個別課的正式點名都納入；停課與核准請假不列入計分分母，遲到仍計入到課，無故缺席才影響分數。${trial?"9 月僅試算，正式計分自 10 月開始。":current?"本月進行中，目前為暫估分數。":"此月份為正式結果。"}</small>
+      : `<div class="notice" style="margin-top:8px">本月尚無可計分的分部課／合奏課／綜合課點名紀錄，因此暫不產生出勤分數。</div>`}
+      <small style="display:block;margin-top:8px;color:var(--muted)">計分範圍：分部課＋合奏課＋綜合課；個別課不納入此 5%。停課與核准請假不列入計分分母，遲到仍計入到課，無故缺席才影響分數。${trial?"9 月僅試算，正式計分自 10 月開始。":current?"本月進行中，目前為暫估分數。":"此月份為正式結果。"}</small>
     </div>`;
   }
   function parentMonthlyScoreOverview(){
     const s=state.summary||{},qualified=Number(s.practiceQualifiedDays||0),target=Math.max(1,Number(s.practiceEffectiveTargetDays||s.practiceTargetDays||30));
     const practice=Math.round(Math.min(qualified/target,1)*1000)/100;
     const attendance=s.attendanceScore5==null?null:Math.round(Number(s.attendanceScore5)*100)/100;
-    const privateScore=s.privatePerformanceAverage==null?null:Math.round(Number(s.privatePerformanceAverage)*100)/100;
-    const privateCount=Number(s.privatePerformanceCount||0);
+    const privateCount=Number(s.privateCompletedForScore||0),privateTarget=Math.max(1,Number(s.privateMonthlyTarget||4));
+    const privateScore=Math.round(Math.min(privateCount/privateTarget,1)*500)/100;
     const trial=/^\d{4}-09$/.test(String(s.month||"")),month=String(s.month||localDate().slice(0,7)).slice(5);
-    const baseKnown=attendance!=null,knownScore=Math.round((practice+(attendance||0))*100)/100,knownMax=baseKnown?15:10;
+    const monthComplete=attendance!=null,monthTotal=monthComplete?Math.round((practice+attendance+privateScore)*100)/100:null;
     const row=(icon,title,value,meta,cls="")=>`<div class="parent-score-row ${cls}"><div class="parent-score-row-main"><span class="parent-score-icon">${icon}</span><div><b>${title}</b><small>${meta}</small></div></div><div class="parent-score-value">${value}</div></div>`;
     return `<section class="parent-score-overview">
       <div class="parent-score-overview-head">
-        <div><b>📊 ${month}月${trial?"評分試算":"學習進度"}｜期末 20%</b><small>10% 自主練習＋5% 所有課程點名；最後 5% 以個課學習表現為主，無個課者於學期末由分部老師評量一次。</small></div>
-        <span class="parent-score-total is-pending">已計 ${knownScore}/${knownMax}</span>
+        <div><b>📊 ${month}月${trial?"評分試算":"學習進度"}｜期末 20%</b><small>自主練習 10%＋課程點名 5%＋個課／期末評量 5%。</small></div>
+        <span class="parent-score-total ${monthComplete?"is-complete":"is-pending"}">${monthComplete?monthTotal+"/20":"已計 "+practice+"/10"}</span>
       </div>
       <div class="parent-score-indent">
         ${row("🎯","自主練習｜10%",practice+"/10",`系統自動計分｜有效練習 ${qualified}/${target} 天`,"practice")}
-        ${row("📘","所有課程點名｜5%",attendance==null?"待資料":attendance+"/5",attendance==null?"尚無可計分點名":"分部／合奏／綜合／個課皆納入；核准請假不扣分","attendance")}
-        ${row("🎻","學習表現｜5%",privateScore==null?"學期末結算":privateScore+"/5",privateScore==null?"本月尚無個課學習表現；整學期無個課者由分部老師期末評量":"本月個課 "+privateCount+" 堂學習表現平均","learning")}
+        ${row("📘","課程點名｜5%",attendance==null?"待資料":attendance+"/5",attendance==null?"尚無可計分點名":"只計分部／合奏／綜合；核准請假不扣分","attendance")}
+        ${row("🎻","個課學習表現｜5%",privateScore+"/5",`本月完成個課 ${privateCount}/${privateTarget} 次；每月 4 次 = 5 分`,"learning")}
       </div>
-      <small class="parent-score-overview-foot">${trial?"9 月為試營運，以上僅供試算；正式成績自 10 月開始。":"最後 5% 是學期層級成績：有個課者採本學期各堂個課老師評分平均；沒有個課者才由分部老師於學期末評量一次。"}</small>
+      <small class="parent-score-overview-foot">${trial?"9 月為試營運，以上僅供試算；正式成績自 10 月開始。":"上學期個課 5% 以 10～12 月每月分數做學期平均；若整學期沒有完成個課，則不採個課 0 分，而是改由分部老師於學期末評量一次。"}</small>
     </section>`;
   }
   function parentFeedbackCard(){
