@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
 import { getTenantContext, ensureStudentAccess, getStudentIdAliases, json } from "../lib/auth.js";
-import { listByStudent, getStudentMaster, semesterLabel, activityStudentId } from "../lib/storage.js";
+import { listByStudent, getStudentMaster, semesterLabel, activityStudentId, ensureTenantTables, table, tenantStudentPartition } from "../lib/storage.js";
 
 function safeInt(v){const n=Number.parseInt(String(v||""),10);return Number.isFinite(n)?n:0}
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
@@ -17,6 +17,35 @@ function termRange(schoolYear,semester){
   if(!roc||!["1","2"].includes(s))return null;
   if(s==="1")return {start:`${greg}-08-01`,end:`${greg+1}-01-31`};
   return {start:`${greg+1}-02-01`,end:`${greg+1}-07-31`};
+}
+function scoreMonths(schoolYear,semester){
+  const roc=safeInt(schoolYear),greg=roc+1911;
+  if(String(semester)==="1")return [9,10,11,12].map(m=>`${greg}-${String(m).padStart(2,"0")}`);
+  return [2,3,4,5].map(m=>`${greg+1}-${String(m).padStart(2,"0")}`);
+}
+function monthDays(month){const [y,m]=String(month).split("-").map(Number);return new Date(y,m,0).getDate()}
+function round2(v){return Math.round(Number(v||0)*100)/100}
+function average(values){const xs=values.filter(v=>v!=null&&Number.isFinite(Number(v))).map(Number);return xs.length?round2(xs.reduce((a,b)=>a+b,0)/xs.length):null}
+async function practiceForAliases(aliases,start,end,schoolId){
+  const sets=await Promise.all(aliases.map(id=>listByStudent("practice",id,start,end,schoolId)));
+  const latest=new Map();
+  for(const row of sets.flat()){
+    const key=[activityStudentId(row),String(row.rowKey||"")].join("|");
+    const old=latest.get(key),stamp=`${String(row.createdAt||"")}|${String(row.rowKey||"")}`,oldStamp=old?`${String(old.createdAt||"")}|${String(old.rowKey||"")}`:"";
+    if(!old||stamp>=oldStamp)latest.set(key,row);
+  }
+  return [...latest.values()];
+}
+async function monthlyEvaluationsForAliases(aliases,schoolId){
+  const rows=[],seen=new Set();
+  for(const id of aliases){
+    const partition=tenantStudentPartition(schoolId,id);
+    for await(const e of table("tenantPracticeMonthlyEvaluation").listEntities({queryOptions:{filter:`PartitionKey eq '${String(partition).replaceAll("'","''")}'`}})){
+      const key=`${e.partitionKey}|${e.rowKey}`;if(seen.has(key))continue;seen.add(key);
+      rows.push({month:String(e.evaluationMonth||""),rating:Number(e.rating||0),teacherEmail:String(e.teacherEmail||"")});
+    }
+  }
+  return rows;
 }
 function blank(){return {present:0,late:0,leave:0,absent:0,cancelled:0,total:0,attended:0,rate:null}}
 function addStat(bucket,status){
@@ -67,11 +96,14 @@ app.http("parentSemesterAttendance",{
     if(!range)return json({error:"學年度或學期格式不正確"},400);
     const today=taipeiDate(),end=today<range.end?today:range.end;
     const aliases=await getStudentIdAliases(studentId,schoolId);
-    const [sectionRows,ensembleRows,comprehensiveRows,privateRows]=await Promise.all([
+    await ensureTenantTables();
+    const [sectionRows,ensembleRows,comprehensiveRows,privateRows,practiceRows,monthlyEvaluations]=await Promise.all([
       recordsForAliases("section",aliases,range.start,end,schoolId),
       recordsForAliases("ensemble",aliases,range.start,end,schoolId),
       recordsForAliases("comprehensive",aliases,range.start,end,schoolId),
-      recordsForAliases("privateLesson",aliases,range.start,end,schoolId)
+      recordsForAliases("privateLesson",aliases,range.start,end,schoolId),
+      practiceForAliases(aliases,range.start,end,schoolId),
+      monthlyEvaluationsForAliases(aliases,schoolId)
     ]);
     const records=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows.filter(r=>["present","late","leave","absent","cancelled"].includes(r.status))]
       .sort((a,b)=>String(b.eventDate).localeCompare(String(a.eventDate))||String(b.createdAt).localeCompare(String(a.createdAt)));
@@ -81,10 +113,62 @@ app.http("parentSemesterAttendance",{
       addStat(stats[key],r.status);addStat(stats.overall,r.status);
     }
     Object.values(stats).forEach(finish);
+
+    // 學期成績：自主練習 10%＋日常團體課出勤 5%＋個別課加分 5%。
+    // 個別課為加分項，僅以「已完成／家長確認後的 present 或 late」累積；停課不扣分。
+    const months=scoreMonths(schoolYear,semester),currentMonth=today.slice(0,7);
+    const qualifiedMinutes=Number(process.env.PRACTICE_QUALIFIED_MINUTES||15);
+    const practiceTargetDays=Number(process.env.PRACTICE_TARGET_DAYS||30);
+    const privateTarget=Math.max(1,Number(process.env.PRIVATE_LESSON_BONUS_TARGET_PER_MONTH||4));
+    const monthlyScores=months.map(month=>{
+      const future=month>currentMonth;
+      const p=practiceRows.filter(x=>String(x.eventDate||"").startsWith(month));
+      const qualifiedDays=new Set(p.filter(x=>x.qualified===true||Number(x.minutes||0)>=qualifiedMinutes).map(x=>String(x.eventDate||""))).size;
+      const days=monthDays(month),elapsed=month===currentMonth?Number(today.slice(8,10)):days;
+      const targetDays=Math.max(1,Math.min(practiceTargetDays,elapsed));
+      const practicePoints=round2(Math.min(qualifiedDays/targetDays,1)*7);
+      const evalRows=monthlyEvaluations.filter(x=>x.month===month&&x.rating>=1&&x.rating<=5);
+      const teacherAverage=evalRows.length?round2(evalRows.reduce((n,x)=>n+x.rating,0)/evalRows.length):null;
+      const teacherPoints=teacherAverage==null?null:round2(teacherAverage/5*3);
+      const practiceScore10=future||teacherPoints==null?null:round2(practicePoints+teacherPoints);
+
+      const groupRows=[...sectionRows,...ensembleRows,...comprehensiveRows].filter(x=>String(x.eventDate||"").startsWith(month)&&x.status!=="cancelled");
+      const attendanceTotal=groupRows.length;
+      const attendancePresent=groupRows.filter(x=>x.status==="present"||x.status==="late").length;
+      const attendanceScore5=future||!attendanceTotal?null:round2(Math.min(attendancePresent/attendanceTotal,1)*5);
+
+      const monthPrivate=privateRows.filter(x=>String(x.eventDate||"").startsWith(month));
+      const privateCompleted=monthPrivate.filter(x=>["present","late"].includes(String(x.status||""))).length;
+      const privateCancelled=monthPrivate.filter(x=>String(x.status||"")==="cancelled").length;
+      const privateScore5=future?null:round2(Math.min(privateCompleted/privateTarget,1)*5);
+      const total20=practiceScore10==null||attendanceScore5==null?null:round2(practiceScore10+attendanceScore5+privateScore5);
+      return {
+        month,future,status:future?"future":month===currentMonth?"provisional":"final",
+        practice:{qualifiedDays,targetDays,practicePoints,teacherAverage,teacherCount:evalRows.length,teacherPoints,score10:practiceScore10},
+        attendance:{present:attendancePresent,total:attendanceTotal,rate:attendanceTotal?round2(attendancePresent/attendanceTotal*100):null,score5:attendanceScore5},
+        privateLesson:{completed:privateCompleted,cancelled:privateCancelled,target:privateTarget,pointsPerLesson:round2(5/privateTarget),score5:privateScore5},
+        total20
+      };
+    });
+    const activeMonths=monthlyScores.filter(x=>!x.future);
+    const semesterScore={
+      practice10:average(activeMonths.map(x=>x.practice.score10)),
+      attendance5:average(activeMonths.map(x=>x.attendance.score5)),
+      privateLesson5:average(activeMonths.map(x=>x.privateLesson.score5)),
+      total20:null,
+      monthsPlanned:months.length,
+      monthsElapsed:activeMonths.length,
+      status:today>=range.end?"final":"provisional"
+    };
+    if(semesterScore.practice10!=null&&semesterScore.attendance5!=null&&semesterScore.privateLesson5!=null){
+      semesterScore.total20=round2(semesterScore.practice10+semesterScore.attendance5+semesterScore.privateLesson5);
+    }
     return json({
       studentId,schoolYear,semester,semesterName:semesterLabel(semester)||`${semester}學期`,
       start:range.start,end,termEnd:range.end,asOf:today,
       student:master?{name:String(master.studentName||""),grade:String(master.grade||""),groupName:String(master.groupName||""),section:String(master.section||"待確認"),instrument:String(master.instrument||"")}:null,
+      scorePolicy:{practiceWeight:10,attendanceWeight:5,privateLessonWeight:5,totalWeight:20,privateTargetPerMonth:privateTarget,privatePointsPerCompletedLesson:round2(5/privateTarget),months},
+      monthlyScores,semesterScore,
       stats,records
     });
   }
