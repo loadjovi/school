@@ -151,7 +151,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
 .parent-monthly-score-grid small{display:block;margin-top:3px;color:var(--muted);font-size:10px}
 
 /* 家長個別課紀錄：精簡顯示，避免歷史紀錄過長 */
-.private-history-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
+.private-history-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
 .private-history-summary>div{padding:10px;border:1px solid #dde5e0;border-radius:12px;background:#f8faf9;text-align:center}
 .private-history-summary b{display:block;font-size:18px;color:#3155a4}
 .private-history-summary span{display:block;margin-top:3px;font-size:10px;color:var(--muted)}
@@ -251,4 +251,16 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
   .semester-score-month{grid-template-columns:38px repeat(3,minmax(0,1fr)) 48px;font-size:9px}
   .semester-score-head b{font-size:16px}
   .semester-score-total{font-size:14px}
+}
+
+/* 統一學習參與與進步 5% 月評量 */
+.learning-score-box{border-color:#cfe6d5;background:#f7fcf8}
+.learning-rubric-list{display:grid;gap:8px;margin-top:8px}
+.learning-rubric-row{display:grid;grid-template-columns:minmax(0,1fr) 108px;gap:10px;align-items:center;padding:9px 10px;border:1px solid #d7e6dc;border-radius:11px;background:#fff}
+.learning-rubric-row b{display:block;font-size:12px;color:#285d3c}
+.learning-rubric-row small{display:block;margin-top:3px;color:var(--muted);font-size:10px;line-height:1.4}
+.learning-rubric-row select{margin:0}
+@media(max-width:520px){
+  .private-history-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .learning-rubric-row{grid-template-columns:1fr}
 }
