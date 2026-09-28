@@ -151,16 +151,25 @@ app.http("parentSemesterAttendance",{
       };
     });
     const activeMonths=monthlyScores.filter(x=>!x.future);
+    const lastScoreMonth=months[months.length-1],lastScoreDate=`${lastScoreMonth}-${String(monthDays(lastScoreMonth)).padStart(2,"0")}`;
+    const finalStatus=today>=lastScoreDate;
+    const practiceValues=activeMonths.map(x=>x.practice.score10).filter(v=>v!=null);
+    const attendanceValues=activeMonths.map(x=>x.attendance.score5).filter(v=>v!=null);
+    const privateValues=activeMonths.map(x=>x.privateLesson.score5).filter(v=>v!=null);
     const semesterScore={
-      practice10:average(activeMonths.map(x=>x.practice.score10)),
-      attendance5:average(activeMonths.map(x=>x.attendance.score5)),
-      privateLesson5:average(activeMonths.map(x=>x.privateLesson.score5)),
+      practice10:average(practiceValues),
+      attendance5:average(attendanceValues),
+      privateLesson5:average(privateValues),
       total20:null,
       monthsPlanned:months.length,
       monthsElapsed:activeMonths.length,
-      status:today>=range.end?"final":"provisional"
+      practiceMonths:practiceValues.length,
+      attendanceMonths:attendanceValues.length,
+      privateLessonMonths:privateValues.length,
+      status:finalStatus?"final":"provisional",
+      complete:!finalStatus||(practiceValues.length===months.length&&attendanceValues.length===months.length&&privateValues.length===months.length)
     };
-    if(semesterScore.practice10!=null&&semesterScore.attendance5!=null&&semesterScore.privateLesson5!=null){
+    if(semesterScore.practice10!=null&&semesterScore.attendance5!=null&&semesterScore.privateLesson5!=null&&semesterScore.complete){
       semesterScore.total20=round2(semesterScore.practice10+semesterScore.attendance5+semesterScore.privateLesson5);
     }
     return json({
