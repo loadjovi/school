@@ -1,13 +1,20 @@
 (()=>{
   const teacherAccount=()=>state.me?.role!=="admin"&&["teacher","sectionTeacher","privateTeacher"].includes(state.me?.role)||state.me?.role!=="admin"&&!!state.me?.capabilities?.teacherSettings;
   const cap=()=>state.me?.capabilities||{};
+  function teacherFinalEvalMonth(month){
+    const [y,m]=String(month||"").split("-").map(Number);
+    if(!y)return "";
+    if(m===1)return `${y-1}-12`;
+    if(m>=8)return `${y}-12`;
+    return `${y}-05`;
+  }
   state.teacherTodayStatus=state.teacherTodayStatus||null;
   state.teacherTodayStatusDate=state.teacherTodayStatusDate||"";
   state.teacherAttention=state.teacherAttention||null;
   state.teacherTodayCourses=state.teacherTodayCourses||[];
   state.teacherLearningEvaluation=state.teacherLearningEvaluation||null;
   state.teacherLearningEvaluationMonth=state.teacherLearningEvaluationMonth||"";
-  async function loadTeacherTodayStatus(date){try{const month=date.slice(0,7);const [att,practice,schedule,learning]=await Promise.all([api(`/api/attendance-report?month=${encodeURIComponent(month)}`),api(`/api/practice-progress?month=${encodeURIComponent(month)}`),api(`/api/school-schedule?date=${encodeURIComponent(date)}`),api(`/api/learning-monthly-evaluation?month=${encodeURIComponent(month)}`).catch(()=>({items:[]}))]);state.teacherTodayStatus=att;state.teacherAttention=practice;state.teacherTodayCourses=(schedule?.items||[]).filter(x=>String(x.effectiveStatus||"active")!=="cancelled");state.teacherLearningEvaluation=learning;state.teacherLearningEvaluationMonth=month;state.teacherTodayStatusDate=date;render()}catch{state.teacherTodayStatus=null;state.teacherAttention=null;state.teacherTodayCourses=[];state.teacherLearningEvaluation=null;state.teacherLearningEvaluationMonth=date.slice(0,7);state.teacherTodayStatusDate=date}}
+  async function loadTeacherTodayStatus(date){try{const month=date.slice(0,7),finalMonth=teacherFinalEvalMonth(month),needFallback=!!cap().section&&month===finalMonth;const [att,practice,schedule,learning]=await Promise.all([api(`/api/attendance-report?month=${encodeURIComponent(month)}`),api(`/api/practice-progress?month=${encodeURIComponent(month)}`),api(`/api/school-schedule?date=${encodeURIComponent(date)}`),needFallback?api(`/api/learning-monthly-evaluation?month=${encodeURIComponent(finalMonth)}&mode=semesterFallback`).catch(()=>({items:[]})):Promise.resolve(null)]);state.teacherTodayStatus=att;state.teacherAttention=practice;state.teacherTodayCourses=(schedule?.items||[]).filter(x=>String(x.effectiveStatus||"active")!=="cancelled");state.teacherLearningEvaluation=learning;state.teacherLearningEvaluationMonth=month;state.teacherTodayStatusDate=date;render()}catch{state.teacherTodayStatus=null;state.teacherAttention=null;state.teacherTodayCourses=[];state.teacherLearningEvaluation=null;state.teacherLearningEvaluationMonth=date.slice(0,7);state.teacherTodayStatusDate=date}}
   const detailPages=new Set(["section","ensemble","comprehensive","private"]);
   function mountTeacherBack(){
     if(!teacherAccount()||!detailPages.has(state.page)||document.getElementById("teacherHomeBack"))return;
@@ -90,7 +97,7 @@
       courseCard("section","🎼",sectionGroup?sectionGroup+"團分部課":"分部課",sectionGroup?todayName+"｜依老師設定的團別＋分部帶入學生點名":"",c.section&&hasTodaySection,progress("section",sectionGroup,sectionExpected),sectionGroup,date),
       courseCard("ensemble","🎻","A／B團合奏課","今天 12:30–13:20｜依老師設定的 A／B 團帶入學生",c.ensemble&&hasTodayEnsemble,progress("ensemble","",ensembleExpected)),
       courseCard("comprehensive","🎶","弦樂團體課（綜合課）","今天 08:45–10:15｜A／B／儲備團共同參加",hasTodayComprehensive,progress("comprehensive","",comprehensiveExpected)),
-      courseCard("private","👤","個別課","預約、改期／停課、老師完課與家長確認",c.private,null)
+      courseCard("private","👤","個別課","預約、改期／停課；完課時順手評學生學習表現 1～5 級",c.private,null)
     ].filter(Boolean).join("");
     const todayLabels=todayCourses.filter(x=>["section","ensemble","comprehensive"].includes(String(x.courseType||""))).map(x=>String(x.courseName||"課程")).filter(Boolean);const groupSchedule=todayLabels.length?[...new Set(todayLabels)].join("＋"):"無固定團體課";
     const practiceAll=(state.teacherAttention?.items||[]).map(x=>{const gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),rate=Number(x.practiceRatePercent||0),active=Number(x.activeDays||0);return {...x,_gap:gap,_rate:rate,_active:active}});
@@ -102,24 +109,20 @@
     const stablePractice=practiceAll.filter(x=>x._gap<3&&x._rate>=80).length;
     const privateIds=new Set((state.me?.privateStudentIds||[]).map(String)),latestPrivate=new Map();for(const r of todayRecords.filter(x=>["private","privateLesson"].includes(String(x.classType))))latestPrivate.set(String(r.studentId),r);
     const attentionHtml=practiceAttention.length?practiceAttention.map(x=>`<div class="item" style="padding:10px 12px"><div><b>${x._gap>=7?"🔴":x._gap>=3?"🟡":"⚠️"} ${esc(x.name)}</b><small>${x._gap===999?"本月尚無自主練習":x._gap>=3?`${x._gap} 天未練習`:`目前達標率 ${x._rate}%`}｜本月 ${x._active} 天｜${esc(x.groupName)}團 ${esc(x.section)}</small></div></div>`).join(""):`<div class="notice">目前沒有明顯需要關注的自主練習紀錄。</div>`;
-    const learningItems=Array.isArray(state.teacherLearningEvaluation?.items)?state.teacherLearningEvaluation.items:[];
-    const learningMap=new Map(learningItems.map(x=>[String(x.studentId),x]));
-    const evalTotal=practiceAll.length;
-    const evalDone=practiceAll.filter(x=>!!learningMap.get(String(x.studentId))?.myRating).length;
-    const evalPending=Math.max(0,evalTotal-evalDone);
-    const evalPct=evalTotal?Math.round(evalDone/evalTotal*100):100;
-    const trial=/^\d{4}-09$/.test(date.slice(0,7)),monthNum=Number(date.slice(5,7)),day=Number(date.slice(8,10)),nearMonthEnd=day>=25;
-    const evaluationCard=`<div class="teacher-monthly-task ${evalPending?"has-pending":"is-done"}">
-      <div class="teacher-monthly-task-head"><div><b>📊 ${monthNum}月月底正式評量</b><small>老師每月唯一需要完成的正式評分${trial?"｜9月試評":""}</small></div><span class="badge ${evalPending?"warn":"ok"}">${evalDone}/${evalTotal}</span></div>
+    const month=date.slice(0,7),finalEvalMonth=teacherFinalEvalMonth(month),finalEvalOpen=!!c.section&&month===finalEvalMonth;
+    const fallbackItems=Array.isArray(state.teacherLearningEvaluation?.items)?state.teacherLearningEvaluation.items:[],eligible=fallbackItems.filter(x=>x.fallbackEligible);
+    const evalDone=eligible.filter(x=>!!x.myRating).length,evalPending=Math.max(0,eligible.length-evalDone),evalPct=eligible.length?Math.round(evalDone/eligible.length*100):100;
+    const evaluationSection=finalEvalOpen?`<div class="card"><h2>📌 學期末待辦</h2><div class="teacher-monthly-task ${evalPending?"has-pending":"is-done"}">
+      <div class="teacher-monthly-task-head"><div><b>📊 學期末分部評量</b><small>只評整學期沒有完成個別課的學生｜每學期一次</small></div><span class="badge ${evalPending?"warn":"ok"}">${evalDone}/${eligible.length}</span></div>
       <div class="teacher-monthly-task-progress"><i style="width:${evalPct}%"></i></div>
-      <div class="teacher-monthly-task-note">${evalPending?(nearMonthEnd?`⚠️ 本月尚有 ${evalPending} 位學生待評量，建議月底前完成。`:`尚有 ${evalPending} 位學生待評量，可隨時先完成。`):"✅ 本月正式評量已完成。"}</div>
-      <button class="primary" style="width:100%;margin-top:9px" onclick="go('teacherEvaluation')">${evalPending?"立即評量":"查看本月評量"} →</button>
-    </div>`;
-    const progressCard=`<button class="item" style="width:100%;text-align:left;background:#fff;cursor:pointer" onclick="go('practiceProgress')"><div><b>📚 自主練習進度</b><small>查看練習天數、需要關注學生與日常鼓勵；不在這裡做正式評分</small></div><span style="font-size:22px">›</span></button>`;
+      <div class="teacher-monthly-task-note">${eligible.length===0?"✅ 本學期沒有需要分部老師替代評量的學生。":evalPending?`尚有 ${evalPending} 位未參加個課的學生待評量。`:"✅ 本學期替代評量已全部完成。"}</div>
+      <button class="primary" style="width:100%;margin-top:9px" onclick="go('teacherEvaluation')">${evalPending?"立即完成期末評量":"查看期末評量"} →</button>
+    </div></div>`:"";
+    const progressCard=`<button class="item" style="width:100%;text-align:left;background:#fff;cursor:pointer" onclick="go('practiceProgress')"><div><b>📚 自主練習進度</b><small>查看練習天數、需要關注學生與日常鼓勵；平時不需要做正式評量</small></div><span style="font-size:22px">›</span></button>`;
     return `<div class="card hero"><h2>🎓 今日教學</h2><div class="notice"><b>${esc(date)}｜${esc(todayName)}</b><br>今日固定課程：${esc(groupSchedule)}。首頁只顯示今天符合老師授課權限的課程。</div></div>
       <div class="card"><h2>今日點名完成度 <span style="font-size:15px">${completedTasks}/${totalTasks||0}</span></h2><div style="height:10px;background:#eef1f4;border-radius:999px;overflow:hidden;margin:8px 0 12px"><div style="height:100%;width:${pct}%;background:#4662b5;border-radius:999px"></div></div>${taskHtml}</div>
       <div class="card"><h2>今日課程</h2>${teachingCards||'<div class="notice">今天沒有符合您授課權限的固定課程。</div>'}</div>
-      <div class="card"><h2>📌 本月待辦</h2>${evaluationCard}</div>
+      ${evaluationSection}
       <div class="card"><h2>需要關注 <span class="badge warn">${practiceAttentionAll.length}</span></h2><div class="notice">這裡只協助老師掌握自主練習狀況；需要時可給日常鼓勵，但不影響正式成績。${stablePractice?`另有 ${stablePractice} 位學生近期穩定練習。`:""}</div>${attentionHtml}${practiceAttentionAll.length>5?`<small style="margin:8px 2px;display:block">目前先顯示最需關注的 5 人，完整名單請進入下方查看。</small>`:""}${progressCard}</div>`;
   }
 
@@ -127,7 +130,7 @@
   nav=function(){
     if(state.page==="contextSelect")return previousNav();
     if(!teacherAccount())return previousNav();
-    return `<nav class="nav">${navBtn("teacherHome","🎓","教學")}${navBtn("attendance","📋","出勤")}${navBtn("teacherEvaluation","📊","評量")}${navBtn("teacherSettings","⚙️","我的教學")}</nav>`;
+    return `<nav class="nav">${navBtn("teacherHome","🎓","教學")}${navBtn("attendance","📋","出勤")}${cap().section?navBtn("teacherEvaluation","📊","期末評量"):""}${navBtn("teacherSettings","⚙️","我的教學")}</nav>`;
   };
 
   const previousGo=go;
