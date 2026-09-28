@@ -119,11 +119,13 @@ app.http("parentSemesterAttendance",{
     }
     Object.values(stats).forEach(finish);
 
-    // 正式學期成績：自主練習 10%＋所有課程點名 5%＋學習表現 5%。
-    // 學習表現以個別課老師每堂「學生學習表現」平均為主；整學期沒有完成個課者，才由分部老師於學期末評量一次。
+    // 正式學期成績：自主練習 10%＋團體課程點名 5%＋學習表現 5%。
+    // 點名 5% 僅計分部課、合奏課、綜合課；個別課不納入此 5%。
+    // 學習表現 5%：有完成個課者，每月完成 4 次 = 5 分，正式月份取學期平均；整學期沒有完成個課者，才由分部老師於學期末評量一次。
     const months=scoreMonths(schoolYear,semester),currentMonth=today.slice(0,7),lastScoreMonth=months[months.length-1];
     const qualifiedMinutes=Number(process.env.PRACTICE_QUALIFIED_MINUTES||15);
     const practiceTargetDays=Number(process.env.PRACTICE_TARGET_DAYS||30);
+    const privateMonthlyTarget=4;
     const monthlyScores=months.map(month=>{
       const future=month>currentMonth;
       const p=practiceRows.filter(x=>String(x.eventDate||"").startsWith(month));
@@ -132,28 +134,26 @@ app.http("parentSemesterAttendance",{
       const targetDays=Math.max(1,Math.min(practiceTargetDays,elapsed));
       const practiceScore10=future?null:round2(Math.min(qualifiedDays/targetDays,1)*10);
 
-      // 所有正式點名課程一起計算：分部、合奏、綜合、個別課。停課與核准請假不列入分母；遲到仍算到課。
-      const allCourseRows=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows]
+      // 團體課程點名 5%：分部＋合奏＋綜合。停課與核准請假不列入分母；遲到仍算到課。
+      const groupCourseRows=[...sectionRows,...ensembleRows,...comprehensiveRows]
         .filter(x=>String(x.eventDate||"").startsWith(month)&&["present","late","leave","absent","cancelled"].includes(String(x.status||""))&&x.status!=="cancelled");
-      const attendanceEligible=allCourseRows.filter(x=>x.status!=="leave");
+      const attendanceEligible=groupCourseRows.filter(x=>x.status!=="leave");
       const attendanceTotal=attendanceEligible.length;
       const attendancePresent=attendanceEligible.filter(x=>x.status==="present"||x.status==="late").length;
-      const attendanceLeave=allCourseRows.filter(x=>x.status==="leave").length;
-      const attendanceAbsent=allCourseRows.filter(x=>x.status==="absent").length;
+      const attendanceLeave=groupCourseRows.filter(x=>x.status==="leave").length;
+      const attendanceAbsent=groupCourseRows.filter(x=>x.status==="absent").length;
       const attendanceScore5=future||!attendanceTotal?null:round2(Math.min(attendancePresent/attendanceTotal,1)*5);
 
       const monthPrivate=privateRows.filter(x=>String(x.eventDate||"").startsWith(month));
-      const privateCompletedRows=monthPrivate.filter(x=>["teacher_completed","present","late"].includes(String(x.status||""))&&Number(x.studentPerformanceRating||0)>0);
-      const privateRatings=privateCompletedRows.map(x=>Number(x.studentPerformanceRating||0)).filter(v=>v>=1&&v<=5);
-      const privateCompleted=privateCompletedRows.length;
+      const privateCompleted=monthPrivate.filter(x=>["teacher_completed","present","late"].includes(String(x.status||""))).length;
       const privateCancelled=monthPrivate.filter(x=>String(x.status||"")==="cancelled").length;
-      const privatePerformance5=privateRatings.length?average(privateRatings):null;
+      const privateScore5=future?null:round2(Math.min(privateCompleted/privateMonthlyTarget,1)*5);
 
       return {
         month,future,status:future?"future":month===currentMonth?"provisional":"final",
         practice:{qualifiedDays,targetDays,score10:practiceScore10,source:"system"},
-        attendance:{present:attendancePresent,total:attendanceTotal,leave:attendanceLeave,absent:attendanceAbsent,rate:attendanceTotal?round2(attendancePresent/attendanceTotal*100):null,score5:attendanceScore5,source:"allCourses"},
-        privateLesson:{completed:privateCompleted,cancelled:privateCancelled,rated:privateRatings.length,missingRatings:Math.max(0,privateCompleted-privateRatings.length),score5:privatePerformance5},
+        attendance:{present:attendancePresent,total:attendanceTotal,leave:attendanceLeave,absent:attendanceAbsent,rate:attendanceTotal?round2(attendancePresent/attendanceTotal*100):null,score5:attendanceScore5,source:"groupCourses"},
+        privateLesson:{completed:privateCompleted,cancelled:privateCancelled,target:privateMonthlyTarget,score5:privateScore5},
         base15:practiceScore10==null||attendanceScore5==null?null:round2(practiceScore10+attendanceScore5)
       };
     });
@@ -164,15 +164,14 @@ app.http("parentSemesterAttendance",{
     const practiceValues=activeMonths.map(x=>x.practice.score10).filter(v=>v!=null);
     const attendanceValues=activeMonths.map(x=>x.attendance.score5).filter(v=>v!=null);
 
-    const formalPrivateRows=privateRows.filter(x=>months.some(month=>String(x.eventDate||"").startsWith(month))&&["teacher_completed","present","late"].includes(String(x.status||""))&&Number(x.studentPerformanceRating||0)>0);
-    const privatePerformanceValues=formalPrivateRows.map(x=>Number(x.studentPerformanceRating||0)).filter(v=>v>=1&&v<=5);
+    const formalPrivateRows=privateRows.filter(x=>months.some(month=>String(x.eventDate||"").startsWith(month))&&["teacher_completed","present","late"].includes(String(x.status||"")));
     const hasPrivateLesson=formalPrivateRows.length>0;
-    const privateRatingsComplete=hasPrivateLesson&&privatePerformanceValues.length===formalPrivateRows.length;
-    const privateLessonScore5=privateRatingsComplete?average(privatePerformanceValues):null;
+    const privateMonthlyValues=activeMonths.map(x=>x.privateLesson.score5).filter(v=>v!=null);
+    const privateLessonScore5=hasPrivateLesson&&privateMonthlyValues.length?average(privateMonthlyValues):null;
     const fallbackRows=learningEvaluations.filter(x=>x.month===lastScoreMonth&&x.evaluationMode==="semesterFallback"&&x.score5>0);
     const sectionFinal5=!hasPrivateLesson&&fallbackRows.length?average(fallbackRows.map(x=>x.score5)):null;
     const performance5=hasPrivateLesson?privateLessonScore5:sectionFinal5;
-    const performanceSource=hasPrivateLesson?"privateLesson":"sectionFinal";
+    const performanceSource=hasPrivateLesson?"privateLessonFrequency":"sectionFinal";
 
     const semesterScore={
       practice10:average(practiceValues),
@@ -183,8 +182,8 @@ app.http("parentSemesterAttendance",{
       sectionFinal5,
       performanceSource,
       privateLessonCompleted:formalPrivateRows.length,
-      privateLessonRated:privatePerformanceValues.length,
-      privateLessonMissingRatings:Math.max(0,formalPrivateRows.length-privatePerformanceValues.length),
+      privateLessonMonths:privateMonthlyValues.length,
+      privateLessonMonthlyTarget:privateMonthlyTarget,
       sectionFinalTeacherCount:fallbackRows.length,
       total20:null,
       monthsPlanned:months.length,
@@ -201,7 +200,7 @@ app.http("parentSemesterAttendance",{
       studentId,schoolYear,semester,semesterName:semesterLabel(semester)||`${semester}學期`,
       start:range.start,end,termEnd:range.end,asOf:today,
       student:master?{name:String(master.studentName||""),grade:String(master.grade||""),groupName:String(master.groupName||""),section:String(master.section||"待確認"),instrument:String(master.instrument||"")}:null,
-      scorePolicy:{practiceWeight:10,attendanceWeight:5,performanceWeight:5,learningWeight:5,totalWeight:20,months,trialMonth:String(semester)==="1"?`${safeInt(schoolYear)+1911}-09`:"",practiceSource:"system",attendanceSource:"allCourses",attendanceLeaveExcluded:true,performanceRule:"privateLessonFirst",privateLessonScoreSource:"teacherStudentPerformance",sectionFallback:true,sectionFallbackMonth:lastScoreMonth},
+      scorePolicy:{practiceWeight:10,attendanceWeight:5,performanceWeight:5,learningWeight:5,totalWeight:20,months,trialMonth:String(semester)==="1"?`${safeInt(schoolYear)+1911}-09`:"",practiceSource:"system",attendanceSource:"groupCourses",attendanceTypes:["section","ensemble","comprehensive"],attendanceLeaveExcluded:true,performanceRule:"privateLessonFrequencyFirst",privateLessonScoreSource:"monthlyCompletedCount",privateLessonMonthlyTarget:privateMonthlyTarget,sectionFallback:true,sectionFallbackMonth:lastScoreMonth},
       monthlyScores,semesterScore,
       stats,records
     });
