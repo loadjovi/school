@@ -11,6 +11,8 @@
   state.practiceProgressStatus=state.practiceProgressStatus||"全部";
   state.teacherEvaluationFilter=state.teacherEvaluationFilter||"pending";
   state.teacherEvaluationSelected=state.teacherEvaluationSelected||"";
+  state.teacherSemesterFallback=state.teacherSemesterFallback||null;
+  state.teacherSemesterFallbackLoading=false;
   const practiceFeedbackLevels=[{level:1,icon:"🌱",label:"起步中"},{level:2,icon:"👍",label:"持續加油"},{level:3,icon:"🙂",label:"表現不錯"},{level:4,icon:"🌟",label:"很棒喔"},{level:5,icon:"🏆",label:"超級投入"}];
   const practiceFeedbackPresets=["這週練習很穩定，繼續保持！","有進步，記得每天練一點點喔！","基本功有累積，繼續加油！","練習很投入，期待下次上課的表現！","很棒！保持規律練習會進步更快。"];
   state.practiceFeedbackSaving=state.practiceFeedbackSaving||"";
@@ -26,27 +28,43 @@
   async function loadPracticeProgress(){
     if(!canView())return;
     const month=encodeURIComponent(state.practiceProgressMonth);
-    const [progress,feedback,learning]=await Promise.all([
+    const [progress,feedback]=await Promise.all([
       api(`/api/practice-progress?month=${month}`),
-      api(`/api/practice-feedback?month=${month}`).catch(()=>({items:[]})),
-      api(`/api/learning-monthly-evaluation?month=${month}`).catch(()=>({items:[]}))
+      api(`/api/practice-feedback?month=${month}`).catch(()=>({items:[]}))
     ]);
     const feedbackMap=new Map();
     for(const x of (feedback.items||[])){const id=String(x.studentId),arr=feedbackMap.get(id)||[];arr.push(x);feedbackMap.set(id,arr)}
-    const learningMap=new Map((learning.items||[]).map(x=>[String(x.studentId),x]));
     progress.items=(progress.items||[]).map(x=>{
       const history=(feedbackMap.get(String(x.studentId))||[]).sort((a,b)=>String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")));
-      const learningEvaluation=learningMap.get(String(x.studentId))||null;
-      const item={...x,feedback:history[0]||null,feedbackCount:history.length,feedbackHistory:history.slice(0,5),learningEvaluation};
+      const item={...x,feedback:history[0]||null,feedbackCount:history.length,feedbackHistory:history.slice(0,5)};
       item.monthlyScore=scoreParts(item,progress);
       return item;
     });
     state.practiceProgressData=progress;
   }
 
-  function hasMyLearningRating(x){
-    if(isTeacher())return !!x.learningEvaluation?.myRating;
-    return Number(x.learningEvaluation?.score5||0)>0;
+  function taipeiMonth(){
+    return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit"}).format(new Date()).slice(0,7);
+  }
+  function semesterFinalMonth(month=taipeiMonth()){
+    const [y,m]=String(month||"").split("-").map(Number);
+    if(!y)return "";
+    if(m===1)return `${y-1}-12`;
+    if(m>=8)return `${y}-12`;
+    return `${y}-05`;
+  }
+  function sectionFallbackOpen(){
+    const now=taipeiMonth(),finalMonth=semesterFinalMonth(now);
+    return !!state.me?.capabilities?.section&&now===finalMonth;
+  }
+  async function loadSemesterFallback(){
+    if(!isTeacher()||!state.me?.capabilities?.section){state.teacherSemesterFallback=null;return}
+    const month=semesterFinalMonth(taipeiMonth());
+    if(!sectionFallbackOpen()){state.teacherSemesterFallback={month,mode:"semesterFallback",items:[],notOpen:true};return}
+    state.teacherSemesterFallbackLoading=true;
+    try{
+      state.teacherSemesterFallback=await api(`/api/learning-monthly-evaluation?month=${encodeURIComponent(month)}&mode=semesterFallback`);
+    }finally{state.teacherSemesterFallbackLoading=false}
   }
 
   function filteredItems(){
@@ -60,8 +78,6 @@
       if(status==="尚未練習"&&active!==0)return false;
       if(status==="未達標"&&!(active>0&&rate<80))return false;
       if(status==="已達標"&&rate<80)return false;
-      if(status==="待正式評量"&&hasMyLearningRating(x))return false;
-      if(status==="已正式評量"&&!hasMyLearningRating(x))return false;
       return true;
     }).sort((a,b)=>{
       const rank=x=>x.daysSincePractice==null?0:Number(x.daysSincePractice)>=7?1:Number(x.practiceRatePercent||0)<80?2:3;
@@ -94,90 +110,61 @@
     </div>`;
   }
 
-  const learningCriteria=[
-    {key:"attitude",label:"學習態度",weight:1,desc:"專注、主動參與與接受指導"},
-    {key:"preparation",label:"課堂準備",weight:1,desc:"樂器、教材與指定內容準備"},
-    {key:"progress",label:"技巧／曲目進步",weight:2,desc:"音準、節奏、技巧與曲目進步"},
-    {key:"teamwork",label:"團體配合",weight:1,desc:"合奏合作、聆聽與團隊配合"}
-  ];
-  function learningScoreText(x){
-    const e=x.learningEvaluation||{},score=Number(e.score5||0);
-    return score>0?`${score.toFixed(2).replace(/\.00$/,"")}/5`:"待老師評量";
-  }
-  function learningEvaluationPanel(x){
-    const e=x.learningEvaluation||{},mine=e.myRating||null,trial=/^\d{4}-09$/.test(String(state.practiceProgressMonth||""));
-    if(!isTeacher()){
-      const a=e.average||{};
-      return `<div class="monthly-score-box learning-score-box">
-        <div class="monthly-score-title"><b>📊 月底正式評量｜期末 5%</b><span class="practice-feedback-chip">${learningScoreText(x)}${trial?"｜9月試評":""}</span></div>
-        <div class="monthly-score-formula">學習態度 ${a.attitude??"—"}/5｜課堂準備 ${a.preparation??"—"}/5｜技巧／曲目進步 ${a.progress??"—"}/5（×2）｜團體配合 ${a.teamwork??"—"}/5</div>
-        <small style="display:block;margin-top:7px;color:var(--muted)">這是老師每月唯一需要完成的正式評量。統一權重：1＋1＋2＋1＝5 分；多位授課老師評量時取平均。個別課只作學習佐證，不直接計分。</small>
-      </div>`;
-    }
-    const current=key=>Number(mine?.[key]||0),comment=String(mine?.comment||"");
-    const options=learningCriteria.map(m=>`<div class="learning-rubric-row"><div><b>${m.label}｜${m.weight} 分</b><small>${m.desc}</small></div><select id="lm_${m.key}_${esc(x.studentId)}"><option value="">請評分</option>${[1,2,3,4,5].map(n=>`<option value="${n}" ${current(m.key)===n?"selected":""}>${n} / 5</option>`).join("")}</select></div>`).join("");
-    return `<div class="monthly-score-box learning-score-box">
-      <div class="monthly-score-title"><b>📊 月底正式評量｜期末 5%</b><span class="practice-feedback-chip">${learningScoreText(x)}${trial?"｜9月試評":""}</span></div>
-      <small style="display:block;margin:5px 0 9px;color:var(--muted)">每位學生每月只需完成這一個正式老師評量：學習態度 1 分、課堂準備 1 分、技巧／曲目進步 2 分、團體配合 1 分。多位老師取平均；9 月僅試評，正式成績自 10 月起。</small>
-      <div class="learning-rubric-list">${options}</div>
-      <label style="margin-top:10px">學習評量備註（選填）</label>
-      <textarea id="lm_comment_${esc(x.studentId)}" rows="2" maxlength="240" placeholder="例如：本月音準與節奏較穩定，合奏配合度持續進步。">${esc(comment)}</textarea>
-      <button class="secondary" style="width:100%;margin-top:8px" onclick="saveLearningMonthlyEvaluation('${esc(x.studentId)}')">📊 儲存月底正式評量</button>
-      ${e.ratings?.length?`<details class="monthly-rating-history"><summary>查看本月授課老師評量（${e.ratings.length}）</summary>${e.ratings.map(r=>`<div><b>${esc(r.teacherName||"老師")}｜${Number(r.score5||0).toFixed(2)}/5</b><small>態度 ${r.attitude}/5｜準備 ${r.preparation}/5｜進步 ${r.progress}/5｜配合 ${r.teamwork}/5</small>${r.comment?`<small>${esc(r.comment)}</small>`:""}</div>`).join("")}</details>`:""}
-    </div>`;
-  }
   function detailHtml(x){
     if(state.practiceProgressSelected!==String(x.studentId))return "";
     const rows=isAdmin()?(x.records||[]):(x.recent||[]);
     const records=rows.length?`<div style="margin-top:10px">${rows.map(r=>`<div class="item" style="display:block"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(r.practiceDate)}｜${r.minutes} 分鐘</b><span class="badge ${r.qualified?'ok':'warn'}">${r.qualified?'計入練習日':'練習紀錄'}</span></div>${r.startTime||r.endTime?`<small>${esc(r.startTime||'')}～${esc(r.endTime||'')}</small>`:''}${r.practiceContent?`<small style="margin-top:7px"><b>練習內容：</b>${esc(r.practiceContent)}</small>`:''}${r.focus?`<small><b>練習重點：</b>${esc(r.focus)}</small>`:''}</div>`).join("")}</div>`:`<div class="notice" style="margin-top:10px">本月尚無家長回填的自主練習紀錄。</div>`;
-    return records+feedbackPanel(x)+learningEvaluationPanel(x);
+    return records+feedbackPanel(x);
   }
 
+  const fallbackRatingText={1:"需加強",2:"持續努力",3:"穩定",4:"良好",5:"優異"};
   function teacherEvaluationPage(){
-    const d=state.practiceProgressData;
-    if(!d)return `<div class="card"><h2>📊 月底正式評量</h2><div class="notice">正在讀取學生資料…</div></div>`;
-    const all=(d.items||[]),done=all.filter(hasMyLearningRating),pending=all.filter(x=>!hasMyLearningRating(x));
-    const filter=state.teacherEvaluationFilter||"pending";
-    const list=filter==="done"?done:filter==="all"?all:pending;
-    if(!list.some(x=>String(x.studentId)===String(state.teacherEvaluationSelected))){
-      state.teacherEvaluationSelected=String((list[0]||pending[0]||all[0]||{}).studentId||"");
+    const now=taipeiMonth(),finalMonth=semesterFinalMonth(now),open=sectionFallbackOpen();
+    if(!state.me?.capabilities?.section){
+      return `<button class="secondary teacher-eval-back" onclick="go('teacherHome')">← 返回今日教學</button>
+        <div class="card hero"><h2>📊 學期末分部評量｜期末 5%</h2><div class="notice"><b>此功能只提供分部老師使用。</b><br>有參加個別課的學生，最後 5% 已由個課老師在每次完課時留下的學生學習表現平均計算，不需其他老師再評。</div></div>`;
     }
-    const current=all.find(x=>String(x.studentId)===String(state.teacherEvaluationSelected))||null;
-    const pct=all.length?Math.round(done.length/all.length*100):100;
-    const month=String(state.practiceProgressMonth||""),trial=/^\d{4}-09$/.test(month);
+    if(!open){
+      const label=finalMonth.endsWith("-12")?"12 月":"5 月";
+      return `<button class="secondary teacher-eval-back" onclick="go('teacherHome')">← 返回今日教學</button>
+        <div class="card hero teacher-eval-hero">
+          <div class="section-title"><div><h2>📊 學期末分部評量｜期末 5%</h2><div class="muted">只有「整學期未參加個別課」的學生需要評一次</div></div><span class="badge ok">平時免評</span></div>
+          <div class="notice"><b>目前不需要進行評量。</b><br>本學期替代評量將於 <b>${esc(label)}</b> 開放。系統會自動排除已有完成個別課的學生，只留下需要分部老師評量的學生。<br><br>因此老師平時不用做每月正式評量，也不需要對已有個課的學生重複評分。</div>
+        </div>`;
+    }
+    const d=state.teacherSemesterFallback;
+    if(state.teacherSemesterFallbackLoading||!d)return `<div class="card"><h2>📊 學期末分部評量</h2><div class="notice">正在整理本學期未參加個課的學生…</div></div>`;
+    const eligible=(d.items||[]).filter(x=>x.fallbackEligible),done=eligible.filter(x=>x.myRating),pending=eligible.filter(x=>!x.myRating);
+    const filter=state.teacherEvaluationFilter||"pending",list=filter==="done"?done:filter==="all"?eligible:pending;
+    if(!list.some(x=>String(x.studentId)===String(state.teacherEvaluationSelected))){
+      state.teacherEvaluationSelected=String((list[0]||pending[0]||eligible[0]||{}).studentId||"");
+    }
+    const current=eligible.find(x=>String(x.studentId)===String(state.teacherEvaluationSelected))||null;
+    const pct=eligible.length?Math.round(done.length/eligible.length*100):100;
     const row=x=>{
-      const selected=String(x.studentId)===String(state.teacherEvaluationSelected),finished=hasMyLearningRating(x),score=Number(x.learningEvaluation?.score5||0);
-      return `<button class="teacher-eval-student-row ${selected?"is-selected":""}" onclick="selectTeacherEvaluationStudent('${esc(x.studentId)}')">
-        <div><b>${finished?"✅":"🟡"} ${esc(x.name)}</b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.instrument)}</small></div>
-        <span>${finished?(score?score+"/5":"已完成"):"待評"}</span>
-      </button>`;
+      const selected=String(x.studentId)===String(state.teacherEvaluationSelected),finished=!!x.myRating,score=Number(x.myRating?.score5||x.score5||0);
+      return `<button class="teacher-eval-student-row ${selected?"is-selected":""}" onclick="selectTeacherEvaluationStudent('${esc(x.studentId)}')"><div><b>${finished?"✅":"🟡"} ${esc(x.name)}</b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.instrument)}</small></div><span>${finished?score+"/5":"待評"}</span></button>`;
     };
-    const context=current?(()=>{
-      const ms=current.monthlyScore||scoreParts(current,d),fb=feedbackLevelMeta(current.feedback?.level);
-      return `<div class="teacher-eval-context">
-        <div><b>${ms.qualified} / ${ms.target} 天</b><small>自主練習｜系統 ${ms.total}/10</small></div>
-        <div><b>${current.lastPracticeDate?esc(current.lastPracticeDate):"尚無紀錄"}</b><small>最近一次自主練習</small></div>
-        <div><b>${fb?fb.icon+" "+esc(fb.label):"尚無鼓勵"}</b><small>最近日常鼓勵｜不計分</small></div>
-      </div>`;
-    })():"";
+    const currentScore=Number(current?.myRating?.score5||0),comment=String(current?.myRating?.comment||"");
     const currentCard=current?`<div class="card teacher-eval-current">
-      <div class="teacher-eval-current-head"><div><b>${esc(current.name)}</b><small>${esc(current.groupName)}團｜${esc(current.section)}｜${esc(current.instrument)}｜${esc(current.grade)}</small></div><span class="badge ${hasMyLearningRating(current)?"ok":"warn"}">${hasMyLearningRating(current)?"我的評量已完成":"待我評量"}</span></div>
-      ${context}
-      <div class="notice" style="margin-top:10px">上方資料只供老師快速參考；本次正式評量仍請依孩子本月實際課堂表現判斷。個別課可作佐證，但沒有上個別課不會扣分。</div>
-      ${learningEvaluationPanel(current)}
-    </div>`:`<div class="card"><div class="notice">目前沒有需要評量的學生。</div></div>`;
+      <div class="teacher-eval-current-head"><div><b>${esc(current.name)}</b><small>${esc(current.groupName)}團｜${esc(current.section)}｜${esc(current.instrument)}｜${esc(current.grade)}</small></div><span class="badge ${current.myRating?"ok":"warn"}">${current.myRating?"我的評量已完成":"待我評量"}</span></div>
+      <div class="notice" style="margin-top:10px"><b>系統確認：本學期沒有完成個別課。</b><br>因此才需要由分部老師做這一次學期末替代評量。請依本學期整體課堂學習表現評定 1～5 級。</div>
+      <label>學期末學習表現</label>
+      <select id="semesterFallbackScore_${esc(current.studentId)}"><option value="">請選擇 1～5 級</option>${[1,2,3,4,5].map(n=>`<option value="${n}" ${currentScore===n?"selected":""}>${n}｜${fallbackRatingText[n]}</option>`).join("")}</select>
+      <label>評量備註（選填）</label><textarea id="semesterFallbackComment_${esc(current.studentId)}" rows="2" maxlength="240" placeholder="例如：本學期音準與節奏穩定，分部課學習態度良好。">${esc(comment)}</textarea>
+      <button class="primary" onclick="saveSemesterFallbackEvaluation('${esc(current.studentId)}')">📊 儲存學期末分部評量</button>
+    </div>`:`<div class="card"><div class="notice">本學期沒有需要分部老師替代評量的學生。已有個課的學生會由個課學習表現自動計算最後 5%。</div></div>`;
     return `<button class="secondary teacher-eval-back" onclick="go('teacherHome')">← 返回今日教學</button>
       <div class="card hero teacher-eval-hero">
-        <div class="section-title"><div><h2>📊 月底正式評量｜期末 5%</h2><div class="muted">老師每月唯一需要完成的正式評分</div></div><span class="badge ${pending.length?"warn":"ok"}">${done.length}/${all.length} 已完成</span></div>
+        <div class="section-title"><div><h2>📊 學期末分部評量｜期末 5%</h2><div class="muted">僅評「本學期沒有完成個別課」的學生，每學期一次</div></div><span class="badge ${pending.length?"warn":"ok"}">${done.length}/${eligible.length} 已完成</span></div>
         <div class="teacher-eval-progress"><i style="width:${pct}%"></i></div>
-        <div class="notice">${trial?"9 月為試營運／試評，不列入正式成績。":"正式計分月份；完成後會自動切到下一位待評學生。"}<br>評量內容：學習態度 1 分＋課堂準備 1 分＋技巧／曲目進步 2 分＋團體配合 1 分。</div>
-        <label>評量月份</label><input type="month" value="${esc(month)}" onchange="changeTeacherEvaluationMonth(this.value)">
+        <div class="notice">已有個課的學生：<b>${Number(d.privateLessonCount||0)} 人</b>，不需在這裡重複評量。<br>需要分部老師替代評量：<b>${eligible.length} 人</b>。儲存後會自動前往下一位待評學生。</div>
       </div>
       <div class="card teacher-eval-list-card">
         <div class="teacher-eval-filters">
           <button class="secondary ${filter==="pending"?"is-active":""}" onclick="changeTeacherEvaluationFilter('pending')">待評量 ${pending.length}</button>
           <button class="secondary ${filter==="done"?"is-active":""}" onclick="changeTeacherEvaluationFilter('done')">已完成 ${done.length}</button>
-          <button class="secondary ${filter==="all"?"is-active":""}" onclick="changeTeacherEvaluationFilter('all')">全部 ${all.length}</button>
+          <button class="secondary ${filter==="all"?"is-active":""}" onclick="changeTeacherEvaluationFilter('all')">全部 ${eligible.length}</button>
         </div>
         <div class="teacher-eval-student-list">${list.map(row).join("")||'<div class="notice">這個分類目前沒有學生。</div>'}</div>
       </div>
@@ -186,11 +173,6 @@
 
   window.selectTeacherEvaluationStudent=function(id){state.teacherEvaluationSelected=String(id||"");render()};
   window.changeTeacherEvaluationFilter=function(v){state.teacherEvaluationFilter=String(v||"pending");state.teacherEvaluationSelected="";render()};
-  window.changeTeacherEvaluationMonth=async function(v){
-    state.practiceProgressMonth=String(v||new Date().toISOString().slice(0,7));
-    state.teacherEvaluationSelected="";
-    try{await loadPracticeProgress();render()}catch(e){toast("❌ "+e.message)}
-  };
 
   function csvCell(v){const s=String(v??"");return /[",\r\n]/.test(s)?`"${s.replaceAll('"','""')}"`:s}
   function downloadCsv(filename,rows){
@@ -215,16 +197,6 @@
     }
     downloadCsv(`${state.practiceProgressMonth}_自主練習系統計分_期末10%.csv`,rows);toast("📥 已匯出自主練習系統計分");
   };
-  window.exportLearningMonthlyScore=function(){
-    const items=filteredItems();
-    if(!items.length){toast("目前沒有可匯出的學習評量資料");return}
-    const rows=[["月份","學生姓名","年級","團別","分部","樂器","學習態度(1)","課堂準備(1)","技巧／曲目進步(2)","團體配合(1)","授課老師數","月分數(5)","狀態"]];
-    for(const x of items){
-      const e=x.learningEvaluation||{},a=e.average||{},trial=/^\d{4}-09$/.test(String(state.practiceProgressMonth||""));
-      rows.push([state.practiceProgressMonth,x.name,x.grade,x.groupName,x.section,x.instrument,a.attitude||"",a.preparation||"",a.progress||"",a.teamwork||"",Number(e.ratingCount||0),e.score5||"",trial?"試營運／不列正式成績":(e.score5?"已評量":"待評量")]);
-    }
-    downloadCsv(`${state.practiceProgressMonth}_月底正式評量_期末5%.csv`,rows);toast("📥 已匯出月底正式評量");
-  };
   window.exportPracticeMonthlyDetail=function(){
     const items=filteredItems();
     const rows=[["月份","學生姓名","年級","團別","分部","樂器","練習日期","開始時間","結束時間","分鐘","紀錄狀態","練習內容","練習重點"]];
@@ -241,45 +213,40 @@
     const groups=["全部",...new Set((d.items||[]).map(x=>String(x.groupName)).filter(Boolean))];
     const sections=["全部",...new Set((d.items||[]).map(x=>String(x.section)).filter(Boolean))];
     const all=(d.items||[]),items=filteredItems();
-    const counts={none:all.filter(x=>Number(x.activeDays||0)===0).length,below:all.filter(x=>Number(x.activeDays||0)>0&&Number(x.practiceRatePercent||0)<80).length,ok:all.filter(x=>Number(x.practiceRatePercent||0)>=80).length,pendingEval:all.filter(x=>!hasMyLearningRating(x)).length,doneEval:all.filter(x=>hasMyLearningRating(x)).length};
+    const counts={none:all.filter(x=>Number(x.activeDays||0)===0).length,below:all.filter(x=>Number(x.activeDays||0)>0&&Number(x.practiceRatePercent||0)<80).length,ok:all.filter(x=>Number(x.practiceRatePercent||0)>=80).length};
     const filterBtn=(key,label,count)=>`<button class="secondary" style="width:100%;min-width:0;padding:9px 8px;margin:0;font-weight:800;white-space:nowrap;${state.practiceProgressStatus===key?'background:#eef2ff;border-width:2px':''}" onclick="changePracticeProgressStatus('${key}')">${label}${count==null?'':' '+count}</button>`;
-    const rows=items.map(x=>{const active=Number(x.activeDays||0),rate=Number(x.practiceRatePercent||0),gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),status=active===0?'⚪ 本月尚無紀錄':gap>=7?`🟡 距上次練習 ${gap} 天`:gap>=3?`🟡 距上次練習 ${gap} 天`:rate<80?'🟡 持續累積中':'🟢 本月練習目標已完成',fb=feedbackLevelMeta(x.feedback?.level),fbText=fb?`<span class="practice-feedback-chip">💛 本月 ${Number(x.feedbackCount||0)} 次｜${fb.icon} ${esc(fb.label)}</span>`:"",ms=x.monthlyScore||scoreParts(x,d),learn=Number(x.learningEvaluation?.score5||0),myDone=hasMyLearningRating(x),scoreText=`<span class="monthly-score-chip">🎯 自主 ${ms.total}/10｜系統計算｜${esc(ms.status)}</span><span class="practice-feedback-chip">📊 ${myDone?"我的評量已完成":"待我評量"}${learn>0?"｜平均 "+learn+"/5":""}</span>`;return `<div class="item" style="align-items:center"><div style="min-width:0"><b>${esc(x.name)} <span style="font-size:13px">${status}</span></b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.instrument)}<br>${active} 天｜${Number(x.totalMinutes||0)} 分鐘｜最近 ${esc(x.lastPracticeDate||'尚無紀錄')}${x.lastPracticeDate&&x.daysSincePractice!=null?`｜距今 ${Number(x.daysSincePractice)} 天`:''}</small>${scoreText}${fbText}</div><button class="secondary" style="width:auto;padding:7px 10px;margin:0" onclick="togglePracticeProgressDetail('${esc(x.studentId)}')">›</button></div>${detailHtml(x)}`}).join("");
+    const rows=items.map(x=>{const active=Number(x.activeDays||0),rate=Number(x.practiceRatePercent||0),gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),status=active===0?'⚪ 本月尚無紀錄':gap>=7?`🟡 距上次練習 ${gap} 天`:gap>=3?`🟡 距上次練習 ${gap} 天`:rate<80?'🟡 持續累積中':'🟢 本月練習目標已完成',fb=feedbackLevelMeta(x.feedback?.level),fbText=fb?`<span class="practice-feedback-chip">💛 本月 ${Number(x.feedbackCount||0)} 次｜${fb.icon} ${esc(fb.label)}</span>`:"",ms=x.monthlyScore||scoreParts(x,d),scoreText=`<span class="monthly-score-chip">🎯 自主 ${ms.total}/10｜系統計算｜${esc(ms.status)}</span>`;return `<div class="item" style="align-items:center"><div style="min-width:0"><b>${esc(x.name)} <span style="font-size:13px">${status}</span></b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.instrument)}<br>${active} 天｜${Number(x.totalMinutes||0)} 分鐘｜最近 ${esc(x.lastPracticeDate||'尚無紀錄')}${x.lastPracticeDate&&x.daysSincePractice!=null?`｜距今 ${Number(x.daysSincePractice)} 天`:''}</small>${scoreText}${fbText}</div><button class="secondary" style="width:auto;padding:7px 10px;margin:0" onclick="togglePracticeProgressDetail('${esc(x.studentId)}')">›</button></div>${detailHtml(x)}`}).join("");
     return `${!isAdmin()?'<button class="secondary" style="width:auto;margin:0 0 12px;padding:9px 14px;border-radius:999px;font-weight:800" onclick="go(\'teacherHome\')">← 返回今日教學</button>':''}
     <div class="card hero"><h2>📚 自主練習${isAdmin()?'月報':'進度'}</h2>
-      <div class="notice">練習進度依「截至目前日期」動態計算；主要用來了解孩子的練習習慣並提供適度提醒。</div>
+      <div class="notice">此頁只用來查看自主練習進度與提供日常鼓勵；<b>老師不需要在這裡做正式成績評量。</b></div>
       <div class="monthly-score-policy"><b>🎯 自主練習｜期末 10%｜系統自動計分</b><small>單日累計 ≥ ${d.qualifiedMinutes||15} 分鐘計 1 個有效練習日；月分數＝有效練習天數 ÷ 當月目標天數 × 10，最高 10 分。老師不需另外評分。9 月為試營運，正式計分自 10 月起。</small></div>
-      <div class="monthly-score-policy" style="margin-top:8px"><b>📊 月底正式評量｜期末 5%</b><small>統一四項量尺：學習態度 1 分＋課堂準備 1 分＋技巧／曲目進步 2 分＋團體配合 1 分。多位授課老師取平均。個別課只作學習佐證，不因未參加個別課而扣分。</small></div>
+      <div class="monthly-score-policy" style="margin-top:8px"><b>🎻 最後 5%｜個課優先，無個課才期末評一次</b><small>有參加個別課的學生，由個課老師每次完課順手選 1～5 級學生學習表現，學期末取平均；整學期沒有個課的學生，才由分部老師在學期末評量一次。</small></div>
       <label>月份</label><input type="month" value="${esc(state.practiceProgressMonth)}" onchange="changePracticeProgressMonth(this.value)">
-      <div class="grid"><div class="kpi"><b>${all.length}</b><span>授課學生</span></div><div class="kpi"><b>${counts.doneEval}</b><span>已完成正式評量</span></div><div class="kpi"><b>${counts.pendingEval}</b><span>待正式評量</span></div><div class="kpi"><b>${all.length-counts.none}</b><span>已有練習</span></div></div>
-      <div style="margin-top:10px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">${filterBtn('全部','全部',all.length)}${filterBtn('待正式評量','📊 待正式評量',counts.pendingEval)}${filterBtn('已正式評量','✅ 已完成正式評量',counts.doneEval)}${filterBtn('尚未練習','⚪ 本月尚無紀錄',counts.none)}${filterBtn('未達標','🟡 持續累積中',counts.below)}${filterBtn('已達標','🟢 已完成目標',counts.ok)}</div>
+      <div class="grid"><div class="kpi"><b>${all.length}</b><span>授課學生</span></div><div class="kpi"><b>${all.length-counts.none}</b><span>已有練習</span></div><div class="kpi"><b>${counts.below}</b><span>持續累積中</span></div><div class="kpi"><b>${counts.ok}</b><span>已完成目標</span></div></div>
+      <div style="margin-top:10px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">${filterBtn('全部','全部',all.length)}${filterBtn('尚未練習','⚪ 本月尚無紀錄',counts.none)}${filterBtn('未達標','🟡 持續累積中',counts.below)}${filterBtn('已達標','🟢 已完成目標',counts.ok)}</div>
       <div class="row2"><div><label>團別</label><select onchange="changePracticeProgressGroup(this.value)">${groups.map(g=>`<option value="${esc(g)}" ${g===state.practiceProgressGroup?'selected':''}>${esc(g==='全部'?'全部團別':g+'團')}</option>`).join('')}</select></div><div><label>分部</label><select onchange="changePracticeProgressSection(this.value)">${sections.map(v=>`<option value="${esc(v)}" ${v===state.practiceProgressSection?'selected':''}>${esc(v)}</option>`).join('')}</select></div></div>
       <label>搜尋學生</label><input value="${esc(state.practiceProgressSearch)}" placeholder="姓名／團別／分部／樂器" oninput="changePracticeProgressSearch(this.value)">
-      <button class="secondary" style="width:100%;margin-top:10px" onclick="exportPracticeMonthlyScore()">📥 匯出自主練習系統計分 CSV（期末 10%）</button><button class="secondary" style="width:100%;margin-top:8px" onclick="exportLearningMonthlyScore()">📥 匯出月底正式評量 CSV（期末 5%）</button>${isAdmin()?'<button class="secondary" style="width:100%;margin-top:8px" onclick="exportPracticeMonthlySummary()">📥 匯出練習統計 CSV</button>':''}
+      <button class="secondary" style="width:100%;margin-top:10px" onclick="exportPracticeMonthlyScore()">📥 匯出自主練習系統計分 CSV（期末 10%）</button>${isAdmin()?'<button class="secondary" style="width:100%;margin-top:8px" onclick="exportPracticeMonthlySummary()">📥 匯出練習統計 CSV</button>':''}
     </div>
     <div class="card"><h2>學生列表 <span class="muted" style="font-size:14px">${items.length} 人</span></h2>${rows||'<div class="notice">目前沒有符合條件的學生。</div>'}</div>`;
   }
 
-  window.saveLearningMonthlyEvaluation=async function(studentId){
-    if(!isTeacher())return;
-    const value=key=>Number(document.getElementById(`lm_${key}_${studentId}`)?.value||0);
-    const payload={
-      studentId,month:state.practiceProgressMonth,
-      attitude:value("attitude"),preparation:value("preparation"),progress:value("progress"),teamwork:value("teamwork"),
-      comment:document.getElementById("lm_comment_"+studentId)?.value?.trim()||""
-    };
-    if(!payload.attitude||!payload.preparation||!payload.progress||!payload.teamwork){toast("請完成四項學習評量");return}
+  window.saveSemesterFallbackEvaluation=async function(studentId){
+    if(!isTeacher()||!state.me?.capabilities?.section)return;
+    const score5=Number(document.getElementById("semesterFallbackScore_"+studentId)?.value||0),comment=document.getElementById("semesterFallbackComment_"+studentId)?.value?.trim()||"";
+    if(!score5){toast("請先選擇 1～5 級學期末學習表現");return}
+    const month=semesterFinalMonth(taipeiMonth());
     try{
-      await api("/api/learning-monthly-evaluation",{method:"POST",body:JSON.stringify(payload)});
-      await loadPracticeProgress();
-      if(state.page==="teacherEvaluation"){
-        const pending=(state.practiceProgressData?.items||[]).filter(x=>!hasMyLearningRating(x));
-        state.teacherEvaluationFilter=pending.length?"pending":"done";
-        state.teacherEvaluationSelected=String((pending[0]||{}).studentId||"");
-        toast(pending.length?`✅ 已儲存，下一位待評：${pending[0].name}`:"✅ 本月正式評量已全部完成");
-      }else toast("✅ 已儲存月底正式評量");
+      await api("/api/learning-monthly-evaluation",{method:"POST",body:JSON.stringify({mode:"semesterFallback",studentId,month,score5,comment})});
+      await loadSemesterFallback();
+      const eligible=(state.teacherSemesterFallback?.items||[]).filter(x=>x.fallbackEligible),pending=eligible.filter(x=>!x.myRating);
+      state.teacherEvaluationFilter=pending.length?"pending":"done";
+      state.teacherEvaluationSelected=String((pending[0]||{}).studentId||"");
+      toast(pending.length?`✅ 已儲存，下一位待評：${pending[0].name}`:"✅ 本學期需要替代評量的學生已全部完成");
       render();
     }catch(e){toast("❌ "+e.message)}
   };
+
   window.usePracticeFeedbackPreset=function(studentId,index){
     const el=document.getElementById("pfComment_"+studentId),text=practiceFeedbackPresets[Number(index)]||"";
     if(el){el.value=text;el.focus()}
@@ -333,9 +300,9 @@
     }
     if(p==='teacherEvaluation'&&isTeacher()){
       state.page='teacherEvaluation';state.teacherEvaluationFilter='pending';state.teacherEvaluationSelected='';
-      try{await loadPracticeProgress()}catch(e){toast('❌ '+e.message)}
-      const pending=(state.practiceProgressData?.items||[]).filter(x=>!hasMyLearningRating(x));
-      state.teacherEvaluationSelected=String((pending[0]||state.practiceProgressData?.items?.[0]||{}).studentId||'');
+      try{await loadSemesterFallback()}catch(e){toast('❌ '+e.message)}
+      const eligible=(state.teacherSemesterFallback?.items||[]).filter(x=>x.fallbackEligible),pending=eligible.filter(x=>!x.myRating);
+      state.teacherEvaluationSelected=String((pending[0]||eligible[0]||{}).studentId||'');
       render();return;
     }
     return previousGo(p);
