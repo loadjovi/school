@@ -108,7 +108,7 @@
     const evalDone=practiceAll.filter(x=>!!learningMap.get(String(x.studentId))?.myRating).length;
     const evalPending=Math.max(0,evalTotal-evalDone);
     const evalPct=evalTotal?Math.round(evalDone/evalTotal*100):100;
-    const trial=/^\\d{4}-09$/.test(date.slice(0,7)),monthNum=Number(date.slice(5,7)),day=Number(date.slice(8,10)),nearMonthEnd=day>=25;
+    const trial=/^\d{4}-09$/.test(date.slice(0,7)),monthNum=Number(date.slice(5,7)),day=Number(date.slice(8,10)),nearMonthEnd=day>=25;
     const evaluationCard=`<div class="teacher-monthly-task ${evalPending?"has-pending":"is-done"}">
       <div class="teacher-monthly-task-head"><div><b>📊 ${monthNum}月月底正式評量</b><small>老師每月唯一需要完成的正式評分${trial?"｜9月試評":""}</small></div><span class="badge ${evalPending?"warn":"ok"}">${evalDone}/${evalTotal}</span></div>
       <div class="teacher-monthly-task-progress"><i style="width:${evalPct}%"></i></div>
