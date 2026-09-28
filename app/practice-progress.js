@@ -9,6 +9,8 @@
   state.practiceProgressSearch=state.practiceProgressSearch||"";
   state.practiceProgressSelected=state.practiceProgressSelected||"";
   state.practiceProgressStatus=state.practiceProgressStatus||"全部";
+  state.teacherEvaluationFilter=state.teacherEvaluationFilter||"pending";
+  state.teacherEvaluationSelected=state.teacherEvaluationSelected||"";
   const practiceFeedbackLevels=[{level:1,icon:"🌱",label:"起步中"},{level:2,icon:"👍",label:"持續加油"},{level:3,icon:"🙂",label:"表現不錯"},{level:4,icon:"🌟",label:"很棒喔"},{level:5,icon:"🏆",label:"超級投入"}];
   const practiceFeedbackPresets=["這週練習很穩定，繼續保持！","有進步，記得每天練一點點喔！","基本功有累積，繼續加油！","練習很投入，期待下次上課的表現！","很棒！保持規律練習會進步更快。"];
   state.practiceFeedbackSaving=state.practiceFeedbackSaving||"";
@@ -42,6 +44,11 @@
     state.practiceProgressData=progress;
   }
 
+  function hasMyLearningRating(x){
+    if(isTeacher())return !!x.learningEvaluation?.myRating;
+    return Number(x.learningEvaluation?.score5||0)>0;
+  }
+
   function filteredItems(){
     const q=String(state.practiceProgressSearch||"").trim().toLowerCase();
     const status=state.practiceProgressStatus||"全部";
@@ -53,8 +60,8 @@
       if(status==="尚未練習"&&active!==0)return false;
       if(status==="未達標"&&!(active>0&&rate<80))return false;
       if(status==="已達標"&&rate<80)return false;
-      if(status==="待正式評量"&&Number(x.learningEvaluation?.score5||0)>0)return false;
-      if(status==="已正式評量"&&Number(x.learningEvaluation?.score5||0)<=0)return false;
+      if(status==="待正式評量"&&hasMyLearningRating(x))return false;
+      if(status==="已正式評量"&&!hasMyLearningRating(x))return false;
       return true;
     }).sort((a,b)=>{
       const rank=x=>x.daysSincePractice==null?0:Number(x.daysSincePractice)>=7?1:Number(x.practiceRatePercent||0)<80?2:3;
@@ -126,6 +133,65 @@
     return records+feedbackPanel(x)+learningEvaluationPanel(x);
   }
 
+  function teacherEvaluationPage(){
+    const d=state.practiceProgressData;
+    if(!d)return `<div class="card"><h2>📊 月底正式評量</h2><div class="notice">正在讀取學生資料…</div></div>`;
+    const all=(d.items||[]),done=all.filter(hasMyLearningRating),pending=all.filter(x=>!hasMyLearningRating(x));
+    const filter=state.teacherEvaluationFilter||"pending";
+    const list=filter==="done"?done:filter==="all"?all:pending;
+    if(!list.some(x=>String(x.studentId)===String(state.teacherEvaluationSelected))){
+      state.teacherEvaluationSelected=String((list[0]||pending[0]||all[0]||{}).studentId||"");
+    }
+    const current=all.find(x=>String(x.studentId)===String(state.teacherEvaluationSelected))||null;
+    const pct=all.length?Math.round(done.length/all.length*100):100;
+    const month=String(state.practiceProgressMonth||""),trial=/^\d{4}-09$/.test(month);
+    const row=x=>{
+      const selected=String(x.studentId)===String(state.teacherEvaluationSelected),finished=hasMyLearningRating(x),score=Number(x.learningEvaluation?.score5||0);
+      return `<button class="teacher-eval-student-row ${selected?"is-selected":""}" onclick="selectTeacherEvaluationStudent('${esc(x.studentId)}')">
+        <div><b>${finished?"✅":"🟡"} ${esc(x.name)}</b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.instrument)}</small></div>
+        <span>${finished?(score?score+"/5":"已完成"):"待評"}</span>
+      </button>`;
+    };
+    const context=current?(()=>{
+      const ms=current.monthlyScore||scoreParts(current,d),fb=feedbackLevelMeta(current.feedback?.level);
+      return `<div class="teacher-eval-context">
+        <div><b>${ms.qualified} / ${ms.target} 天</b><small>自主練習｜系統 ${ms.total}/10</small></div>
+        <div><b>${current.lastPracticeDate?esc(current.lastPracticeDate):"尚無紀錄"}</b><small>最近一次自主練習</small></div>
+        <div><b>${fb?fb.icon+" "+esc(fb.label):"尚無鼓勵"}</b><small>最近日常鼓勵｜不計分</small></div>
+      </div>`;
+    })():"";
+    const currentCard=current?`<div class="card teacher-eval-current">
+      <div class="teacher-eval-current-head"><div><b>${esc(current.name)}</b><small>${esc(current.groupName)}團｜${esc(current.section)}｜${esc(current.instrument)}｜${esc(current.grade)}</small></div><span class="badge ${hasMyLearningRating(current)?"ok":"warn"}">${hasMyLearningRating(current)?"我的評量已完成":"待我評量"}</span></div>
+      ${context}
+      <div class="notice" style="margin-top:10px">上方資料只供老師快速參考；本次正式評量仍請依孩子本月實際課堂表現判斷。個別課可作佐證，但沒有上個別課不會扣分。</div>
+      ${learningEvaluationPanel(current)}
+    </div>`:`<div class="card"><div class="notice">目前沒有需要評量的學生。</div></div>`;
+    return `<button class="secondary teacher-eval-back" onclick="go('teacherHome')">← 返回今日教學</button>
+      <div class="card hero teacher-eval-hero">
+        <div class="section-title"><div><h2>📊 月底正式評量｜期末 5%</h2><div class="muted">老師每月唯一需要完成的正式評分</div></div><span class="badge ${pending.length?"warn":"ok"}">${done.length}/${all.length} 已完成</span></div>
+        <div class="teacher-eval-progress"><i style="width:${pct}%"></i></div>
+        <div class="notice">${trial?"9 月為試營運／試評，不列入正式成績。":"正式計分月份；完成後會自動切到下一位待評學生。"}<br>評量內容：學習態度 1 分＋課堂準備 1 分＋技巧／曲目進步 2 分＋團體配合 1 分。</div>
+        <label>評量月份</label><input type="month" value="${esc(month)}" onchange="changeTeacherEvaluationMonth(this.value)">
+      </div>
+      <div class="card teacher-eval-list-card">
+        <div class="teacher-eval-filters">
+          <button class="secondary ${filter==="pending"?"is-active":""}" onclick="changeTeacherEvaluationFilter('pending')">待評量 ${pending.length}</button>
+          <button class="secondary ${filter==="done"?"is-active":""}" onclick="changeTeacherEvaluationFilter('done')">已完成 ${done.length}</button>
+          <button class="secondary ${filter==="all"?"is-active":""}" onclick="changeTeacherEvaluationFilter('all')">全部 ${all.length}</button>
+        </div>
+        <div class="teacher-eval-student-list">${list.map(row).join("")||'<div class="notice">這個分類目前沒有學生。</div>'}</div>
+      </div>
+      ${currentCard}`;
+  }
+
+  window.selectTeacherEvaluationStudent=function(id){state.teacherEvaluationSelected=String(id||"");render()};
+  window.changeTeacherEvaluationFilter=function(v){state.teacherEvaluationFilter=String(v||"pending");state.teacherEvaluationSelected="";render()};
+  window.changeTeacherEvaluationMonth=async function(v){
+    state.practiceProgressMonth=String(v||new Date().toISOString().slice(0,7));
+    state.teacherEvaluationSelected="";
+    try{await loadPracticeProgress();render()}catch(e){toast("❌ "+e.message)}
+  };
+
   function csvCell(v){const s=String(v??"");return /[",\r\n]/.test(s)?`"${s.replaceAll('"','""')}"`:s}
   function downloadCsv(filename,rows){
     const content="\uFEFF"+rows.map(r=>r.map(csvCell).join(",")).join("\r\n");
@@ -175,9 +241,9 @@
     const groups=["全部",...new Set((d.items||[]).map(x=>String(x.groupName)).filter(Boolean))];
     const sections=["全部",...new Set((d.items||[]).map(x=>String(x.section)).filter(Boolean))];
     const all=(d.items||[]),items=filteredItems();
-    const counts={none:all.filter(x=>Number(x.activeDays||0)===0).length,below:all.filter(x=>Number(x.activeDays||0)>0&&Number(x.practiceRatePercent||0)<80).length,ok:all.filter(x=>Number(x.practiceRatePercent||0)>=80).length,pendingEval:all.filter(x=>Number(x.learningEvaluation?.score5||0)<=0).length,doneEval:all.filter(x=>Number(x.learningEvaluation?.score5||0)>0).length};
+    const counts={none:all.filter(x=>Number(x.activeDays||0)===0).length,below:all.filter(x=>Number(x.activeDays||0)>0&&Number(x.practiceRatePercent||0)<80).length,ok:all.filter(x=>Number(x.practiceRatePercent||0)>=80).length,pendingEval:all.filter(x=>!hasMyLearningRating(x)).length,doneEval:all.filter(x=>hasMyLearningRating(x)).length};
     const filterBtn=(key,label,count)=>`<button class="secondary" style="width:100%;min-width:0;padding:9px 8px;margin:0;font-weight:800;white-space:nowrap;${state.practiceProgressStatus===key?'background:#eef2ff;border-width:2px':''}" onclick="changePracticeProgressStatus('${key}')">${label}${count==null?'':' '+count}</button>`;
-    const rows=items.map(x=>{const active=Number(x.activeDays||0),rate=Number(x.practiceRatePercent||0),gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),status=active===0?'⚪ 本月尚無紀錄':gap>=7?`🟡 距上次練習 ${gap} 天`:gap>=3?`🟡 距上次練習 ${gap} 天`:rate<80?'🟡 持續累積中':'🟢 本月練習目標已完成',fb=feedbackLevelMeta(x.feedback?.level),fbText=fb?`<span class="practice-feedback-chip">💛 本月 ${Number(x.feedbackCount||0)} 次｜${fb.icon} ${esc(fb.label)}</span>`:"",ms=x.monthlyScore||scoreParts(x,d),learn=Number(x.learningEvaluation?.score5||0),scoreText=`<span class="monthly-score-chip">🎯 自主 ${ms.total}/10｜系統計算｜${esc(ms.status)}</span><span class="practice-feedback-chip">📊 正式評量 ${learn>0?learn+"/5":"待老師完成"}</span>`;return `<div class="item" style="align-items:center"><div style="min-width:0"><b>${esc(x.name)} <span style="font-size:13px">${status}</span></b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.instrument)}<br>${active} 天｜${Number(x.totalMinutes||0)} 分鐘｜最近 ${esc(x.lastPracticeDate||'尚無紀錄')}${x.lastPracticeDate&&x.daysSincePractice!=null?`｜距今 ${Number(x.daysSincePractice)} 天`:''}</small>${scoreText}${fbText}</div><button class="secondary" style="width:auto;padding:7px 10px;margin:0" onclick="togglePracticeProgressDetail('${esc(x.studentId)}')">›</button></div>${detailHtml(x)}`}).join("");
+    const rows=items.map(x=>{const active=Number(x.activeDays||0),rate=Number(x.practiceRatePercent||0),gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),status=active===0?'⚪ 本月尚無紀錄':gap>=7?`🟡 距上次練習 ${gap} 天`:gap>=3?`🟡 距上次練習 ${gap} 天`:rate<80?'🟡 持續累積中':'🟢 本月練習目標已完成',fb=feedbackLevelMeta(x.feedback?.level),fbText=fb?`<span class="practice-feedback-chip">💛 本月 ${Number(x.feedbackCount||0)} 次｜${fb.icon} ${esc(fb.label)}</span>`:"",ms=x.monthlyScore||scoreParts(x,d),learn=Number(x.learningEvaluation?.score5||0),myDone=hasMyLearningRating(x),scoreText=`<span class="monthly-score-chip">🎯 自主 ${ms.total}/10｜系統計算｜${esc(ms.status)}</span><span class="practice-feedback-chip">📊 ${myDone?"我的評量已完成":"待我評量"}${learn>0?"｜平均 "+learn+"/5":""}</span>`;return `<div class="item" style="align-items:center"><div style="min-width:0"><b>${esc(x.name)} <span style="font-size:13px">${status}</span></b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.instrument)}<br>${active} 天｜${Number(x.totalMinutes||0)} 分鐘｜最近 ${esc(x.lastPracticeDate||'尚無紀錄')}${x.lastPracticeDate&&x.daysSincePractice!=null?`｜距今 ${Number(x.daysSincePractice)} 天`:''}</small>${scoreText}${fbText}</div><button class="secondary" style="width:auto;padding:7px 10px;margin:0" onclick="togglePracticeProgressDetail('${esc(x.studentId)}')">›</button></div>${detailHtml(x)}`}).join("");
     return `${!isAdmin()?'<button class="secondary" style="width:auto;margin:0 0 12px;padding:9px 14px;border-radius:999px;font-weight:800" onclick="go(\'teacherHome\')">← 返回今日教學</button>':''}
     <div class="card hero"><h2>📚 自主練習${isAdmin()?'月報':'進度'}</h2>
       <div class="notice">練習進度依「截至目前日期」動態計算；主要用來了解孩子的練習習慣並提供適度提醒。</div>
@@ -205,7 +271,12 @@
     try{
       await api("/api/learning-monthly-evaluation",{method:"POST",body:JSON.stringify(payload)});
       await loadPracticeProgress();
-      toast("🌱 已儲存月底正式評量");
+      if(state.page==="teacherEvaluation"){
+        const pending=(state.practiceProgressData?.items||[]).filter(x=>!hasMyLearningRating(x));
+        state.teacherEvaluationFilter=pending.length?"pending":"done";
+        state.teacherEvaluationSelected=String((pending[0]||{}).studentId||"");
+        toast(pending.length?`✅ 已儲存，下一位待評：${pending[0].name}`:"✅ 本月正式評量已全部完成");
+      }else toast("✅ 已儲存月底正式評量");
       render();
     }catch(e){toast("❌ "+e.message)}
   };
@@ -260,6 +331,13 @@
       try{await loadPracticeProgress()}catch(e){toast('❌ '+e.message)}
       render();return;
     }
+    if(p==='teacherEvaluation'&&isTeacher()){
+      state.page='teacherEvaluation';state.teacherEvaluationFilter='pending';state.teacherEvaluationSelected='';
+      try{await loadPracticeProgress()}catch(e){toast('❌ '+e.message)}
+      const pending=(state.practiceProgressData?.items||[]).filter(x=>!hasMyLearningRating(x));
+      state.teacherEvaluationSelected=String((pending[0]||state.practiceProgressData?.items?.[0]||{}).studentId||'');
+      render();return;
+    }
     return previousGo(p);
   };
 
@@ -267,6 +345,10 @@
   render=function(){
     if(state.page==='practiceProgress'&&canView()){
       document.getElementById('app').innerHTML=shell(practiceProgressPage());
+      return;
+    }
+    if(state.page==='teacherEvaluation'&&isTeacher()){
+      document.getElementById('app').innerHTML=shell(teacherEvaluationPage());
       return;
     }
     return previousRender();
