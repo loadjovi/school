@@ -264,3 +264,44 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
   .private-history-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
   .learning-rubric-row{grid-template-columns:1fr}
 }
+
+/* 家長首頁：月評分縮排與資訊階層 */
+.parent-score-overview{margin-top:14px;padding:13px 12px;border:1.5px solid #c8d6f7;border-radius:16px;background:#f8faff}
+.parent-score-overview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.parent-score-overview-head b{display:block;font-size:16px;color:#203f91}
+.parent-score-overview-head small{display:block;margin-top:4px;color:var(--muted);font-size:10px;line-height:1.45}
+.parent-score-total{flex:0 0 auto;padding:7px 10px;border-radius:999px;font-size:12px;font-weight:900;white-space:nowrap}
+.parent-score-total.is-complete{background:#eaf8ef;color:#18723e}
+.parent-score-total.is-pending{background:#fff2be;color:#7b5700}
+.parent-score-indent{margin:11px 0 0 9px;padding-left:11px;border-left:3px solid #dce5fb;display:grid;gap:7px}
+.parent-score-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border:1px solid #e0e6f2;border-radius:11px;background:#fff}
+.parent-score-row-main{display:flex;align-items:center;gap:9px;min-width:0}
+.parent-score-icon{font-size:19px;line-height:1}
+.parent-score-row-main b{display:block;font-size:12px;color:#172554}
+.parent-score-row-main small{display:block;margin-top:2px;font-size:9px;line-height:1.35;color:var(--muted)}
+.parent-score-value{flex:0 0 auto;font-size:14px;font-weight:900;color:#27499b}
+.parent-score-row.learning .parent-score-value{color:#2d6a46}
+.parent-score-overview-foot{display:block;margin-top:9px;color:var(--muted);font-size:10px;line-height:1.5}
+.parent-detail-heading{margin-top:16px;padding:0 3px}
+.parent-detail-heading b{display:block;font-size:14px;color:#172554}
+.parent-detail-heading small{display:block;margin-top:3px;font-size:10px;color:var(--muted)}
+
+/* 日常鼓勵預設收合，避免首頁過長 */
+.parent-feedback-compact{padding:0;overflow:hidden}
+.parent-feedback-compact>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;cursor:pointer}
+.parent-feedback-compact>summary::-webkit-details-marker{display:none}
+.parent-feedback-compact>summary div{min-width:0}
+.parent-feedback-compact>summary b{display:block;font-size:13px;color:#5f4b12}
+.parent-feedback-compact>summary small{display:block;margin-top:3px;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.parent-feedback-compact[open]>summary{border-bottom:1px dashed #e7d99e;background:#fff8e8}
+.parent-feedback-expanded{padding:0 12px 12px}
+
+@media(max-width:520px){
+  .parent-score-overview{padding:11px 10px}
+  .parent-score-overview-head{align-items:center}
+  .parent-score-overview-head b{font-size:15px}
+  .parent-score-indent{margin-left:5px;padding-left:9px}
+  .parent-score-row{padding:8px}
+  .parent-score-row-main small{font-size:8.5px}
+  .parent-score-value{font-size:13px}
+}
