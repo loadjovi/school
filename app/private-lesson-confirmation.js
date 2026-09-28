@@ -252,16 +252,15 @@
     if(state.me?.role!=="parent"||!state.student)return "";
     const all=sortedLessons().filter(x=>["completed","cancelled"].includes(workflow(x)));
     if(!all.length)return "";
-    const rows=all.slice(0,24),recent=rows.slice(0,3),older=rows.slice(3),month=today().slice(0,7),monthRows=all.filter(x=>String(x.lessonDate||"").startsWith(month)),completed=monthRows.filter(x=>workflow(x)==="completed"&&["present","late"].includes(String(x.status||""))).length,cancelled=monthRows.filter(x=>workflow(x)==="cancelled").length,target=Math.max(1,Number(state.parentSemesterAttendance?.scorePolicy?.privateTargetPerMonth||4)),monthlyScore=Math.round(Math.min(completed/target,1)*500)/100;
+    const rows=all.slice(0,24),recent=rows.slice(0,3),older=rows.slice(3),month=today().slice(0,7),monthRows=all.filter(x=>String(x.lessonDate||"").startsWith(month)),completed=monthRows.filter(x=>workflow(x)==="completed"&&["present","late"].includes(String(x.status||""))).length,cancelled=monthRows.filter(x=>workflow(x)==="cancelled").length;
     return `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">⭐ 個別課課後紀錄與評價</h2><span class="muted">最近 3 筆優先顯示</span></div>
       <div class="private-history-summary">
         <div><b>${completed}</b><span>本月完成</span></div>
         <div><b>${cancelled}</b><span>本月停課</span></div>
         <div><b>${all.length}</b><span>累計紀錄</span></div>
-        <div class="private-score-kpi"><b>${monthlyScore}/5</b><span>本月個課加分</span></div>
       </div>
-      <div class="notice" style="margin-top:10px">個別課為期末 5% 加分項：每完成 1 堂加 ${Math.round((5/target)*100)/100} 分，每月最高 5 分；停課不扣分。家長星級評價是對師資的回饋，不影響學生分數。下方預設只顯示最近 3 筆課後紀錄。</div>
+      <div class="notice" style="margin-top:10px">個別課屬延伸學習與升等參考，不直接列入期末 20% 分數，也不會因未參加個別課而扣分。家長星級評價是對師資的回饋。下方預設只顯示最近 3 筆課後紀錄。</div>
       <div style="margin-top:10px">${recent.map(parentHistoryRow).join("")}</div>
       ${older.length?`<details class="private-history-older"><summary>查看較早個課紀錄（${older.length} 筆）</summary><div style="margin-top:8px">${older.map(parentHistoryRow).join("")}</div></details>`:""}
       ${all.length>24?`<div class="muted" style="text-align:center;margin-top:10px">目前先顯示最近 24 筆紀錄。</div>`:""}
