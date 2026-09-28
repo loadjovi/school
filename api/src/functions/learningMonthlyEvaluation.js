@@ -43,7 +43,7 @@ async function listRows(schoolId,month,{fallbackOnly=false}={}){
 
 async function completedPrivateForStudent(schoolId,studentId,start,end,rows){
   const alias=await getStudentAliasInfo(studentId,schoolId),ids=new Set((alias.aliases||[studentId]).map(String));
-  return rows.filter(r=>ids.has(String(activityStudentId(r)))&&["present","late"].includes(String(r.status||""))).length;
+  return rows.filter(r=>ids.has(String(activityStudentId(r)))&&["teacher_completed","present","late"].includes(String(r.status||""))&&Number(r.studentPerformanceRating||0)>0).length;
 }
 
 function aggregateRatings(ratings,isTeacher,email){
