@@ -37,7 +37,8 @@
       <div class="card"><h2>🎻 合奏課</h2><div class="notice">A、B團合奏課：每週二 12:30–13:20。勾選後會自動帶入該團所有分部學生。</div>${ensembleRows}</div>
       <div class="card"><h2>🎶 弦樂團體課（綜合課）</h2><div class="notice">A團、B團、儲備團都參加。週五 08:45–10:15；本學期共 7 次：9/18、10/2、10/16、10/30、11/20、11/27、12/4。</div><label class="check"><input id="teacherComprehensivePick" type="checkbox" ${checked(p.comprehensiveEnabled===true)}><div><b>我要負責綜合課點名</b><br><small>開啟後會自動帶入 A／B／儲備團全部在團學生。</small></div></label></div>
       <div class="card"><div class="section-title"><h2>👤 個別課學生</h2><span class="badge ok">已選 ${selectedCount} 人</span></div><div class="notice">個別課學生改為獨立管理，不會和分部／合奏／綜合課設定混在一起。</div><button class="secondary" style="width:100%;margin-top:10px;padding:12px" onclick="go('privateStudents')">管理個別課學生名單 →</button></div>
-      <div class="card"><button class="primary" onclick="saveTeacherSettings()">儲存分部／合奏／綜合課設定</button></div>`;
+      <div class="card"><button class="primary" onclick="saveTeacherSettings()">儲存分部／合奏／綜合課設定</button></div>
+      <div class="card"><h2>ℹ️ 操作協助</h2><div class="notice">需要查看平台操作方式時，可從「我的教學」進入說明，不占用底部主要工作入口。</div><button class="secondary" style="width:100%;margin-top:10px" onclick="go('help')">查看操作說明 →</button></div>`;
   }
 
   function privateStudentSettingsPage(){
