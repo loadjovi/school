@@ -148,7 +148,7 @@
     const currentScore=Number(current?.myRating?.score5||0),comment=String(current?.myRating?.comment||"");
     const currentCard=current?`<div class="card teacher-eval-current">
       <div class="teacher-eval-current-head"><div><b>${esc(current.name)}</b><small>${esc(current.groupName)}團｜${esc(current.section)}｜${esc(current.instrument)}｜${esc(current.grade)}</small></div><span class="badge ${current.myRating?"ok":"warn"}">${current.myRating?"我的評量已完成":"待我評量"}</span></div>
-      <div class="notice" style="margin-top:10px"><b>系統確認：本學期沒有完成個別課。</b><br>因此才需要由分部老師做這一次學期末替代評量。請依本學期整體課堂學習表現評定 1～5 級。</div>
+      <div class="notice" style="margin-top:10px"><b>目前本學期尚無完成個別課。</b><br>因此列入分部老師學期末替代評量；若後續又完成個課，系統會自動改採個課次數規則，不重複計分。請依本學期整體課堂學習表現評定 1～5 級。</div>
       <label>學期末學習表現</label>
       <select id="semesterFallbackScore_${esc(current.studentId)}"><option value="">請選擇 1～5 級</option>${[1,2,3,4,5].map(n=>`<option value="${n}" ${currentScore===n?"selected":""}>${n}｜${fallbackRatingText[n]}</option>`).join("")}</select>
       <label>評量備註（選填）</label><textarea id="semesterFallbackComment_${esc(current.studentId)}" rows="2" maxlength="240" placeholder="例如：本學期音準與節奏穩定，分部課學習態度良好。">${esc(comment)}</textarea>
