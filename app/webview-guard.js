@@ -52,7 +52,7 @@
       "/roster-import.js?v=20260915-1135",
       "/attendance-support.js?v=20260928-2148",
       "/attendance-edit.js",
-      "/practice-progress.js?v=20260929-0135",
+      "/practice-progress.js?v=20260929-0205",
       "/admin-operations.js?v=20260928-1520",
       "/admin-followup-summary-fix.js?v=20260917-1320",
       "/system-backup.js?v=20260919-2305",
@@ -68,16 +68,16 @@
       "/private-student-bottom-back.js?v=20260915-1432",
       "/attendance-support.js?v=20260928-2148",
       "/attendance-edit.js",
-      "/practice-progress.js?v=20260929-0135",
-      "/teacher-navigation.js?v=20260929-0135",
+      "/practice-progress.js?v=20260929-0205",
+      "/teacher-navigation.js?v=20260929-0205",
       "/comprehensive-support.js?v=20260922-0715",
-      "/private-lesson-confirmation.js?v=20260929-0150"
+      "/private-lesson-confirmation.js?v=20260929-0205"
     ];
     if(role==="parent")return [
       "/practice-timer.js?v=20260918-0725",
-      "/private-lesson-confirmation.js?v=20260929-0150",
-      "/parent-semester-attendance.js?v=20260929-0135",
-      "/parent-home-summary.js?v=20260929-0135"
+      "/private-lesson-confirmation.js?v=20260929-0205",
+      "/parent-semester-attendance.js?v=20260929-0205",
+      "/parent-home-summary.js?v=20260929-0205"
     ];
     if(role==="globalAdmin")return [
       "/school-access.js?v=20260920-0010",
