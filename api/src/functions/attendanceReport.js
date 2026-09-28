@@ -2,6 +2,7 @@ import { app } from "@azure/functions";
 import { getTenantContext, getStudentAliasInfo, json } from "../lib/auth.js";
 import { ensureTenantTables, listActivityRange, activityStudentId, listStudentMaster, getTeacherDirectory, getTeacherProfile, listUserStudentMappings } from "../lib/storage.js";
 import { getSystemSettings, saveSystemSettings } from "../lib/settings.js";
+import { resolveSchoolCourses } from "./schoolSchedule.js";
 
 function clean(v,max=80){return String(v||"").trim().slice(0,max)}
 function monthRange(month){
@@ -167,44 +168,91 @@ app.http("dailyFollowup",{
         parentEmail:email,parentName:String(m.parentName||""),relationship:String(m.relationship||"家長")
       });
     }
-    const [sectionRows,ensembleRows,comprehensiveRows,privateRows]=await Promise.all([collectDaily("section",date,schoolId),collectDaily("ensemble",date,schoolId),collectDaily("comprehensive",date,schoolId),collectDaily("privateLesson",date,schoolId)]);
-    const allDailyRows=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows];
+    const [sectionRows,ensembleRows,comprehensiveRows,privateRows,scheduleCourses]=await Promise.all([
+      collectDaily("section",date,schoolId),
+      collectDaily("ensemble",date,schoolId),
+      collectDaily("comprehensive",date,schoolId),
+      collectDaily("privateLesson",date,schoolId),
+      resolveSchoolCourses(schoolId,date)
+    ]);
     const activeMasters=masters.filter(e=>String(e.status||"active")!=="inactive");
-    const activeByGroup=g=>activeMasters.filter(e=>String(e.groupName||"")===g).length;
+    const normGroup=v=>String(v||"").trim().replace(/團$/,"");
+    const targetGroups=v=>String(v||"").split(",").map(normGroup).filter(Boolean);
+    const matchesSchedule=(row,s)=>{
+      if(String(row.classType||"")!==String(s.courseType||""))return false;
+      const groups=targetGroups(s.groupName);
+      if(groups.length&&!groups.includes(normGroup(row.groupName)))return false;
+      if(s.courseType==="section"&&String(s.section||"").trim()&&String(row.section||"").trim()!==String(s.section||"").trim())return false;
+      return true;
+    };
+    const groupSchedules=(scheduleCourses||[]).filter(s=>["section","ensemble","comprehensive"].includes(String(s.courseType||"")));
+    const blockedSchedules=groupSchedules.filter(s=>["cancelled","rescheduled"].includes(String(s.effectiveStatus||"active")));
+    const isBlockedRow=row=>blockedSchedules.some(s=>matchesSchedule(row,s));
+    const effectiveSectionRows=sectionRows.filter(x=>!isBlockedRow(x));
+    const effectiveEnsembleRows=ensembleRows.filter(x=>!isBlockedRow(x));
+    const effectiveComprehensiveRows=comprehensiveRows.filter(x=>!isBlockedRow(x));
+    const allDailyRows=[...effectiveSectionRows,...effectiveEnsembleRows,...effectiveComprehensiveRows,...privateRows];
     const attendedCount=rows=>rows.filter(x=>x.status==="present"||x.status==="late").length;
     const statusCount=(rows,status)=>rows.filter(x=>x.status===status).length;
-    const weekday=new Date(date+"T12:00:00Z").getUTCDay();
-    const comprehensiveDates=new Set(["2026-09-18","2026-10-02","2026-10-16","2026-10-30","2026-11-20","2026-11-27","2026-12-04"]);
     const courseSummary=[];
-    const pushCourse=(key,label,groups,expected,rows,time="")=>{
+    const pushCourse=(key,label,groups,expected,rows,time="",meta={})=>{
       const attended=attendedCount(rows);
-      courseSummary.push({key,label,groups,time,expected,attended,leave:statusCount(rows,"leave"),absent:statusCount(rows,"absent"),late:statusCount(rows,"late"),recorded:rows.filter(x=>x.status!=="cancelled").length,attendanceRate:expected?Math.round(attended/expected*1000)/10:null});
+      courseSummary.push({
+        key,label,groups,time,expected,attended,
+        leave:statusCount(rows,"leave"),absent:statusCount(rows,"absent"),late:statusCount(rows,"late"),
+        recorded:rows.filter(x=>x.status!=="cancelled").length,
+        attendanceRate:expected?Math.round(attended/expected*1000)/10:null,
+        scheduleStatus:String(meta.scheduleStatus||"active"),
+        reason:String(meta.reason||""),
+        newDate:String(meta.newDate||""),
+        newStartTime:String(meta.newStartTime||""),
+        newEndTime:String(meta.newEndTime||"")
+      });
     };
-    if(weekday===1||weekday===3){
-      const rows=sectionRows.filter(x=>String(x.groupName)==="A");
-      pushCourse("section-A","A團分部課",["A"],activeByGroup("A"),rows,"每週一、週三");
+    const typeRows={section:effectiveSectionRows,ensemble:effectiveEnsembleRows,comprehensive:effectiveComprehensiveRows};
+    const defaultLabel={section:"分部課",ensemble:"合奏課",comprehensive:"綜合課"};
+    const represented=new Set();
+    for(const s of groupSchedules){
+      const groups=targetGroups(s.groupName);
+      const blocked=["cancelled","rescheduled"].includes(String(s.effectiveStatus||"active"));
+      const rows=(typeRows[s.courseType]||[]).filter(x=>matchesSchedule(x,s));
+      const expectedStudents=activeMasters.filter(m=>{
+        if(groups.length&&groups[0]!=="ALL"&&!groups.includes(normGroup(m.groupName)))return false;
+        if(s.courseType==="section"&&String(s.section||"").trim()&&String(m.section||"").trim()!==String(s.section||"").trim())return false;
+        return true;
+      });
+      const time=[String(s.startTime||""),String(s.endTime||"")].filter(Boolean).join("–");
+      const ex=s.exception||{};
+      const label=String(s.courseName||"").trim()||([groups.join("、"),defaultLabel[s.courseType]].filter(Boolean).join("團 ")||defaultLabel[s.courseType]);
+      const key=String(s.scheduleId||[s.courseType,s.groupName,s.section].join("|"));
+      represented.add(key);
+      pushCourse(key,label,groups,blocked?0:expectedStudents.length,blocked?[]:rows,time,{
+        scheduleStatus:String(s.effectiveStatus||"active"),
+        reason:String(ex.reason||""),
+        newDate:String(ex.newDate||""),
+        newStartTime:String(ex.newStartTime||""),
+        newEndTime:String(ex.newEndTime||"")
+      });
     }
-    if(weekday===2||weekday===4){
-      const rows=sectionRows.filter(x=>String(x.groupName)==="B");
-      pushCourse("section-B","B團分部課",["B"],activeByGroup("B"),rows,"每週二、週四");
-    }
-    const reserveSectionStart="2026-10-02";
-    if(weekday===5&&date>=reserveSectionStart){
-      const rows=sectionRows.filter(x=>String(x.groupName)==="儲備");
-      pushCourse("section-reserve","儲備團分部課",["儲備"],activeByGroup("儲備"),rows,"每週五｜10/2 起");
-    }
-    if(weekday===2){
-      const rows=ensembleRows.filter(x=>["A","B"].includes(String(x.groupName)));
-      pushCourse("ensemble-AB","A、B團合奏課",["A","B"],activeByGroup("A")+activeByGroup("B"),rows,"12:30–13:20");
-    }
-    if(comprehensiveDates.has(date)){
-      const rows=comprehensiveRows.filter(x=>["A","B","儲備"].includes(String(x.groupName)));
-      pushCourse("comprehensive","弦樂團體課（綜合課）",["A","B","儲備"],activeByGroup("A")+activeByGroup("B")+activeByGroup("儲備"),rows,"08:45–10:15");
+    // 若有未排在固定課表內、但老師實際完成的補課／臨時課程，仍保留在行政彙整。
+    for(const [type,rows] of Object.entries(typeRows)){
+      const byCourse=new Map();
+      for(const r of rows){
+        if(groupSchedules.some(s=>String(s.effectiveStatus||"active")==="active"&&matchesSchedule(r,s)))continue;
+        const key=[type,normGroup(r.groupName),String(r.section||"")].join("|");
+        if(!byCourse.has(key))byCourse.set(key,[]);
+        byCourse.get(key).push(r);
+      }
+      for(const [key,rows2] of byCourse){
+        const first=rows2[0]||{},groups=first.groupName?[normGroup(first.groupName)]:[];
+        const label=["臨時／補課",groups.length?groups.join("、")+"團":"",defaultLabel[type],type==="section"&&first.section?first.section:""].filter(Boolean).join("｜");
+        pushCourse("actual|"+key,label,groups,rows2.filter(x=>x.status!=="cancelled").length,rows2,"依實際點名",{scheduleStatus:"actual"});
+      }
     }
     if(privateRows.length){
       const attendancePrivateRows=privateRows.filter(x=>["present","late","leave","absent","cancelled"].includes(x.status));
       const expected=attendancePrivateRows.filter(x=>x.status!=="cancelled").length;
-      pushCourse("private","個別課",[],expected,attendancePrivateRows,"依個別課流程");
+      pushCourse("private","個別課",[],expected,attendancePrivateRows,"依個別課流程",{scheduleStatus:"actual"});
     }
     const privateLessonDetails=[];
     for(const r of privateRows){
