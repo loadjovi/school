@@ -112,7 +112,7 @@
   window.switchParentStudent=async function(studentId){
     const next=(state.students||[]).find(s=>String(s.studentId)===String(studentId));
     if(!next||String(next.studentId)===String(state.student?.studentId))return;
-    state.student=next;state.summary=null;state.practice=[];state.parentPracticeFeedback=null;state.parentPracticeFeedbackData=null;state.parentMonthlyEvaluation=null;state.parentLearningEvaluation=null;state.parentPracticeFeedbackStudentId="";
+    state.student=next;state.summary=null;state.practice=[];state.parentPracticeFeedback=null;state.parentPracticeFeedbackData=null;state.parentLearningEvaluation=null;state.parentPracticeFeedbackStudentId="";
     try{await refreshStudent();render();toast(`已切換為 ${next.name}`)}catch(e){toast("❌ "+e.message)}
   };
 
