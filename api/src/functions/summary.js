@@ -57,6 +57,10 @@ app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handle
   const ensemblePresent=ensembleEffective.filter(x=>["present","late"].includes(x.status)).length;
   const comprehensivePresent=comprehensiveEffective.filter(x=>["present","late"].includes(x.status)).length;
   const privatePresent=privateEffective.filter(x=>["present","late"].includes(x.status)).length;
+  const sectionLeave=sectionEffective.filter(x=>x.status==="leave").length,sectionAbsent=sectionEffective.filter(x=>x.status==="absent").length;
+  const ensembleLeave=ensembleEffective.filter(x=>x.status==="leave").length,ensembleAbsent=ensembleEffective.filter(x=>x.status==="absent").length;
+  const comprehensiveLeave=comprehensiveEffective.filter(x=>x.status==="leave").length,comprehensiveAbsent=comprehensiveEffective.filter(x=>x.status==="absent").length;
+  const privateLeave=privateEffective.filter(x=>x.status==="leave").length,privateAbsent=privateEffective.filter(x=>x.status==="absent").length;
   // 日常團體課期末 5%：分部＋合奏＋綜合課；個別課維持獨立紀錄，不納入此 5%。
   // 遲到仍視為到課；請假與缺席依比例扣分。當月進行中為暫估，歷史月份為正式結果。
   const groupEffective=[...sectionEffective,...ensembleEffective,...comprehensiveEffective];
@@ -71,10 +75,10 @@ app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handle
   const todayCourses=await todayCoursesFor(schoolId,master,today,s,e,c);
   return json({
     month,practiceQualifiedDays:qualifiedDays,practiceMinutes,practiceRate:Math.min(qualifiedDays/Math.max(effectiveTargetDays,1),1),practiceTargetDays:targetDays,practiceEffectiveTargetDays:effectiveTargetDays,practiceQualifiedMinutes:qualifiedMinutes,
-    sectionPresent,sectionTotal:sectionEffective.length,
-    ensemblePresent,ensembleTotal:ensembleEffective.length,
-    comprehensivePresent,comprehensiveTotal:comprehensiveEffective.length,
-    privatePresent,privateTotal:privateEffective.length,
+    sectionPresent,sectionTotal:sectionEffective.length,sectionLeave,sectionAbsent,
+    ensemblePresent,ensembleTotal:ensembleEffective.length,ensembleLeave,ensembleAbsent,
+    comprehensivePresent,comprehensiveTotal:comprehensiveEffective.length,comprehensiveLeave,comprehensiveAbsent,
+    privatePresent,privateTotal:privateEffective.length,privateLeave,privateAbsent,
     attendancePresent,attendanceTotal,attendanceLeave,attendanceAbsent,attendanceRate:attendanceRate==null?null:Math.round(attendanceRate*1000)/10,attendanceScore5,
     today,todayCourses,
     weightedScore:null
