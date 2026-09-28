@@ -50,28 +50,33 @@
     const s=d.semesterScore||{},months=Array.isArray(d.monthlyScores)?d.monthlyScores:[],policy=d.scorePolicy||{};
     const total=s.total20==null?"待完成":`${Math.round(Number(s.total20)*100)/100}/20`;
     const rows=months.map(x=>{
-      const p=x.practice||{},a=x.attendance||{},i=x.privateLesson||{};
+      const p=x.practice||{},a=x.attendance||{},l=x.learning||{};
       return `<div class="semester-score-month ${x.future?"is-future":""}">
         <b>${esc(String(x.month||"").slice(5))}月</b>
         <span>自主 ${scoreText(p.score10,10)}</span>
         <span>出勤 ${scoreText(a.score5,5)}</span>
-        <span>個課 ${scoreText(i.score5,5)}</span>
+        <span>學習 ${scoreText(l.score5,5)}</span>
         <strong>${x.total20==null?"—":(Math.round(Number(x.total20)*100)/100)+"/20"}</strong>
       </div>`;
     }).join("");
     return `<section class="semester-score-panel">
       <div class="semester-score-head">
-        <div><b>🏅 本學期 20% 成績總覽</b><small>自主練習 10%＋日常上課出勤 5%＋個別課加分 5%</small></div>
+        <div><b>🏅 本學期 20% 成績總覽</b><small>自主練習 10%＋日常上課出勤 5%＋學習參與與進步 5%</small></div>
         <span class="semester-score-total">${total}</span>
       </div>
       <div class="semester-score-components">
         <div><b>${scoreText(s.practice10,10)}</b><small>自主練習平均</small></div>
         <div><b>${scoreText(s.attendance5,5)}</b><small>日常出勤平均</small></div>
-        <div><b>${scoreText(s.privateLesson5,5)}</b><small>個別課加分平均</small></div>
+        <div><b>${scoreText(s.learning5,5)}</b><small>學習參與與進步平均</small></div>
       </div>
-      <div class="notice" style="margin-top:10px">學期以 ${(policy.months||[]).map(m=>String(m).slice(5)+"月").join("、")} 的月分數取平均。個別課為加分項：每完成 1 堂加 ${policy.privatePointsPerCompletedLesson??1.25} 分，每月最高 5 分；停課不扣分。家長星級是「師資回饋」，不列入學生個別課成績。</div>
-      <details class="semester-score-months"><summary>查看各月分數</summary>${rows}</details>
-      <small class="semester-score-foot">${s.status==="final"?(s.complete?"本學期計分月份已結束，以上為正式學期成績。":"本學期計分月份已結束，但仍有月份缺少老師月評或出勤資料，因此總分暫不定案。"):`本學期進行中，目前為暫估成績；自主練習已計 ${Number(s.practiceMonths||0)}/${Number(s.monthsPlanned||4)} 月、日常出勤已計 ${Number(s.attendanceMonths||0)}/${Number(s.monthsPlanned||4)} 月。`}</small>
+      <div class="notice" style="margin-top:10px">
+        正式計分月份：${(policy.months||[]).map(m=>String(m).slice(5)+"月").join("、")}。9 月為平台試營運，不列入正式平均。<br>
+        日常出勤：停課與核准請假不列入扣分分母，遲到仍算到課，無故缺席才影響分數。<br>
+        學習參與與進步：學習態度 1 分＋課堂準備 1 分＋技巧／曲目進步 2 分＋團體配合 1 分，多位授課老師取平均。<br>
+        個別課屬延伸學習與升等參考，不因未參加個別課而扣分。
+      </div>
+      <details class="semester-score-months"><summary>查看各月正式分數</summary>${rows}</details>
+      <small class="semester-score-foot">${s.status==="final"?(s.complete?"本學期正式計分月份已結束，以上為正式成績。":"正式計分月份已結束，但仍有月份缺少老師評量或出勤資料，因此總分暫不定案。"):`本學期進行中，目前為暫估成績；自主練習已計 ${Number(s.practiceMonths||0)}/${Number(s.monthsPlanned||3)} 月、日常出勤已計 ${Number(s.attendanceMonths||0)}/${Number(s.monthsPlanned||3)} 月、學習參與與進步已計 ${Number(s.learningMonths||0)}/${Number(s.monthsPlanned||3)} 月。`}</small>
     </section>`;
   }
   window.parentSemesterScorePanel=semesterScoreHtml;
@@ -90,7 +95,7 @@
         <div class="record-section-icon">📅</div>
         <div><b>本學期出勤紀錄</b><small>日常出勤 5% 依分部、合奏、綜合課到課比例換算；個別課出勤另列紀錄</small></div>
       </div>
-      <div class="card hero record-section-summary"><div class="section-title"><h2>出勤總覽</h2><span class="badge ${Number(o.absent||0)||Number(o.leave||0)||Number(o.late||0)?"warn":"ok"}">${Number(o.absent||0)||Number(o.leave||0)||Number(o.late||0)?"非全勤":"紀錄正常"}</span></div><div class="notice"><b>${semesterTitle(d)}</b><br>統計至 ${esc(d.asOf)}<br>${esc(statsLine(o))}<br><br>此區統計實際點名；遲到仍計入到課，請假與缺席依比例影響日常出勤 5% 分數。個別課的上課內容與家長星級評價另在「個別課專區」顯示。</div><div class="muted" style="margin-top:10px;text-align:right">最近更新：${esc(d.asOf)}　<button class="secondary" style="padding:6px 10px;margin:0" onclick="reloadParentSemesterAttendance()">↻ 重新整理</button></div></div>
+      <div class="card hero record-section-summary"><div class="section-title"><h2>出勤總覽</h2><span class="badge ${Number(o.absent||0)||Number(o.leave||0)||Number(o.late||0)?"warn":"ok"}">${Number(o.absent||0)||Number(o.leave||0)||Number(o.late||0)?"非全勤":"紀錄正常"}</span></div><div class="notice"><b>${semesterTitle(d)}</b><br>統計至 ${esc(d.asOf)}<br>${esc(statsLine(o))}<br><br>此區統計實際點名；遲到仍計入到課，核准請假不列入 5% 計分分母，無故缺席才會影響分數。個別課的上課內容與家長星級評價另在「個別課專區」顯示。</div><div class="muted" style="margin-top:10px;text-align:right">最近更新：${esc(d.asOf)}　<button class="secondary" style="padding:6px 10px;margin:0" onclick="reloadParentSemesterAttendance()">↻ 重新整理</button></div></div>
       ${classCard("section","分部課出勤","🎼",d)}
       ${classCard("ensemble","合奏課出勤","🎻",d)}
       ${classCard("comprehensive","綜合課出勤","🎶",d)}
