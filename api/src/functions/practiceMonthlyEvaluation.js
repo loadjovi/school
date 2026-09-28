@@ -57,6 +57,9 @@ app.http("practiceMonthlyEvaluation",{
       return json({month,items,item:studentId?(items[0]||null):null});
     }
 
+    return json({error:"自主練習老師月評已停用；自主練習 10% 改由系統依有效練習天數自動計分，老師請改用「月底正式評量｜期末 5%」。"},410);
+
+    /* legacy write path retained below for historical reference only */
     if(!isTeacher||a.role==="admin")return json({error:"只有教學老師可進行月評比"},403);
     const body=await request.json();
     const studentId=String(body.studentId||"").trim();
