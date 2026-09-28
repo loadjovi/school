@@ -71,7 +71,7 @@
       </div>
       <div class="notice" style="margin-top:10px">學期以 ${(policy.months||[]).map(m=>String(m).slice(5)+"月").join("、")} 的月分數取平均。個別課為加分項：每完成 1 堂加 ${policy.privatePointsPerCompletedLesson??1.25} 分，每月最高 5 分；停課不扣分。家長星級是「師資回饋」，不列入學生個別課成績。</div>
       <details class="semester-score-months"><summary>查看各月分數</summary>${rows}</details>
-      <small class="semester-score-foot">${s.status==="final"?"本學期已結束，以上為正式學期成績。":"本學期進行中，尚未結束月份不列入目前平均；目前顯示暫估成績。"}</small>
+      <small class="semester-score-foot">${s.status==="final"?(s.complete?"本學期計分月份已結束，以上為正式學期成績。":"本學期計分月份已結束，但仍有月份缺少老師月評或出勤資料，因此總分暫不定案。"):`本學期進行中，目前為暫估成績；自主練習已計 ${Number(s.practiceMonths||0)}/${Number(s.monthsPlanned||4)} 月、日常出勤已計 ${Number(s.attendanceMonths||0)}/${Number(s.monthsPlanned||4)} 月。`}</small>
     </section>`;
   }
   window.parentSemesterScorePanel=semesterScoreHtml;
