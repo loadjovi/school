@@ -71,12 +71,12 @@
       "/practice-progress.js?v=20260925-0205",
       "/teacher-navigation.js?v=20260924-2359",
       "/comprehensive-support.js?v=20260922-0715",
-      "/private-lesson-confirmation.js?v=20260925-0415"
+      "/private-lesson-confirmation.js?v=20260928-1615"
     ];
     if(role==="parent")return [
       "/practice-timer.js?v=20260918-0725",
-      "/private-lesson-confirmation.js?v=20260925-0415",
-      "/parent-semester-attendance.js?v=20260925-0415",
+      "/private-lesson-confirmation.js?v=20260928-1615",
+      "/parent-semester-attendance.js?v=20260928-1615",
       "/parent-home-summary.js?v=20260928-1545"
     ];
     if(role==="globalAdmin")return [
