@@ -97,7 +97,7 @@
       courseCard("section","🎼",sectionGroup?sectionGroup+"團分部課":"分部課",sectionGroup?todayName+"｜依老師設定的團別＋分部帶入學生點名":"",c.section&&hasTodaySection,progress("section",sectionGroup,sectionExpected),sectionGroup,date),
       courseCard("ensemble","🎻","A／B團合奏課","今天 12:30–13:20｜依老師設定的 A／B 團帶入學生",c.ensemble&&hasTodayEnsemble,progress("ensemble","",ensembleExpected)),
       courseCard("comprehensive","🎶","弦樂團體課（綜合課）","今天 08:45–10:15｜A／B／儲備團共同參加",hasTodayComprehensive,progress("comprehensive","",comprehensiveExpected)),
-      courseCard("private","👤","個別課","預約、改期／停課；完課時順手評學生學習表現 1～5 級",c.private,null)
+      courseCard("private","👤","個別課","預約、改期／停課、完課與家長確認；完成次數自動換算個課 5%",c.private,null)
     ].filter(Boolean).join("");
     const todayLabels=todayCourses.filter(x=>["section","ensemble","comprehensive"].includes(String(x.courseType||""))).map(x=>String(x.courseName||"課程")).filter(Boolean);const groupSchedule=todayLabels.length?[...new Set(todayLabels)].join("＋"):"無固定團體課";
     const practiceAll=(state.teacherAttention?.items||[]).map(x=>{const gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),rate=Number(x.practiceRatePercent||0),active=Number(x.activeDays||0);return {...x,_gap:gap,_rate:rate,_active:active}});
