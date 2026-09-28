@@ -79,23 +79,58 @@
       <small style="display:block;margin-top:8px;color:var(--muted)">這是老師每月唯一的正式評量：學習態度 1 分＋課堂準備 1 分＋技巧／曲目進步 2 分＋團體配合 1 分；多位授課老師取平均。個別課僅作升等參考，不因未參加而扣分。${trial?"9 月僅試評，正式計分自 10 月開始。":""}</small>
     </div>`;
   }
+  function parentMonthlyScoreOverview(){
+    const s=state.summary||{},e=state.parentLearningEvaluation||{};
+    const qualified=Number(s.practiceQualifiedDays||0),target=Math.max(1,Number(s.practiceEffectiveTargetDays||s.practiceTargetDays||30));
+    const practice=Math.round(Math.min(qualified/target,1)*1000)/100;
+    const attendance=s.attendanceScore5==null?null:Math.round(Number(s.attendanceScore5)*100)/100;
+    const learning=Number(e.score5||0)>0?Math.round(Number(e.score5)*100)/100:null;
+    const trial=/^\d{4}-09$/.test(String(s.month||"")),month=String(s.month||localDate().slice(0,7)).slice(5);
+    const complete=attendance!=null&&learning!=null;
+    const total=complete?Math.round((practice+attendance+learning)*100)/100:null;
+    const knownMax=10+(attendance==null?0:5)+(learning==null?0:5);
+    const knownScore=Math.round((practice+(attendance||0)+(learning||0))*100)/100;
+    const row=(icon,title,weight,value,meta,cls="")=>`<div class="parent-score-row ${cls}">
+      <div class="parent-score-row-main"><span class="parent-score-icon">${icon}</span><div><b>${title}</b><small>${meta}</small></div></div>
+      <div class="parent-score-value">${value}</div>
+    </div>`;
+    const attendanceMeta=attendance==null?"尚無可計分點名":"停課／核准請假不扣分";
+    const learningMeta=learning==null?"等待老師月底正式評量":"老師每月唯一正式評量";
+    return `<section class="parent-score-overview">
+      <div class="parent-score-overview-head">
+        <div><b>📊 ${month}月${trial?"評分試算":"評分"}｜期末 20%</b><small>三項分開計算，避免家長需要在頁面中來回找分數。</small></div>
+        <span class="parent-score-total ${complete?"is-complete":"is-pending"}">${complete?total+"/20":"已計 "+knownScore+"/"+knownMax}</span>
+      </div>
+      <div class="parent-score-indent">
+        ${row("🎯","自主練習","10",practice+"/10",`系統自動計分｜有效練習 ${qualified}/${target} 天`,"practice")}
+        ${row("📘","日常上課出勤","5",attendance==null?"待資料":attendance+"/5",attendanceMeta,"attendance")}
+        ${row("📊","月底正式評量","5",learning==null?"待老師評量":learning+"/5",learningMeta,"learning")}
+      </div>
+      <small class="parent-score-overview-foot">${trial?"9 月為試營運，以上僅供試算；正式成績自 10 月開始。":"當月尚未結束時為暫估，月底完成老師正式評量後顯示完整 20 分。"}</small>
+    </section>`;
+  }
   function parentFeedbackCard(){
     const f=state.parentPracticeFeedback,d=state.parentPracticeFeedbackData||{},m=feedbackLevels[Number(f?.level||0)];
     if(!f||!m)return "";
     const counts=d.badgeCounts||{},monthCount=Number(d.currentMonthCount||0),recent=Array.isArray(d.recent)?d.recent:[],streak=practiceStreakInfo();
     const badges=feedbackLevels.slice(1).map((meta,i)=>`<div class="parent-feedback-badge ${Number(counts[i+1]||0)>0?"earned":""}"><span>${meta.icon}</span><small>${esc(meta.label)}</small><b>×${Number(counts[i+1]||0)}</b></div>`).join("");
     const reward=streak.reward?`<div class="practice-streak-earned"><span>${streak.reward.icon}</span><div><b>${esc(streak.reward.label)}</b><small>本月最長連續練習 ${streak.longest} 天</small></div></div>`:`<div class="practice-streak-earned"><span>🌱</span><div><b>連續練習挑戰</b><small>目前最長 ${streak.longest} 天${streak.next?`｜達 ${streak.next} 天可獲得第一枚徽章`:""}</small></div></div>`;
-    return `<div class="parent-practice-feedback">
-      <div class="parent-practice-feedback-head"><b>💛 日常鼓勵｜不計分</b><span class="practice-feedback-chip">本月 ${monthCount} 次</span></div>
-      <div class="parent-feedback-latest"><div style="font-size:20px;font-weight:900">${m.icon} ${esc(m.label)}</div>${f.comment?`<div style="margin-top:6px;font-size:14px;font-weight:800">${esc(f.comment)}</div>`:""}<small>最近回饋｜${esc(f.teacherName||"老師")}${f.updatedAt?`｜${esc(String(f.updatedAt).slice(0,10))}`:""}</small></div>
-      <small style="display:block;margin:7px 0;color:var(--muted)">此區為老師平時鼓勵互動，不列入任何成績。</small><div class="parent-feedback-section-title">🏅 鼓勵徽章牆</div>
-      <div class="parent-feedback-badges">${badges}</div>
-      <div class="parent-feedback-section-title">🔥 連續練習獎勵</div>
-      ${reward}
-      ${recent.length>1?`<details class="parent-feedback-history"><summary>查看最近老師鼓勵（${Math.min(recent.length,5)}）</summary>${recent.slice(0,5).map(h=>{const hm=feedbackLevels[Number(h.level||0)];return `<div><b>${hm?hm.icon:"💛"} ${esc(hm?.label||"鼓勵")}</b><small>${esc(h.teacherName||"老師")}｜${esc(String(h.updatedAt||"").slice(0,10))}</small>${h.comment?`<p>${esc(h.comment)}</p>`:""}</div>`}).join("")}</details>`:""}
-    </div>`;
+    return `<details class="parent-practice-feedback parent-feedback-compact">
+      <summary>
+        <div><b>💛 日常鼓勵｜不計分</b><small>${m.icon} ${esc(m.label)}｜最近回饋 ${esc(f.teacherName||"老師")}</small></div>
+        <span class="practice-feedback-chip">本月 ${monthCount} 次</span>
+      </summary>
+      <div class="parent-feedback-expanded">
+        <div class="parent-feedback-latest"><div style="font-size:18px;font-weight:900">${m.icon} ${esc(m.label)}</div>${f.comment?`<div style="margin-top:6px;font-size:14px;font-weight:800">${esc(f.comment)}</div>`:""}<small>最近回饋｜${esc(f.teacherName||"老師")}${f.updatedAt?`｜${esc(String(f.updatedAt).slice(0,10))}`:""}</small></div>
+        <small style="display:block;margin:7px 0;color:var(--muted)">此區為老師平時鼓勵互動，不列入任何成績；需要查看徽章或歷史回饋時再展開即可。</small>
+        <div class="parent-feedback-section-title">🏅 鼓勵徽章牆</div>
+        <div class="parent-feedback-badges">${badges}</div>
+        <div class="parent-feedback-section-title">🔥 連續練習獎勵</div>
+        ${reward}
+        ${recent.length>1?`<details class="parent-feedback-history"><summary>查看最近老師鼓勵（${Math.min(recent.length,5)}）</summary>${recent.slice(0,5).map(h=>{const hm=feedbackLevels[Number(h.level||0)];return `<div><b>${hm?hm.icon:"💛"} ${esc(hm?.label||"鼓勵")}</b><small>${esc(h.teacherName||"老師")}｜${esc(String(h.updatedAt||"").slice(0,10))}</small>${h.comment?`<p>${esc(h.comment)}</p>`:""}</div>`}).join("")}</details>`:""}
+      </div>
+    </details>`;
   }
-
   function todayCourseReminder(){
     const s=state.summary||{},courses=Array.isArray(s.todayCourses)?s.todayCourses:[],date=String(s.today||localDate());
     const statusText={present:"已出席",late:"遲到",leave:"請假",absent:"缺席",cancelled:"停課"};
@@ -122,7 +157,7 @@
     const feedbackStudentId=String(state.student.studentId||"");if(state.parentPracticeFeedbackStudentId!==feedbackStudentId&&!state.parentPracticeFeedbackLoading){state.parentPracticeFeedbackStudentId=feedbackStudentId;setTimeout(()=>loadParentPracticeFeedback(feedbackStudentId),0)}
     const action=todayDone?`<div class="notice"><b>✅ 今天已完成自主練習</b><br><span style="display:block;margin-top:6px">${todayMinutes} 分鐘｜今天已有 ${todayRows.length} 筆紀錄</span></div><button class="primary" onclick="go('record')">查看今日／近期紀錄</button><button class="secondary" style="width:100%;margin-top:10px" onclick="go('practice')">＋ 補登另一筆練習</button>`:`<div class="notice"><b>🎻 今天尚未有自主練習紀錄</b><br><span style="display:block;margin-top:6px">完成練習後，記得幫${esc(state.student.name)}留下紀錄。</span></div><button class="primary" onclick="go('practice')">立即自主練習打卡</button>`;
     const privateLessonPanel=typeof window.privateLessonParentPanels==="function"?window.privateLessonParentPanels("home"):"";
-    return `${studentSwitcher()}${todayCourseReminder()}${privateLessonPanel}<div class="card hero"><div class="student"><div class="studentleft"><div class="avatar">${esc(state.student.name?.[0]||"學")}</div><div><div class="name">${esc(state.student.name)}</div><div class="muted">${esc(state.student.groupName)}團${sectionName?`｜${esc(sectionName)}`:""}｜${esc(state.student.instrument)}｜${esc(state.student.grade)}</div></div></div><div class="pill">${new Date().getMonth()+1}月</div></div><div style="margin-top:14px;font-weight:900">本月自主練習</div><div class="grid" style="margin-top:8px"><div class="kpi"><b>${s.practiceQualifiedDays||0} 天</b><span>練習達標天數</span></div><div class="kpi"><b>${s.practiceMinutes||0} 分鐘</b><span>累計練習時間</span></div></div><div class="notice" style="margin-top:10px"><b>最近一次自主練習</b><br>${esc(latestText)}</div>${parentMonthlyScoreCard()}${parentFeedbackCard()}<div style="margin-top:16px;font-weight:900">本月上課出勤</div><div class="muted" style="font-size:12px;margin-top:3px">到課 / 應到；遲到仍計入到課</div>${parentAttendanceScoreCard()}${parentLearningScoreCard()}<div class="grid" style="margin-top:8px">${attendanceKpi("分部課",s.sectionPresent,s.sectionTotal,s.sectionLeave,s.sectionAbsent,sectionName||"目前分部")}${attendanceKpi("合奏課",s.ensemblePresent,s.ensembleTotal,s.ensembleLeave,s.ensembleAbsent,"A／B 團合奏")}${attendanceKpi("綜合課（團體課）",s.comprehensivePresent,s.comprehensiveTotal,s.comprehensiveLeave,s.comprehensiveAbsent,"A／B／儲備團")}${attendanceKpi("個別課",s.privatePresent,s.privateTotal,s.privateLeave,s.privateAbsent,"僅紀錄／升等參考")}</div><button class="secondary" style="width:100%;margin-top:12px" onclick="go('record')">查看整學期上課紀錄 ›</button></div><div class="card"><h2>今天要做什麼？</h2>${action}</div><div class="card"><h2>📌 自主練習登記提醒</h2><div class="notice">自主練習紀錄將作為後續練習統計與成績計算依據。為保障學生權益，請家長於每次練習完成後確認紀錄已成功送出，並可至「紀錄」頁再次核對。<br><br><b>達標規則：單日累計自主練習達 15 分鐘以上，計為 1 個達標日；同一天多筆紀錄的分鐘數會累計，但達標日仍以 1 天計算。</b><br><br>若主要登記之家長因出差、工作或其他因素無法操作，可由另一位已綁定之監護人登入完成登記。<b>系統以「學生」為統計單位</b>，不同監護人登記的紀錄皆累計於同一位學生名下。</div></div>`;
+    return `${studentSwitcher()}${todayCourseReminder()}${privateLessonPanel}<div class="card hero"><div class="student"><div class="studentleft"><div class="avatar">${esc(state.student.name?.[0]||"學")}</div><div><div class="name">${esc(state.student.name)}</div><div class="muted">${esc(state.student.groupName)}團${sectionName?`｜${esc(sectionName)}`:""}｜${esc(state.student.instrument)}｜${esc(state.student.grade)}</div></div></div><div class="pill">${new Date().getMonth()+1}月</div></div><div style="margin-top:14px;font-weight:900">本月自主練習</div><div class="grid" style="margin-top:8px"><div class="kpi"><b>${s.practiceQualifiedDays||0} 天</b><span>練習達標天數</span></div><div class="kpi"><b>${s.practiceMinutes||0} 分鐘</b><span>累計練習時間</span></div></div><div class="notice" style="margin-top:10px"><b>最近一次自主練習</b><br>${esc(latestText)}</div>${parentMonthlyScoreOverview()}${parentFeedbackCard()}<div class="parent-detail-heading"><b>本月上課出勤明細</b><small>分部／合奏／綜合課與個別課的實際點名紀錄</small></div><div class="grid" style="margin-top:8px">${attendanceKpi("分部課",s.sectionPresent,s.sectionTotal,s.sectionLeave,s.sectionAbsent,sectionName||"目前分部")}${attendanceKpi("合奏課",s.ensemblePresent,s.ensembleTotal,s.ensembleLeave,s.ensembleAbsent,"A／B 團合奏")}${attendanceKpi("綜合課（團體課）",s.comprehensivePresent,s.comprehensiveTotal,s.comprehensiveLeave,s.comprehensiveAbsent,"A／B／儲備團")}${attendanceKpi("個別課",s.privatePresent,s.privateTotal,s.privateLeave,s.privateAbsent,"僅紀錄／升等參考")}</div><button class="secondary" style="width:100%;margin-top:12px" onclick="go('record')">查看整學期上課紀錄 ›</button></div><div class="card"><h2>今天要做什麼？</h2>${action}</div><div class="card"><h2>📌 自主練習登記提醒</h2><div class="notice">自主練習紀錄將作為後續練習統計與成績計算依據。為保障學生權益，請家長於每次練習完成後確認紀錄已成功送出，並可至「紀錄」頁再次核對。<br><br><b>達標規則：單日累計自主練習達 15 分鐘以上，計為 1 個達標日；同一天多筆紀錄的分鐘數會累計，但達標日仍以 1 天計算。</b><br><br>若主要登記之家長因出差、工作或其他因素無法操作，可由另一位已綁定之監護人登入完成登記。<b>系統以「學生」為統計單位</b>，不同監護人登記的紀錄皆累計於同一位學生名下。</div></div>`;
   };
   if(baseNav){nav=function(){if(state.page==="contextSelect")return baseNav();if(isParent())return `<nav class="nav">${navBtn("home","🏠","首頁")}${navBtn("practice","⏱️","自主打卡")}${navBtn("record","📊","紀錄")}${navBtn("register","➕","綁定孩子")}</nav>`;return baseNav()}}
   window.parentHomeSummaryReady=true;
