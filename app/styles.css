@@ -344,3 +344,67 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
   .teacher-eval-student-list{max-height:280px}
   .teacher-eval-current-head b{font-size:18px}
 }
+
+/* 學校後台：出勤行政工作台 */
+.attendance-workbench .muted{line-height:1.45}
+.attendance-primary-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}
+.attendance-primary-kpis>div{padding:11px;border:1px solid #dfe5ee;border-radius:12px;background:#fff}
+.attendance-primary-kpis>div.attention{border-color:#efb7b7;background:#fff7f7}
+.attendance-primary-kpis b{display:block;font-size:18px;color:#17367e}
+.attendance-primary-kpis .attention b{color:#b42318}
+.attendance-primary-kpis span{display:block;margin-top:4px;font-size:10px;color:var(--muted);line-height:1.35}
+
+.attendance-reset-filter{width:auto;margin:0;padding:7px 11px}
+.attendance-quick-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.attendance-quick-card{display:flex;align-items:flex-start;gap:8px;width:100%;margin:0;padding:10px;border:1px solid #dfe5ed;border-radius:12px;background:#fff;text-align:left;cursor:pointer}
+.attendance-quick-card>span{font-size:20px;line-height:1.1}
+.attendance-quick-card b{display:block;font-size:18px;color:#172554}
+.attendance-quick-card small{display:block;margin-top:1px;font-size:10px;font-weight:800;color:#334155}
+.attendance-quick-card em{display:block;margin-top:4px;font-size:9px;font-style:normal;color:var(--muted);line-height:1.3}
+.attendance-quick-card.is-active{border:2px solid #4662b5;background:#f3f6ff}
+.attendance-quick-card.attention b,.attendance-quick-card.absent b{color:#b42318}
+.attendance-quick-card.leave b{color:#8a6100}
+
+.attendance-course-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.attendance-course-card{padding:11px;border:1px solid #dfe5ed;border-radius:13px;background:#fff}
+.attendance-course-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.attendance-course-head b{font-size:12px;color:#172554}
+.attendance-course-main{margin-top:9px}
+.attendance-course-main strong{display:block;font-size:19px;color:#24499c}
+.attendance-course-main small{display:block;margin-top:2px;font-size:9px;color:var(--muted)}
+.attendance-course-detail{display:grid;gap:3px;margin-top:8px;font-size:9px;color:#5b6572}
+.attendance-private-reference{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding:10px 11px;border:1px dashed #d9dee7;border-radius:11px;background:#fafbfc}
+.attendance-private-reference b{font-size:11px;color:#334155}
+.attendance-private-reference span{font-size:11px;font-weight:900;color:#3155a4}
+.attendance-private-reference small{flex:1 1 100%;font-size:9px;color:var(--muted)}
+
+.attendance-list-card .section-title{align-items:flex-start}
+.attendance-student-row{padding:12px 0;border-bottom:1px solid var(--line)}
+.attendance-student-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.attendance-student-name{min-width:0;flex:1}
+.attendance-student-name>div{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.attendance-student-name b{font-size:15px;color:#172554}
+.attendance-student-name small{display:block;margin-top:4px;font-size:10px;color:var(--muted)}
+.attendance-student-rate{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto}
+.attendance-student-rate button{width:auto;margin:0;padding:5px 8px;font-size:10px}
+.attendance-student-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-top:9px}
+.attendance-student-summary span{padding:6px;border-radius:9px;background:#f8fafc;font-size:9px;white-space:nowrap}
+.attendance-student-summary b{font-size:10px}
+.attendance-student-summary .absent{background:#fff3f3;color:#9d1c1c}
+.attendance-student-summary .leave{background:#fff9e9;color:#755400}
+.attendance-student-summary .present{background:#f2faf5;color:#21663c}
+.attendance-student-summary .late{background:#f6f7fb;color:#4d5260}
+.attendance-recent{display:block;margin-top:7px;padding:7px 8px;border-radius:9px;font-size:9px;line-height:1.4}
+.attendance-recent.has-change{background:#fff8ea;color:#705000}
+.attendance-recent.is-clear{background:#f2faf5;color:#25633e}
+.attendance-class-breakdown{display:block;margin-top:6px;font-size:9px;color:var(--muted)}
+.attendance-pager{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;margin-top:14px}
+.attendance-pager button{width:100%;margin:0}
+.attendance-pager span{font-size:10px;color:var(--muted);white-space:nowrap}
+
+@media(max-width:520px){
+  .attendance-primary-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .attendance-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .attendance-course-grid{grid-template-columns:1fr}
+  .attendance-student-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
