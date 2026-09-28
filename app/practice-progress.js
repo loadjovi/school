@@ -220,7 +220,7 @@
     <div class="card hero"><h2>📚 自主練習${isAdmin()?'月報':'進度'}</h2>
       <div class="notice">此頁只用來查看自主練習進度與提供日常鼓勵；<b>老師不需要在這裡做正式成績評量。</b></div>
       <div class="monthly-score-policy"><b>🎯 自主練習｜期末 10%｜系統自動計分</b><small>單日累計 ≥ ${d.qualifiedMinutes||15} 分鐘計 1 個有效練習日；月分數＝有效練習天數 ÷ 當月目標天數 × 10，最高 10 分。老師不需另外評分。9 月為試營運，正式計分自 10 月起。</small></div>
-      <div class="monthly-score-policy" style="margin-top:8px"><b>🎻 最後 5%｜個課優先，無個課才期末評一次</b><small>有參加個別課的學生，由個課老師每次完課順手選 1～5 級學生學習表現，學期末取平均；整學期沒有個課的學生，才由分部老師在學期末評量一次。</small></div>
+      <div class="monthly-score-policy" style="margin-top:8px"><b>🎻 學習表現｜期末 5%</b><small>有完成個別課的學生，由系統依完成次數自動換算：每月 4 次 = 5 分，上學期 10～12 月取學期平均；整學期沒有完成個課的學生，才由分部老師在學期末評量一次。</small></div>
       <label>月份</label><input type="month" value="${esc(state.practiceProgressMonth)}" onchange="changePracticeProgressMonth(this.value)">
       <div class="grid"><div class="kpi"><b>${all.length}</b><span>授課學生</span></div><div class="kpi"><b>${all.length-counts.none}</b><span>已有練習</span></div><div class="kpi"><b>${counts.below}</b><span>持續累積中</span></div><div class="kpi"><b>${counts.ok}</b><span>已完成目標</span></div></div>
       <div style="margin-top:10px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">${filterBtn('全部','全部',all.length)}${filterBtn('尚未練習','⚪ 本月尚無紀錄',counts.none)}${filterBtn('未達標','🟡 持續累積中',counts.below)}${filterBtn('已達標','🟢 已完成目標',counts.ok)}</div>
