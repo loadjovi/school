@@ -1,0 +1,96 @@
+import { app } from "@azure/functions";
+import { getTenantContext, ensureStudentAccess, json } from "../lib/auth.js";
+import { ensureTenantTables, table, tenantStudentPartition, tenantSchoolPartition, getStudentMaster } from "../lib/storage.js";
+
+const safe=v=>String(v||"").replaceAll("'","''");
+const monthValue=v=>/^\d{4}-\d{2}$/.test(String(v||"").trim())?String(v).trim():new Date().toISOString().slice(0,7);
+const teacherKey=v=>String(v||"teacher").toLowerCase().replace(/[^a-z0-9]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"").slice(0,48)||"teacher";
+const clampRating=v=>{const n=Number(v||0);return Number.isInteger(n)&&n>=1&&n<=5?n:0};
+const round2=v=>Math.round(Number(v||0)*100)/100;
+const calcScore=(attitude,preparation,progress,teamwork)=>round2(
+  Number(attitude||0)/5*1+
+  Number(preparation||0)/5*1+
+  Number(progress||0)/5*2+
+  Number(teamwork||0)/5*1
+);
+
+const view=e=>({
+  studentId:String(e.studentId||""),
+  month:String(e.evaluationMonth||""),
+  attitude:Number(e.attitude||0),
+  preparation:Number(e.preparation||0),
+  progress:Number(e.progress||0),
+  teamwork:Number(e.teamwork||0),
+  score5:Number(e.score5||0),
+  comment:String(e.comment||""),
+  teacherName:String(e.teacherName||""),
+  teacherEmail:String(e.teacherEmail||""),
+  updatedAt:String(e.updatedAt||"")
+});
+
+async function listRows(schoolId,month){
+  const rows=[],sid=safe(tenantSchoolPartition(schoolId)),m=safe(month);
+  const filter=`schoolId eq '${sid}' and evaluationMonth eq '${m}'`;
+  for await(const e of table("tenantLearningMonthlyEvaluation").listEntities({queryOptions:{filter}}))rows.push(e);
+  return rows.sort((a,b)=>String(b.updatedAt||"").localeCompare(String(a.updatedAt||"")));
+}
+
+app.http("learningMonthlyEvaluation",{
+  methods:["GET","POST"],authLevel:"anonymous",route:"learning-monthly-evaluation",
+  handler:async request=>{
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access:a,schoolId}=context;
+    await ensureTenantTables();
+    const isTeacher=!!a.capabilities?.teacherSettings;
+
+    if(request.method==="GET"){
+      const rawMonth=String(request.query.get("month")||"").trim(),studentId=String(request.query.get("studentId")||"").trim();
+      if(rawMonth&&!/^\d{4}-\d{2}$/.test(rawMonth))return json({error:"月份格式錯誤"},400);
+      const month=monthValue(rawMonth),rows=await listRows(schoolId,month);
+      let filtered=[];
+      if(studentId){
+        if(!ensureStudentAccess(a,studentId))return json({error:"無此學生存取權限"},403);
+        filtered=rows.filter(e=>String(e.studentId||"")===studentId);
+      }else{
+        if(a.role!=="admin"&&!isTeacher)return json({error:"Forbidden"},403);
+        const allowed=a.role==="admin"?null:new Set((a.students||[]).map(x=>String(x?.studentId||x||"")).filter(Boolean));
+        filtered=rows.filter(e=>!allowed||allowed.has(String(e.studentId||"")));
+      }
+      const grouped=new Map();
+      for(const e of filtered){
+        const id=String(e.studentId||""),arr=grouped.get(id)||[];arr.push(view(e));grouped.set(id,arr);
+      }
+      const items=[...grouped.entries()].map(([studentId,ratings])=>{
+        const avg=key=>ratings.length?round2(ratings.reduce((n,x)=>n+Number(x[key]||0),0)/ratings.length):0;
+        const score5=ratings.length?round2(ratings.reduce((n,x)=>n+Number(x.score5||0),0)/ratings.length):0;
+        const mine=isTeacher?ratings.find(x=>String(x.teacherEmail||"").toLowerCase()===String(a.email||"").toLowerCase())||null:null;
+        return {
+          studentId,ratingCount:ratings.length,myRating:mine,ratings,
+          average:{attitude:avg("attitude"),preparation:avg("preparation"),progress:avg("progress"),teamwork:avg("teamwork")},
+          score5
+        };
+      });
+      return json({month,weights:{attitude:1,preparation:1,progress:2,teamwork:1,total:5},items,item:studentId?(items[0]||null):null});
+    }
+
+    if(!isTeacher||a.role==="admin")return json({error:"只有教學老師可進行學習參與與進步月評"},403);
+    const body=await request.json(),studentId=String(body.studentId||"").trim(),month=monthValue(body.month);
+    const attitude=clampRating(body.attitude),preparation=clampRating(body.preparation),progress=clampRating(body.progress),teamwork=clampRating(body.teamwork);
+    const comment=String(body.comment||"").trim().slice(0,240);
+    if(!studentId)return json({error:"缺少學生"},400);
+    if(!attitude||!preparation||!progress||!teamwork)return json({error:"四項評量皆需完成 1～5 級評分"},400);
+    if(!ensureStudentAccess(a,studentId))return json({error:"無此學生存取權限"},403);
+    const master=await getStudentMaster(studentId,schoolId);if(!master)return json({error:"找不到學生資料"},404);
+
+    const now=new Date().toISOString(),email=String(a.email||""),score5=calcScore(attitude,preparation,progress,teamwork);
+    const entity={
+      partitionKey:tenantStudentPartition(schoolId,studentId),
+      rowKey:`learn_${month.replace("-","")}_${teacherKey(email)}`,
+      schoolId:tenantSchoolPartition(schoolId),studentId,studentName:String(master.studentName||""),
+      evaluationMonth:month,attitude,preparation,progress,teamwork,score5,comment,
+      teacherName:String(a.displayName||email||"老師"),teacherEmail:email,updatedAt:now
+    };
+    await table("tenantLearningMonthlyEvaluation").upsertEntity(entity,"Replace");
+    return json({ok:true,item:view(entity),score5});
+  }
+});
