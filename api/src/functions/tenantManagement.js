@@ -183,6 +183,180 @@ app.http("globalDashboard",{
   }
 });
 
+function parseJsonArray(value){
+  if(Array.isArray(value))return value;
+  try{const x=JSON.parse(String(value||"[]"));return Array.isArray(x)?x:[]}catch{return []}
+}
+function attendanceBucket(){return {total:0,present:0,late:0,leave:0,absent:0,cancelled:0,attended:0,attendanceRate:null}}
+function addAttendance(bucket,status){
+  status=String(status||"");
+  if(status==="cancelled"){bucket.cancelled++;return}
+  if(!["present","late","leave","absent"].includes(status))return;
+  bucket.total++;bucket[status]++;
+  if(status==="present"||status==="late")bucket.attended++;
+}
+function doneAttendance(bucket){
+  bucket.attendanceRate=bucket.total?Math.round(bucket.attended/bucket.total*1000)/10:null;
+  return bucket;
+}
+function mergeWorkAttendance(...items){
+  const out=attendanceBucket();
+  for(const x of items){for(const k of ["total","present","late","leave","absent","cancelled","attended"])out[k]+=Number(x?.[k]||0)}
+  return doneAttendance(out);
+}
+function hoursTextNumber(minutes){return Math.round(Number(minutes||0)/60*100)/100}
+function teacherKeyValue(email){return String(email||"").trim().toLowerCase()}
+async function globalTeacherProfiles(schoolId){
+  const sid=String(schoolId||"").replaceAll("'","''"),items=[];
+  for await(const e of table("tenantTeacherProfile").listEntities({queryOptions:{filter:`PartitionKey eq '${sid}'`}}))items.push(e);
+  return items;
+}
+function profileCandidate(type,row,profiles=[]){
+  const group=String(row?.groupName||""),section=String(row?.section||"");
+  return profiles.filter(p=>{
+    if(type==="section")return parseJsonArray(p.sectionAssignments).some(a=>String(a?.groupName||a?.group||"")===group&&String(a?.section||"")===section);
+    if(type==="ensemble")return parseJsonArray(p.ensembleGroups).map(String).includes(group);
+    if(type==="comprehensive")return p.comprehensiveEnabled===true;
+    return false;
+  });
+}
+function courseLabel(type){return ({section:"分部課",ensemble:"合奏課",comprehensive:"綜合課",practice:"加練課",privateLesson:"個別課"})[type]||type}
+function defaultCourseMinutes(type){return ({section:45,ensemble:50,comprehensive:90,practice:0})[type]||0}
+function sessionKeyFor(type,row){
+  const date=String(row.eventDate||"");
+  if(type==="section")return [date,type,String(row.groupName||""),String(row.section||"")].join("|");
+  if(type==="ensemble")return [date,type,String(row.groupName||"")].join("|");
+  if(type==="comprehensive")return [date,type].join("|");
+  return [date,type,String(row.sessionId||row.rowKey||""),String(row.teacher||"")].join("|");
+}
+function latestRowsForSessions(type,rows=[]){
+  const latest=new Map();
+  for(const row of rows){
+    const student=activityStudentId(row),key=[sessionKeyFor(type,row),student].join("|"),old=latest.get(key);
+    const stamp=`${String(row.createdAt||row.updatedAt||"")}|${String(row.rowKey||"")}`,oldStamp=old?`${String(old.createdAt||old.updatedAt||"")}|${String(old.rowKey||"")}`:"";
+    if(!old||stamp>=oldStamp)latest.set(key,row);
+  }
+  return [...latest.values()];
+}
+function resolveTeachingTeacher(type,rows,profiles,directoryMap){
+  const latest=[...rows].sort((a,b)=>String(b.createdAt||b.updatedAt||"").localeCompare(String(a.createdAt||a.updatedAt||"")))[0]||{};
+  const recorderEmail=teacherKeyValue(latest.teacher),recorderName=String(latest.teacherName||directoryMap.get(recorderEmail)?.teacherName||latest.teacher||""),recorderRole=String(latest.actorRole||"teacher");
+  const candidates=profileCandidate(type,latest,profiles).map(p=>{
+    const email=teacherKeyValue(p.teacherEmail||p.rowKey),dir=directoryMap.get(email);
+    return {email,name:String(p.displayName||dir?.teacherName||email)};
+  });
+  const matching=candidates.find(x=>x.email&&x.email===recorderEmail);
+  if(matching)return {teacherEmail:matching.email,teacherName:matching.name,teacherSource:"點名老師符合授課設定",recorderEmail,recorderName,recorderRole,candidates};
+  if(recorderRole!=="admin"&&recorderEmail&&directoryMap.has(recorderEmail))return {teacherEmail:recorderEmail,teacherName:String(directoryMap.get(recorderEmail)?.teacherName||recorderName||recorderEmail),teacherSource:"老師本人點名",recorderEmail,recorderName,recorderRole,candidates};
+  if(candidates.length===1)return {teacherEmail:candidates[0].email,teacherName:candidates[0].name,teacherSource:"依授課設定判定",recorderEmail,recorderName,recorderRole,candidates};
+  return {teacherEmail:"",teacherName:"待確認授課老師",teacherSource:candidates.length?"多位授課候選，未自動認列工時":"無可辨識授課老師",recorderEmail,recorderName,recorderRole,candidates};
+}
+async function teacherOperationsForSchool(tenant,startDate,endDate){
+  const schoolId=String(tenant.rowKey||tenant.schoolId||"");
+  const [sectionRaw,ensembleRaw,comprehensiveRaw,privateRaw,directory,profiles]=await Promise.all([
+    listActivityRange("section",schoolId,startDate,endDate),
+    listActivityRange("ensemble",schoolId,startDate,endDate),
+    listActivityRange("comprehensive",schoolId,startDate,endDate),
+    listActivityRange("privateLesson",schoolId,startDate,endDate),
+    listTeacherDirectory(schoolId),
+    globalTeacherProfiles(schoolId)
+  ]);
+  const directoryMap=new Map(directory.map(x=>[teacherKeyValue(x.teacherEmail||x.rowKey),x]));
+  const sessions=[];
+  const groupTypes=[["section",sectionRaw],["ensemble",ensembleRaw],["comprehensive",comprehensiveRaw]];
+  for(const [type,raw] of groupTypes){
+    const grouped=new Map();
+    for(const row of latestRowsForSessions(type,raw)){
+      const key=sessionKeyFor(type,row),arr=grouped.get(key)||[];arr.push(row);grouped.set(key,arr);
+    }
+    for(const [key,rows] of grouped){
+      const attendance=attendanceBucket();for(const r of rows)addAttendance(attendance,r.status);doneAttendance(attendance);
+      const teacher=resolveTeachingTeacher(type,rows,profiles,directoryMap),sample=rows[0]||{};
+      const positiveMinutes=rows.map(r=>Number(r.minutes||0)).filter(n=>n>0),durationMinutes=positiveMinutes.length?Math.max(...positiveMinutes):defaultCourseMinutes(type);
+      sessions.push({
+        sessionKey:key,courseType:type,courseLabel:courseLabel(type),eventDate:String(sample.eventDate||""),groupName:String(sample.groupName||""),section:String(sample.section||""),
+        durationMinutes,teachingHours:hoursTextNumber(durationMinutes),attendance,
+        teacherEmail:teacher.teacherEmail,teacherName:teacher.teacherName,teacherSource:teacher.teacherSource,
+        recordedByEmail:teacher.recorderEmail,recordedBy:teacher.recorderName,recordedByRole:teacher.recorderRole,
+        teacherCandidates:teacher.candidates.map(x=>x.name),feedbackCount:0,feedbackAverage:null
+      });
+    }
+  }
+
+  // 個別課：老師完課待家長確認也算已完成教學；家長星級只作師資回饋。
+  const privateLatest=new Map();
+  for(const row of privateRaw){
+    const key=String(row.sessionId||row.rowKey||[row.eventDate,row.startTime,row.endTime,row.studentId,row.teacher].join("|")),old=privateLatest.get(key);
+    const stamp=String(row.updatedAt||row.createdAt||""),oldStamp=old?String(old.updatedAt||old.createdAt||""):"";
+    if(!old||stamp>=oldStamp)privateLatest.set(key,row);
+  }
+  for(const [key,row] of privateLatest){
+    const status=String(row.status||"");
+    if(!["teacher_completed","present","late"].includes(status))continue;
+    const teacherEmail=teacherKeyValue(row.teacher),teacherName=String(row.teacherName||directoryMap.get(teacherEmail)?.teacherName||row.teacher||"個課老師");
+    const rating=Number(row.teacherRating||0),durationMinutes=Math.max(0,Number(row.minutes||0));
+    sessions.push({
+      sessionKey:key,courseType:"privateLesson",courseLabel:"個別課",eventDate:String(row.eventDate||""),groupName:String(row.groupName||""),section:String(row.section||""),
+      durationMinutes,teachingHours:hoursTextNumber(durationMinutes),attendance:{total:1,present:status==="present"||status==="teacher_completed"?1:0,late:status==="late"?1:0,leave:0,absent:0,cancelled:0,attended:1,attendanceRate:100},
+      teacherEmail,teacherName,teacherSource:"個課預約／完課老師",recordedByEmail:teacherEmail,recordedBy:teacherName,recordedByRole:"teacher",
+      teacherCandidates:[teacherName],feedbackCount:rating>0?1:0,feedbackAverage:rating>0?rating:null,parentReview:String(row.teacherReview||"")
+    });
+  }
+
+  const baseCourse=()=>({sessions:0,minutes:0,hours:0,attendance:attendanceBucket()});
+  const schoolCourses={section:baseCourse(),ensemble:baseCourse(),comprehensive:baseCourse(),practice:{...baseCourse(),available:false,note:"目前加練僅有特殊行事曆，尚未建立獨立點名來源，因此不認列出勤與工時。"},privateLesson:{sessions:0,minutes:0,hours:0,feedbackCount:0,feedbackAverage:null}};
+  const teacherMap=new Map();
+  const ensureTeacher=(email,name)=>{
+    const key=email||`unassigned:${name||"unknown"}`;
+    if(!teacherMap.has(key))teacherMap.set(key,{teacherKey:key,teacherEmail:email||"",teacherName:name||"待確認授課老師",course:{section:baseCourse(),ensemble:baseCourse(),comprehensive:baseCourse(),practice:{...baseCourse(),available:false},privateLesson:{sessions:0,minutes:0,hours:0,feedbackCount:0,feedbackAverage:null}},totalMinutes:0,totalHours:0,parentFeedbackCount:0,parentFeedbackAverage:null,sessions:[]});
+    return teacherMap.get(key);
+  };
+  for(const d of directory.filter(x=>String(x.status||"active")==="active"))ensureTeacher(teacherKeyValue(d.teacherEmail||d.rowKey),String(d.teacherName||d.teacherEmail||d.rowKey));
+
+  const schoolFeedback=[];
+  for(const s of sessions){
+    if(s.courseType==="privateLesson"){
+      const sc=schoolCourses.privateLesson;sc.sessions++;sc.minutes+=s.durationMinutes;
+      if(s.feedbackCount){sc.feedbackCount++;schoolFeedback.push(Number(s.feedbackAverage))}
+    }else{
+      const sc=schoolCourses[s.courseType];sc.sessions++;sc.minutes+=s.durationMinutes;sc.attendance=mergeWorkAttendance(sc.attendance,s.attendance);
+    }
+    if(s.teacherEmail){
+      const t=ensureTeacher(s.teacherEmail,s.teacherName),tc=t.course[s.courseType];
+      if(s.courseType==="privateLesson"){
+        tc.sessions++;tc.minutes+=s.durationMinutes;if(s.feedbackCount){tc.feedbackCount++;t.parentFeedbackCount++;tc._ratings=tc._ratings||[];tc._ratings.push(Number(s.feedbackAverage));t._ratings=t._ratings||[];t._ratings.push(Number(s.feedbackAverage))}
+      }else{
+        tc.sessions++;tc.minutes+=s.durationMinutes;tc.attendance=mergeWorkAttendance(tc.attendance,s.attendance);
+      }
+      t.totalMinutes+=s.durationMinutes;t.sessions.push(s);
+    }
+  }
+  for(const key of ["section","ensemble","comprehensive"]){schoolCourses[key].hours=hoursTextNumber(schoolCourses[key].minutes);schoolCourses[key].attendance=doneAttendance(schoolCourses[key].attendance)}
+  schoolCourses.privateLesson.hours=hoursTextNumber(schoolCourses.privateLesson.minutes);
+  schoolCourses.privateLesson.feedbackAverage=schoolFeedback.length?Math.round(schoolFeedback.reduce((a,b)=>a+b,0)/schoolFeedback.length*100)/100:null;
+
+  const teachers=[...teacherMap.values()].map(t=>{
+    for(const key of ["section","ensemble","comprehensive"]){t.course[key].hours=hoursTextNumber(t.course[key].minutes);t.course[key].attendance=doneAttendance(t.course[key].attendance)}
+    t.course.privateLesson.hours=hoursTextNumber(t.course.privateLesson.minutes);
+    const privateRatings=t.course.privateLesson._ratings||[];delete t.course.privateLesson._ratings;
+    t.course.privateLesson.feedbackAverage=privateRatings.length?Math.round(privateRatings.reduce((a,b)=>a+b,0)/privateRatings.length*100)/100:null;
+    const ratings=t._ratings||[];delete t._ratings;
+    t.parentFeedbackAverage=ratings.length?Math.round(ratings.reduce((a,b)=>a+b,0)/ratings.length*100)/100:null;
+    t.totalHours=hoursTextNumber(t.totalMinutes);
+    t.sessions=t.sessions.sort((a,b)=>String(b.eventDate).localeCompare(String(a.eventDate))||String(a.courseType).localeCompare(String(b.courseType)));
+    return t;
+  }).filter(t=>t.totalMinutes>0||directoryMap.has(t.teacherEmail)).sort((a,b)=>b.totalMinutes-a.totalMinutes||String(a.teacherName).localeCompare(String(b.teacherName),"zh-Hant"));
+
+  const groupAttendance=mergeWorkAttendance(schoolCourses.section.attendance,schoolCourses.ensemble.attendance,schoolCourses.comprehensive.attendance);
+  const unassigned=sessions.filter(x=>x.courseType!=="privateLesson"&&!x.teacherEmail);
+  const teachingMinutes=sessions.filter(x=>x.teacherEmail).reduce((n,x)=>n+Number(x.durationMinutes||0),0);
+  return {
+    schoolId,schoolName:String(tenant.schoolName||schoolId),shortName:String(tenant.shortName||""),cityName:String(tenant.cityName||""),schoolLevelName:String(tenant.schoolLevelName||""),status:String(tenant.status||"setup"),
+    summary:{groupSessions:schoolCourses.section.sessions+schoolCourses.ensemble.sessions+schoolCourses.comprehensive.sessions,groupAttendance,privateLessons:schoolCourses.privateLesson.sessions,privateMinutes:schoolCourses.privateLesson.minutes,parentFeedbackCount:schoolCourses.privateLesson.feedbackCount,parentFeedbackAverage:schoolCourses.privateLesson.feedbackAverage,totalTeachingMinutes:teachingMinutes,totalTeachingHours:hoursTextNumber(teachingMinutes),unassignedSessions:unassigned.length},
+    courseSummary:schoolCourses,teachers,audit:sessions,unassignedAudit:unassigned
+  };
+}
+
 app.http("globalAttendance",{
   methods:["GET"],authLevel:"anonymous",route:"global-attendance",
   handler:async request=>{
@@ -191,11 +365,20 @@ app.http("globalAttendance",{
     if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))return json({error:"month 必須為 YYYY-MM"},400);
     await ensureTenantTables();
     const tenants=await listTenantDirectory(),startDate=`${month}-01`,endDate=`${month}-31`;
-    const schools=await Promise.all(tenants.map(async tenant=>{
-      const schoolId=String(tenant.rowKey||tenant.schoolId||""),attendance=await attendanceSummary(schoolId,startDate,endDate);
-      return {schoolId,schoolName:String(tenant.schoolName||schoolId),shortName:String(tenant.shortName||""),cityName:String(tenant.cityName||""),schoolLevelName:String(tenant.schoolLevelName||""),status:String(tenant.status||"setup"),total:attendance.total,byClass:attendance.byClass};
-    }));
-    return json({month,startDate,endDate,aggregateOnly:true,totals:mergeAttendance(...schools.map(x=>x.total)),schools,notice:"本報表只回傳各校彙總出勤數，不含學生、家長或老師個資。"});
+    const schools=await Promise.all(tenants.map(tenant=>teacherOperationsForSchool(tenant,startDate,endDate)));
+    const totals={
+      schools:schools.length,
+      groupSessions:schools.reduce((n,x)=>n+Number(x.summary?.groupSessions||0),0),
+      groupAttendance:mergeWorkAttendance(...schools.map(x=>x.summary?.groupAttendance)),
+      privateLessons:schools.reduce((n,x)=>n+Number(x.summary?.privateLessons||0),0),
+      privateMinutes:schools.reduce((n,x)=>n+Number(x.summary?.privateMinutes||0),0),
+      totalTeachingMinutes:schools.reduce((n,x)=>n+Number(x.summary?.totalTeachingMinutes||0),0),
+      parentFeedbackCount:schools.reduce((n,x)=>n+Number(x.summary?.parentFeedbackCount||0),0),
+      unassignedSessions:schools.reduce((n,x)=>n+Number(x.summary?.unassignedSessions||0),0)
+    };
+    const ratings=schools.flatMap(s=>s.audit||[]).filter(x=>x.courseType==="privateLesson"&&Number(x.feedbackAverage||0)>0).map(x=>Number(x.feedbackAverage));
+    totals.privateHours=hoursTextNumber(totals.privateMinutes);totals.totalTeachingHours=hoursTextNumber(totals.totalTeachingMinutes);totals.parentFeedbackAverage=ratings.length?Math.round(ratings.reduce((a,b)=>a+b,0)/ratings.length*100)/100:null;
+    return json({month,startDate,endDate,threeLayer:true,totals,schools,courseTypes:["section","ensemble","comprehensive","practice","privateLesson"],notice:"Global 月報分三層：各校月度總覽 → 老師月度工時 → 課堂稽核。團體課以實際點名 Session 為準；授課老師與點名人分開記錄。加練目前尚無獨立點名來源，因此暫不認列工時。"});
   }
 });
 
