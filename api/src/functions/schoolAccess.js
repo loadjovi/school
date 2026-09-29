@@ -45,7 +45,7 @@ async function collectDaily(key,date,schoolId){const latest=new Map();for(const 
 async function viewerContext(request){
   const access=await getAccess(request);
   if(!access.authenticated)return {access,error:json({error:"Unauthorized"},401)};
-  if(["admin","globalAdmin","tenantPending","contextDenied"].includes(access.role))return {access,error:json({error:"Forbidden"},403)};
+  if(["admin","globalAdmin","tenantPending"].includes(access.role))return {access,error:json({error:"Forbidden"},403)};
   const requestedSchoolId=tenantIdValue(request.headers.get("x-school-id")),schoolId=requestedSchoolId||tenantIdValue(access.schoolId)||defaultTenantId();
   const tenant=await getTenantDirectory(schoolId);
   if(!tenant||String(tenant.status||"")!=="active")return {access,error:json({error:"此學校尚未啟用"},403)};
