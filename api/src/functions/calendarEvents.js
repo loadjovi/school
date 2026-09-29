@@ -1,12 +1,13 @@
 import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
-import { ensureTenantTables, table, tenantSchoolPartition, rowKey } from "../lib/storage.js";
+import { ensureTenantTables, table, tenantSchoolPartition, rowKey, listTeacherDirectory, getTeacherDirectory } from "../lib/storage.js";
 
 const safe=v=>String(v||"").replaceAll("'","''");
 const validDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||""));
 const validTime=v=>!v||/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v||""));
 const normGroup=v=>String(v||"").trim().replace(/團$/,"");
-const eventView=e=>({
+const taipeiDate=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+const eventView=(e,internal=false)=>({
   eventId:String(e.rowKey||""),
   eventType:String(e.eventType||"general"),
   title:String(e.title||"活動"),
@@ -21,7 +22,8 @@ const eventView=e=>({
   requiresAttendance:e.requiresAttendance===true,
   visibleToParents:e.visibleToParents!==false,
   status:String(e.status||"active"),
-  updatedAt:String(e.updatedAt||"")
+  updatedAt:String(e.updatedAt||""),
+  ...(internal?{teachingTeacherEmail:String(e.teachingTeacherEmail||""),teachingTeacherName:String(e.teachingTeacherName||""),teachingMinutes:Number(e.teachingMinutes||0),teachingConfirmedAt:String(e.teachingConfirmedAt||""),teachingConfirmedBy:String(e.teachingConfirmedBy||"")}:{}),
 });
 
 export async function listCalendarEvents(schoolId,startDate="",endDate="",groupName="",includeInactive=false){
@@ -34,7 +36,7 @@ export async function listCalendarEvents(schoolId,startDate="",endDate="",groupN
     if(!includeInactive&&String(e.status||"active")!=="active")continue;
     const target=String(e.targetGroups||"").split(",").map(normGroup).filter(Boolean);
     if(group&&target.length&&!target.includes("ALL")&&!target.includes(group))continue;
-    items.push(eventView(e));
+    items.push(eventView(e,includeInactive));
   }
   return items.sort((a,b)=>a.eventDate.localeCompare(b.eventDate)||a.startTime.localeCompare(b.startTime)||a.title.localeCompare(b.title,"zh-Hant"));
 }
@@ -61,7 +63,9 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
 
   if(request.method==="GET"){
     const from=String(request.query.get("from")||""),to=String(request.query.get("to")||""),groupName=String(request.query.get("groupName")||"");
-    return json({items:await listCalendarEvents(schoolId,from,to,groupName,a.role==="admin")});
+    const items=await listCalendarEvents(schoolId,from,to,groupName,a.role==="admin");
+    const teachers=a.role==="admin"?(await listTeacherDirectory(schoolId)).filter(x=>String(x.status||"active")==="active").map(x=>({email:String(x.teacherEmail||x.rowKey||""),teacherName:String(x.teacherName||x.rowKey||"")})):undefined;
+    return json({items,...(teachers?{teachers}:{})});
   }
 
   if(a.role!=="admin")return json({error:"僅學校管理員可維護行事曆"},403);
@@ -78,7 +82,13 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
         ?("evt_"+Buffer.from([x.eventType,x.title,eventDate,startTime,endTime,x.targetGroups].join("|"),"utf8").toString("base64url").slice(0,220))
         :String(x.eventId||rowKey("evt"));
       const entity={partitionKey:sid,rowKey:deterministic,schoolId:sid,eventType:String(x.eventType||"general").slice(0,40),title:String(x.title||"活動").slice(0,120),eventDate,startTime,endTime,timeLabel:String(x.timeLabel||"").slice(0,60),targetGroups:String(x.targetGroups||"ALL").slice(0,80),teacherName:String(x.teacherName||"").slice(0,80),location:String(x.location||"").slice(0,120),note:String(x.note||"").slice(0,300),requiresAttendance:x.requiresAttendance===true,visibleToParents:x.visibleToParents!==false,status:"active",updatedAt:now,updatedBy:a.email};
-      await client.upsertEntity(entity,"Replace");saved.push(eventView(entity));
+      let old=null;try{old=await client.getEntity(sid,deterministic)}catch(e){if(e.statusCode!==404)throw e}
+      const sameTeachingPlan=old&&String(old.eventType)===entity.eventType&&String(old.eventDate)===eventDate&&String(old.startTime)===startTime&&String(old.endTime)===endTime&&String(old.teacherName||"")===entity.teacherName;
+      if(old?.teachingConfirmedAt&&!sameTeachingPlan)return json({error:"此加練已確認工時，請先撤銷後再修改活動"},409);
+      if(old?.teachingConfirmedAt&&sameTeachingPlan){
+        for(const key of ["teachingTeacherEmail","teachingTeacherName","teachingMinutes","teachingConfirmedAt","teachingConfirmedBy"])entity[key]=old[key];
+      }
+      await client.upsertEntity(entity,"Replace");saved.push(eventView(entity,true));
     }
     return json({ok:true,count:saved.length,items:saved});
   }
@@ -86,11 +96,28 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
   const eventId=String(body.eventId||"");
   if(!eventId)return json({error:"缺少活動 ID"},400);
   let old;try{old=await client.getEntity(sid,eventId)}catch(e){if(e.statusCode===404)return json({error:"找不到活動"},404);throw e}
+  if(["confirmTeaching","revokeTeaching"].includes(String(body.action||""))){
+    if(String(old.eventType||"")!=="competition_training")return json({error:"只有加練活動可認列老師工時"},400);
+    if(body.action==="confirmTeaching"){
+      const day=taipeiDate(),time=new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Taipei",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date());
+      if(String(old.status||"active")!=="active"||String(old.eventDate||"")>day||(String(old.eventDate||"")===day&&(!old.endTime||String(old.endTime)>time)))return json({error:"加練尚未結束或已取消，不能確認工時"},400);
+      const email=String(body.teacherEmail||"").trim().toLowerCase(),minutes=Number(body.minutes);
+      if(!email||!Number.isInteger(minutes)||minutes<1||minutes>600)return json({error:"請選擇老師並填寫 1 至 600 分鐘的實際授課時間"},400);
+      const teacher=await getTeacherDirectory(email,schoolId);
+      if(!teacher||String(teacher.status||"active")!=="active")return json({error:"授課老師需為本校啟用中的老師帳號"},400);
+      const entity={...old,partitionKey:sid,rowKey:eventId,teachingTeacherEmail:email,teachingTeacherName:String(teacher.teacherName||email),teachingMinutes:minutes,teachingConfirmedAt:now,teachingConfirmedBy:a.email,updatedAt:now,updatedBy:a.email};
+      await client.upsertEntity(entity,"Replace");return json({ok:true,item:eventView(entity,true)});
+    }
+    const entity={...old,partitionKey:sid,rowKey:eventId,teachingTeacherEmail:"",teachingTeacherName:"",teachingMinutes:0,teachingConfirmedAt:"",teachingConfirmedBy:"",updatedAt:now,updatedBy:a.email};
+    await client.upsertEntity(entity,"Replace");return json({ok:true,item:eventView(entity,true)});
+  }
+  if(old.teachingConfirmedAt&&(["cancel","delete"].includes(String(body.action||""))||String(body.status||"active")!=="active"))return json({error:"請先撤銷加練工時確認，再取消或刪除活動"},409);
   if(body.action==="delete"){
     await client.deleteEntity(sid,eventId);return json({ok:true,deleted:true});
   }
   const status=body.action==="cancel"?"cancelled":body.action==="restore"?"active":String(body.status||old.status||"active");
   const entity={...old,partitionKey:sid,rowKey:eventId,status,title:String((body.title??old.title)||"").slice(0,120),eventDate:String((body.eventDate??old.eventDate)||""),startTime:String((body.startTime??old.startTime)||""),endTime:String((body.endTime??old.endTime)||""),timeLabel:String((body.timeLabel??old.timeLabel)||"").slice(0,60),targetGroups:String((body.targetGroups??old.targetGroups)||"ALL").slice(0,80),teacherName:String((body.teacherName??old.teacherName)||"").slice(0,80),location:String((body.location??old.location)||"").slice(0,120),note:String((body.note??old.note)||"").slice(0,300),requiresAttendance:body.requiresAttendance??old.requiresAttendance??false,visibleToParents:body.visibleToParents??old.visibleToParents??true,updatedAt:now,updatedBy:a.email};
   if(!validDate(entity.eventDate)||!validTime(entity.startTime)||!validTime(entity.endTime))return json({error:"日期或時間格式不正確"},400);
-  await client.upsertEntity(entity,"Replace");return json({ok:true,item:eventView(entity)});
+  if(old.teachingConfirmedAt&&["eventDate","startTime","endTime","teacherName"].some(key=>String(entity[key]||"")!==String(old[key]||"")))return json({error:"請先撤銷加練工時確認，再修改授課日期、時間或老師"},409);
+  await client.upsertEntity(entity,"Replace");return json({ok:true,item:eventView(entity,true)});
 }});

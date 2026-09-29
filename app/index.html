@@ -23,7 +23,7 @@
 <body>
   <div id="app"><div class="loading">🎻 系統載入中…</div></div>
   <div id="toast" class="toast"></div>
-  <script src="/webview-guard.js?v=20260929-1458" defer></script>
+  <script src="/webview-guard.js?v=20260929-1430" defer></script>
   <script>
     (()=>{
       let tries=0;
@@ -60,7 +60,7 @@
         try{
           if(typeof state!=="undefined"&&((state.me?.role==="parent"&&window.parentHomeSummaryReady===true)||state.me?.role==="admin")&&typeof home==="function"&&typeof adminPage==="function"&&typeof render==="function"){
             clearInterval(timer);
-            const s=document.createElement("script");s.src="/special-calendar.js?v=20260921-2345";document.body.appendChild(s);
+            const s=document.createElement("script");s.src="/special-calendar.js?v=20260929-1430";document.body.appendChild(s);
           }else if(tries>400)clearInterval(timer);
         }catch(e){if(tries>400)clearInterval(timer)}
       },25);

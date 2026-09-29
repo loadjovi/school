@@ -152,8 +152,20 @@
       ?esc(item.note||"尚無可認列資料")
       :privateType
         ?"教學 "+globalHours(item.hours||0)+"｜家長回饋 "+Number(item.feedbackCount||0)+" 筆｜"+globalRating(item.feedbackAverage)
-        :"教學 "+globalHours(item.hours||0)+"｜到課率 "+attendanceRateText(item.attendance?.attendanceRate);
+        :key==="practice"
+          ?"已確認教學 "+globalHours(item.hours||0)
+          :"教學 "+globalHours(item.hours||0)+"｜到課率 "+attendanceRateText(item.attendance?.attendanceRate);
     return '<div class="global-ops-course-card '+(unavailable?"is-unavailable":"")+'"><b>'+globalCourseIcons[key]+' '+globalCourseLabels[key]+'</b><strong>'+main+'</strong><small>'+detail+'</small></div>';
+  }
+  function crossSchoolTeacherTotals(schools){
+    const map=new Map(),types=["section","ensemble","comprehensive","practice","privateLesson"];
+    for(const school of schools||[])for(const teacher of school.teachers||[]){
+      const email=String(teacher.teacherEmail||"").toLowerCase(),key=email||school.schoolId+":"+String(teacher.teacherKey||teacher.teacherName||"");
+      if(!map.has(key))map.set(key,{teacherName:teacher.teacherName||email,schools:[],minutes:0,course:Object.fromEntries(types.map(type=>[type,{sessions:0,minutes:0}]))});
+      const total=map.get(key);total.schools.push(school.schoolName||school.schoolId);total.minutes+=Number(teacher.totalMinutes||0);
+      for(const type of types){total.course[type].sessions+=Number(teacher.course?.[type]?.sessions||0);total.course[type].minutes+=Number(teacher.course?.[type]?.minutes||0)}
+    }
+    return [...map.values()].sort((a,b)=>b.minutes-a.minutes||String(a.teacherName).localeCompare(String(b.teacherName),"zh-Hant"));
   }
   function globalOpsBreadcrumb(school,teacher){
     let html='<div class="global-ops-breadcrumb"><button class="secondary" onclick="openGlobalOpsSchools()">全部學校</button>';
@@ -163,6 +175,9 @@
   }
   function globalOpsLayer1(report,busy){
     const total=report.totals||{},schools=(report.schools||[]);
+    const teachers=crossSchoolTeacherTotals(schools),types=["section","ensemble","comprehensive","practice","privateLesson"];
+    const courseTotals=Object.fromEntries(types.map(type=>[type,schools.reduce((out,school)=>{const course=school.courseSummary?.[type]||{};out.sessions+=Number(course.sessions||0);out.minutes+=Number(course.minutes||0);return out},{sessions:0,minutes:0})]));
+    const teacherRows=teachers.map(t=>'<div class="global-ops-teacher"><div class="global-ops-teacher-head"><div><b>👤 '+esc(t.teacherName)+'</b><small>'+esc([...new Set(t.schools)].join("、"))+'</small></div><strong class="global-ops-teacher-hours">'+globalHours(t.minutes/60)+'</strong></div><div class="global-ops-teacher-breakdown">'+types.map(type=>'<span>'+globalCourseIcons[type]+' '+globalCourseLabels[type]+'<br><b>'+Number(t.course[type].sessions)+' 堂｜'+globalHours(t.course[type].minutes/60)+'</b></span>').join("")+'</div></div>').join("");
     const cards=schools.map(school=>{
       const s=school.summary||{},att=s.groupAttendance||{};
       return '<div class="global-ops-school-card"><div class="student"><div><b style="font-size:16px">🏫 '+esc(school.schoolName||school.schoolId)+'</b><small>'+esc(st[school.status]||school.status||"")+(school.cityName?'｜'+esc(school.cityName):'')+'</small></div><button class="secondary" style="width:auto;margin:0" onclick="openGlobalOpsSchool(\''+esc(school.schoolId)+'\')">查看老師工時 →</button></div>'+
@@ -171,9 +186,12 @@
       '</div>';
     }).join("");
     return '<div class="card"><div class="section-title"><div><h2>📊 月度課務／師資工時</h2><div class="muted">第一層｜各校月度總覽</div></div><span class="badge ok">'+esc(report.month||"")+'</span></div>'+
-      '<div class="notice"><b>統計原則</b><br>分部、合奏、綜合課以「實際完成點名」認列堂數與到課狀況；個課以老師完成上課紀錄計算堂數／時數，家長星級僅作師資回饋。授課老師與實際點名人分開保存，避免行政代點名造成工時誤算。</div>'+
-      '<div class="row2" style="align-items:end"><div><label>統計月份</label><input type="month" value="'+esc(report.month||state.globalTenant.attendanceMonth)+'" onchange="changeGlobalAttendanceMonth(this.value)" '+(busy?'disabled':'')+'></div><div><button class="secondary" style="width:100%" onclick="exportGlobalAttendance()" '+(busy?'disabled':'')+'>⬇️ 匯出老師月工時 CSV</button></div></div>'+
+      '<div class="notice"><b>統計原則</b><br>分部、合奏、綜合課依已完成點名認列；個課依老師完課紀錄認列；加練依學校管理員確認的實際授課分鐘認列。未確認的行事曆活動不列入工時。按老師 Gmail 合併跨校工時，保留各校明細供核對。</div>'+
+      '<div class="row2" style="align-items:end"><div><label>統計月份</label><input type="month" value="'+esc(report.month||state.globalTenant.attendanceMonth)+'" onchange="changeGlobalAttendanceMonth(this.value)" '+(busy?'disabled':'')+'></div><div><button class="secondary" style="width:100%" onclick="exportGlobalAttendance()" '+(busy?'disabled':'')+'>⬇️ 匯出老師月工時 CSV</button></div></div><button class="secondary" style="width:100%;margin-top:8px" onclick="refreshGlobalAttendance()" '+(busy?'disabled':'')+'>🔄 重新統計此月份</button>'+
       '<div class="global-ops-grid"><div class="global-ops-stat"><b>'+Number(total.groupSessions||0)+'</b><small>跨校團體課堂數</small></div><div class="global-ops-stat"><b>'+attendanceRateText(total.groupAttendance?.attendanceRate)+'</b><small>跨校團體課到課率</small></div><div class="global-ops-stat"><b>'+Number(total.privateLessons||0)+'</b><small>個課完成堂數</small></div><div class="global-ops-stat"><b>'+globalHours(total.totalTeachingHours||0)+'</b><small>老師總教學時數</small></div><div class="global-ops-stat"><b>'+globalRating(total.parentFeedbackAverage)+'</b><small>家長回饋｜'+Number(total.parentFeedbackCount||0)+' 筆</small></div></div>'+
+      '<h3 style="margin:16px 0 6px">五類課程月度總計</h3><div class="global-ops-course-grid">'+types.map(type=>'<div class="global-ops-course-card"><b>'+globalCourseIcons[type]+' '+globalCourseLabels[type]+'</b><strong>'+courseTotals[type].sessions+' 堂</strong><small>已認列 '+globalHours(courseTotals[type].minutes/60)+'</small></div>').join("")+'</div>'+
+      '<h3 style="margin:16px 0 6px">跨校老師月工時（'+teachers.length+' 人）</h3>'+(teacherRows||'<div class="notice">本月尚無老師資料。</div>')+
+      '<h3 style="margin:16px 0 6px">各校明細</h3>'+
       (busy?'<div class="notice" style="margin-top:10px">正在更新月份統計…</div>':cards||'<div class="notice" style="margin-top:10px">目前沒有學校資料。</div>')+
     '</div>';
   }
@@ -186,14 +204,14 @@
           '<span>🎼 分部<br><b>'+Number(c.section?.sessions||0)+' 堂｜'+globalHours(c.section?.hours||0)+'</b></span>'+
           '<span>🎻 合奏<br><b>'+Number(c.ensemble?.sessions||0)+' 堂｜'+globalHours(c.ensemble?.hours||0)+'</b></span>'+
           '<span>🎶 綜合<br><b>'+Number(c.comprehensive?.sessions||0)+' 堂｜'+globalHours(c.comprehensive?.hours||0)+'</b></span>'+
-          '<span>⏱️ 加練<br><b>'+(c.practice?.available===false?'待點名功能':Number(c.practice?.sessions||0)+' 堂')+'</b></span>'+
+          '<span>⏱️ 加練<br><b>'+Number(c.practice?.sessions||0)+' 堂｜'+globalHours(c.practice?.hours||0)+'</b></span>'+
           '<span>👤 個課<br><b>'+Number(privateInfo.sessions||0)+' 堂｜'+globalHours(privateInfo.hours||0)+'</b></span>'+
         '</div></div>';
     }).join("");
     return '<div class="card">'+globalOpsBreadcrumb(school,null)+'<div class="section-title"><div><h2>🏫 '+esc(school.schoolName)+'｜老師月度工時</h2><div class="muted">第二層｜依老師拆分課別、堂數與時數</div></div><span class="badge ok">'+esc(report.month||"")+'</span></div>'+
       '<div class="global-ops-grid"><div class="global-ops-stat"><b>'+Number(s.groupSessions||0)+'</b><small>團體課已點名堂數</small></div><div class="global-ops-stat"><b>'+attendanceRateText(s.groupAttendance?.attendanceRate)+'</b><small>團體課到課率</small></div><div class="global-ops-stat"><b>'+Number(s.privateLessons||0)+'</b><small>個課堂數</small></div><div class="global-ops-stat"><b>'+globalHours(s.totalTeachingHours||0)+'</b><small>已辨識教學時數</small></div><div class="global-ops-stat"><b>'+Number(s.unassignedSessions||0)+'</b><small>待確認授課老師堂數</small></div></div>'+
       '<h3 style="margin:16px 0 6px">課別月度概況</h3><div class="global-ops-course-grid">'+["section","ensemble","comprehensive","practice","privateLesson"].map(k=>globalCourseCard(k,courses[k])).join("")+'</div>'+
-      '<div class="notice" style="margin-top:10px"><b>⏱️ 加練課</b><br>目前平台只有特殊行事曆，尚未建立獨立加練點名，所以 Global 先顯示欄位但不認列到課與老師工時。待加練點名完成後即可直接接入此層。</div>'+
+      '<div class="notice" style="margin-top:10px"><b>⏱️ 加練課</b><br>由各校管理員在加練後確認實際授課老師及分鐘數；僅已確認、未取消的活動計入工時。此欄不代表學生出勤。</div>'+
       '<h3 style="margin:16px 0 6px">老師月度工時</h3>'+(rows||'<div class="notice">本月尚無可辨識的老師教學紀錄。</div>')+
     '</div>';
   }
@@ -204,11 +222,13 @@
       const recorder=x.recordedBy?('點名／紀錄人：'+esc(x.recordedBy)+(x.recordedByRole==="admin"?'（行政協助）':'')):"點名／紀錄人：未記錄";
       const detail=privateType
         ?'個課 '+Number(x.durationMinutes||0)+' 分鐘｜家長回饋 '+(x.feedbackCount?globalRating(x.feedbackAverage):"未評分")
-        :'應到 '+Number(att.total||0)+'｜到課 '+Number(att.attended||0)+'｜請假 '+Number(att.leave||0)+'｜缺席 '+Number(att.absent||0)+'｜遲到 '+Number(att.late||0)+'｜'+attendanceRateText(att.attendanceRate);
+        :x.courseType==="practice"
+          ?'校方確認實際授課 '+Number(x.durationMinutes||0)+' 分鐘｜確認時間 '+esc(x.confirmedAt||"")
+          :'應到 '+Number(att.total||0)+'｜到課 '+Number(att.attended||0)+'｜請假 '+Number(att.leave||0)+'｜缺席 '+Number(att.absent||0)+'｜遲到 '+Number(att.late||0)+'｜'+attendanceRateText(att.attendanceRate);
       return '<div class="global-ops-audit"><div class="global-ops-audit-head"><b>'+globalCourseIcons[x.courseType]+' '+esc(x.eventDate)+'｜'+esc(x.courseLabel||globalCourseLabels[x.courseType]||x.courseType)+(where?'｜'+esc(where):'')+'</b><strong>'+globalHours(x.teachingHours||0)+'</strong></div><small>'+detail+'<br>授課認列：'+esc(x.teacherSource||"")+'｜'+recorder+'</small></div>';
     }).join("");
     return '<div class="card">'+globalOpsBreadcrumb(school,teacher)+'<div class="section-title"><div><h2>🔎 '+esc(teacher.teacherName)+'｜課堂稽核</h2><div class="muted">第三層｜逐堂核對日期、課別、點名與工時來源</div></div><span class="badge ok">'+globalHours(teacher.totalHours||0)+'</span></div>'+
-      '<div class="global-ops-grid"><div class="global-ops-stat"><b>'+Number(course.section?.sessions||0)+'</b><small>分部課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.ensemble?.sessions||0)+'</b><small>合奏課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.comprehensive?.sessions||0)+'</b><small>綜合課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.privateLesson?.sessions||0)+'</b><small>個課堂數</small></div><div class="global-ops-stat"><b>'+globalRating(teacher.parentFeedbackAverage)+'</b><small>家長回饋｜'+Number(teacher.parentFeedbackCount||0)+' 筆</small></div></div>'+
+      '<div class="global-ops-grid"><div class="global-ops-stat"><b>'+Number(course.section?.sessions||0)+'</b><small>分部課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.ensemble?.sessions||0)+'</b><small>合奏課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.comprehensive?.sessions||0)+'</b><small>綜合課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.practice?.sessions||0)+'</b><small>加練課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.privateLesson?.sessions||0)+'</b><small>個課堂數</small></div></div>'+
       '<div class="notice" style="margin-top:10px"><b>授課老師 ≠ 點名人</b><br>若 School Admin 協助點名，工時不會直接算到管理員；Global 會優先依老師授課設定與老師本人點名判斷。無法唯一判定的課堂不計入老師工時，避免誤算。</div>'+
       '<h3 style="margin:16px 0 6px">本月課堂明細</h3>'+(audits||'<div class="notice">本月沒有可稽核的課堂。</div>')+
     '</div>';
@@ -295,8 +315,13 @@
   };
   window.changeGlobalAttendanceMonth=async function(month){
     if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month||""))){toast("月份格式不正確");return}
-    state.globalTenant.attendanceMonth=month;state.globalTenant.attendanceLoading=true;state.globalTenant.operationsSchoolId="";state.globalTenant.operationsTeacherKey="";draw();
-    try{state.globalTenant.attendance=await api("/api/global-attendance?month="+encodeURIComponent(month))}catch(e){toast("❌ 跨校出勤讀取失敗："+e.message)}
+    state.globalTenant.attendanceMonth=month;state.globalTenant.operationsSchoolId="";state.globalTenant.operationsTeacherKey="";
+    await window.refreshGlobalAttendance();
+  };
+  window.refreshGlobalAttendance=async function(){
+    if(state.globalTenant.attendanceLoading)return;
+    state.globalTenant.attendanceLoading=true;draw();
+    try{state.globalTenant.attendance=await api("/api/global-attendance?month="+encodeURIComponent(state.globalTenant.attendanceMonth))}catch(e){toast("❌ 月度工時讀取失敗："+e.message)}
     state.globalTenant.attendanceLoading=false;draw();
   };
   window.exportGlobalAttendance=function(){

@@ -211,6 +211,17 @@ async function globalTeacherProfiles(schoolId){
   for await(const e of table("tenantTeacherProfile").listEntities({queryOptions:{filter:`PartitionKey eq '${sid}'`}}))items.push(e);
   return items;
 }
+async function confirmedTrainingEvents(schoolId,startDate,endDate){
+  const sid=String(schoolId||"").replaceAll("'","''"),items=[];
+  const filter=`PartitionKey eq '${sid}' and eventDate ge '${startDate}' and eventDate le '${endDate}'`;
+  for await(const e of table("tenantCalendarEvent").listEntities({queryOptions:{filter}})){
+    if(String(e.eventType||"")!=="competition_training"||String(e.status||"active")!=="active")continue;
+    const minutes=Number(e.teachingMinutes||0),email=teacherKeyValue(e.teachingTeacherEmail);
+    if(!e.teachingConfirmedAt||!email||!Number.isInteger(minutes)||minutes<1||minutes>600)continue;
+    items.push(e);
+  }
+  return items;
+}
 function profileCandidate(type,row,profiles=[]){
   const group=String(row?.groupName||""),section=String(row?.section||"");
   return profiles.filter(p=>{
@@ -253,13 +264,14 @@ function resolveTeachingTeacher(type,rows,profiles,directoryMap){
 }
 async function teacherOperationsForSchool(tenant,startDate,endDate){
   const schoolId=String(tenant.rowKey||tenant.schoolId||"");
-  const [sectionRaw,ensembleRaw,comprehensiveRaw,privateRaw,directory,profiles]=await Promise.all([
+  const [sectionRaw,ensembleRaw,comprehensiveRaw,privateRaw,directory,profiles,trainingRaw]=await Promise.all([
     listActivityRange("section",schoolId,startDate,endDate),
     listActivityRange("ensemble",schoolId,startDate,endDate),
     listActivityRange("comprehensive",schoolId,startDate,endDate),
     listActivityRange("privateLesson",schoolId,startDate,endDate),
     listTeacherDirectory(schoolId),
-    globalTeacherProfiles(schoolId)
+    globalTeacherProfiles(schoolId),
+    confirmedTrainingEvents(schoolId,startDate,endDate)
   ]);
   const directoryMap=new Map(directory.map(x=>[teacherKeyValue(x.teacherEmail||x.rowKey),x]));
   const sessions=[];
@@ -271,6 +283,7 @@ async function teacherOperationsForSchool(tenant,startDate,endDate){
     }
     for(const [key,rows] of grouped){
       const attendance=attendanceBucket();for(const r of rows)addAttendance(attendance,r.status);doneAttendance(attendance);
+      if(attendance.cancelled===rows.length)continue;
       const teacher=resolveTeachingTeacher(type,rows,profiles,directoryMap),sample=rows[0]||{};
       const positiveMinutes=rows.map(r=>Number(r.minutes||0)).filter(n=>n>0),durationMinutes=positiveMinutes.length?Math.max(...positiveMinutes):defaultCourseMinutes(type);
       sessions.push({
@@ -303,12 +316,24 @@ async function teacherOperationsForSchool(tenant,startDate,endDate){
     });
   }
 
+  // 加練只認列校方確認的實際授課時間；單純排入行事曆不產生老師工時。
+  for(const row of trainingRaw){
+    const teacherEmail=teacherKeyValue(row.teachingTeacherEmail),durationMinutes=Number(row.teachingMinutes);
+    const teacherName=String(row.teachingTeacherName||directoryMap.get(teacherEmail)?.teacherName||teacherEmail);
+    sessions.push({
+      sessionKey:`calendar:${row.rowKey}`,courseType:"practice",courseLabel:String(row.title||"加練課"),eventDate:String(row.eventDate||""),groupName:String(row.targetGroups||""),section:"",
+      durationMinutes,teachingHours:hoursTextNumber(durationMinutes),attendance:attendanceBucket(),
+      teacherEmail,teacherName,teacherSource:"校方確認實際授課",recordedByEmail:String(row.teachingConfirmedBy||""),recordedBy:String(row.teachingConfirmedBy||""),recordedByRole:"admin",
+      teacherCandidates:[teacherName],feedbackCount:0,feedbackAverage:null,confirmedAt:String(row.teachingConfirmedAt||""),startTime:String(row.startTime||""),endTime:String(row.endTime||"")
+    });
+  }
+
   const baseCourse=()=>({sessions:0,minutes:0,hours:0,attendance:attendanceBucket()});
-  const schoolCourses={section:baseCourse(),ensemble:baseCourse(),comprehensive:baseCourse(),practice:{...baseCourse(),available:false,note:"目前加練僅有特殊行事曆，尚未建立獨立點名來源，因此不認列出勤與工時。"},privateLesson:{sessions:0,minutes:0,hours:0,feedbackCount:0,feedbackAverage:null}};
+  const schoolCourses={section:baseCourse(),ensemble:baseCourse(),comprehensive:baseCourse(),practice:{...baseCourse(),available:true,note:"只認列校方已確認的實際授課時間"},privateLesson:{sessions:0,minutes:0,hours:0,feedbackCount:0,feedbackAverage:null}};
   const teacherMap=new Map();
   const ensureTeacher=(email,name)=>{
     const key=email||`unassigned:${name||"unknown"}`;
-    if(!teacherMap.has(key))teacherMap.set(key,{teacherKey:key,teacherEmail:email||"",teacherName:name||"待確認授課老師",course:{section:baseCourse(),ensemble:baseCourse(),comprehensive:baseCourse(),practice:{...baseCourse(),available:false},privateLesson:{sessions:0,minutes:0,hours:0,feedbackCount:0,feedbackAverage:null}},totalMinutes:0,totalHours:0,parentFeedbackCount:0,parentFeedbackAverage:null,sessions:[]});
+    if(!teacherMap.has(key))teacherMap.set(key,{teacherKey:key,teacherEmail:email||"",teacherName:name||"待確認授課老師",course:{section:baseCourse(),ensemble:baseCourse(),comprehensive:baseCourse(),practice:{...baseCourse(),available:true},privateLesson:{sessions:0,minutes:0,hours:0,feedbackCount:0,feedbackAverage:null}},totalMinutes:0,totalHours:0,parentFeedbackCount:0,parentFeedbackAverage:null,sessions:[]});
     return teacherMap.get(key);
   };
   for(const d of directory.filter(x=>String(x.status||"active")==="active"))ensureTeacher(teacherKeyValue(d.teacherEmail||d.rowKey),String(d.teacherName||d.teacherEmail||d.rowKey));
@@ -331,12 +356,12 @@ async function teacherOperationsForSchool(tenant,startDate,endDate){
       t.totalMinutes+=s.durationMinutes;t.sessions.push(s);
     }
   }
-  for(const key of ["section","ensemble","comprehensive"]){schoolCourses[key].hours=hoursTextNumber(schoolCourses[key].minutes);schoolCourses[key].attendance=doneAttendance(schoolCourses[key].attendance)}
+  for(const key of ["section","ensemble","comprehensive","practice"]){schoolCourses[key].hours=hoursTextNumber(schoolCourses[key].minutes);schoolCourses[key].attendance=doneAttendance(schoolCourses[key].attendance)}
   schoolCourses.privateLesson.hours=hoursTextNumber(schoolCourses.privateLesson.minutes);
   schoolCourses.privateLesson.feedbackAverage=schoolFeedback.length?Math.round(schoolFeedback.reduce((a,b)=>a+b,0)/schoolFeedback.length*100)/100:null;
 
   const teachers=[...teacherMap.values()].map(t=>{
-    for(const key of ["section","ensemble","comprehensive"]){t.course[key].hours=hoursTextNumber(t.course[key].minutes);t.course[key].attendance=doneAttendance(t.course[key].attendance)}
+    for(const key of ["section","ensemble","comprehensive","practice"]){t.course[key].hours=hoursTextNumber(t.course[key].minutes);t.course[key].attendance=doneAttendance(t.course[key].attendance)}
     t.course.privateLesson.hours=hoursTextNumber(t.course.privateLesson.minutes);
     const privateRatings=t.course.privateLesson._ratings||[];delete t.course.privateLesson._ratings;
     t.course.privateLesson.feedbackAverage=privateRatings.length?Math.round(privateRatings.reduce((a,b)=>a+b,0)/privateRatings.length*100)/100:null;
@@ -352,7 +377,7 @@ async function teacherOperationsForSchool(tenant,startDate,endDate){
   const teachingMinutes=sessions.filter(x=>x.teacherEmail).reduce((n,x)=>n+Number(x.durationMinutes||0),0);
   return {
     schoolId,schoolName:String(tenant.schoolName||schoolId),shortName:String(tenant.shortName||""),cityName:String(tenant.cityName||""),schoolLevelName:String(tenant.schoolLevelName||""),status:String(tenant.status||"setup"),
-    summary:{groupSessions:schoolCourses.section.sessions+schoolCourses.ensemble.sessions+schoolCourses.comprehensive.sessions,groupAttendance,privateLessons:schoolCourses.privateLesson.sessions,privateMinutes:schoolCourses.privateLesson.minutes,parentFeedbackCount:schoolCourses.privateLesson.feedbackCount,parentFeedbackAverage:schoolCourses.privateLesson.feedbackAverage,totalTeachingMinutes:teachingMinutes,totalTeachingHours:hoursTextNumber(teachingMinutes),unassignedSessions:unassigned.length},
+    summary:{groupSessions:schoolCourses.section.sessions+schoolCourses.ensemble.sessions+schoolCourses.comprehensive.sessions,groupAttendance,practiceSessions:schoolCourses.practice.sessions,practiceMinutes:schoolCourses.practice.minutes,privateLessons:schoolCourses.privateLesson.sessions,privateMinutes:schoolCourses.privateLesson.minutes,parentFeedbackCount:schoolCourses.privateLesson.feedbackCount,parentFeedbackAverage:schoolCourses.privateLesson.feedbackAverage,totalTeachingMinutes:teachingMinutes,totalTeachingHours:hoursTextNumber(teachingMinutes),unassignedSessions:unassigned.length},
     courseSummary:schoolCourses,teachers,audit:sessions,unassignedAudit:unassigned
   };
 }
@@ -372,13 +397,15 @@ app.http("globalAttendance",{
       groupAttendance:mergeWorkAttendance(...schools.map(x=>x.summary?.groupAttendance)),
       privateLessons:schools.reduce((n,x)=>n+Number(x.summary?.privateLessons||0),0),
       privateMinutes:schools.reduce((n,x)=>n+Number(x.summary?.privateMinutes||0),0),
+      practiceSessions:schools.reduce((n,x)=>n+Number(x.summary?.practiceSessions||0),0),
+      practiceMinutes:schools.reduce((n,x)=>n+Number(x.summary?.practiceMinutes||0),0),
       totalTeachingMinutes:schools.reduce((n,x)=>n+Number(x.summary?.totalTeachingMinutes||0),0),
       parentFeedbackCount:schools.reduce((n,x)=>n+Number(x.summary?.parentFeedbackCount||0),0),
       unassignedSessions:schools.reduce((n,x)=>n+Number(x.summary?.unassignedSessions||0),0)
     };
     const ratings=schools.flatMap(s=>s.audit||[]).filter(x=>x.courseType==="privateLesson"&&Number(x.feedbackAverage||0)>0).map(x=>Number(x.feedbackAverage));
-    totals.privateHours=hoursTextNumber(totals.privateMinutes);totals.totalTeachingHours=hoursTextNumber(totals.totalTeachingMinutes);totals.parentFeedbackAverage=ratings.length?Math.round(ratings.reduce((a,b)=>a+b,0)/ratings.length*100)/100:null;
-    return json({month,startDate,endDate,threeLayer:true,totals,schools,courseTypes:["section","ensemble","comprehensive","practice","privateLesson"],notice:"Global 月報分三層：各校月度總覽 → 老師月度工時 → 課堂稽核。團體課以實際點名 Session 為準；授課老師與點名人分開記錄。加練目前尚無獨立點名來源，因此暫不認列工時。"});
+    totals.privateHours=hoursTextNumber(totals.privateMinutes);totals.practiceHours=hoursTextNumber(totals.practiceMinutes);totals.totalTeachingHours=hoursTextNumber(totals.totalTeachingMinutes);totals.parentFeedbackAverage=ratings.length?Math.round(ratings.reduce((a,b)=>a+b,0)/ratings.length*100)/100:null;
+    return json({month,startDate,endDate,threeLayer:true,totals,schools,courseTypes:["section","ensemble","comprehensive","practice","privateLesson"],notice:"Global 月報分三層：各校月度總覽 → 老師月度工時 → 課堂稽核。分部、合奏、綜合課以點名紀錄認列；個課以完課紀錄認列；加練依校方確認的實際授課分鐘認列。"});
   }
 });
 
