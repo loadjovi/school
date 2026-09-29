@@ -8,6 +8,28 @@ function toast(msg){const t=$("toast");if(!t)return;t.textContent=msg;t.classLis
 async function api(url,options={}){const h={"Content-Type":"application/json"};if(state.token)h["X-Google-ID-Token"]=state.token;const schoolContext=sessionStorage.getItem("school_context_id")||"",roleContext=sessionStorage.getItem("role_context")||"";if(schoolContext)h["X-School-Id"]=schoolContext;if(roleContext)h["X-Role-Context"]=roleContext;Object.assign(h,options.headers||{});const method=String(options.method||"GET").toUpperCase(),fetchOptions={...options,headers:h};if(method==="GET"&&String(url).startsWith("/api/")&&!fetchOptions.cache)fetchOptions.cache="no-store";const r=await fetch(url,fetchOptions);const d=await r.json().catch(()=>({}));if(r.status===401){logout(false);throw new Error("登入已失效，請重新使用 Google 登入")};if(!r.ok)throw new Error(d.error||d.message||`HTTP ${r.status}`);return d}
 function logout(reload=true){state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}
 async function boot(){if(!state.token){renderLogin();return}try{await loadProfile()}catch(e){renderLogin(e.message)}}
+const schoolViewScript="/school-access.js?v=20260929-1305";
+let schoolViewLoading=null;
+async function loadSchoolViewModule(){
+  if(typeof window.changeSchoolFollowupDate==="function"){state.schoolViewerLoadError="";render();return}
+  if(!schoolViewLoading){
+    schoolViewLoading=new Promise((resolve,reject)=>{
+      let script=[...document.scripts].find(s=>s.getAttribute("src")===schoolViewScript);
+      const fresh=!script;
+      if(fresh){script=document.createElement("script");script.src=schoolViewScript;script.defer=true}
+      let done=false;
+      const finish=error=>{if(done)return;done=true;clearTimeout(timer);script.removeEventListener("load",loaded);script.removeEventListener("error",failed);if(error){script.remove();reject(error)}else resolve()};
+      const loaded=()=>finish(typeof window.changeSchoolFollowupDate==="function"?null:new Error("校方功能初始化失敗"));
+      const failed=()=>finish(new Error("校方功能載入失敗"));
+      const timer=setTimeout(()=>finish(new Error("校方功能載入逾時")),15000);
+      script.addEventListener("load",loaded);script.addEventListener("error",failed);
+      if(fresh)document.body.appendChild(script);
+    }).finally(()=>{schoolViewLoading=null});
+  }
+  try{await schoolViewLoading;state.schoolViewerLoadError="";render()}
+  catch(e){state.schoolViewerLoadError=e.message||"校方功能載入失敗";render()}
+}
+window.retrySchoolView=()=>{state.schoolViewerLoadError="";render();return loadSchoolViewModule()};
 async function loadProfile(){
   state.me=await api("/api/me");
   const contexts=Array.isArray(state.me.contexts)?state.me.contexts:[];
@@ -23,7 +45,7 @@ async function loadProfile(){
         state.me.schoolName=school.schoolName;state.me.systemName=school.systemName||state.me.systemName;
         state.me.capabilities={schoolAttendance:true,readOnly:true};
         state.schoolViewer={checked:true,allowed:true,date:new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"}),data:null,loading:false,error:"",filter:"all"};
-        state.students=[];state.student=null;state.page="school";render();return;
+        state.students=[];state.student=null;state.page="school";render();await loadSchoolViewModule();return;
       }
       if(school.reason==="multipleSchools"){
         state.students=[];state.student=null;state.page="schoolAccessError";render();return;
@@ -182,5 +204,5 @@ function studentEdit(s){return `<div class="card"><h2>${esc(s.name)} <span class
 function studentsPage(){return `<div class="card"><h2>學生主檔管理</h2><div class="notice">年級、團別、樂器皆可後續修改；每次異動會寫入 StudentHistory，不會改掉過去點名與練習紀錄。</div></div>${state.master.map(studentEdit).join("")||'<div class="card"><div class="notice">尚無學生主檔。之後可以匯入目前弦樂團名單。</div></div>'}`}
 async function saveStudent(id){const body={studentId:id,name:$(`sn_${id}`).value,grade:$(`sg_${id}`).value,groupName:$(`sgrp_${id}`).value,instrument:$(`si_${id}`).value,schoolYear:$(`sy_${id}`).value,status:$(`ss_${id}`).value};try{await api("/api/student-master",{method:"PATCH",body:JSON.stringify(body)});toast("✅ 學生主檔已更新");await loadAdmin();render()}catch(e){toast("❌ "+e.message)}}
 function helpPage(){return `<div class="card"><h2>系統說明</h2><div class="notice">Gmail 只用來辨識家長／老師／管理員；學生資料存在 StudentMaster。年級升級、A/B 團異動、換樂器時，只更新學生主檔即可。</div></div>`}
-function render(){let c;const teacherRole=["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me?.role)||state.me?.capabilities?.teacherSettings;if(teacherRole&&window.__roleLoaderActive&&window.__roleModulesReady!==true){c=`<div class="card hero"><h2>🎓 正在準備教學功能</h2><div class="notice">正在同步今日課程、點名與教學設定，完成後即可直接操作。</div><div class="teacher-boot-progress"><i></i></div></div>`;document.getElementById("app").innerHTML=shell(c);return}if(state.page==="schoolAccessError")c=`<div class="card hero"><h2>🏫 校方帳號設定需修正</h2><div class="notice">此 Gmail 對應多所學校，請通知系統管理員確認校方查詢權限。</div></div>`;else if(state.me.role==="school")c=`<div class="card hero"><h2>🏫 正在載入校方出缺勤資料…</h2></div>`;else if(state.page==="schoolSelect")c=schoolSelectionPage();else if(state.page==="contextSelect")c=contextSelectorPage();else if(state.me.role==="admin")c=state.page==="students"?studentsPage():state.page==="help"?helpPage():adminPage();else if(teacherRole){if(state.page==="help")c=helpPage();else if(state.page==="private")c=privatePage();else if(state.page==="section")c=sectionPage();else c=home()}else if(state.page==="practice")c=practicePage();else if(state.page==="record")c=recordPage();else if(state.page==="register")c=registrationForm();else if(state.page==="help")c=helpPage();else c=home();document.getElementById("app").innerHTML=shell(c)}
+function render(){let c;const teacherRole=["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me?.role)||state.me?.capabilities?.teacherSettings;if(teacherRole&&window.__roleLoaderActive&&window.__roleModulesReady!==true){c=`<div class="card hero"><h2>🎓 正在準備教學功能</h2><div class="notice">正在同步今日課程、點名與教學設定，完成後即可直接操作。</div><div class="teacher-boot-progress"><i></i></div></div>`;document.getElementById("app").innerHTML=shell(c);return}if(state.page==="schoolAccessError")c=`<div class="card hero"><h2>🏫 校方帳號設定需修正</h2><div class="notice">此 Gmail 對應多所學校，請通知系統管理員確認校方查詢權限。</div></div>`;else if(state.me.role==="school")c=state.schoolViewerLoadError?`<div class="card hero"><h2>🏫 校方功能暫時無法開啟</h2><div class="error">${esc(state.schoolViewerLoadError)}</div><button class="primary" onclick="retrySchoolView()">重新載入校方功能</button></div>`:`<div class="card hero"><h2>🏫 正在載入校方出缺勤資料…</h2></div>`;else if(state.page==="schoolSelect")c=schoolSelectionPage();else if(state.page==="contextSelect")c=contextSelectorPage();else if(state.me.role==="admin")c=state.page==="students"?studentsPage():state.page==="help"?helpPage():adminPage();else if(teacherRole){if(state.page==="help")c=helpPage();else if(state.page==="private")c=privatePage();else if(state.page==="section")c=sectionPage();else c=home()}else if(state.page==="practice")c=practicePage();else if(state.page==="record")c=recordPage();else if(state.page==="register")c=registrationForm();else if(state.page==="help")c=helpPage();else c=home();document.getElementById("app").innerHTML=shell(c)}
 boot();
