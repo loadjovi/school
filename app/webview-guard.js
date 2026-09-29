@@ -51,7 +51,7 @@
       "/batch-upgrade.js",
       "/roster-import.js?v=20260915-1135",
       "/attendance-support.js?v=20260928-2148",
-      "/attendance-edit.js",
+      "/attendance-edit.js?v=20260929-late10",
       "/practice-progress.js?v=20260929-0205",
       "/admin-operations.js?v=20260928-1520",
       "/admin-followup-summary-fix.js?v=20260917-1320",
@@ -59,21 +59,21 @@
       "/school-access.js?v=20260920-0010",
       "/school-access-audit-admin.js?v=20260918-0005",
       "/school-access-refresh-fix.js?v=20260929-1730",
-      "/training-attendance.js?v=20260929-1600"
+      "/training-attendance.js?v=20260929-late10"
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
       "/roster-support.js",
-      "/section-support.js?v=20260924-2238",
-      "/teacher-support.js?v=20260924-2245",
+      "/section-support.js?v=20260929-late10",
+      "/teacher-support.js?v=20260929-late10",
       "/teacher-settings.js?v=20260928-2135",
       "/private-student-bottom-back.js?v=20260915-1432",
       "/attendance-support.js?v=20260928-2148",
-      "/attendance-edit.js",
+      "/attendance-edit.js?v=20260929-late10",
       "/practice-progress.js?v=20260929-0205",
       "/teacher-navigation.js?v=20260929-1600",
-      "/training-attendance.js?v=20260929-1600",
-      "/comprehensive-support.js?v=20260922-0715",
-      "/private-lesson-confirmation.js?v=20260929-1335"
+      "/training-attendance.js?v=20260929-late10",
+      "/comprehensive-support.js?v=20260929-late10",
+      "/private-lesson-confirmation.js?v=20260929-late10"
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20260929-1305",
@@ -82,9 +82,9 @@
     if(role==="school")return ["/school-access.js?v=20260929-1305"];
     if(role==="parent")return [
       "/practice-timer.js?v=20260918-0725",
-      "/private-lesson-confirmation.js?v=20260929-1335",
-      "/parent-semester-attendance.js?v=20260929-1335",
-      "/parent-home-summary.js?v=20260929-0205"
+      "/private-lesson-confirmation.js?v=20260929-late10",
+      "/parent-semester-attendance.js?v=20260929-late10",
+      "/parent-home-summary.js?v=20260929-late10"
     ];
     if(role==="globalAdmin")return [
       "/school-access.js?v=20260920-0010",

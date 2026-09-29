@@ -111,20 +111,21 @@
   function teacherLessonRow(x){
     const w=workflow(x),badge=`<span class="badge ${workflowClass[w]||""}">${esc(workflowText[w]||w)}</span>`;
     const expanded=String(state.expandedPrivateLessonId||"")===String(x.lessonId);
+    const lateNote='<div class="muted" style="margin-top:6px">以預約開始時間為準：超過 10 分鐘才到課選「遲到後完成」；10 分鐘內到課選「完成上課」。</div>';
     let action="";
     if(w==="scheduled"){
       if(canChange(x))action=`${scheduleEditor(x,"teacher")}${cancelButton(x,"teacher")}<button class="secondary" style="width:100%;margin-top:8px" onclick="resendPrivateLessonEmail('${esc(x.studentId)}','${esc(x.lessonId)}','teacher')">📨 重寄預約 Email</button>`;
       else if(String(x.lessonDate)===today()){
         const k=lessonDomKey(x.lessonId),ended=canComplete(x);
-        action=`<div class="notice" style="margin-top:10px"><b>今天是預約上課日</b><br>上課已開始，原預約時間固定為 ${esc(x.startTime)}～${esc(x.endTime)}；開啟或儲存上課內容都不會改動預約時間。</div><label>實際課程內容（可修正）</label><textarea id="completeContent_${k}" rows="3" maxlength="500">${esc(x.lessonContent||"")}</textarea><button class="secondary" style="width:100%;margin-top:8px" onclick="savePrivateLessonContent('${esc(x.studentId)}','${esc(x.lessonId)}')">💾 儲存上課內容</button>${ended?`<label>實際上課狀態</label><select id="completeAttendance_${k}"><option value="present" ${x.actualAttendanceStatus!=="late"?"selected":""}>完成上課</option><option value="late" ${x.actualAttendanceStatus==="late"?"selected":""}>遲到後完成</option></select><button class="primary" onclick="completePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">✅ 已完成上課並通知家長</button>`:`<div class="muted" style="margin-top:8px">預約結束時間 ${esc(x.endTime)} 後，才可送出「完成上課」。</div>`}`;
+        action=`<div class="notice" style="margin-top:10px"><b>今天是預約上課日</b><br>上課已開始，原預約時間固定為 ${esc(x.startTime)}～${esc(x.endTime)}；開啟或儲存上課內容都不會改動預約時間。</div><label>實際課程內容（可修正）</label><textarea id="completeContent_${k}" rows="3" maxlength="500">${esc(x.lessonContent||"")}</textarea><button class="secondary" style="width:100%;margin-top:8px" onclick="savePrivateLessonContent('${esc(x.studentId)}','${esc(x.lessonId)}')">💾 儲存上課內容</button>${ended?`<label>實際上課狀態</label><select id="completeAttendance_${k}"><option value="present" ${x.actualAttendanceStatus!=="late"?"selected":""}>完成上課</option><option value="late" ${x.actualAttendanceStatus==="late"?"selected":""}>遲到後完成</option></select>${lateNote}<button class="primary" onclick="completePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">✅ 已完成上課並通知家長</button>`:`<div class="muted" style="margin-top:8px">預約結束時間 ${esc(x.endTime)} 後，才可送出「完成上課」。</div>`}`;
       }else if(canComplete(x)){
         const k=lessonDomKey(x.lessonId);
-        action=`<div class="notice" style="margin-top:10px"><b>本堂預約時間已結束</b><br>原預約時間保留不變；確認實際完成上課後，再送交家長確認。</div><label>實際上課狀態</label><select id="completeAttendance_${k}"><option value="present" ${x.actualAttendanceStatus!=="late"?"selected":""}>完成上課</option><option value="late" ${x.actualAttendanceStatus==="late"?"selected":""}>遲到後完成</option></select><label>實際課程內容（可修正）</label><textarea id="completeContent_${k}" rows="2" maxlength="500">${esc(x.lessonContent||"")}</textarea><button class="primary" onclick="completePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">✅ 已完成上課並通知家長</button>`;
+        action=`<div class="notice" style="margin-top:10px"><b>本堂預約時間已結束</b><br>原預約時間保留不變；確認實際完成上課後，再送交家長確認。</div><label>實際上課狀態</label><select id="completeAttendance_${k}"><option value="present" ${x.actualAttendanceStatus!=="late"?"selected":""}>完成上課</option><option value="late" ${x.actualAttendanceStatus==="late"?"selected":""}>遲到後完成</option></select>${lateNote}<label>實際課程內容（可修正）</label><textarea id="completeContent_${k}" rows="2" maxlength="500">${esc(x.lessonContent||"")}</textarea><button class="primary" onclick="completePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">✅ 已完成上課並通知家長</button>`;
       }else action=`<div class="notice" style="margin-top:10px">預約已同步給家長；預約日期與時間會固定保留。</div>`;
     }else if(w==="awaiting_parent")action=`<div class="notice" style="margin-top:10px">老師已完成上課，等待家長確認；家長確認後才正式完成流程。</div><button class="secondary" style="width:100%;margin-top:8px" onclick="resendPrivateLessonEmail('${esc(x.studentId)}','${esc(x.lessonId)}','teacher')">📨 重寄完課確認 Email</button>`;
     else if(w==="issue"){
       const k=lessonDomKey(x.lessonId);
-      action=`<div class="error" style="margin-top:10px"><b>家長回報問題</b><br>${esc(x.parentNote||"請聯繫家長確認")}</div><label>實際上課狀態</label><select id="completeAttendance_${k}"><option value="present" ${x.actualAttendanceStatus!=="late"?"selected":""}>完成上課</option><option value="late" ${x.actualAttendanceStatus==="late"?"selected":""}>遲到後完成</option></select><label>修正後課程內容（選填）</label><textarea id="completeContent_${k}" rows="2" maxlength="500">${esc(x.lessonContent||"")}</textarea><button class="primary" onclick="completePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">再次送出完課確認</button>`;
+      action=`<div class="error" style="margin-top:10px"><b>家長回報問題</b><br>${esc(x.parentNote||"請聯繫家長確認")}</div><label>實際上課狀態</label><select id="completeAttendance_${k}"><option value="present" ${x.actualAttendanceStatus!=="late"?"selected":""}>完成上課</option><option value="late" ${x.actualAttendanceStatus==="late"?"selected":""}>遲到後完成</option></select>${lateNote}<label>修正後課程內容（選填）</label><textarea id="completeContent_${k}" rows="2" maxlength="500">${esc(x.lessonContent||"")}</textarea><button class="primary" onclick="completePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">再次送出完課確認</button>`;
     }else if(w==="completed")action=`<div class="notice private-completed-state" style="margin-top:10px">✅ 已完成上課並經家長確認，紀錄已結案。</div>`;
     else if(w==="cancelled")action=`<div class="notice" style="margin-top:10px">⏸️ 此堂個別課已停課。</div>`;
 
@@ -228,7 +229,8 @@
   function parentHistoryRow(x){
     const w=workflow(x),rating=Number(x.teacherRating||0),isCompleted=w==="completed";
     const ratingText=rating?`<span style="color:#d5a100;font-weight:900">${ratingStars(rating)}</span> ${rating}/5`:"";
-    const statusBadge=`<span class="badge ${workflowClass[w]||""}">${isCompleted?"已完成":"已停課"}</span>`;
+    const late=isCompleted&&(x.actualAttendanceStatus==="late"||x.status==="late");
+    const statusBadge=`<span class="badge ${workflowClass[w]||""}">${isCompleted?(late?"遲到後完成":"已完成"):"已停課"}</span>`;
     const detailBits=[
       x.lessonContent?`<div><b>上課內容：</b>${esc(x.lessonContent)}</div>`:"",
       rating?`<div><b>家長對師資評價：</b>${ratingText}</div>`:"",
@@ -261,7 +263,7 @@
         <div><b>${all.length}</b><span>累計紀錄</span></div>
         <div class="private-score-kpi"><b>${monthlyScore}/5</b><span>${trial?"9月試算（不計分）":"本月個課成績"}</span></div>
       </div>
-      <div class="notice" style="margin-top:10px"><b>個別課／期末教師評量占學期成績 5%。</b><br>${firstTerm?"9 月為測試期間，不納入正式成績。":""}${formalMonths}每月完成 4 次個別課為當月 5 分，未滿 4 次依完成次數換算，再取各月平均；若正式計分期間沒有完成任何個課，則由分部老師於期末評分。家長星級只是對師資的回饋，不會計入學生分數。</div>
+      <div class="notice" style="margin-top:10px"><b>個別課／期末教師評量占學期成績 5%。</b><br>${firstTerm?"9 月為測試期間，不納入正式成績。":""}${formalMonths}每月完成 4 次個別課為當月 5 分，未滿 4 次依完成次數換算，再取各月平均；若正式計分期間沒有完成任何個課，則由分部老師於期末評分。上課開始後超過 10 分鐘才到課記為遲到，10 分鐘內到課記為出席；遲到後完成仍計入完成次數。家長星級只是對師資的回饋，不會計入學生分數。</div>
       <div style="margin-top:10px">${recent.map(parentHistoryRow).join("")}</div>
       ${older.length?`<details class="private-history-older"><summary>查看較早個課紀錄（${older.length} 筆）</summary><div style="margin-top:8px">${older.map(parentHistoryRow).join("")}</div></details>`:""}
       ${all.length>24?`<div class="muted" style="text-align:center;margin-top:10px">目前先顯示最近 24 筆紀錄。</div>`:""}
@@ -315,7 +317,7 @@
     const bookingOrActive=activeLesson
       ? `<div class="card" id="privateBookingForm">${activeLessonHtml(activeLesson)}</div>`
       : `<div class="card" id="privateBookingForm"><h2>📅 預約個別課</h2><div class="notice">建立後會立即顯示在家長平台，並依後台通知設定寄送預約 Email。</div><label>學生</label><select id="iStudent" onchange="rememberPrivateBookingStudent(this.value)">${students.map(st=>`<option value="${esc(st.studentId)}" ${String(st.studentId)===String(state.privateBookingStudentId||students[0]?.studentId||"")?"selected":""}>${esc(st.name)}｜${esc(st.groupName)}團｜${esc(st.instrument)}</option>`).join("")}</select><label>上課日期</label><input id="iDate" type="date" min="${esc(d)}" value="${esc(defaultBookingDate)}"><div class="row2"><div><label>開始時間</label><input id="iStart" type="time" value="18:00"></div><div><label>結束時間</label><input id="iEnd" type="time" value="18:50"></div></div><label>預約備註／預計內容（選填）</label><textarea id="iContent" rows="3" placeholder="例：預計複習音階、換把、考試曲"></textarea><button class="primary" onclick="savePrivate()">📅 預約上課並通知家長</button></div>`;
-    return `<div class="card"><h2>👤 個別課流程</h2><div class="notice"><b>預約 → 上課 → 老師完課 → 家長確認 → 正式完成</b><br>有完成個課的學生，由系統依正式計分月份的個課次數換算期末 5%，每月完成 4 次為 5 分，再取各月平均；沒有完成個課的學生，才由分部老師於學期末評量。</div><div class="grid"><div class="kpi"><b>${scheduled.length}</b><span>未來預約</span></div><div class="kpi"><b>${pending.length}</b><span>待處理／確認</span></div><div class="kpi"><b>${completed.length}</b><span>本月完成流程</span></div><div class="kpi"><b>${minutes}</b><span>本月完成分鐘</span></div></div></div>
+    return `<div class="card"><h2>👤 個別課流程</h2><div class="notice"><b>預約 → 上課 → 老師完課 → 家長確認 → 正式完成</b><br>有完成個課的學生，由系統依正式計分月份的個課次數換算期末 5%，每月完成 4 次為 5 分，再取各月平均；沒有完成個課的學生，才由分部老師於學期末評量。<br>遲到標準：以預約開始時間為準，超過 10 分鐘才到課記為遲到；10 分鐘內記為出席，遲到後完成仍計入個課次數。</div><div class="grid"><div class="kpi"><b>${scheduled.length}</b><span>未來預約</span></div><div class="kpi"><b>${pending.length}</b><span>待處理／確認</span></div><div class="kpi"><b>${completed.length}</b><span>本月完成流程</span></div><div class="kpi"><b>${minutes}</b><span>本月完成分鐘</span></div></div></div>
     <div class="card"><h2>快速選擇學生</h2><div class="notice">已有預約的學生優先顯示；也可直接選擇學生建立下一堂課。</div>${quick}</div>
     ${bookingOrActive}
     <div class="card"><h2>預約／完課／家長確認</h2><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理雙方狀態</button><div id="privateConfirmList">${teacherHistoryHtml()}</div></div>`;
@@ -325,7 +327,7 @@
     if(changeable){
       return `<h2>🎻 本次個別課</h2><div class="notice"><b>今天是預約上課日</b><br>目前尚未到 ${esc(x.startTime)} 開始時間，老師仍可改期或停課；開始上課後，原預約日期與時間才會鎖定。</div><label>學生</label><div class="private-active-student"><div><b>${esc(currentStudentName(x.studentId))}</b>${studentMetaLine(x.studentId)?`<small>${esc(studentMetaLine(x.studentId))}</small>`:""}<small>${esc(x.lessonDate)}｜${esc(x.startTime)}～${esc(x.endTime)}</small></div><span class="badge warn">已約</span></div>${scheduleEditor(x,"active")}${cancelButton(x,"active")}<button class="secondary" style="width:100%;margin-top:8px" onclick="showPrivateBookingForm()">＋ 建立下一堂預約</button>`;
     }
-    return `<h2>🎻 本次個別課</h2><div class="notice"><b>今天是預約上課日</b><br>上課已開始，原預約日期與時間固定為 ${esc(x.startTime)}～${esc(x.endTime)}；填寫上課內容不會改動預約時間。</div><label>學生</label><div class="item" style="background:#f8fafc"><div><b>${esc(currentStudentName(x.studentId))}</b><small>${esc(x.lessonDate)}｜${esc(x.startTime)}～${esc(x.endTime)}</small></div><span class="badge warn">已約</span></div><label>實際上課內容（可修正）</label><textarea id="activeLessonContent" rows="4" maxlength="500" placeholder="請填寫本次實際上課內容">${esc(x.lessonContent||"")}</textarea>${ended?`<button class="primary" onclick="completeActivePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">✅ 已完成上課並通知家長</button>`:`<button class="secondary" style="width:100%" onclick="saveActivePrivateLessonContent('${esc(x.studentId)}','${esc(x.lessonId)}')">💾 儲存上課內容</button><div class="muted" style="margin-top:8px">預約結束時間 ${esc(x.endTime)} 後，可送出「已完成上課並通知家長」。</div>`}<button class="secondary" style="width:100%;margin-top:8px" onclick="showPrivateBookingForm()">＋ 建立下一堂預約</button>`;
+    return `<h2>🎻 本次個別課</h2><div class="notice"><b>今天是預約上課日</b><br>上課已開始，原預約日期與時間固定為 ${esc(x.startTime)}～${esc(x.endTime)}；填寫上課內容不會改動預約時間。</div><label>學生</label><div class="item" style="background:#f8fafc"><div><b>${esc(currentStudentName(x.studentId))}</b><small>${esc(x.lessonDate)}｜${esc(x.startTime)}～${esc(x.endTime)}</small></div><span class="badge warn">已約</span></div><label>實際上課內容（可修正）</label><textarea id="activeLessonContent" rows="4" maxlength="500" placeholder="請填寫本次實際上課內容">${esc(x.lessonContent||"")}</textarea>${ended?`<label>實際上課狀態</label><select id="activeLessonAttendance"><option value="present" ${x.actualAttendanceStatus!=="late"?"selected":""}>完成上課</option><option value="late" ${x.actualAttendanceStatus==="late"?"selected":""}>遲到後完成</option></select><div class="muted" style="margin-top:6px">以預約開始時間為準，超過 10 分鐘才到課選「遲到後完成」；10 分鐘內選「完成上課」。</div><button class="primary" onclick="completeActivePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">✅ 已完成上課並通知家長</button>`:`<button class="secondary" style="width:100%" onclick="saveActivePrivateLessonContent('${esc(x.studentId)}','${esc(x.lessonId)}')">💾 儲存上課內容</button><div class="muted" style="margin-top:8px">預約結束時間 ${esc(x.endTime)} 後，可送出「已完成上課並通知家長」。</div>`}<button class="secondary" style="width:100%;margin-top:8px" onclick="showPrivateBookingForm()">＋ 建立下一堂預約</button>`;
   }
   window.openPrivateLesson=function(lessonId){
     const x=(state.privateLessons||[]).find(r=>String(r.lessonId)===String(lessonId));
@@ -353,11 +355,11 @@
     try{await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"update_lesson_content",lessonContent})});toast("✅ 上課內容已儲存");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
   };
   window.completeActivePrivateLesson=async function(studentId,lessonId){
-    const x=(state.privateLessons||[]).find(r=>String(r.lessonId)===String(lessonId)),lessonContent=document.getElementById("activeLessonContent")?.value.trim()||"";
+    const x=(state.privateLessons||[]).find(r=>String(r.lessonId)===String(lessonId)),lessonContent=document.getElementById("activeLessonContent")?.value.trim()||"",attendanceStatus=document.getElementById("activeLessonAttendance")?.value||"present";
     if(!x)return;
     if(!canComplete(x)){toast(`目前尚未到預約結束時間 ${x.endTime}，請於課程結束後再送出完成上課。`);return}
     if(!confirm("確定本堂已完成上課？\n\n本堂完成紀錄會自動累計個課次數；每月完成 4 次 = 5 分，正式月份再取學期平均。送出後家長平台會出現『待確認』。"))return;
-    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"complete_lesson",lessonContent,attendanceStatus:"present"})});notifyToast(r,"已完成上課並通知家長");state.activePrivateLessonId="";state.suppressAutoPrivateLesson=false;await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
+    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"complete_lesson",lessonContent,attendanceStatus})});notifyToast(r,"已完成上課並通知家長");state.activePrivateLessonId="";state.suppressAutoPrivateLesson=false;await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
   };
   window.rememberPrivateBookingStudent=function(studentId){state.privateBookingStudentId=String(studentId||"")};
   window.quickPrivateStudent=function(studentId){

@@ -81,7 +81,7 @@
       <div class="notice" style="margin-top:10px">
         正式計分月份：${esc(scoreMonthText)}。${policy.trialMonth?"9 月為測試期間，可查看紀錄與試算，但不列入正式成績。":""}<br>
         自主練習 10%：系統依有效練習天數自動換算，老師不用另外評分。<br>
-        課程點名 5%：只計分部課、合奏課、綜合課；個別課不納入此 5%。停課與核准請假不列入扣分分母，遲到仍算到課。<br>
+        課程點名 5%：只計分部課、合奏課、綜合課；個別課不納入此 5%。上課開始後超過 10 分鐘才到課記為遲到，10 分鐘內到課記為出席；遲到仍算到課。停課與核准請假不列入扣分分母。<br>
         學習表現 5%：有完成個課者，每月完成 4 次 = 5 分；以 ${esc(scoreMonthText)}的月分數做學期平均。正式計分期間沒有完成個課者，才由分部老師於學期末評量一次。<br>
         家長對個課老師的星級／評論只是師資回饋，不會計入學生分數。
       </div>
@@ -109,7 +109,7 @@
         <div class="record-section-icon">📅</div>
         <div><b>本學期出勤紀錄</b><small>課程點名 5% 只依分部課、合奏課、綜合課正式點名比例換算</small></div>
       </div>
-      <div class="card hero record-section-summary"><div class="section-title"><h2>整學期出勤概況</h2><span class="badge ${Number(o.absent||0)||Number(o.leave||0)||Number(o.late||0)?"warn":"ok"}">${Number(o.absent||0)||Number(o.leave||0)||Number(o.late||0)?"非全勤":"紀錄正常"}</span></div><div class="notice"><b>${semesterTitle(d)}</b><br>統計至 ${esc(d.asOf)}<br>${esc(statsLine(o))}<br><br>${esc(historyNote)}遲到仍計入到課，核准請假不列入計分分母，無故缺席才會影響分數。個別課另列紀錄，並依每月完成次數計算學習表現 5%；整學期沒有完成個課則由分部老師期末評分。</div><div class="muted" style="margin-top:10px;text-align:right">最近更新：${esc(d.asOf)}　<button class="secondary" style="padding:6px 10px;margin:0" onclick="reloadParentSemesterAttendance()">↻ 重新整理</button></div></div>
+      <div class="card hero record-section-summary"><div class="section-title"><h2>整學期出勤概況</h2><span class="badge ${Number(o.absent||0)||Number(o.leave||0)||Number(o.late||0)?"warn":"ok"}">${Number(o.absent||0)||Number(o.leave||0)||Number(o.late||0)?"非全勤":"紀錄正常"}</span></div><div class="notice"><b>${semesterTitle(d)}</b><br>統計至 ${esc(d.asOf)}<br>${esc(statsLine(o))}<br><br>${esc(historyNote)}上課開始後超過 10 分鐘才到課記為遲到，10 分鐘內到課記為出席；遲到仍計入到課。核准請假不列入計分分母，無故缺席才會影響分數。個別課另列紀錄，並依每月完成次數計算學習表現 5%；整學期沒有完成個課則由分部老師期末評分。</div><div class="muted" style="margin-top:10px;text-align:right">最近更新：${esc(d.asOf)}　<button class="secondary" style="padding:6px 10px;margin:0" onclick="reloadParentSemesterAttendance()">↻ 重新整理</button></div></div>
       ${classCard("section","分部課出勤","🎼",d)}
       ${classCard("ensemble","合奏課出勤","🎻",d)}
       ${classCard("comprehensive","綜合課出勤","🎶",d)}
