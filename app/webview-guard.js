@@ -77,6 +77,7 @@
       "/school-access.js?v=20260929-1305",
       "/school-access-refresh-fix.js?v=20260929-1305"
     ];
+    if(role==="school")return ["/school-access.js?v=20260929-1305"];
     if(role==="parent")return [
       "/practice-timer.js?v=20260918-0725",
       "/private-lesson-confirmation.js?v=20260929-1335",
@@ -127,7 +128,7 @@
   }
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20260925-0415",()=>{
+    appendScript("/app-v3.js?v=20260929-1410",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
