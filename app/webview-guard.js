@@ -58,7 +58,7 @@
       "/system-backup.js?v=20260919-2305",
       "/school-access.js?v=20260920-0010",
       "/school-access-audit-admin.js?v=20260918-0005",
-      "/school-access-refresh-fix.js?v=20260920-0245"
+      "/school-access-refresh-fix.js?v=20260929-1225"
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
       "/roster-support.js",
@@ -82,7 +82,7 @@
     if(role==="globalAdmin")return [
       "/school-access.js?v=20260920-0010",
       "/school-access-audit-admin.js?v=20260918-0005",
-      "/school-access-refresh-fix.js?v=20260920-0245"
+      "/school-access-refresh-fix.js?v=20260929-1225"
     ];
     return [];
   }
