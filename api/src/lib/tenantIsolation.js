@@ -13,7 +13,9 @@ export const TENANT_ISOLATION_DATASETS=[
   {key:"tenantSection",label:"分部課",kind:"student"},
   {key:"tenantEnsemble",label:"合奏課",kind:"student"},
   {key:"tenantComprehensive",label:"綜合課",kind:"student"},
-  {key:"tenantPrivateLesson",label:"個別課",kind:"student"}
+  {key:"tenantPrivateLesson",label:"個別課",kind:"student"},
+  {key:"tenantCalendarEvent",label:"特殊活動",kind:"school"},
+  {key:"tenantTrainingAttendance",label:"加練點名",kind:"school"}
 ];
 
 function validTenantPartition(entity,schoolIds,kind){

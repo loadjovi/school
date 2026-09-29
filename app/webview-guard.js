@@ -58,7 +58,8 @@
       "/system-backup.js?v=20260919-2305",
       "/school-access.js?v=20260920-0010",
       "/school-access-audit-admin.js?v=20260918-0005",
-      "/school-access-refresh-fix.js?v=20260929-1430"
+      "/school-access-refresh-fix.js?v=20260929-1430",
+      "/training-attendance.js?v=20260929-1600"
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
       "/roster-support.js",
@@ -69,7 +70,8 @@
       "/attendance-support.js?v=20260928-2148",
       "/attendance-edit.js",
       "/practice-progress.js?v=20260929-0205",
-      "/teacher-navigation.js?v=20260929-0205",
+      "/teacher-navigation.js?v=20260929-1600",
+      "/training-attendance.js?v=20260929-1600",
       "/comprehensive-support.js?v=20260922-0715",
       "/private-lesson-confirmation.js?v=20260929-1335"
     ];

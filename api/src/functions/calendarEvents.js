@@ -6,7 +6,16 @@ const safe=v=>String(v||"").replaceAll("'","''");
 const validDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||""));
 const validTime=v=>!v||/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v||""));
 const normGroup=v=>String(v||"").trim().replace(/團$/,"");
+async function hasTrainingAttendance(schoolId,eventId){
+  const filter=`PartitionKey eq '${safe(tenantSchoolPartition(schoolId))}' and eventId eq '${safe(eventId)}'`;
+  for await(const _ of table("tenantTrainingAttendance").listEntities({queryOptions:{filter}}))return true;
+  return false;
+}
 const taipeiDate=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+const legacySaturdayDates=new Set(["2026-10-03","2026-10-17","2026-11-07","2026-11-14"]);
+export const needsTrainingAttendance=e=>e.requiresAttendance===true||(
+  String(e.eventType||"")==="competition_training"&&String(e.title||"")==="A團比賽加練｜週六加練"&&legacySaturdayDates.has(String(e.eventDate||""))
+);
 const eventView=(e,internal=false)=>({
   eventId:String(e.rowKey||""),
   eventType:String(e.eventType||"general"),
@@ -19,11 +28,11 @@ const eventView=(e,internal=false)=>({
   teacherName:String(e.teacherName||""),
   location:String(e.location||""),
   note:String(e.note||""),
-  requiresAttendance:e.requiresAttendance===true,
+  requiresAttendance:needsTrainingAttendance(e),
   visibleToParents:e.visibleToParents!==false,
   status:String(e.status||"active"),
   updatedAt:String(e.updatedAt||""),
-  ...(internal?{teachingTeacherEmail:String(e.teachingTeacherEmail||""),teachingTeacherName:String(e.teachingTeacherName||""),teachingMinutes:Number(e.teachingMinutes||0),teachingConfirmedAt:String(e.teachingConfirmedAt||""),teachingConfirmedBy:String(e.teachingConfirmedBy||"")}:{}),
+  ...(internal?{teacherEmail:String(e.teacherEmail||""),teachingTeacherEmail:String(e.teachingTeacherEmail||""),teachingTeacherName:String(e.teachingTeacherName||""),teachingMinutes:Number(e.teachingMinutes||0),teachingConfirmedAt:String(e.teachingConfirmedAt||""),teachingConfirmedBy:String(e.teachingConfirmedBy||"")}:{}),
 });
 
 export async function listCalendarEvents(schoolId,startDate="",endDate="",groupName="",includeInactive=false){
@@ -52,7 +61,7 @@ function makePresetRows(){
   const sat=["2026-10-03","2026-10-17","2026-11-07","2026-11-14"];
   return [
     ...early.map(eventDate=>({eventType:"competition_training",title:"A團比賽加練｜早自習",eventDate,startTime:"07:50",endTime:"08:35",timeLabel:"早自習",targetGroups:"A",teacherName:"陳宣文老師",location:"聖家樓四樓團練教室",note:"比賽加強練習｜地點：聖家樓四樓團練教室",requiresAttendance:false,visibleToParents:true})),
-    ...sat.map(eventDate=>({eventType:"competition_training",title:"A團比賽加練｜週六加練",eventDate,startTime:"09:00",endTime:"11:00",timeLabel:"09:00–11:00",targetGroups:"A",teacherName:"林逸旻老師",location:"聖家樓四樓團練教室",note:"比賽加強練習｜地點：聖家樓四樓團練教室",requiresAttendance:false,visibleToParents:true}))
+    ...sat.map(eventDate=>({eventType:"competition_training",title:"A團比賽加練｜週六加練",eventDate,startTime:"09:00",endTime:"11:00",timeLabel:"09:00–11:00",targetGroups:"A",teacherName:"林逸旻老師",location:"聖家樓四樓團練教室",note:"比賽加強練習｜地點：聖家樓四樓團練教室",requiresAttendance:true,visibleToParents:true}))
   ];
 }
 
@@ -81,9 +90,14 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
       const deterministic=body.action==="preset_a_competition_2026"
         ?("evt_"+Buffer.from([x.eventType,x.title,eventDate,startTime,endTime,x.targetGroups].join("|"),"utf8").toString("base64url").slice(0,220))
         :String(x.eventId||rowKey("evt"));
-      const entity={partitionKey:sid,rowKey:deterministic,schoolId:sid,eventType:String(x.eventType||"general").slice(0,40),title:String(x.title||"活動").slice(0,120),eventDate,startTime,endTime,timeLabel:String(x.timeLabel||"").slice(0,60),targetGroups:String(x.targetGroups||"ALL").slice(0,80),teacherName:String(x.teacherName||"").slice(0,80),location:String(x.location||"").slice(0,120),note:String(x.note||"").slice(0,300),requiresAttendance:x.requiresAttendance===true,visibleToParents:x.visibleToParents!==false,status:"active",updatedAt:now,updatedBy:a.email};
+      const teacherEmail=String(x.teacherEmail||"").trim().toLowerCase();
+      if(x.requiresAttendance===true&&String(x.eventType||"general")!=="competition_training")return json({error:"目前僅比賽加練支援獨立點名"},400);
+      if(teacherEmail){const t=await getTeacherDirectory(teacherEmail,schoolId);if(!t||String(t.status||"active")!=="active")return json({error:"點名老師需為本校啟用中的老師帳號"},400)}
+      const entity={partitionKey:sid,rowKey:deterministic,schoolId:sid,eventType:String(x.eventType||"general").slice(0,40),title:String(x.title||"活動").slice(0,120),eventDate,startTime,endTime,timeLabel:String(x.timeLabel||"").slice(0,60),targetGroups:String(x.targetGroups||"ALL").slice(0,80),teacherName:String(x.teacherName||"").slice(0,80),teacherEmail,location:String(x.location||"").slice(0,120),note:String(x.note||"").slice(0,300),requiresAttendance:x.requiresAttendance===true,visibleToParents:x.visibleToParents!==false,status:"active",updatedAt:now,updatedBy:a.email};
       let old=null;try{old=await client.getEntity(sid,deterministic)}catch(e){if(e.statusCode!==404)throw e}
       const sameTeachingPlan=old&&String(old.eventType)===entity.eventType&&String(old.eventDate)===eventDate&&String(old.startTime)===startTime&&String(old.endTime)===endTime&&String(old.teacherName||"")===entity.teacherName;
+      if(old&&(String(old.eventDate||"")!==eventDate||String(old.targetGroups||"")!==entity.targetGroups||(needsTrainingAttendance(old)&&!needsTrainingAttendance(entity)))&&await hasTrainingAttendance(schoolId,deterministic))return json({error:"此場已有點名紀錄，不能更改日期、團別或關閉點名"},409);
+      if(body.action==="preset_a_competition_2026"&&sameTeachingPlan)entity.teacherEmail=String(old.teacherEmail||"");
       if(old?.teachingConfirmedAt&&!sameTeachingPlan)return json({error:"此加練已確認工時，請先撤銷後再修改活動"},409);
       if(old?.teachingConfirmedAt&&sameTeachingPlan){
         for(const key of ["teachingTeacherEmail","teachingTeacherName","teachingMinutes","teachingConfirmedAt","teachingConfirmedBy"])entity[key]=old[key];
@@ -113,11 +127,16 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
   }
   if(old.teachingConfirmedAt&&(["cancel","delete"].includes(String(body.action||""))||String(body.status||"active")!=="active"))return json({error:"請先撤銷加練工時確認，再取消或刪除活動"},409);
   if(body.action==="delete"){
+    if(await hasTrainingAttendance(schoolId,eventId))return json({error:"此場已有點名紀錄，請保留活動並改為取消，以保存出勤歷史"},409);
     await client.deleteEntity(sid,eventId);return json({ok:true,deleted:true});
   }
   const status=body.action==="cancel"?"cancelled":body.action==="restore"?"active":String(body.status||old.status||"active");
-  const entity={...old,partitionKey:sid,rowKey:eventId,status,title:String((body.title??old.title)||"").slice(0,120),eventDate:String((body.eventDate??old.eventDate)||""),startTime:String((body.startTime??old.startTime)||""),endTime:String((body.endTime??old.endTime)||""),timeLabel:String((body.timeLabel??old.timeLabel)||"").slice(0,60),targetGroups:String((body.targetGroups??old.targetGroups)||"ALL").slice(0,80),teacherName:String((body.teacherName??old.teacherName)||"").slice(0,80),location:String((body.location??old.location)||"").slice(0,120),note:String((body.note??old.note)||"").slice(0,300),requiresAttendance:body.requiresAttendance??old.requiresAttendance??false,visibleToParents:body.visibleToParents??old.visibleToParents??true,updatedAt:now,updatedBy:a.email};
+  const teacherEmail=String(body.teacherEmail??old.teacherEmail??"").trim().toLowerCase();
+  if(teacherEmail){const t=await getTeacherDirectory(teacherEmail,schoolId);if(!t||String(t.status||"active")!=="active")return json({error:"點名老師需為本校啟用中的老師帳號"},400)}
+  const entity={...old,partitionKey:sid,rowKey:eventId,status,title:String((body.title??old.title)||"").slice(0,120),eventDate:String((body.eventDate??old.eventDate)||""),startTime:String((body.startTime??old.startTime)||""),endTime:String((body.endTime??old.endTime)||""),timeLabel:String((body.timeLabel??old.timeLabel)||"").slice(0,60),targetGroups:String((body.targetGroups??old.targetGroups)||"ALL").slice(0,80),teacherName:String((body.teacherName??old.teacherName)||"").slice(0,80),teacherEmail,location:String((body.location??old.location)||"").slice(0,120),note:String((body.note??old.note)||"").slice(0,300),requiresAttendance:body.requiresAttendance??old.requiresAttendance??false,visibleToParents:body.visibleToParents??old.visibleToParents??true,updatedAt:now,updatedBy:a.email};
   if(!validDate(entity.eventDate)||!validTime(entity.startTime)||!validTime(entity.endTime))return json({error:"日期或時間格式不正確"},400);
+  if(entity.requiresAttendance===true&&entity.eventType!=="competition_training")return json({error:"目前僅比賽加練支援獨立點名"},400);
+  if((entity.eventDate!==old.eventDate||entity.targetGroups!==old.targetGroups||(needsTrainingAttendance(old)&&!needsTrainingAttendance(entity)))&&await hasTrainingAttendance(schoolId,eventId))return json({error:"此場已有點名紀錄，不能更改日期、團別或關閉點名"},409);
   if(old.teachingConfirmedAt&&["eventDate","startTime","endTime","teacherName"].some(key=>String(entity[key]||"")!==String(old[key]||"")))return json({error:"請先撤銷加練工時確認，再修改授課日期、時間或老師"},409);
   await client.upsertEntity(entity,"Replace");return json({ok:true,item:eventView(entity,true)});
 }});
