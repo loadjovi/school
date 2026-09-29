@@ -252,16 +252,16 @@
     if(state.me?.role!=="parent"||!state.student)return "";
     const all=sortedLessons().filter(x=>["completed","cancelled"].includes(workflow(x)));
     if(!all.length)return "";
-    const rows=all.slice(0,24),recent=rows.slice(0,3),older=rows.slice(3),month=today().slice(0,7),monthRows=all.filter(x=>String(x.lessonDate||"").startsWith(month)),completed=monthRows.filter(x=>workflow(x)==="completed"&&["present","late"].includes(String(x.status||""))).length,cancelled=monthRows.filter(x=>workflow(x)==="cancelled").length,monthlyTarget=4,monthlyScore=Math.round(Math.min(completed/monthlyTarget,1)*500)/100;
+    const rows=all.slice(0,24),recent=rows.slice(0,3),older=rows.slice(3),month=today().slice(0,7),monthRows=all.filter(x=>String(x.lessonDate||"").startsWith(month)),completed=monthRows.filter(x=>workflow(x)==="completed"&&["present","late"].includes(String(x.status||""))).length,cancelled=monthRows.filter(x=>workflow(x)==="cancelled").length,monthlyTarget=4,monthlyScore=Math.round(Math.min(completed/monthlyTarget,1)*500)/100,firstTerm=String(state.student?.semester||"1")==="1",formalMonths=firstTerm?"10～12 月":"2～5 月",trial=firstTerm&&/^\d{4}-09$/.test(month);
     return `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><h2 style="margin:0">⭐ 個別課課後紀錄與評價</h2><span class="muted">最近 3 筆優先顯示</span></div>
       <div class="private-history-summary">
         <div><b>${completed}</b><span>本月完成</span></div>
         <div><b>${cancelled}</b><span>本月停課</span></div>
         <div><b>${all.length}</b><span>累計紀錄</span></div>
-        <div class="private-score-kpi"><b>${monthlyScore}/5</b><span>本月個課加分</span></div>
+        <div class="private-score-kpi"><b>${monthlyScore}/5</b><span>${trial?"9月試算（不計分）":"本月個課成績"}</span></div>
       </div>
-      <div class="notice" style="margin-top:10px"><b>個別課為期末加分項，最高 5%。</b><br>每月完成 4 次個別課即取得當月 5 分；未完成 4 次則依完成次數比例換算。上學期採 9～12 月四個月平均，與自主練習 10%＋日常上課出勤 5% 合併為期末 20%。家長星級仍只是對師資的回饋，不會拿來當學生分數。</div>
+      <div class="notice" style="margin-top:10px"><b>個別課／期末教師評量占學期成績 5%。</b><br>${firstTerm?"9 月為測試期間，不納入正式成績。":""}${formalMonths}每月完成 4 次個別課為當月 5 分，未滿 4 次依完成次數換算，再取各月平均；若正式計分期間沒有完成任何個課，則由分部老師於期末評分。家長星級只是對師資的回饋，不會計入學生分數。</div>
       <div style="margin-top:10px">${recent.map(parentHistoryRow).join("")}</div>
       ${older.length?`<details class="private-history-older"><summary>查看較早個課紀錄（${older.length} 筆）</summary><div style="margin-top:8px">${older.map(parentHistoryRow).join("")}</div></details>`:""}
       ${all.length>24?`<div class="muted" style="text-align:center;margin-top:10px">目前先顯示最近 24 筆紀錄。</div>`:""}
@@ -315,7 +315,7 @@
     const bookingOrActive=activeLesson
       ? `<div class="card" id="privateBookingForm">${activeLessonHtml(activeLesson)}</div>`
       : `<div class="card" id="privateBookingForm"><h2>📅 預約個別課</h2><div class="notice">建立後會立即顯示在家長平台，並依後台通知設定寄送預約 Email。</div><label>學生</label><select id="iStudent" onchange="rememberPrivateBookingStudent(this.value)">${students.map(st=>`<option value="${esc(st.studentId)}" ${String(st.studentId)===String(state.privateBookingStudentId||students[0]?.studentId||"")?"selected":""}>${esc(st.name)}｜${esc(st.groupName)}團｜${esc(st.instrument)}</option>`).join("")}</select><label>上課日期</label><input id="iDate" type="date" min="${esc(d)}" value="${esc(defaultBookingDate)}"><div class="row2"><div><label>開始時間</label><input id="iStart" type="time" value="18:00"></div><div><label>結束時間</label><input id="iEnd" type="time" value="18:50"></div></div><label>預約備註／預計內容（選填）</label><textarea id="iContent" rows="3" placeholder="例：預計複習音階、換把、考試曲"></textarea><button class="primary" onclick="savePrivate()">📅 預約上課並通知家長</button></div>`;
-    return `<div class="card"><h2>👤 個別課流程</h2><div class="notice"><b>預約 → 上課 → 老師完課 → 家長確認 → 正式完成</b><br>老師不需要額外評分；系統會依完成個課次數自動換算期末加分 5%，每月完成 4 次為 5 分，上學期以 9～12 月四個月做平均。</div><div class="grid"><div class="kpi"><b>${scheduled.length}</b><span>未來預約</span></div><div class="kpi"><b>${pending.length}</b><span>待處理／確認</span></div><div class="kpi"><b>${completed.length}</b><span>本月完成流程</span></div><div class="kpi"><b>${minutes}</b><span>本月完成分鐘</span></div></div></div>
+    return `<div class="card"><h2>👤 個別課流程</h2><div class="notice"><b>預約 → 上課 → 老師完課 → 家長確認 → 正式完成</b><br>有完成個課的學生，由系統依正式計分月份的個課次數換算期末 5%，每月完成 4 次為 5 分，再取各月平均；沒有完成個課的學生，才由分部老師於學期末評量。</div><div class="grid"><div class="kpi"><b>${scheduled.length}</b><span>未來預約</span></div><div class="kpi"><b>${pending.length}</b><span>待處理／確認</span></div><div class="kpi"><b>${completed.length}</b><span>本月完成流程</span></div><div class="kpi"><b>${minutes}</b><span>本月完成分鐘</span></div></div></div>
     <div class="card"><h2>快速選擇學生</h2><div class="notice">已有預約的學生優先顯示；也可直接選擇學生建立下一堂課。</div>${quick}</div>
     ${bookingOrActive}
     <div class="card"><h2>預約／完課／家長確認</h2><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理雙方狀態</button><div id="privateConfirmList">${teacherHistoryHtml()}</div></div>`;

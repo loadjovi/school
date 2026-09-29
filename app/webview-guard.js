@@ -71,7 +71,7 @@
       "/practice-progress.js?v=20260929-0205",
       "/teacher-navigation.js?v=20260929-0205",
       "/comprehensive-support.js?v=20260922-0715",
-      "/private-lesson-confirmation.js?v=20260929-1315"
+      "/private-lesson-confirmation.js?v=20260929-1335"
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20260929-1305",
@@ -79,8 +79,8 @@
     ];
     if(role==="parent")return [
       "/practice-timer.js?v=20260918-0725",
-      "/private-lesson-confirmation.js?v=20260929-1315",
-      "/parent-semester-attendance.js?v=20260929-1315",
+      "/private-lesson-confirmation.js?v=20260929-1335",
+      "/parent-semester-attendance.js?v=20260929-1335",
       "/parent-home-summary.js?v=20260929-0205"
     ];
     if(role==="globalAdmin")return [

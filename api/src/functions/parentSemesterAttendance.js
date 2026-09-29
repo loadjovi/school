@@ -20,7 +20,7 @@ function termRange(schoolYear,semester){
 }
 function scoreMonths(schoolYear,semester){
   const roc=safeInt(schoolYear),greg=roc+1911;
-  if(String(semester)==="1")return [9,10,11,12].map(m=>`${greg}-${String(m).padStart(2,"0")}`);
+  if(String(semester)==="1")return [10,11,12].map(m=>`${greg}-${String(m).padStart(2,"0")}`);
   return [2,3,4,5].map(m=>`${greg+1}-${String(m).padStart(2,"0")}`);
 }
 function monthDays(month){const [y,m]=String(month).split("-").map(Number);return new Date(y,m,0).getDate()}
@@ -121,7 +121,7 @@ app.http("parentSemesterAttendance",{
 
     // 正式學期成績：自主練習 10%＋團體課程點名 5%＋學習表現 5%。
     // 點名 5% 僅計分部課、合奏課、綜合課；個別課不納入此 5%。
-    // 個別課加分 5%：每月完成 4 次 = 5 分，9～12 月各月皆納入平均；當月未完成個課即為 0 分。
+    // 學習表現 5%：有完成個課者，每月完成 4 次 = 5 分，正式月份取學期平均；整學期沒有完成個課者，才由分部老師於學期末評量一次。
     const months=scoreMonths(schoolYear,semester),currentMonth=today.slice(0,7),lastScoreMonth=months[months.length-1];
     const qualifiedMinutes=Number(process.env.PRACTICE_QUALIFIED_MINUTES||15);
     const practiceTargetDays=Number(process.env.PRACTICE_TARGET_DAYS||30);
@@ -165,12 +165,13 @@ app.http("parentSemesterAttendance",{
     const attendanceValues=activeMonths.map(x=>x.attendance.score5).filter(v=>v!=null);
 
     const formalPrivateRows=privateRows.filter(x=>months.some(month=>String(x.eventDate||"").startsWith(month))&&["teacher_completed","present","late"].includes(String(x.status||"")));
+    const hasPrivateLesson=formalPrivateRows.length>0;
     const privateMonthlyValues=activeMonths.map(x=>x.privateLesson.score5).filter(v=>v!=null);
-    // 個別課為加分項：已進入的月份都以 0～5 分納入平均；未完成個課即為 0 分。
-    const privateLessonScore5=privateMonthlyValues.length?average(privateMonthlyValues):0;
-    const sectionFinal5=null;
-    const performance5=privateLessonScore5;
-    const performanceSource="privateLessonBonus";
+    const privateLessonScore5=hasPrivateLesson&&privateMonthlyValues.length?average(privateMonthlyValues):null;
+    const fallbackRows=learningEvaluations.filter(x=>x.month===lastScoreMonth&&x.evaluationMode==="semesterFallback"&&x.score5>0);
+    const sectionFinal5=!hasPrivateLesson&&fallbackRows.length?average(fallbackRows.map(x=>x.score5)):null;
+    const performance5=hasPrivateLesson?privateLessonScore5:sectionFinal5;
+    const performanceSource=hasPrivateLesson?"privateLessonFrequency":sectionFinal5!=null?"sectionFinal":"pending";
 
     const semesterScore={
       practice10:average(practiceValues),
@@ -183,14 +184,14 @@ app.http("parentSemesterAttendance",{
       privateLessonCompleted:formalPrivateRows.length,
       privateLessonMonths:privateMonthlyValues.length,
       privateLessonMonthlyTarget:privateMonthlyTarget,
-      sectionFinalTeacherCount:0,
+      sectionFinalTeacherCount:fallbackRows.length,
       total20:null,
       monthsPlanned:months.length,
       monthsElapsed:activeMonths.length,
       practiceMonths:practiceValues.length,
       attendanceMonths:attendanceValues.length,
       status:finalStatus?"final":"provisional",
-      complete:finalStatus&&practiceValues.length===months.length&&attendanceValues.length===months.length
+      complete:finalStatus&&practiceValues.length===months.length&&attendanceValues.length===months.length&&performance5!=null
     };
     if(semesterScore.practice10!=null&&semesterScore.attendance5!=null&&semesterScore.performance5!=null){
       semesterScore.total20=round2(semesterScore.practice10+semesterScore.attendance5+semesterScore.performance5);
@@ -199,7 +200,7 @@ app.http("parentSemesterAttendance",{
       studentId,schoolYear,semester,semesterName:semesterLabel(semester)||`${semester}學期`,
       start:range.start,end,termEnd:range.end,asOf:today,
       student:master?{name:String(master.studentName||""),grade:String(master.grade||""),groupName:String(master.groupName||""),section:String(master.section||"待確認"),instrument:String(master.instrument||"")}:null,
-      scorePolicy:{practiceWeight:10,attendanceWeight:5,performanceWeight:5,learningWeight:5,totalWeight:20,months,trialMonth:"",practiceSource:"system",attendanceSource:"groupCourses",attendanceTypes:["section","ensemble","comprehensive"],attendanceLeaveExcluded:true,performanceRule:"privateLessonBonus",privateLessonScoreSource:"monthlyCompletedCount",privateLessonMonthlyTarget:privateMonthlyTarget,sectionFallback:false,sectionFallbackMonth:""},
+      scorePolicy:{practiceWeight:10,attendanceWeight:5,performanceWeight:5,learningWeight:5,totalWeight:20,months,trialMonth:String(semester)==="1"?`${safeInt(schoolYear)+1911}-09`:"",practiceSource:"system",attendanceSource:"groupCourses",attendanceTypes:["section","ensemble","comprehensive"],attendanceLeaveExcluded:true,performanceRule:"privateLessonFrequencyFirst",privateLessonScoreSource:"monthlyCompletedCount",privateLessonMonthlyTarget:privateMonthlyTarget,sectionFallback:true,sectionFallbackMonth:lastScoreMonth},
       monthlyScores,semesterScore,
       stats,records
     });
