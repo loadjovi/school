@@ -414,3 +414,71 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
 .private-history-summary .private-score-kpi{background:#fff8df;border-color:#efd77a}
 .private-history-summary .private-score-kpi b{color:#8a6500}
 @media (max-width:640px){.private-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* 桌面工作區：共用權限與資料，改用側邊導覽與寬版資訊密度。 */
+.desktop-sidebar{display:none}
+@media (min-width:900px){
+  html{scroll-behavior:smooth}
+  body{padding:0;background:#e9eef2}
+  .desktop-shell{width:min(100%,1600px);max-width:none;min-height:100vh;margin:0 auto;padding-bottom:0;display:grid;grid-template-columns:238px minmax(0,1fr);grid-template-rows:auto 1fr;border-radius:0;overflow:visible;box-shadow:0 0 42px rgba(26,47,68,.09)}
+  .desktop-shell.desktop-no-sidebar{grid-template-columns:minmax(0,1fr)}
+  .desktop-shell>.top{grid-column:1/-1;grid-row:1;min-height:100px;padding:17px 28px;position:sticky;top:0;z-index:50;box-shadow:0 4px 20px rgba(22,40,57,.12)}
+  .desktop-shell>.top .brand{padding-left:75px;padding-right:230px;min-height:34px;font-size:23px}
+  .desktop-shell>.top .brand>span:first-child{width:62px!important;height:62px!important;min-width:62px!important;flex-basis:62px!important}
+  .desktop-shell>.top>.sub{margin-left:75px!important;margin-right:230px!important;font-size:13px}
+  .desktop-shell>.top>.userrow{right:28px;top:18px}
+  .desktop-shell>.top>.userrow small{max-width:225px}
+  .desktop-shell>.desktop-sidebar{grid-column:1;grid-row:2;display:flex;flex-direction:column;align-self:start;position:sticky;top:100px;height:calc(100vh - 100px);overflow-y:auto;padding:24px 14px 16px;background:#fff;border-right:1px solid var(--line)}
+  .desktop-sidebar-head{padding:0 12px 16px;border-bottom:1px solid var(--line)}
+  .desktop-sidebar-head b{display:block;font-size:16px;color:var(--green)}
+  .desktop-sidebar-head small{display:block;margin-top:4px;color:var(--muted);font-size:12px}
+  .desktop-menu{display:grid;align-content:start;gap:4px;padding-top:13px}
+  .desktop-menu-item{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:10px 12px;border:0;border-radius:12px;background:transparent;color:#4c5f58;text-align:left;cursor:pointer}
+  .desktop-menu-item span{font-size:19px;line-height:1}
+  .desktop-menu-item b{font-size:13px}
+  .desktop-menu-item:hover,.desktop-menu-item:focus-visible{background:#f2f7f4;color:var(--green);outline:none}
+  .desktop-menu-item.is-active{background:var(--mint);color:var(--green);box-shadow:inset 3px 0 var(--green)}
+  .desktop-sidebar-foot{margin-top:auto;padding:16px 12px 0;color:var(--muted);font-size:11px;line-height:1.5;border-top:1px solid var(--line)}
+  .desktop-shell>.main{grid-column:2;grid-row:2;min-width:0;padding:27px clamp(20px,3vw,42px) 70px;background:#f8fafb}
+  .desktop-shell.desktop-no-sidebar>.main{grid-column:1}
+  .desktop-shell>.nav{display:none}
+  .desktop-content{min-width:0;max-width:1320px;margin:0 auto}
+  .desktop-content>.card,.desktop-content>.record-section,.desktop-content>section{min-width:0}
+  .desktop-content .card{padding:20px 22px;margin-bottom:18px}
+  .desktop-content h2{font-size:19px}
+  .desktop-content .notice{font-size:13px}
+  .desktop-content .item small{font-size:12px;line-height:1.5}
+  .desktop-content>.card.hero .grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .desktop-content[data-page="home"],.desktop-content[data-page="teacherHome"],.desktop-content[data-page="admin"]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px;align-items:start}
+  .desktop-content[data-page="home"]>.card.hero,.desktop-content[data-page="teacherHome"]>.card.hero,.desktop-content[data-page="admin"]>.card.hero{grid-column:1/-1}
+  .desktop-content[data-page="home"]>.card:first-child{grid-column:1/-1}
+  .desktop-content[data-page="home"]>.card,.desktop-content[data-page="teacherHome"]>.card,.desktop-content[data-page="admin"]>.card{height:auto}
+  .desktop-content[data-page="home"]>h2,.desktop-content[data-page="admin"]>h2{grid-column:1/-1}
+  .desktop-content[data-page="attendance"]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px;align-items:start}
+  .desktop-content[data-page="attendance"]>.attendance-workbench,.desktop-content[data-page="attendance"]>.attendance-list-card{grid-column:1/-1}
+  .desktop-content[data-page="attendance"] .attendance-quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .desktop-content[data-page="attendance"] .attendance-course-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .desktop-content[data-page="teacherEvaluation"]{display:grid;grid-template-columns:minmax(290px,.8fr) minmax(0,1.2fr);gap:0 18px;align-items:start}
+  .desktop-content[data-page="teacherEvaluation"]>.teacher-eval-back,.desktop-content[data-page="teacherEvaluation"]>.teacher-eval-hero{grid-column:1/-1}
+  .desktop-content[data-page="teacherEvaluation"]>.teacher-eval-list-card{position:sticky;top:118px}
+  .desktop-content[data-page="teacherEvaluation"] .teacher-eval-student-list{max-height:calc(100vh - 320px)}
+  .desktop-content[data-page="privateStudents"] #privateStudentList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px}
+  .desktop-content[data-page="trainingAttendance"] .item{padding:14px 16px}
+  .desktop-content[data-page="global"] section[id^="global"]{scroll-margin-top:118px;min-width:0}
+  .desktop-content[data-page="global"] #globalOverview .grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .desktop-content[data-page="global"] .desktop-school-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px;align-items:start}
+  .desktop-content[data-page="global"] .desktop-school-grid>.global-school-card-open{grid-column:1/-1}
+  .desktop-content[data-page="global"] .desktop-global-tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px;align-items:start}
+  .desktop-content[data-page="global"] .global-ops-teacher-breakdown span,.desktop-content[data-page="global"] .global-ops-stat small{font-size:11px}
+  .desktop-content[data-page="global"] .global-ops-audit small{font-size:11px}
+  .desktop-content[data-page="teacherAdmin"]>.main{padding:0}
+  .toast{bottom:24px}
+}
+@media (min-width:900px) and (max-width:1120px){
+  .desktop-shell{grid-template-columns:205px minmax(0,1fr)}
+  .desktop-shell>.main{padding:22px 20px 60px}
+  .desktop-content[data-page="global"] .desktop-school-grid,.desktop-content[data-page="global"] .desktop-global-tools{grid-template-columns:1fr}
+  .desktop-content[data-page="global"] .global-ops-grid,.desktop-content[data-page="global"] .global-ops-course-grid,.desktop-content[data-page="global"] .global-ops-teacher-breakdown{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .desktop-content[data-page="attendance"]{grid-template-columns:1fr}
+}
+@media (max-width:899px){.desktop-content{display:contents}}

@@ -58,7 +58,7 @@
       "/system-backup.js?v=20260919-2305",
       "/school-access.js?v=20260920-0010",
       "/school-access-audit-admin.js?v=20260918-0005",
-      "/school-access-refresh-fix.js?v=20260929-1430",
+      "/school-access-refresh-fix.js?v=20260929-1730",
       "/training-attendance.js?v=20260929-1600"
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
@@ -77,7 +77,7 @@
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20260929-1305",
-      "/school-access-refresh-fix.js?v=20260929-1430"
+      "/school-access-refresh-fix.js?v=20260929-1730"
     ];
     if(role==="school")return ["/school-access.js?v=20260929-1305"];
     if(role==="parent")return [
@@ -89,7 +89,7 @@
     if(role==="globalAdmin")return [
       "/school-access.js?v=20260920-0010",
       "/school-access-audit-admin.js?v=20260918-0005",
-      "/school-access-refresh-fix.js?v=20260929-1430"
+      "/school-access-refresh-fix.js?v=20260929-1730"
     ];
     return [];
   }
@@ -116,7 +116,7 @@
   async function loadRoleModules(){
     await waitForProfileReady();
     if(typeof state==="undefined"||!state.me)return;
-    const list=roleModules();
+    const list=[...roleModules(),"/desktop-ui.js?v=20260929-1730"];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");
