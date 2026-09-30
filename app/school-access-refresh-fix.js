@@ -112,7 +112,7 @@
 
   if(!document.querySelector('script[data-global-tenant-admin="1"]')){
     const s=document.createElement("script");
-    s.src="/global-tenant-admin.js?v=20260930-teacher-support";
+    s.src="/global-tenant-admin.js?v=20260930-section-merge";
     s.defer=true;
     s.dataset.globalTenantAdmin="1";
     document.body.appendChild(s);

@@ -226,7 +226,7 @@
   function globalOpsLayer3(report,school,teacher){
     const course=teacher.course||{},sessions=teacher.sessions||[];
     const audits=sessions.map(x=>{
-      const privateType=x.courseType==="privateLesson",att=x.attendance||{},where=[x.groupName?x.groupName+"團":"",x.section||""].filter(Boolean).join("｜");
+      const privateType=x.courseType==="privateLesson",att=x.attendance||{},mergeText=(x.mergedSections||[]).length?"併班 "+x.mergedSections.join("、")+" → "+x.section:"",where=[x.groupName?x.groupName+"團":"",mergeText||x.section||""].filter(Boolean).join("｜");
       const recorder=x.recordedBy?('點名／紀錄人：'+esc(x.recordedBy)+(x.recordedByRole==="admin"?'（行政協助）':'')):"點名／紀錄人：未記錄";
       const detail=privateType
         ?'個課 '+Number(x.durationMinutes||0)+' 分鐘｜家長回饋 '+(x.feedbackCount?globalRating(x.feedbackAverage):"未評分")
@@ -421,12 +421,12 @@
     const lessons=selected.flatMap(({school,teacher})=>(teacher.sessions||[]).filter(session=>globalCourseTypes.includes(session.courseType)).map(session=>({school,teacher,session})));
     if(!lessons.length){toast("這位老師本月沒有可匯出的課堂明細");return}
     lessons.sort((a,b)=>String(a.session.eventDate||"").localeCompare(String(b.session.eventDate||""))||globalCourseTypes.indexOf(a.session.courseType)-globalCourseTypes.indexOf(b.session.courseType)||String(a.school.schoolId).localeCompare(String(b.school.schoolId))||String(a.session.sessionKey||"").localeCompare(String(b.session.sessionKey||"")));
-    const rows=[["月份","schoolId","學校","老師","上課日期","課別","授課分鐘","教學時數","課程／團別","分部","工時認列來源","點名／紀錄人","活動地點"]];
+    const rows=[["月份","schoolId","學校","老師","上課日期","課別","授課分鐘","教學時數","課程／團別","分部","併班原分部","工時認列來源","點名／紀錄人","活動地點"]];
     for(const {school,teacher,session} of lessons){
-      rows.push([report.month,school.schoolId,school.schoolName,teacher.teacherName,String(session.eventDate||"").trim()||"日期未記錄",globalCourseLabels[session.courseType],Number(session.durationMinutes||0),Number(session.teachingHours||0),["practice","performance"].includes(session.courseType)?session.courseLabel||"":session.groupName||"",session.section||"",session.teacherSource||"",session.recordedBy||"",session.location||""]);
+      rows.push([report.month,school.schoolId,school.schoolName,teacher.teacherName,String(session.eventDate||"").trim()||"日期未記錄",globalCourseLabels[session.courseType],Number(session.durationMinutes||0),Number(session.teachingHours||0),["practice","performance"].includes(session.courseType)?session.courseLabel||"":session.groupName||"",session.section||"",(session.mergedSections||[]).join("、"),session.teacherSource||"",session.recordedBy||"",session.location||""]);
     }
     const totalMinutes=lessons.reduce((sum,{session})=>sum+Number(session.durationMinutes||0),0);
-    rows.push(["合計","","",selected[0].teacher.teacherName,"","",totalMinutes,Math.round(totalMinutes/60*100)/100,"","","","",""]);
+    rows.push(["合計","","",selected[0].teacher.teacherName,"","",totalMinutes,Math.round(totalMinutes/60*100)/100,"","","","","",""]);
     downloadGlobalCsv(rows,"global-teacher-detail-"+report.month+"-"+globalCsvFilenamePart(selected[0].teacher.teacherName)+(schoolId?"-"+globalCsvFilenamePart(schoolId):"")+".csv");
   };
   window.refreshGlobalHealth=async function(){

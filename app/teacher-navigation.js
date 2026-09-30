@@ -45,7 +45,7 @@
       state.sectionExistingKey="";
     }
     await go(page);
-    if(page==="section"&&typeof loadSectionExisting==="function")setTimeout(()=>loadSectionExisting(),0);
+    if(page==="section"&&!window.__attendanceEditSectionActive&&typeof loadSectionExisting==="function")setTimeout(()=>loadSectionExisting(),0);
   };
   function courseCard(page,icon,title,desc,enabled,progress=null,targetGroup="",targetDate=""){
     if(!enabled)return "";
@@ -84,20 +84,23 @@
     const scoped=(type,group)=>todayRecords.filter(x=>(type==="private"?["private","privateLesson"].includes(String(x.classType)):String(x.classType)===type)&&(!group||String(x.groupName)===group));
     const assignmentStudents=(group)=>{const ids=new Set();for(const a of sectionAssignments){if(String(a.groupName||a.group||"")!==group)continue;for(const st of (state.teacherTodayStatus?.items||[])){if(String(st.groupName)===group&&String(st.section)===String(a.section||""))ids.add(String(st.studentId))}}return ids.size};
     const progress=(type,group,expected)=>{const rows=scoped(type,group).filter(x=>x.status!=="cancelled");const ids=new Set(rows.map(x=>String(x.studentId||"")).filter(Boolean));return {expected:Number(expected||0),recorded:ids.size}};
-    const sectionExpected=hasTodaySection?assignmentStudents(sectionGroup):0;
+    const activeSection=sectionAssignments[Math.min(window.__sectionClassIndex||0,Math.max(sectionAssignments.length-1,0))]||sectionAssignments[0];
+    const loadedSectionKey=[date,sectionGroup,String(activeSection?.section||"")].join("|");
+    const mergedRosterReady=state.sectionSessionKey===loadedSectionKey&&Array.isArray(state.sectionSessionMerges)&&state.sectionSessionMerges.length>0;
+    const sectionExpected=hasTodaySection?(mergedRosterReady?state.sectionSessionRoster.length:assignmentStudents(sectionGroup)):0;
     const ensembleExpected=hasTodayEnsemble?(state.teacherTodayStatus?.items||[]).filter(x=>ensembleGroups.includes(String(x.groupName))).length:0;
     const comprehensiveExpected=hasTodayComprehensive?(state.teacherTodayStatus?.items||[]).length:0;
     const privateExpected=c.private?(state.me?.privateStudents||state.me?.privateStudentIds||[]).length:0;
     const taskRows=[];
     const addTask=(title,p)=>{if(!p||!p.expected)return;const left=Math.max(0,p.expected-p.recorded);taskRows.push({title,done:left===0,text:left===0?`已完成 ${p.recorded}/${p.expected}`:p.recorded?`尚有 ${left} 人未完成 (${p.recorded}/${p.expected})`:`尚未點名 0/${p.expected}`})};
-    if(c.section&&hasTodaySection)addTask(sectionGroup+"團分部課",progress("section",sectionGroup,sectionExpected));
+    if(c.section&&hasTodaySection)addTask(sectionGroup+"團分部課",mergedRosterReady?{expected:sectionExpected,recorded:state.sectionSessionLoaded}:progress("section",sectionGroup,sectionExpected));
     if(c.ensemble&&hasTodayEnsemble)addTask("A／B團合奏課",progress("ensemble","",ensembleExpected));
     if(hasTodayComprehensive)addTask("弦樂團體課",progress("comprehensive","",comprehensiveExpected));
     for(const x of todayTraining)addTask(x.title||"週六加練",{expected:x.expected,recorded:x.recorded});
     const completedTasks=taskRows.filter(x=>x.done).length,totalTasks=taskRows.length,pct=totalTasks?Math.round(completedTasks/totalTasks*100):100;
     const taskHtml=taskRows.length?taskRows.map(x=>`<div class="item" style="padding:10px 12px"><div><b>${x.done?"✅":"🔴"} ${esc(x.title)}</b><small>${esc(x.text)}</small></div></div>`).join(""):`<div class="notice">今天沒有需要固定點名的團體課；個別課請先建立預約，上課後再送家長確認。</div>`;
     const teachingCards=[
-      courseCard("section","🎼",sectionGroup?sectionGroup+"團分部課":"分部課",sectionGroup?todayName+"｜依老師設定的團別＋分部帶入學生點名":"",c.section&&hasTodaySection,progress("section",sectionGroup,sectionExpected),sectionGroup,date),
+      courseCard("section","🎼",sectionGroup?sectionGroup+"團分部課":"分部課",sectionGroup?todayName+"｜依老師設定的團別＋分部帶入學生點名":"",c.section&&hasTodaySection,mergedRosterReady?{expected:sectionExpected,recorded:state.sectionSessionLoaded}:progress("section",sectionGroup,sectionExpected),sectionGroup,date),
       courseCard("ensemble","🎻","A／B團合奏課","今天 12:30–13:20｜依老師設定的 A／B 團帶入學生",c.ensemble&&hasTodayEnsemble,progress("ensemble","",ensembleExpected)),
       courseCard("comprehensive","🎶","弦樂團體課（綜合課）","今天 08:45–10:15｜A／B／儲備團共同參加",hasTodayComprehensive,progress("comprehensive","",comprehensiveExpected)),
       courseCard("private","👤","個別課","預約、改期／停課、完課與家長確認；完成次數自動換算個課 5%",c.private,null)

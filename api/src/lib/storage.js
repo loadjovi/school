@@ -28,6 +28,7 @@ const names={
   tenantTeacherDirectory:process.env.TENANT_TEACHER_DIRECTORY_TABLE||"TenantTeacherDirectory",
   tenantTeacherProfile:process.env.TENANT_TEACHER_PROFILE_TABLE||"TenantTeacherProfile",
   tenantTeacherSupport:process.env.TENANT_TEACHER_SUPPORT_TABLE||"TenantTeacherSupport",
+  tenantSectionMerge:process.env.TENANT_SECTION_MERGE_TABLE||"TenantSectionMerge",
   globalTeacherEvent:process.env.GLOBAL_TEACHER_EVENT_TABLE||"GlobalTeacherEvent",
   tenantAcademicYearBatch:process.env.TENANT_ACADEMIC_YEAR_BATCH_TABLE||"TenantAcademicYearBatch",
   tenantDirectory:process.env.TENANT_DIRECTORY_TABLE||"TenantDirectory",
@@ -44,7 +45,7 @@ const names={
   tenantPracticeMonthlyEvaluation:process.env.TENANT_PRACTICE_MONTHLY_EVALUATION_TABLE||"TenantPracticeMonthlyEvaluation",
   tenantLearningMonthlyEvaluation:process.env.TENANT_LEARNING_MONTHLY_EVALUATION_TABLE||"TenantLearningMonthlyEvaluation"
 };
-const tenantDataKeys=["tenantPractice","tenantSection","tenantEnsemble","tenantComprehensive","tenantPrivateLesson","tenantRegistrations","tenantUserStudentMap","tenantStudentMaster","tenantStudentHistory","tenantSemesterEnrollment","tenantTeacherDirectory","tenantTeacherProfile","tenantTeacherSupport","tenantAcademicYearBatch","tenantMigration","tenantSchedule","tenantScheduleException","tenantScheduleState","tenantCalendarEvent","tenantTrainingAttendance","tenantPracticeFeedback","tenantPracticeMonthlyEvaluation","tenantLearningMonthlyEvaluation"];
+const tenantDataKeys=["tenantPractice","tenantSection","tenantEnsemble","tenantComprehensive","tenantPrivateLesson","tenantRegistrations","tenantUserStudentMap","tenantStudentMaster","tenantStudentHistory","tenantSemesterEnrollment","tenantTeacherDirectory","tenantTeacherProfile","tenantTeacherSupport","tenantSectionMerge","tenantAcademicYearBatch","tenantMigration","tenantSchedule","tenantScheduleException","tenantScheduleState","tenantCalendarEvent","tenantTrainingAttendance","tenantPracticeFeedback","tenantPracticeMonthlyEvaluation","tenantLearningMonthlyEvaluation"];
 const tenantActivityKeys={practice:"tenantPractice",section:"tenantSection",ensemble:"tenantEnsemble",comprehensive:"tenantComprehensive",privateLesson:"tenantPrivateLesson"};
 
 let initialized=false,tenantInitialized=false,initializationPromise=null,tenantInitializationPromise=null;

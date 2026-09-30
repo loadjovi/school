@@ -3,9 +3,15 @@
   const schedule={A:[1,3],B:[2,4],"儲備":[5]};
   const dayText={1:"週一",2:"週二",3:"週三",4:"週四",5:"週五"};
   const today=()=>new Date().toISOString().slice(0,10);
+  window.__attendanceEditSectionActive=true;
   state.sectionSessionDate=state.sectionSessionDate||today();
   state.sectionSessionStatuses=state.sectionSessionStatuses||{};
   state.sectionSessionLoaded=state.sectionSessionLoaded||0;
+  state.sectionSessionKey="";
+  state.sectionSessionRoster=[];
+  state.sectionSessionMerges=[];
+  state.sectionSessionLoading=false;
+  state.sectionSessionError="";
   state.ensembleSessionDate=state.ensembleSessionDate||today();
   state.ensembleSessionStatuses=state.ensembleSessionStatuses||{};
   state.ensembleSessionLoaded=state.ensembleSessionLoaded||0;
@@ -23,13 +29,20 @@
   }
   async function fetchSection(date=state.sectionSessionDate){
     const c=currentSection();
-    state.sectionSessionDate=date||today();state.sectionSessionStatuses={};state.sectionSessionLoaded=0;
+    state.sectionSessionDate=date||today();state.sectionSessionStatuses={};state.sectionSessionLoaded=0;state.sectionSessionError="";
     if(!c)return;
     const groupName=String(c.groupName||c.group||""),section=String(c.section||"");
-    const data=await api(`/api/section-attendance?sessionDate=${encodeURIComponent(state.sectionSessionDate)}&groupName=${encodeURIComponent(groupName)}&section=${encodeURIComponent(section)}`);
-    state.sectionSessionStatuses=Object.fromEntries((data.items||[]).map(x=>[String(x.studentId),String(x.status||"present")]));
-    state.sectionSessionLoaded=(data.items||[]).length;
+    const key=[state.sectionSessionDate,groupName,section].join("|"),sequence=(state.sectionRequestSequence||0)+1;
+    state.sectionRequestSequence=sequence;state.sectionSessionKey="";state.sectionSessionRoster=[];state.sectionSessionMerges=[];state.sectionSessionLoading=true;
+    try{
+      const data=await api(`/api/section-attendance?sessionDate=${encodeURIComponent(state.sectionSessionDate)}&groupName=${encodeURIComponent(groupName)}&section=${encodeURIComponent(section)}`);
+      if(sequence!==state.sectionRequestSequence)return;
+      state.sectionSessionStatuses=Object.fromEntries((data.items||[]).map(x=>[String(x.studentId),String(x.status||"present")]));
+      state.sectionSessionLoaded=(data.items||[]).length;state.sectionSessionRoster=data.roster||[];state.sectionSessionMerges=data.merges||[];state.sectionSessionKey=key;
+    }catch(e){if(sequence===state.sectionRequestSequence){state.sectionSessionError=e.message;state.sectionSessionKey=key}throw e}
+    finally{if(sequence===state.sectionRequestSequence)state.sectionSessionLoading=false}
   }
+  window.loadSectionExisting=async function(){try{await fetchSection(state.sectionSelectedDate||state.sectionSessionDate);render()}catch(e){toast("❌ "+e.message);render()}};
   async function fetchEnsemble(date=state.ensembleSessionDate){
     const g=currentEnsemble();
     state.ensembleSessionDate=date||today();state.ensembleSessionStatuses={};state.ensembleSessionLoaded=0;
@@ -40,14 +53,15 @@
   }
 
   window.changeSectionAttendanceDate=async function(v){
-    try{await fetchSection(String(v||today()));render()}catch(e){toast("❌ 無法讀取既有分部點名："+e.message)}
+    state.sectionSelectedDate=String(v||today());
+    try{await fetchSection(state.sectionSelectedDate)}catch(e){toast("❌ 無法讀取既有分部點名："+e.message)}finally{render()}
   };
   window.changeEnsembleAttendanceDate=async function(v){
     try{await fetchEnsemble(String(v||today()));render()}catch(e){toast("❌ 無法讀取既有合奏課點名："+e.message)}
   };
   window.changeSectionClass=async function(v){
     window.__sectionClassIndex=Number(v)||0;
-    try{await fetchSection(state.sectionSessionDate);render()}catch(e){toast("❌ "+e.message);render()}
+    try{await fetchSection(state.sectionSessionDate)}catch(e){toast("❌ "+e.message)}finally{render()}
   };
   window.changeEnsembleGroup=async function(v){
     window.__ensembleGroupIndex=Number(v)||0;
@@ -74,7 +88,9 @@
   window.exportSectionFollowup=function(){
     const c=currentSection();if(!c){toast("尚未設定分部課");return}
     const groupName=String(c.groupName||c.group||""),section=String(c.section||"");
-    const students=state.students.filter(s=>String(s.groupName)===groupName&&String(s.section||"待確認")===section);
+    const key=[state.sectionSessionDate,groupName,section].join("|");
+    if(state.sectionSessionKey!==key||state.sectionSessionError){toast("請先載入本次點名名單");return}
+    const students=state.sectionSessionRoster;
     const rows=followupRows(state.sectionSessionDate,"分部課",groupName,section,students,state.sectionSessionStatuses);
     if(rows.length===1){toast("✅ 本次沒有請假／缺席學生");return}
     downloadCsv(`${state.sectionSessionDate}_${groupName}團_${section}_未到追蹤.csv`,rows);toast(`📥 已匯出 ${rows.length-1} 位未到學生`);
@@ -92,19 +108,24 @@
     if(!assignments.length)return `<div class="card"><h2>分部課點名</h2><div class="notice">尚未設定分部課授課範圍，請先到「我的教學」設定。</div></div>`;
     const idx=Math.min(window.__sectionClassIndex||0,assignments.length-1),c=assignments[idx];
     const groupName=String(c.groupName||c.group||""),section=String(c.section||"");
-    const students=state.students.filter(s=>String(s.groupName)===groupName&&String(s.section||"待確認")===section);
+    const key=[state.sectionSessionDate,groupName,section].join("|"),ready=state.sectionSessionKey===key&&!state.sectionSessionError;
+    const students=ready?state.sectionSessionRoster:[];
+    if(!ready&&!state.sectionSessionLoading&&state.sectionSessionKey!==key)setTimeout(()=>window.loadSectionExisting(),0);
     const days=schedule[groupName]||[];
     const selector=assignments.length>1?`<label>本次分部課</label><select onchange="changeSectionClass(this.value)">${assignments.map((x,i)=>`<option value="${i}" ${i===idx?"selected":""}>${esc(x.groupName||x.group)}團｜${esc(x.section)}</option>`).join("")}</select>`:`<div class="notice"><b>${esc(groupName)}團｜${esc(section)}</b></div>`;
-    const loaded=state.sectionSessionLoaded?`<div class="notice" style="margin-top:10px">✅ 已載入 ${state.sectionSessionLoaded} 筆 ${esc(state.sectionSessionDate)} 的既有點名，可直接修改後重新儲存。</div>`:"";
+    const loaded=state.sectionSessionLoading?'<div class="notice" style="margin-top:10px">⏳ 正在載入點名與併班名單…</div>':state.sectionSessionError?`<div class="notice" style="margin-top:10px">⚠️ ${esc(state.sectionSessionError)}</div>`:state.sectionSessionLoaded?`<div class="notice" style="margin-top:10px">✅ 已載入 ${state.sectionSessionLoaded} 筆 ${esc(state.sectionSessionDate)} 的既有點名，可直接修改後重新儲存。</div>`:"";
+    const mergeNote=ready&&state.sectionSessionMerges.length?`<div class="notice" style="margin-top:10px"><b>🎼 今日併班：</b>${state.sectionSessionMerges.map(x=>esc(x.sourceSection)).join("、")} 併入 ${esc(section)}；兩個分部統一點名，工時計一堂。</div>`:"";
     const scheduleExtra=groupName==="儲備"?"（時間依學校實際課表）":"";
-    return `<div class="card"><h2>分部課點名</h2>${selector}<label>上課日期</label><input id="sDate" type="date" value="${esc(state.sectionSessionDate)}" onchange="changeSectionAttendanceDate(this.value)">${days.length?`<div class="notice" style="margin-top:10px"><b>${esc(groupName)}團固定分部課：</b>${days.map(d=>dayText[d]).join("、")}${scheduleExtra}</div>`:""}${loaded}<div class="notice" style="margin-top:10px">點名標準：上課開始後超過 10 分鐘才到課記為「遲到」；10 分鐘內到課記為「出席」。遲到仍算到課。</div></div>
-      <div class="card"><h2>${esc(groupName)}團｜${esc(section)}學生名單</h2>${students.length?students.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.grade)}｜${esc(s.instrument)}</small></div><select id="att_${s.studentId}" class="status-select" onchange="setSectionStatus('${esc(s.studentId)}',this.value)">${statusOptions(state.sectionSessionStatuses[String(s.studentId)]||"present")}</select></div>`).join(""):`<div class="notice">目前沒有符合此團別／分部的學生。</div>`}${students.length?`<button class="primary" onclick="saveSection()">儲存／更新本次點名</button><button class="secondary" style="width:100%;margin-top:10px" onclick="exportSectionFollowup()">📤 一鍵匯出未到學生名單</button>`:""}</div>`;
+    return `<div class="card"><h2>分部課點名</h2>${selector}<label>上課日期</label><input id="sDate" type="date" value="${esc(state.sectionSessionDate)}" onchange="changeSectionAttendanceDate(this.value)">${days.length?`<div class="notice" style="margin-top:10px"><b>${esc(groupName)}團固定分部課：</b>${days.map(d=>dayText[d]).join("、")}${scheduleExtra}</div>`:""}${loaded}${mergeNote}<div class="notice" style="margin-top:10px">點名標準：上課開始後超過 10 分鐘才到課記為「遲到」；10 分鐘內到課記為「出席」。遲到仍算到課。</div></div>
+      <div class="card"><h2>${esc(groupName)}團｜${esc(section)}${mergeNote?"（併班）":""}學生名單</h2>${students.length?students.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.grade)}｜${esc(s.section||section)}｜${esc(s.instrument)}</small></div><select id="att_${s.studentId}" class="status-select" onchange="setSectionStatus('${esc(s.studentId)}',this.value)">${statusOptions(state.sectionSessionStatuses[String(s.studentId)]||"present")}</select></div>`).join(""):`<div class="notice">${ready?"目前沒有符合此團別／分部的學生。":"請稍候載入名單，或檢查上方提示。"}</div>`}${students.length?`<button class="primary" onclick="saveSection()">儲存／更新本次點名</button><button class="secondary" style="width:100%;margin-top:10px" onclick="exportSectionFollowup()">📤 一鍵匯出未到學生名單</button>`:""}</div>`;
   };
 
   window.saveSection=async function(){
     const c=currentSection();if(!c){toast("尚未設定分部課");return}
     const groupName=String(c.groupName||c.group||""),section=String(c.section||"");
-    const students=state.students.filter(s=>String(s.groupName)===groupName&&String(s.section||"待確認")===section);
+    const key=[state.sectionSessionDate,groupName,section].join("|");
+    if(state.sectionSessionKey!==key||state.sectionSessionError){toast("請先載入本次點名名單");return}
+    const students=state.sectionSessionRoster;
     const items=students.map(s=>{const status=String(state.sectionSessionStatuses[String(s.studentId)]||"present");return {studentId:s.studentId,status,minutes:["present","late"].includes(status)?45:0}});
     try{
       await api("/api/section-attendance",{method:"POST",body:JSON.stringify({sessionDate:state.sectionSessionDate,section,groupName,items})});
@@ -135,7 +156,7 @@
 
   const priorGo=go;
   go=async function(p){
-    if(p==="section"&&state.me?.capabilities?.section){state.page="section";try{await fetchSection(state.sectionSessionDate)}catch(e){toast("⚠️ 無法讀取既有點名："+e.message)}render();return}
+    if(p==="section"&&state.me?.capabilities?.section){state.page="section";try{await fetchSection(state.sectionSelectedDate||state.sectionSessionDate)}catch(e){toast("⚠️ 無法讀取既有點名："+e.message)}render();return}
     if(p==="ensemble"&&state.me?.capabilities?.ensemble){state.page="ensemble";try{await fetchEnsemble(state.ensembleSessionDate)}catch(e){toast("⚠️ 無法讀取既有點名："+e.message)}render();return}
     return priorGo(p);
   };
@@ -146,7 +167,7 @@
     if(state.me?.capabilities?.teacherSettings){
       clearInterval(timer);
       try{
-        if(state.page==="section"&&state.me.capabilities.section)await fetchSection(state.sectionSessionDate);
+        if(state.page==="section"&&state.me.capabilities.section)await fetchSection(state.sectionSelectedDate||state.sectionSessionDate);
         if(state.page==="ensemble"&&state.me.capabilities.ensemble)await fetchEnsemble(state.ensembleSessionDate);
       }catch{}
       render();

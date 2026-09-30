@@ -51,7 +51,7 @@
       "/batch-upgrade.js",
       "/roster-import.js?v=20260915-1135",
       "/attendance-support.js?v=20260928-2148",
-      "/attendance-edit.js?v=20260929-late10",
+      "/attendance-edit.js?v=20260930-section-merge",
       "/practice-progress.js?v=20260929-0205",
       "/admin-operations.js?v=20260928-1520",
       "/admin-followup-summary-fix.js?v=20260917-1320",
@@ -63,14 +63,14 @@
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
       "/roster-support.js",
-      "/section-support.js?v=20260929-late10",
+      "/section-support.js?v=20260930-section-merge",
       "/teacher-support.js?v=20260929-late10",
       "/teacher-settings.js?v=20260930-teacher-support",
       "/private-student-bottom-back.js?v=20260915-1432",
-      "/attendance-support.js?v=20260928-2148",
-      "/attendance-edit.js?v=20260929-late10",
+      "/attendance-support.js?v=20260930-section-merge",
+      "/attendance-edit.js?v=20260930-section-merge",
       "/practice-progress.js?v=20260929-0205",
-      "/teacher-navigation.js?v=20260929-1600",
+      "/teacher-navigation.js?v=20260930-section-merge",
       "/training-attendance.js?v=20260929-late10",
       "/comprehensive-support.js?v=20260929-late10",
       "/private-lesson-confirmation.js?v=20260929-late10"

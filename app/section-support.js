@@ -66,7 +66,7 @@
     render();setTimeout(()=>loadSectionExisting(),0);
   };
   document.addEventListener("change",function(e){
-    if(e.target&&e.target.id==="sDate") window.changeSectionDate(e.target.value);
+    if(!window.__attendanceEditSectionActive&&e.target&&e.target.id==="sDate") window.changeSectionDate(e.target.value);
   },true);
 
   sectionPage=function(){

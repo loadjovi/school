@@ -235,7 +235,7 @@ function courseLabel(type){return ({section:"分部課",ensemble:"合奏課",com
 function defaultCourseMinutes(type){return ({section:45,ensemble:50,comprehensive:90,practice:0})[type]||0}
 function sessionKeyFor(type,row){
   const date=String(row.eventDate||"");
-  if(type==="section")return [date,type,String(row.groupName||""),String(row.section||"")].join("|");
+  if(type==="section")return [date,type,String(row.groupName||""),String(row.mergeTargetSection||row.section||"")].join("|");
   if(type==="ensemble")return [date,type,String(row.groupName||"")].join("|");
   if(type==="comprehensive")return [date,type].join("|");
   return [date,type,String(row.sessionId||row.rowKey||""),String(row.teacher||"")].join("|");
@@ -252,6 +252,12 @@ function latestRowsForSessions(type,rows=[]){
 function resolveTeachingTeacher(type,rows,profiles,directoryMap,isAuthorized,support){
   const latest=[...rows].sort((a,b)=>String(b.createdAt||b.updatedAt||"").localeCompare(String(a.createdAt||a.updatedAt||"")))[0]||{};
   const recorderEmail=teacherKeyValue(latest.teacher),recorderName=String(latest.teacherName||directoryMap.get(recorderEmail)?.teacherName||latest.teacher||""),recorderRole=String(latest.actorRole||"teacher");
+  const merged=type==="section"?rows.filter(x=>x.mergeTargetSection&&x.mergeTeacherEmail):[];
+  const mergeTeachers=[...new Set(merged.map(x=>teacherKeyValue(x.mergeTeacherEmail)))];
+  if(mergeTeachers.length===1&&isAuthorized(mergeTeachers[0],latest.eventDate,type,latest.createdAt||latest.updatedAt)){
+    const chosen=mergeTeachers[0];
+    return {teacherEmail:chosen,teacherName:String(directoryMap.get(chosen)?.teacherName||merged[0].mergeTeacherName||chosen),teacherSource:"校方單日併班指派",recorderEmail,recorderName,recorderRole,candidates:[]};
+  }
   const candidates=profileCandidate(type,latest,profiles).map(p=>{
     const email=teacherKeyValue(p.teacherEmail||p.rowKey),dir=directoryMap.get(email);
     return {email,name:String(p.displayName||dir?.teacherName||email)};
@@ -293,8 +299,9 @@ async function teacherOperationsForSchool(tenant,startDate,endDate,globalEvents=
       if(attendance.cancelled===rows.length)continue;
       const teacher=resolveTeachingTeacher(type,rows,profiles,directoryMap,isAuthorized,support),sample=rows[0]||{};
       const positiveMinutes=rows.map(r=>Number(r.minutes||0)).filter(n=>n>0),durationMinutes=positiveMinutes.length?Math.max(...positiveMinutes):defaultCourseMinutes(type);
+      const mergedSections=[...new Set(rows.filter(r=>r.mergeTargetSection).map(r=>String(r.section||"")))];
       sessions.push({
-        sessionKey:key,courseType:type,courseLabel:courseLabel(type),eventDate:String(sample.eventDate||""),groupName:String(sample.groupName||""),section:String(sample.section||""),
+        sessionKey:key,courseType:type,courseLabel:courseLabel(type),eventDate:String(sample.eventDate||""),groupName:String(sample.groupName||""),section:type==="section"?String(sample.mergeTargetSection||sample.section||""):String(sample.section||""),mergedSections,
         durationMinutes,teachingHours:hoursTextNumber(durationMinutes),attendance,
         teacherEmail:teacher.teacherEmail,teacherName:teacher.teacherName,teacherSource:teacher.teacherSource,
         recordedByEmail:teacher.recorderEmail,recordedBy:teacher.recorderName,recordedByRole:teacher.recorderRole,

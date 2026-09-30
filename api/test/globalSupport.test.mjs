@@ -48,3 +48,22 @@ test("month-end report credits admin-entered class to substitute and performance
   assert.equal(homeReport.teachers.find(x=>x.teacherEmail===teacher.teacherEmail).course.performance.minutes,90);
   assert.equal(result.jsonBody.totals.totalTeachingMinutes,135);
 });
+
+test("a same-school section merge counts one class and credits the receiving teacher",async()=>{
+  const handlers={},receiving="receiver@example.org",absent="absent@example.org";
+  const sectionRows=[
+    {studentId:"target-student",rowKey:"t1",eventDate:"2026-09-29",groupName:"A",section:"小提二部",status:"present",minutes:45,teacher:"admin@example.org",actorRole:"admin",createdAt:"2026-09-29T03:00:00Z"},
+    {studentId:"source-student",rowKey:"s1",eventDate:"2026-09-29",groupName:"A",section:"小提一部",mergeTargetSection:"小提二部",mergeTeacherEmail:receiving,mergeTeacherName:"接課老師",status:"present",minutes:45,teacher:"admin@example.org",actorRole:"admin",createdAt:"2026-09-29T03:00:00Z"}
+  ];
+  const context={app:{http:(name,config)=>{handlers[name]=config.handler}},getAccess:async()=>({authenticated:true,capabilities:{globalAdmin:true}}),json:(jsonBody,status=200)=>({status,jsonBody}),ensureTenantTables:async()=>{},listTenantDirectory:async()=>[school],listTeacherDirectory:async()=>[{teacherEmail:receiving,teacherName:"接課老師",status:"active"},{teacherEmail:absent,teacherName:"請假老師",status:"active"}],listTeacherSupport:async()=>[],listGlobalTeacherEvents:async()=>[],listActivityRange:async type=>type==="section"?sectionRows:[],activityStudentId:x=>x.studentId,table:name=>({listEntities:async function*(){if(name==="tenantTeacherProfile"){yield {teacherEmail:receiving,displayName:"接課老師",sectionAssignments:JSON.stringify([{groupName:"A",section:"小提二部"}])};yield {teacherEmail:absent,displayName:"請假老師",sectionAssignments:JSON.stringify([{groupName:"A",section:"小提一部"}])}}}})};
+  runInNewContext(read("tenantManagement").slice(read("tenantManagement").indexOf("function clean(")),context);
+  const result=await handlers.globalAttendance({query:new URLSearchParams({month:"2026-09"})});
+  assert.equal(result.status,200);
+  const report=result.jsonBody.schools[0];
+  assert.equal(report.courseSummary.section.sessions,1);
+  assert.equal(report.courseSummary.section.minutes,45);
+  assert.equal(report.audit[0].teacherEmail,receiving);
+  assert.equal(report.audit[0].section,"小提二部");
+  assert.equal(report.audit[0].mergedSections[0],"小提一部");
+  assert.equal(report.audit[0].attendance.total,2);
+});

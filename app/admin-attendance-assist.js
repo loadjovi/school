@@ -34,6 +34,7 @@
     const a=state.adminAttendanceAssist,all=masters();
     if(a.type==="comprehensive")return all.filter(s=>["A","B","儲備"].includes(String(s.groupName||"")));
     if(a.type==="ensemble")return all.filter(s=>String(s.groupName||"")===String(a.groupName||""));
+    if(Array.isArray(a.data?.roster)&&a.data.sessionDate===a.date&&a.data.groupName===a.groupName&&a.data.section===a.section)return a.data.roster;
     return all.filter(s=>String(s.groupName||"")===String(a.groupName||"")&&String(s.section||"待確認")===String(a.section||""));
   }
   function endpoint(){
@@ -87,6 +88,7 @@
       ? `<div class="notice" style="margin-top:10px">目前已有點名：<b>${esc(a.data.recordedBy)}</b>${a.data.recordedByRole==="admin"?"（行政協助）":""}</div>`
       : "";
     const error=a.error?`<div class="error" style="margin-top:10px">${esc(a.error)}</div>`:"";
+    const mergeNotice=a.data?.merges?.length?`<div class="notice" style="margin-top:10px">🎼 今日併班：${a.data.merges.map(x=>esc(x.sourceSection)).join("、")} 併入 ${esc(a.section)}。本名單包含兩個分部，工時按一堂認列。</div>`:"";
     const listHtml=a.data&&list.length
       ? `<div style="margin-top:12px"><b>${esc(typeText[a.type])}學生｜${list.length} 人</b>
           ${list.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.groupName||"")}團｜${esc(s.section||"待確認")}｜${esc(s.instrument||"")}</small></div>
@@ -110,7 +112,7 @@
       ${a.type!=="comprehensive"?`<label>團別</label><select onchange="adminAssistChange('groupName',this.value)">${groups.map(g=>`<option value="${esc(g)}" ${String(a.groupName)===String(g)?"selected":""}>${esc(g)}團</option>`).join("")}</select>`:""}
       ${a.type==="section"?`<label>分部</label><select onchange="adminAssistChange('section',this.value)">${sections.map(s=>`<option value="${esc(s)}" ${String(a.section)===String(s)?"selected":""}>${esc(s)}</option>`).join("")}</select>`:""}
       <button class="secondary" style="width:100%;margin-top:10px" onclick="adminAssistLoad()" ${a.loading?"disabled":""}>${a.loading?"⏳ 正在載入":"🔄 載入目前點名／開始點名"}</button>
-      ${recorded}${error}${listHtml}
+      ${recorded}${mergeNotice}${error}${listHtml}
     </div>`;
   }
 

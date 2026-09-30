@@ -46,7 +46,7 @@
         try{
           if(typeof state!=="undefined"&&state.me?.role==="admin"&&typeof adminPage==="function"&&typeof render==="function"){
             clearInterval(timer);
-            const s=document.createElement("script");s.src="/schedule-admin.js?v=20260921-2235";document.body.appendChild(s);
+            const s=document.createElement("script");s.src="/schedule-admin.js?v=20260930-section-merge";document.body.appendChild(s);
           }else if(tries>400)clearInterval(timer);
         }catch(e){if(tries>400)clearInterval(timer)}
       },25);
@@ -74,7 +74,7 @@
         try{
           if(typeof state!=="undefined"&&state.me?.role==="admin"&&typeof window.exportAttendanceReport==="function"&&typeof render==="function"){
             clearInterval(timer);
-            const s=document.createElement("script");s.src="/admin-attendance-assist.js?v=20260922-2005";document.body.appendChild(s);
+            const s=document.createElement("script");s.src="/admin-attendance-assist.js?v=20260930-section-merge";document.body.appendChild(s);
           }else if(tries>400)clearInterval(timer);
         }catch(e){if(tries>400)clearInterval(timer)}
       },25);

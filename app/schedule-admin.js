@@ -2,13 +2,19 @@
   const isAdmin=()=>state.me?.role==="admin";
   state.schoolSchedule=state.schoolSchedule||null;
   state.schedulePreview=state.schedulePreview||null;
+  state.sectionMerges=state.sectionMerges||[];
+  state.mergeTeachers=state.mergeTeachers||[];
 
   const weekdayText=n=>["週日","週一","週二","週三","週四","週五","週六"][Number(n)]||"";
   const typeText=t=>({section:"分部課",ensemble:"合奏課",comprehensive:"綜合課"}[t]||"課程");
   const escCsv=v=>String(v??"").replaceAll('"','""');
 
   async function loadSchedule(){state.schoolSchedule=await api("/api/school-schedule")}
-  window.openScheduleAdmin=async function(){state.page="schoolSchedule";await loadSchedule();render()};
+  async function loadMergeData(){
+    const [merges,teachers]=await Promise.all([api("/api/section-merge"),api("/api/teacher-directory")]);
+    state.sectionMerges=merges.items||[];state.mergeTeachers=teachers.items||[];
+  }
+  window.openScheduleAdmin=async function(){state.page="schoolSchedule";render();try{await Promise.all([loadSchedule(),loadMergeData()]);render()}catch(e){toast("❌ 課程資料讀取失敗："+e.message)}};
   window.closeScheduleAdmin=function(){state.page="admin";render()};
   window.activateSchoolSchedule=async function(){
     const count=(state.schoolSchedule?.items||[]).filter(x=>x.status==="active").length;
@@ -25,6 +31,48 @@
     try{state.schedulePreview=await api("/api/school-schedule?date="+encodeURIComponent(date)+"&preview=1");render()}catch(e){toast("❌ "+e.message)}
   };
   window.clearSchedulePreview=function(){state.schedulePreview=null;render()};
+
+  const mergeClasses=()=>{
+    const map=new Map();
+    for(const t of state.mergeTeachers.filter(x=>x.status==="active"))for(const a of t.sectionAssignments||[]){
+      const groupName=String(a.groupName||a.group||""),section=String(a.section||"");
+      if(groupName&&section)map.set([groupName,section].join("|"),{groupName,section});
+    }
+    return [...map.values()].sort((a,b)=>a.groupName.localeCompare(b.groupName)||a.section.localeCompare(b.section,"zh-Hant"));
+  };
+  const mergeAssigned=(c)=>state.mergeTeachers.filter(x=>x.status==="active"&&(x.sectionAssignments||[]).some(a=>String(a.groupName||a.group||"")===c?.groupName&&String(a.section||"")===c?.section));
+  const teacherOptions=c=>mergeAssigned(c).map(t=>`<option value="${esc(t.email)}">${esc(t.teacherName||t.email)}｜${esc(t.email)}</option>`).join("");
+  const targetOptions=(classes,source)=>classes.filter(x=>x.groupName===source?.groupName&&x.section!==source.section).map(x=>`<option value="${esc(x.section)}">${esc(x.section)}</option>`).join("");
+  window.changeSectionMergeSource=function(){
+    const classes=mergeClasses(),source=classes[Number($("mergeSource")?.value)||0],targets=$("mergeTarget"),absent=$("mergeAbsent");
+    if(targets)targets.innerHTML=targetOptions(classes,source);
+    if(absent)absent.innerHTML=teacherOptions(source);
+    window.changeSectionMergeTarget();
+  };
+  window.changeSectionMergeTarget=function(){
+    const classes=mergeClasses(),source=classes[Number($("mergeSource")?.value)||0],target=classes.find(x=>x.groupName===source?.groupName&&x.section===$("mergeTarget")?.value);
+    const receiver=$("mergeReceiver");if(receiver)receiver.innerHTML=teacherOptions(target);
+  };
+  window.createSectionMerge=async function(){
+    const source=mergeClasses()[Number($("mergeSource")?.value)||0];
+    if(!source){toast("請先在老師教學設定中建立分部授課範圍");return}
+    const body={sessionDate:$("mergeDate")?.value,groupName:source.groupName,sourceSection:source.section,targetSection:$("mergeTarget")?.value,absentTeacherEmail:$("mergeAbsent")?.value,receivingTeacherEmail:$("mergeReceiver")?.value,reason:$("mergeReason")?.value};
+    try{await api("/api/section-merge",{method:"POST",body:JSON.stringify(body)});toast("✅ 已安排單日併班，接課老師可統一點名");state.sectionMerges=(await api("/api/section-merge")).items||[];render()}catch(e){toast("❌ "+e.message)}
+  };
+  window.cancelSectionMerge=async function(id){
+    if(!confirm("確定取消此併班安排？已完成的點名與工時稽核紀錄會保留。"))return;
+    try{await api("/api/section-merge",{method:"PATCH",body:JSON.stringify({action:"cancel",mergeId:id})});state.sectionMerges=(await api("/api/section-merge")).items||[];toast("✅ 已取消併班安排");render()}catch(e){toast("❌ "+e.message)}
+  };
+
+  function sectionMergeCard(){
+    const classes=mergeClasses(),source=classes.find(c=>classes.some(x=>x.groupName===c.groupName&&x.section!==c.section)),targets=classes.filter(x=>x.groupName===source?.groupName&&x.section!==source?.section),receiver=targets[0];
+    const items=state.sectionMerges.slice().sort((a,b)=>String(b.sessionDate).localeCompare(String(a.sessionDate))).slice(0,20);
+    return `<div class="card"><h2>🎼 單日分部併班</h2><div class="notice">分部老師請假時，由同校另一分部老師接課。只在指定日期生效；接課老師會看到兩個分部的學生並統一點名。學生仍屬原分部，月報按一堂課計算接課老師工時。先由兩位老師在「我的教學設定」設定各自授課分部。</div>
+      ${source?`<div class="row2"><div><label>併班日期</label><input id="mergeDate" type="date" value="${new Date().toLocaleDateString("sv-SE")}"></div><div><label>老師請假的原分部</label><select id="mergeSource" onchange="changeSectionMergeSource()">${classes.map((x,i)=>`<option value="${i}" ${x===source?"selected":""}>${esc(x.groupName)}團｜${esc(x.section)}</option>`).join("")}</select></div></div>
+      <div class="row2"><div><label>請假老師</label><select id="mergeAbsent">${teacherOptions(source)}</select></div><div><label>接課分部（同一團）</label><select id="mergeTarget" onchange="changeSectionMergeTarget()">${targetOptions(classes,source)}</select></div></div>
+      <label>接課老師</label><select id="mergeReceiver">${teacherOptions(receiver)}</select><label>原因／備註</label><input id="mergeReason" maxlength="180" placeholder="例：原分部老師請假，當天併入小提二部"><button class="primary" onclick="createSectionMerge()">確認單日併班</button>`:'<div class="notice" style="margin-top:10px">至少需有同一團的兩個分部與各自的老師授課設定，才能安排併班。</div>'}
+      <h3 style="margin-top:18px">近期併班安排</h3>${items.length?items.map(x=>`<div class="item"><div><b>${esc(x.sessionDate)}｜${esc(x.groupName)}團 ${esc(x.sourceSection)} → ${esc(x.targetSection)}</b><small>請假：${esc(x.absentTeacherName)}｜接課：${esc(x.receivingTeacherName)}<br>${esc(x.reason)}｜建立者：${esc(x.createdBy)}${x.cancelledAt?`｜取消：${esc(x.cancelledAt)}`:""}</small></div>${x.status==="active"?`<button class="secondary" style="width:auto;margin:0;padding:8px 10px" onclick="cancelSectionMerge('${esc(x.mergeId)}')">取消</button>`:'<span class="badge warn">已取消</span>'}</div>`).join(""):'<div class="notice">尚無併班安排。</div>'}</div>`;
+  }
 
 
   function scheduleAdmin(){
@@ -44,6 +92,7 @@
       <input id="scheduleCsv" type="file" accept=".csv,text/csv" style="display:none" onchange="importScheduleCsv(this.files[0])">
     </div>
     ${previewPanel}
+    ${sectionMergeCard()}
     <div class="card"><h2>目前課表</h2>${active.length?active.map(x=>`<div class="item"><div><b>${esc(x.courseName)}</b><small>${esc(typeText(x.courseType))}｜${esc(x.groupName||"全團")}｜${x.recurrence==="weekly"?esc(weekdayText(x.weekday)):esc(x.sessionDate)}｜${esc(x.startTime)}–${esc(x.endTime)}${x.location?`｜📍 ${esc(x.location)}`:""}</small></div><button class="secondary" style="width:auto;margin:0;padding:8px 10px" onclick="cancelSchedulePrompt('${esc(x.scheduleId)}','${esc(x.courseName)}')">停課</button></div>`).join(""):'<div class="notice">尚未建立課表，可先下載「本校課表範本」，用 Excel 編輯後再匯入。</div>'}</div>
     <div class="card"><h2>近期異動</h2>${exceptions.length?exceptions.slice().sort((a,b)=>String(b.sessionDate).localeCompare(String(a.sessionDate))).slice(0,8).map(x=>`<div class="item"><div><b>${esc(x.sessionDate)}｜${x.status==="cancelled"?"停課":"課程異動"}</b><small>${esc(x.reason||"未填原因")}</small></div><span class="badge warn">已通知首頁</span></div>`).join(""):'<div class="notice">目前沒有課程異動。</div>'}</div>`;
   }

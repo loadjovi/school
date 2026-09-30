@@ -5,14 +5,14 @@ import { createHash } from "node:crypto";
 import { getAccess, json } from "../lib/auth.js";
 import { ensureTenantTables, table, writeGlobalAudit } from "../lib/storage.js";
 
-const SCHEMA_VERSION=6;
+const SCHEMA_VERSION=7;
 const LOGICAL_TABLES=[
   ["PracticeLog","practice"],["SectionAttendance","section"],["EnsembleAttendance","ensemble"],["ComprehensiveAttendance","comprehensive"],["PrivateLesson","privateLesson"],
   ["StudentRegistration","registrations"],["UserStudentMap","userStudentMap"],["StudentMaster","studentMaster"],["StudentHistory","studentHistory"],["SemesterEnrollment","semesterEnrollment"],
   ["TeacherDirectory","teacherDirectory"],["TeacherProfile","teacherProfile"],["AcademicYearBatch","academicYearBatch"],
   ["TenantPracticeLog","tenantPractice"],["TenantSectionAttendance","tenantSection"],["TenantEnsembleAttendance","tenantEnsemble"],["TenantComprehensiveAttendance","tenantComprehensive"],["TenantPrivateLesson","tenantPrivateLesson"],
   ["TenantStudentRegistration","tenantRegistrations"],["TenantUserStudentMap","tenantUserStudentMap"],["TenantStudentMaster","tenantStudentMaster"],["TenantStudentHistory","tenantStudentHistory"],["TenantSemesterEnrollment","tenantSemesterEnrollment"],
-  ["TenantTeacherDirectory","tenantTeacherDirectory"],["TenantTeacherProfile","tenantTeacherProfile"],["TenantTeacherSupport","tenantTeacherSupport"],["TenantAcademicYearBatch","tenantAcademicYearBatch"],
+  ["TenantTeacherDirectory","tenantTeacherDirectory"],["TenantTeacherProfile","tenantTeacherProfile"],["TenantTeacherSupport","tenantTeacherSupport"],["TenantSectionMerge","tenantSectionMerge"],["TenantAcademicYearBatch","tenantAcademicYearBatch"],
   ["TenantDirectory","tenantDirectory"],["TenantUserRole","tenantUserRole"],["TenantMigration","tenantMigration"],["GlobalAuditLog","globalAuditLog"],["UserIdentity","userIdentity"],
   ["TenantCalendarEvent","tenantCalendarEvent"],["TenantTrainingAttendance","tenantTrainingAttendance"],["GlobalTeacherEvent","globalTeacherEvent"]
 ];
@@ -48,12 +48,12 @@ async function restoreBrandingAsset(asset,replace=false){
 function validateBackup(input){
   if(!input||typeof input!=="object")throw new Error("備份檔格式不正確");
   const version=Number(input.schemaVersion);
-  if(![1,2,3,4,5,6].includes(version))throw new Error(`不支援的備份格式版本：${input.schemaVersion??"空白"}`);
+  if(![1,2,3,4,5,6,7].includes(version))throw new Error(`不支援的備份格式版本：${input.schemaVersion??"空白"}`);
   if(!input.tables||typeof input.tables!=="object")throw new Error("備份檔缺少 tables");
   if(input.checksum&&String(input.checksum)!==checksumFor(input))throw new Error("備份檔檢查碼不一致，檔案可能已損毀或被修改");
   const tenantTables=new Set(["TenantDirectory","TenantUserRole","GlobalAuditLog"]);
   const allowed=new Set([...LOGICAL_TABLES.map(x=>x[0]),"SystemSettings"]);
-  const legacyMissingAllowed=name=>(version===1&&tenantTables.has(name))||(version<=2&&name==="UserIdentity")||(version<=3&&PHASE2_TABLES.has(name))||(version<=4&&["TenantCalendarEvent","TenantTrainingAttendance"].includes(name))||(version<=5&&["TenantTeacherSupport","GlobalTeacherEvent"].includes(name));
+  const legacyMissingAllowed=name=>(version===1&&tenantTables.has(name))||(version<=2&&name==="UserIdentity")||(version<=3&&PHASE2_TABLES.has(name))||(version<=4&&["TenantCalendarEvent","TenantTrainingAttendance"].includes(name))||(version<=5&&["TenantTeacherSupport","GlobalTeacherEvent"].includes(name))||(version<=6&&name==="TenantSectionMerge");
   for(const name of allowed){
     if(!Array.isArray(input.tables[name])){
       if(legacyMissingAllowed(name))continue;
@@ -88,9 +88,9 @@ app.http("systemBackup",{methods:["GET","POST"],authLevel:"anonymous",route:"sys
   if(action!=="restore")return json({error:"action 必須為 preview 或 restore"},400);
   const mode=String(body?.mode||"merge").toLowerCase();if(!["merge","replace"].includes(mode))return json({error:"mode 必須為 merge 或 replace"},400);if(mode==="replace"&&String(body?.confirmText||"")!=="完整移轉")return json({error:"完整移轉還原需要輸入確認文字「完整移轉」"},400);if(mode==="merge"&&body?.confirmRestore!==true)return json({error:"合併還原需要 confirmRestore=true"},400);
   const clients=await clientsByLogical(),removed={},restored={},sourceVersion=Number(backup.schemaVersion||1),tenantTables=new Set(["TenantDirectory","TenantUserRole","GlobalAuditLog"]);
-  const legacyMissing=name=>(sourceVersion===1&&tenantTables.has(name)&&!Array.isArray(backup.tables[name]))||(sourceVersion<=2&&name==="UserIdentity"&&!Array.isArray(backup.tables[name]))||(sourceVersion<=3&&PHASE2_TABLES.has(name)&&!Array.isArray(backup.tables[name]))||(sourceVersion<=4&&["TenantCalendarEvent","TenantTrainingAttendance"].includes(name)&&!Array.isArray(backup.tables[name]))||(sourceVersion<=5&&["TenantTeacherSupport","GlobalTeacherEvent"].includes(name)&&!Array.isArray(backup.tables[name]));
+  const legacyMissing=name=>(sourceVersion===1&&tenantTables.has(name)&&!Array.isArray(backup.tables[name]))||(sourceVersion<=2&&name==="UserIdentity"&&!Array.isArray(backup.tables[name]))||(sourceVersion<=3&&PHASE2_TABLES.has(name)&&!Array.isArray(backup.tables[name]))||(sourceVersion<=4&&["TenantCalendarEvent","TenantTrainingAttendance"].includes(name)&&!Array.isArray(backup.tables[name]))||(sourceVersion<=5&&["TenantTeacherSupport","GlobalTeacherEvent"].includes(name)&&!Array.isArray(backup.tables[name]))||(sourceVersion<=6&&name==="TenantSectionMerge"&&!Array.isArray(backup.tables[name]));
   if(mode==="replace")for(const name of Object.keys(clients)){
-    if(legacyMissing(name)&&!PHASE2_TABLES.has(name))continue;
+    if(legacyMissing(name)&&!PHASE2_TABLES.has(name)&&name!=="TenantSectionMerge")continue;
     removed[name]=await clearClient(clients[name]);
   }
   for(const name of Object.keys(clients)){
