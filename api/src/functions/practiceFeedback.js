@@ -31,6 +31,7 @@ app.http("practiceFeedback",{
   handler:async(request)=>{
     const context=await getTenantContext(request);if(context.error)return context.error;
     const {access:a,schoolId}=context;
+    if(a.temporaryAssignment)return json({error:"短期代課僅可查看指定課堂的點名資料"},403);
     await ensureTenantTables();
 
     if(request.method==="GET"){

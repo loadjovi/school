@@ -1,5 +1,5 @@
 import { OAuth2Client } from "google-auth-library";
-import { getMappedStudentsByEmail, listStudentMaster, getTeacherProfile, getTeacherDirectory, listUserStudentMappings, ensureDefaultTenant, ensureBootstrapGlobalAdmin, listTenantRolesByEmail, getTenantDirectory, defaultTenantId, tenantIdValue } from "./storage.js";
+import { getMappedStudentsByEmail, listStudentMaster, getTeacherProfile, getTeacherDirectory, activeTeacherSupport, listUserStudentMappings, ensureDefaultTenant, ensureBootstrapGlobalAdmin, listTenantRolesByEmail, getTenantDirectory, defaultTenantId, tenantIdValue } from "./storage.js";
 
 const googleClient = new OAuth2Client();
 const aliasCaches=new Map();
@@ -311,6 +311,18 @@ export async function getAccess(request){
   const roleTenantStatus=String(roleTenant?.status||(roleSchoolId===defaultId?"active":"")),roleTenantOnboarding=roleTenantStatus==="onboarding";
   const roleTenantAvailable=roleTenantStatus==="active"||roleTenantOnboarding;
   const directory=roleTenantAvailable?await getTeacherDirectory(email,roleSchoolId):null;
+  const supportDay=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+  const temporary=roleTenantAvailable&&!directory?await activeTeacherSupport(email,roleSchoolId,supportDay):null;
+  if(temporary&&(!requestedContext||requestedContext==="teacher")){
+    const source=await getTeacherDirectory(email,temporary.sourceSchoolId);
+    if(source?.status==="active"){
+      const type=String(temporary.courseType||""),groupName=String(temporary.groupName||""),section=String(temporary.section||"");
+      const sectionAssignments=type==="section"?[{groupName,section}]:[],ensembleGroups=type==="ensemble"?[groupName]:[],comprehensiveEnabled=type==="comprehensive";
+      const masters=await listStudentMaster("active",roleSchoolId);
+      const students=masters.filter(m=>type==="section"?m.groupName===groupName&&m.section===section:type==="ensemble"?m.groupName===groupName:type==="comprehensive"?["A","B","儲備"].includes(String(m.groupName||"")):false).map(m=>viewMaster(m));
+      return {authenticated:true,...identity,displayName:temporary.teacherName||source.teacherName||identity.displayName,role:type==="section"?"sectionTeacher":type==="ensemble"?"ensembleTeacher":type==="comprehensive"?"comprehensiveTeacher":"teacher",schoolId:roleSchoolId,schoolName:String(roleTenant?.schoolName||roleSchoolId),systemName:String(roleTenant?.systemName||roleTenant?.schoolName||roleSchoolId),capabilities:{section:type==="section",ensemble:type==="ensemble",comprehensive:comprehensiveEnabled,private:false,practice:type==="practice",teacherSettings:true,temporarySupport:true,tenantOnboarding:roleTenantOnboarding},sectionAssignments,assignments:sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds:[],students,temporaryAssignment:{assignmentId:temporary.rowKey,sourceSchoolId:temporary.sourceSchoolId,courseType:type,groupName,section,startDate:temporary.startDate,endDate:temporary.endDate}};
+    }
+  }
   if(directory?.status==="active"&&(!requestedContext||requestedContext==="teacher")){
     const profile=await getTeacherProfile(email,roleSchoolId);
     const {sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds:rawPrivateStudentIds}=normalizeProfile(profile);
@@ -386,6 +398,11 @@ export function ensureSectionAccess(access,student){
 export function ensureEnsembleAccess(access,student){
   if(access.role==="admin")return true;
   return !!access.capabilities?.ensemble&&(access.ensembleGroups||[]).includes(student.groupName);
+}
+
+export function ensureTemporaryCourseAccess(access,type,date){
+  const t=access.temporaryAssignment;if(!t)return true;
+  const d=String(date||"");return t.courseType===type&&/^\d{4}-\d{2}-\d{2}$/.test(d)&&d>=t.startDate&&d<=t.endDate;
 }
 
 export function ensureComprehensiveAccess(access,student){

@@ -1,5 +1,5 @@
 import { app } from "@azure/functions";
-import { getTenantContext, json } from "../lib/auth.js";
+import { getTenantContext, ensureTemporaryCourseAccess, json } from "../lib/auth.js";
 import { ensureTenantTables, table, tenantSchoolPartition, listStudentMaster, listTeacherDirectory } from "../lib/storage.js";
 import { needsTrainingAttendance } from "./calendarEvents.js";
 
@@ -21,6 +21,7 @@ function rosterFor(event,masters){
 function mayTakeAttendance(access,event,teachers){
   if(access.role==="admin")return true;
   if(!access.capabilities?.teacherSettings||String(event.status||"active")!=="active")return false;
+  if(!ensureTemporaryCourseAccess(access,"practice",event.eventDate))return false;
   const email=String(access.email||"").trim().toLowerCase();
   const assigned=String(event.teacherEmail||"").trim().toLowerCase();
   if(assigned)return assigned===email;

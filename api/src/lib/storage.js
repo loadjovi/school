@@ -27,6 +27,8 @@ const names={
   tenantSemesterEnrollment:process.env.TENANT_SEMESTER_ENROLLMENT_TABLE||"TenantSemesterEnrollment",
   tenantTeacherDirectory:process.env.TENANT_TEACHER_DIRECTORY_TABLE||"TenantTeacherDirectory",
   tenantTeacherProfile:process.env.TENANT_TEACHER_PROFILE_TABLE||"TenantTeacherProfile",
+  tenantTeacherSupport:process.env.TENANT_TEACHER_SUPPORT_TABLE||"TenantTeacherSupport",
+  globalTeacherEvent:process.env.GLOBAL_TEACHER_EVENT_TABLE||"GlobalTeacherEvent",
   tenantAcademicYearBatch:process.env.TENANT_ACADEMIC_YEAR_BATCH_TABLE||"TenantAcademicYearBatch",
   tenantDirectory:process.env.TENANT_DIRECTORY_TABLE||"TenantDirectory",
   tenantUserRole:process.env.TENANT_USER_ROLE_TABLE||"TenantUserRole",
@@ -42,7 +44,7 @@ const names={
   tenantPracticeMonthlyEvaluation:process.env.TENANT_PRACTICE_MONTHLY_EVALUATION_TABLE||"TenantPracticeMonthlyEvaluation",
   tenantLearningMonthlyEvaluation:process.env.TENANT_LEARNING_MONTHLY_EVALUATION_TABLE||"TenantLearningMonthlyEvaluation"
 };
-const tenantDataKeys=["tenantPractice","tenantSection","tenantEnsemble","tenantComprehensive","tenantPrivateLesson","tenantRegistrations","tenantUserStudentMap","tenantStudentMaster","tenantStudentHistory","tenantSemesterEnrollment","tenantTeacherDirectory","tenantTeacherProfile","tenantAcademicYearBatch","tenantMigration","tenantSchedule","tenantScheduleException","tenantScheduleState","tenantCalendarEvent","tenantTrainingAttendance","tenantPracticeFeedback","tenantPracticeMonthlyEvaluation","tenantLearningMonthlyEvaluation"];
+const tenantDataKeys=["tenantPractice","tenantSection","tenantEnsemble","tenantComprehensive","tenantPrivateLesson","tenantRegistrations","tenantUserStudentMap","tenantStudentMaster","tenantStudentHistory","tenantSemesterEnrollment","tenantTeacherDirectory","tenantTeacherProfile","tenantTeacherSupport","tenantAcademicYearBatch","tenantMigration","tenantSchedule","tenantScheduleException","tenantScheduleState","tenantCalendarEvent","tenantTrainingAttendance","tenantPracticeFeedback","tenantPracticeMonthlyEvaluation","tenantLearningMonthlyEvaluation"];
 const tenantActivityKeys={practice:"tenantPractice",section:"tenantSection",ensemble:"tenantEnsemble",comprehensive:"tenantComprehensive",privateLesson:"tenantPrivateLesson"};
 
 let initialized=false,tenantInitialized=false,initializationPromise=null,tenantInitializationPromise=null;
@@ -87,6 +89,33 @@ export async function saveTeacherDirectory(email,{teacherName="",status="active"
 export async function touchTeacherLastLogin(email,schoolId=defaultTenantId()){await ensureTenantTables();const key=teacherEmail(email);if(!key)return;try{await table("tenantTeacherDirectory").updateEntity({partitionKey:tenantSchoolPartition(schoolId),rowKey:key,lastLoginAt:new Date().toISOString()},"Merge")}catch(e){if(e.statusCode!==404)throw e}}
 export async function getTeacherProfile(email,schoolId=defaultTenantId()){await ensureTenantTables();const key=teacherEmail(email);if(!key)return null;try{return await table("tenantTeacherProfile").getEntity(tenantSchoolPartition(schoolId),key)}catch(e){if(e.statusCode===404)return null;throw e}}
 export async function saveTeacherProfile(email,profile={},schoolId=defaultTenantId()){await ensureTenantTables();const key=teacherEmail(email),sid=tenantSchoolPartition(schoolId),now=new Date().toISOString();const entity={partitionKey:sid,rowKey:key,schoolId:sid,teacherEmail:key,displayName:String(profile.displayName||"").slice(0,100),sectionAssignments:JSON.stringify(profile.sectionAssignments||[]),ensembleGroups:JSON.stringify(profile.ensembleGroups||[]),comprehensiveEnabled:profile.comprehensiveEnabled===true,privateStudentIds:JSON.stringify(profile.privateStudentIds||[]),updatedAt:now};try{const old=await table("tenantTeacherProfile").getEntity(sid,key);entity.createdAt=old.createdAt||now;await table("tenantTeacherProfile").upsertEntity(entity,"Replace")}catch(e){if(e.statusCode!==404)throw e;entity.createdAt=now;await table("tenantTeacherProfile").createEntity(entity)}return entity;}
+export async function listTeacherSupport(schoolId,startDate="",endDate=""){
+  await ensureTenantTables();const sid=tenantSchoolPartition(schoolId).replaceAll("'","''"),items=[];
+  for await(const e of table("tenantTeacherSupport").listEntities({queryOptions:{filter:`PartitionKey eq '${sid}'`}})){
+    if(startDate&&String(e.endDate||"")<startDate||endDate&&String(e.startDate||"")>endDate)continue;
+    items.push(e);
+  }
+  return items;
+}
+export async function activeTeacherSupport(email,schoolId,date){
+  const key=teacherEmail(email),day=String(date||"");if(!key||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(day))return null;
+  return (await listTeacherSupport(schoolId,day,day)).find(x=>teacherEmail(x.teacherEmail)===key&&x.status==="active"&&x.startDate<=day&&x.endDate>=day)||null;
+}
+export async function teacherForDate(email,schoolId,date,{historical=false}={}){
+  const permanent=await getTeacherDirectory(email,schoolId);
+  if(permanent)return permanent.status==="active"?permanent:null;
+  const day=String(date||""),rows=await listTeacherSupport(schoolId,day,day);
+  const revokedDay=x=>x.revokedAt?new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(x.revokedAt)):"";
+  const support=rows.find(x=>teacherEmail(x.teacherEmail)===teacherEmail(email)&&x.startDate<=day&&x.endDate>=day&&(x.status==="active"||historical&&x.status==="revoked"&&day<=revokedDay(x)));
+  return support?{teacherEmail:support.teacherEmail,teacherName:support.teacherName,status:"active",temporary:true,courseType:support.courseType}:null;
+}
+export async function listGlobalTeacherEvents(startDate="",endDate=""){
+  await ensureTables();const items=[],parts=["PartitionKey eq 'EVENT'"];
+  if(startDate)parts.push(`eventDate ge '${String(startDate).replaceAll("'","''")}'`);
+  if(endDate)parts.push(`eventDate le '${String(endDate).replaceAll("'","''")}'`);
+  for await(const e of table("globalTeacherEvent").listEntities({queryOptions:{filter:parts.join(" and ")}}))items.push(e);
+  return items;
+}
 export async function getMappedStudentsByEmail(email,schoolId=defaultTenantId()){await ensureTenantTables();const client=table("tenantUserStudentMap"),partition=tenantParentPartition(schoolId,email).replaceAll("'","''"),items=[];for await(const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${partition}' and status eq 'active'`}})){const master=await getStudentMaster(e.rowKey,schoolId);if(master){if(master.status!=="inactive")items.push(masterView(master));continue}const registration=await getRegistrationById(e.registrationId,schoolId);const mapped=mappingView(e,registration);items.push({studentId:mapped.studentId,name:mapped.studentName,grade:mapped.grade,groupName:mapped.groupName,instrument:mapped.instrument,section:mapped.section,schoolYear:mapped.schoolYear,semester:mapped.semester,source:"tenantMap"})}return items;}
 export async function listUserStudentMappings(status="active",schoolId=defaultTenantId()){await ensureTenantTables();const sid=tenantSchoolPartition(schoolId).replaceAll("'","''"),parts=[`schoolId eq '${sid}'`];if(status)parts.push(`status eq '${String(status).replaceAll("'","''")}'`);const items=[];for await(const e of table("tenantUserStudentMap").listEntities({queryOptions:{filter:parts.join(" and ")}})){const registration=await getRegistrationById(e.registrationId,schoolId);items.push(mappingView(e,registration))}return items;}
 export async function listAllMappedStudents(schoolId=defaultTenantId()){await ensureTenantTables();const masters=await listStudentMaster("",schoolId);if(masters.length)return masters.map(masterView);const sid=tenantSchoolPartition(schoolId).replaceAll("'","''"),client=table("tenantUserStudentMap"),map=new Map();for await(const e of client.listEntities({queryOptions:{filter:`schoolId eq '${sid}' and status eq 'active'`}})){const registration=await getRegistrationById(e.registrationId,schoolId);const mapped=mappingView(e,registration);if(!map.has(mapped.studentId))map.set(mapped.studentId,{studentId:mapped.studentId,name:mapped.studentName,grade:mapped.grade,groupName:mapped.groupName,instrument:mapped.instrument,section:mapped.section,parentEmail:mapped.parentEmail,source:"tenantMap"})}return [...map.values()];}

@@ -8,6 +8,7 @@ export const TENANT_ISOLATION_DATASETS=[
   {key:"tenantSemesterEnrollment",label:"學期名單",kind:"term"},
   {key:"tenantTeacherDirectory",label:"老師帳號",kind:"school"},
   {key:"tenantTeacherProfile",label:"老師權限",kind:"school"},
+  {key:"tenantTeacherSupport",label:"跨校短期師資",kind:"school"},
   {key:"tenantAcademicYearBatch",label:"學年度批次",kind:"school"},
   {key:"tenantPractice",label:"自主練習",kind:"student"},
   {key:"tenantSection",label:"分部課",kind:"student"},

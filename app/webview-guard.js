@@ -46,7 +46,7 @@
       "/student-number-support.js?v=20260918-1105",
       "/student-change-admin.js?v=20260918-1015",
       "/parent-link-admin.js?v=20260921-0135",
-      "/teacher-settings.js?v=20260928-2135",
+      "/teacher-settings.js?v=20260930-teacher-support",
       "/teacher-admin.js?v=20260925-0315",
       "/batch-upgrade.js",
       "/roster-import.js?v=20260915-1135",
@@ -58,14 +58,14 @@
       "/system-backup.js?v=20260919-2305",
       "/school-access.js?v=20260920-0010",
       "/school-access-audit-admin.js?v=20260918-0005",
-      "/school-access-refresh-fix.js?v=20260930-teacher-dates",
+      "/school-access-refresh-fix.js?v=20260930-teacher-support",
       "/training-attendance.js?v=20260929-late10"
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
       "/roster-support.js",
       "/section-support.js?v=20260929-late10",
       "/teacher-support.js?v=20260929-late10",
-      "/teacher-settings.js?v=20260928-2135",
+      "/teacher-settings.js?v=20260930-teacher-support",
       "/private-student-bottom-back.js?v=20260915-1432",
       "/attendance-support.js?v=20260928-2148",
       "/attendance-edit.js?v=20260929-late10",
@@ -77,7 +77,7 @@
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20260929-1305",
-      "/school-access-refresh-fix.js?v=20260930-teacher-dates"
+      "/school-access-refresh-fix.js?v=20260930-teacher-support"
     ];
     if(role==="school")return ["/school-access.js?v=20260929-1305"];
     if(role==="parent")return [
@@ -89,7 +89,7 @@
     if(role==="globalAdmin")return [
       "/school-access.js?v=20260920-0010",
       "/school-access-audit-admin.js?v=20260918-0005",
-      "/school-access-refresh-fix.js?v=20260930-teacher-dates"
+      "/school-access-refresh-fix.js?v=20260930-teacher-support"
     ];
     return [];
   }
@@ -116,7 +116,7 @@
   async function loadRoleModules(){
     await waitForProfileReady();
     if(typeof state==="undefined"||!state.me)return;
-    const list=[...roleModules(),"/desktop-ui.js?v=20260929-1730"];
+    const list=[...roleModules(),"/desktop-ui.js?v=20260930-teacher-support"];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");

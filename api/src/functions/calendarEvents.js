@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
-import { ensureTenantTables, table, tenantSchoolPartition, rowKey, listTeacherDirectory, getTeacherDirectory } from "../lib/storage.js";
+import { ensureTenantTables, table, tenantSchoolPartition, rowKey, listTeacherDirectory, listTeacherSupport, teacherForDate } from "../lib/storage.js";
 
 const safe=v=>String(v||"").replaceAll("'","''");
 const validDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||""));
@@ -73,7 +73,12 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
   if(request.method==="GET"){
     const from=String(request.query.get("from")||""),to=String(request.query.get("to")||""),groupName=String(request.query.get("groupName")||"");
     const items=await listCalendarEvents(schoolId,from,to,groupName,a.role==="admin");
-    const teachers=a.role==="admin"?(await listTeacherDirectory(schoolId)).filter(x=>String(x.status||"active")==="active").map(x=>({email:String(x.teacherEmail||x.rowKey||""),teacherName:String(x.teacherName||x.rowKey||"")})):undefined;
+    let teachers;
+    if(a.role==="admin"){
+      const permanent=(await listTeacherDirectory(schoolId)).filter(x=>String(x.status||"active")==="active").map(x=>({email:String(x.teacherEmail||x.rowKey||""),teacherName:String(x.teacherName||x.rowKey||"")}));
+      const support=(await listTeacherSupport(schoolId)).filter(x=>x.courseType==="practice"&&x.endDate>=new Date(Date.now()-180*86400000).toISOString().slice(0,10)).map(x=>({email:x.teacherEmail,teacherName:x.teacherName,temporary:true,startDate:x.startDate,endDate:x.endDate,status:x.status}));
+      teachers=[...new Map([...permanent,...support].map(x=>[x.email,x])).values()];
+    }
     return json({items,...(teachers?{teachers}:{})});
   }
 
@@ -92,7 +97,7 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
         :String(x.eventId||rowKey("evt"));
       const teacherEmail=String(x.teacherEmail||"").trim().toLowerCase();
       if(x.requiresAttendance===true&&String(x.eventType||"general")!=="competition_training")return json({error:"目前僅比賽加練支援獨立點名"},400);
-      if(teacherEmail){const t=await getTeacherDirectory(teacherEmail,schoolId);if(!t||String(t.status||"active")!=="active")return json({error:"點名老師需為本校啟用中的老師帳號"},400)}
+      if(teacherEmail){const t=await teacherForDate(teacherEmail,schoolId,eventDate);if(!t||t.temporary&&t.courseType!=="practice")return json({error:"點名老師需在活動日期具備本校加練權限"},400)}
       const entity={partitionKey:sid,rowKey:deterministic,schoolId:sid,eventType:String(x.eventType||"general").slice(0,40),title:String(x.title||"活動").slice(0,120),eventDate,startTime,endTime,timeLabel:String(x.timeLabel||"").slice(0,60),targetGroups:String(x.targetGroups||"ALL").slice(0,80),teacherName:String(x.teacherName||"").slice(0,80),teacherEmail,location:String(x.location||"").slice(0,120),note:String(x.note||"").slice(0,300),requiresAttendance:x.requiresAttendance===true,visibleToParents:x.visibleToParents!==false,status:"active",updatedAt:now,updatedBy:a.email};
       let old=null;try{old=await client.getEntity(sid,deterministic)}catch(e){if(e.statusCode!==404)throw e}
       const sameTeachingPlan=old&&String(old.eventType)===entity.eventType&&String(old.eventDate)===eventDate&&String(old.startTime)===startTime&&String(old.endTime)===endTime&&String(old.teacherName||"")===entity.teacherName;
@@ -117,8 +122,8 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
       if(String(old.status||"active")!=="active"||String(old.eventDate||"")>day||(String(old.eventDate||"")===day&&(!old.endTime||String(old.endTime)>time)))return json({error:"加練尚未結束或已取消，不能確認工時"},400);
       const email=String(body.teacherEmail||"").trim().toLowerCase(),minutes=Number(body.minutes);
       if(!email||!Number.isInteger(minutes)||minutes<1||minutes>600)return json({error:"請選擇老師並填寫 1 至 600 分鐘的實際授課時間"},400);
-      const teacher=await getTeacherDirectory(email,schoolId);
-      if(!teacher||String(teacher.status||"active")!=="active")return json({error:"授課老師需為本校啟用中的老師帳號"},400);
+      const teacher=await teacherForDate(email,schoolId,String(old.eventDate||""),{historical:true});
+      if(!teacher||teacher.temporary&&teacher.courseType!=="practice")return json({error:"授課老師需在活動日期具備本校加練權限"},400);
       const entity={...old,partitionKey:sid,rowKey:eventId,teachingTeacherEmail:email,teachingTeacherName:String(teacher.teacherName||email),teachingMinutes:minutes,teachingConfirmedAt:now,teachingConfirmedBy:a.email,updatedAt:now,updatedBy:a.email};
       await client.upsertEntity(entity,"Replace");return json({ok:true,item:eventView(entity,true)});
     }
@@ -132,7 +137,7 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
   }
   const status=body.action==="cancel"?"cancelled":body.action==="restore"?"active":String(body.status||old.status||"active");
   const teacherEmail=String(body.teacherEmail??old.teacherEmail??"").trim().toLowerCase();
-  if(teacherEmail){const t=await getTeacherDirectory(teacherEmail,schoolId);if(!t||String(t.status||"active")!=="active")return json({error:"點名老師需為本校啟用中的老師帳號"},400)}
+  if(teacherEmail){const t=await teacherForDate(teacherEmail,schoolId,String(body.eventDate??old.eventDate??""));if(!t||t.temporary&&t.courseType!=="practice")return json({error:"點名老師需在活動日期具備本校加練權限"},400)}
   const entity={...old,partitionKey:sid,rowKey:eventId,status,title:String((body.title??old.title)||"").slice(0,120),eventDate:String((body.eventDate??old.eventDate)||""),startTime:String((body.startTime??old.startTime)||""),endTime:String((body.endTime??old.endTime)||""),timeLabel:String((body.timeLabel??old.timeLabel)||"").slice(0,60),targetGroups:String((body.targetGroups??old.targetGroups)||"ALL").slice(0,80),teacherName:String((body.teacherName??old.teacherName)||"").slice(0,80),teacherEmail,location:String((body.location??old.location)||"").slice(0,120),note:String((body.note??old.note)||"").slice(0,300),requiresAttendance:body.requiresAttendance??old.requiresAttendance??false,visibleToParents:body.visibleToParents??old.visibleToParents??true,updatedAt:now,updatedBy:a.email};
   if(!validDate(entity.eventDate)||!validTime(entity.startTime)||!validTime(entity.endTime))return json({error:"日期或時間格式不正確"},400);
   if(entity.requiresAttendance===true&&entity.eventType!=="competition_training")return json({error:"目前僅比賽加練支援獨立點名"},400);

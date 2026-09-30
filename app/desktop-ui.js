@@ -12,6 +12,7 @@
       item("globalOverview","🌐","跨校總覽","#globalOverview"),
       item("globalOnboarding","🚀","第二校上線","#globalOnboarding"),
       item("globalOperations","📊","月度工時","#globalOperations"),
+      item("globalTeacherSupport","👩‍🏫","師資調度／展演","#globalTeacherSupport"),
       item("globalHealth","🩺","平台健康","#globalHealth"),
       item("globalSchools","🏫","學校管理","#globalSchools"),
       item("globalSettings","⚙️","進階設定","#globalSettings")

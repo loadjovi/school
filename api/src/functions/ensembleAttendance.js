@@ -1,5 +1,5 @@
 import { app } from "@azure/functions";
-import { getTenantContext, ensureEnsembleAccess, json } from "../lib/auth.js";
+import { getTenantContext, ensureEnsembleAccess, ensureTemporaryCourseAccess, json } from "../lib/auth.js";
 import { ensureTenantTables, table, rowKey, getStudentMaster, tenantStudentPartition, listActivityRange, activityStudentId } from "../lib/storage.js";
 import { enforceScheduledCourse } from "./schoolSchedule.js";
 
@@ -29,6 +29,7 @@ app.http("ensembleAttendance",{
       const sessionDate=String(request.query.get("sessionDate")||"").trim();
       const groupName=String(request.query.get("groupName")||"").trim();
       if(!sessionDate||!groupName)return json({error:"缺少日期或團別"},400);
+      if(!ensureTemporaryCourseAccess(a,"ensemble",sessionDate))return json({error:"此日期不在短期代課期間"},403);
       if(!["A","B"].includes(groupName)&&a.role!=="admin")return json({error:"目前團體課僅開放 A、B 團"},400);
       if(!ensureEnsembleAccess(a,{groupName}))return json({error:"無此團體課權限"},403);
       const schedulePolicy=await enforceScheduledCourse(schoolId,sessionDate,"ensemble",groupName);
@@ -50,6 +51,7 @@ app.http("ensembleAttendance",{
     const sessionDate=String(body.sessionDate||"").trim();
     const groupName=String(body.groupName||"").trim();
     if(!sessionDate||!groupName||!items.length)return json({error:"缺少團別、日期或點名資料"},400);
+    if(!ensureTemporaryCourseAccess(a,"ensemble",sessionDate))return json({error:"此日期不在短期代課期間"},403);
     if(!["A","B"].includes(groupName)&&a.role!=="admin")return json({error:"目前團體課僅開放 A、B 團"},400);
     if(!ensureEnsembleAccess(a,{groupName}))return json({error:"無此團體課權限"},403);
     const schedulePolicy=await enforceScheduledCourse(schoolId,sessionDate,"ensemble",groupName);

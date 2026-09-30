@@ -1,6 +1,6 @@
 import { app } from "@azure/functions";
 import { getAccess, json, parseJsonEnv } from "../lib/auth.js";
-import { touchTeacherLastLogin, listTenantRolesByEmail, listTenantDirectory, getTenantDirectory, getTeacherDirectory, getMappedStudentsByEmail, defaultTenantId, saveUserIdentity } from "../lib/storage.js";
+import { touchTeacherLastLogin, listTenantRolesByEmail, listTenantDirectory, getTenantDirectory, getTeacherDirectory, activeTeacherSupport, getMappedStudentsByEmail, defaultTenantId, saveUserIdentity } from "../lib/storage.js";
 app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(request)=>{
   const a=await getAccess(request);
   if(!a.authenticated)return json({error:"Unauthorized"},401);
@@ -32,11 +32,16 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
   const defaultId=defaultTenantId();
   const staticMap=parseJsonEnv("STUDENT_MAP_JSON",{}),staticParentDefault=!!staticMap[String(a.email||"").toLowerCase()];
   let tenants=[];try{tenants=await listTenantDirectory()}catch(e){console.warn("identity tenant lookup failed",e)}
+  const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   for(const tenant of tenants.filter(x=>["active","onboarding"].includes(String(x.status||"")))){
     const schoolId=String(tenant.rowKey||tenant.schoolId||""),schoolName=String(tenant.schoolName||schoolId),tenantStatus=String(tenant.status||"active");
     try{
       const teacher=await getTeacherDirectory(a.email,schoolId);
       if(teacher?.status==="active")addContext({key:"teacher:"+schoolId,type:"teacher",role:"teacher",label:schoolName+"｜老師",icon:"🎻",schoolId,schoolName,status:tenantStatus});
+      else if(!teacher){
+        const support=await activeTeacherSupport(a.email,schoolId,today);
+        if(support&&(await getTeacherDirectory(a.email,support.sourceSchoolId))?.status==="active")addContext({key:"teacher:"+schoolId,type:"teacher",role:"teacher",label:schoolName+"｜短期支援（至 "+support.endDate+"）",icon:"🎻",schoolId,schoolName,status:tenantStatus});
+      }
     }catch(e){console.warn("teacher context lookup failed",schoolId,e)}
     try{
       const staticParent=schoolId===defaultId&&staticParentDefault,dynamic=staticParent?[]:await getMappedStudentsByEmail(a.email,schoolId);
@@ -64,7 +69,7 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
     schoolId:a.schoolId||null,schoolName:a.schoolName||"",systemName:a.systemName||"",
     memberships:a.memberships||[],capabilities:a.capabilities||{},
     assignments:a.sectionAssignments||a.assignments||[],ensembleGroups:a.ensembleGroups||[],
-    comprehensiveEnabled:a.comprehensiveEnabled===true,privateStudentIds:a.privateStudentIds||[],
+    comprehensiveEnabled:a.comprehensiveEnabled===true,privateStudentIds:a.privateStudentIds||[],temporaryAssignment:a.temporaryAssignment||null,
     contexts,activeContextKey
   });
 }});

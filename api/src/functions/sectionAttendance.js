@@ -1,5 +1,5 @@
 import { app } from "@azure/functions";
-import { getTenantContext, ensureSectionAccess, json } from "../lib/auth.js";
+import { getTenantContext, ensureSectionAccess, ensureTemporaryCourseAccess, json } from "../lib/auth.js";
 import { ensureTenantTables, table, rowKey, getStudentMaster, tenantStudentPartition, listActivityRange, activityStudentId } from "../lib/storage.js";
 import { enforceScheduledCourse } from "./schoolSchedule.js";
 
@@ -31,6 +31,7 @@ app.http("sectionAttendance",{
       const groupName=String(request.query.get("groupName")||"").trim();
       const section=String(request.query.get("section")||"").trim();
       if(!sessionDate||!groupName||!section)return json({error:"缺少日期、團別或分部"},400);
+      if(!ensureTemporaryCourseAccess(a,"section",sessionDate))return json({error:"此日期不在短期代課期間"},403);
       if(!ensureSectionAccess(a,{groupName,section}))return json({error:"無此分部課權限"},403);
       const schedulePolicy=await enforceScheduledCourse(schoolId,sessionDate,"section",groupName);
       if(schedulePolicy.enforced&&!schedulePolicy.allowed)return json({error:schedulePolicy.reason,scheduleBlocked:true},409);
@@ -52,6 +53,7 @@ app.http("sectionAttendance",{
     const requestedGroup=String(body.groupName||"").trim();
     const requestedSection=String(body.section||"").trim();
     if(!sessionDate||!requestedGroup||!requestedSection||!items.length)return json({error:"缺少日期、團別、分部或點名資料"},400);
+    if(!ensureTemporaryCourseAccess(a,"section",sessionDate))return json({error:"此日期不在短期代課期間"},403);
     if(!ensureSectionAccess(a,{groupName:requestedGroup,section:requestedSection}))return json({error:"無此分部課權限"},403);
     const schedulePolicy=await enforceScheduledCourse(schoolId,sessionDate,"section",requestedGroup);
     if(schedulePolicy.enforced&&!schedulePolicy.allowed)return json({error:schedulePolicy.reason,scheduleBlocked:true},409);

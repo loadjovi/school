@@ -1,5 +1,5 @@
 import { app } from "@azure/functions";
-import { getTenantContext, json } from "../lib/auth.js";
+import { getTenantContext, ensureComprehensiveAccess, ensureTemporaryCourseAccess, json } from "../lib/auth.js";
 import { ensureTenantTables, table, rowKey, getStudentMaster, getTeacherProfile, tenantStudentPartition, listActivityRange, activityStudentId } from "../lib/storage.js";
 import { enforceScheduledCourse } from "./schoolSchedule.js";
 
@@ -9,6 +9,7 @@ const safe=v=>String(v||"").replaceAll("'","''");
 async function canUse(access,schoolId){
   if(access.role==="admin")return true;
   if(!access.capabilities?.teacherSettings)return false;
+  if(access.temporaryAssignment)return access.temporaryAssignment.courseType==="comprehensive";
   const p=await getTeacherProfile(access.email,schoolId);
   return p?.comprehensiveEnabled===true;
 }
@@ -35,6 +36,7 @@ app.http("comprehensiveAttendance",{
     if(request.method==="GET"){
       const sessionDate=String(request.query.get("sessionDate")||"").trim();
       if(!sessionDate)return json({error:"缺少上課日期"},400);
+      if(!ensureTemporaryCourseAccess(access,"comprehensive",sessionDate))return json({error:"此日期不在短期代課期間"},403);
       const schedulePolicy=await enforceScheduledCourse(schoolId,sessionDate,"comprehensive");
       if(schedulePolicy.enforced&&!schedulePolicy.allowed)return json({error:schedulePolicy.reason,scheduleBlocked:true},409);
       const latest=new Map();
@@ -46,7 +48,7 @@ app.http("comprehensiveAttendance",{
         const oldStamp=old?`${String(old.createdAt||"")}|${String(old.rowKey||"")}`:"";
         if(!old||stamp>=oldStamp)latest.set(id,e);
       }
-      const rows=[...latest.values()],last=rows.slice().sort((x,y)=>String(y.createdAt||"").localeCompare(String(x.createdAt||"")))[0];
+      const rows=[...latest.values()].filter(x=>!access.temporaryAssignment||ensureComprehensiveAccess(access,x)),last=rows.slice().sort((x,y)=>String(y.createdAt||"").localeCompare(String(x.createdAt||"")))[0];
       return json({sessionDate,recordedBy:String(last?.teacherName||last?.teacher||""),recordedByEmail:String(last?.teacher||""),recordedByRole:String(last?.actorRole||"teacher"),lastSavedAt:String(last?.createdAt||""),items:rows.map(e=>({studentId:activityStudentId(e),groupName:String(e.groupName||""),section:String(e.section||""),status:String(e.status||"present"),minutes:Number(e.minutes||0),teacher:String(e.teacher||""),teacherName:String(e.teacherName||e.teacher||""),actorRole:String(e.actorRole||"teacher"),createdAt:String(e.createdAt||"")}))});
     }
 
@@ -54,6 +56,7 @@ app.http("comprehensiveAttendance",{
     const sessionDate=String(body.sessionDate||"").trim();
     const items=Array.isArray(body.items)?body.items:[];
     if(!sessionDate||!items.length)return json({error:"缺少日期或點名資料"},400);
+    if(!ensureTemporaryCourseAccess(access,"comprehensive",sessionDate))return json({error:"此日期不在短期代課期間"},403);
     const schedulePolicy=await enforceScheduledCourse(schoolId,sessionDate,"comprehensive");
     if(schedulePolicy.enforced&&!schedulePolicy.allowed)return json({error:schedulePolicy.reason,scheduleBlocked:true},409);
     const now=new Date().toISOString();
@@ -61,6 +64,7 @@ app.http("comprehensiveAttendance",{
       const master=await getStudentMaster(item.studentId,schoolId);
       if(!master)return json({error:`找不到學生 ${item.studentId}`},404);
       if(master.status==="inactive"||!allowedGroups.has(String(master.groupName||"")))return json({error:`學生不在綜合課名單：${master.studentName}`},400);
+      if(!ensureComprehensiveAccess(access,master))return json({error:`無此團別點名權限：${master.studentName}`},403);
       const oldRows=await existingRows(client,schoolId,item.studentId,sessionDate);
       for(const old of oldRows)await client.deleteEntity(String(old.partitionKey),String(old.rowKey));
       const status=String(item.status||"present");

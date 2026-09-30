@@ -58,6 +58,7 @@ app.http("attendanceReport",{
   handler:async(request)=>{
     const context=await getTenantContext(request);if(context.error)return context.error;
     const {access:a,schoolId}=context;
+    if(a.temporaryAssignment)return json({error:"短期代課僅可查看指定課堂的點名資料"},403);
     const isTeacher=!!a.capabilities?.teacherSettings;
     if(a.role!=="admin"&&!isTeacher)return json({error:"Forbidden"},403);
     const {month,start,end}=monthRange(clean(request.query.get("month"),12));

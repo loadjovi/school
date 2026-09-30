@@ -18,6 +18,10 @@ app.http("teacherProfile",{
     const context=await getTenantContext(request);if(context.error)return context.error;
     const {access,schoolId}=context;
     if(access.role!=="admin"&&!access.capabilities?.teacherSettings)return json({error:"此 Gmail 尚未由管理員啟用為老師帳號。"},403);
+    if(access.temporaryAssignment){
+      if(request.method!=="GET")return json({error:"短期教學範圍由 Global 指定，無法自行變更"},403);
+      return json({email:access.email,temporaryAssignment:access.temporaryAssignment,profile:{sectionAssignments:access.sectionAssignments||[],ensembleGroups:access.ensembleGroups||[],comprehensiveEnabled:access.comprehensiveEnabled===true,privateStudentIds:[]},students:access.students||[],choices:{groups:["A","B","儲備"],sections:["小提一部","小提二部","中提","大提","低音提"],ensembleGroups:["A","B"]}});
+    }
 
     const email=access.email;
     const current=await getTeacherProfile(email,schoolId);

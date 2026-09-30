@@ -25,6 +25,10 @@
   function teacherSettingsPage(){
     const d=state.teacherSetup;
     if(!d)return `<div class="card"><h2>我的教學設定</h2><div class="notice">正在載入學生與課程資料…</div></div>`;
+    if(d.temporaryAssignment){
+      const t=d.temporaryAssignment,names={section:"分部課",ensemble:"合奏課",comprehensive:"綜合課",practice:"加練課"};
+      return `<div class="card hero"><h2>🎻 短期跨校支援</h2><div class="notice">支援期間：<b>${esc(t.startDate)} 至 ${esc(t.endDate)}</b><br>課別：${esc(names[t.courseType]||t.courseType)}｜${esc(t.groupName==="ALL"?"全團":t.groupName||"—")}${t.section?"｜"+esc(t.section):""}<br>期滿或 Global 提前取消後，該校代課權限即失效。教學範圍由 Global 管理員設定。</div></div>`;
+    }
     const p=d.profile||{},sectionSet=new Set((p.sectionAssignments||[]).map(x=>`${x.groupName}|${x.section}`));
     const ensembleSet=new Set((p.ensembleGroups||[]).map(String));
     const groups=d.choices?.groups||["A","B","儲備"],sections=d.choices?.sections||["小提一部","小提二部","中提","大提"];
@@ -139,12 +143,12 @@
   if(teacherAccount()){
     if(state.teacherSetup){
       const c=state.me?.capabilities||{};
-      if(!c.section&&!c.ensemble&&!c.private&&!state.teacherSetup?.profile?.comprehensiveEnabled)state.page="teacherSettings";
+      if(!c.section&&!c.ensemble&&!c.private&&!c.practice&&!state.teacherSetup?.profile?.comprehensiveEnabled)state.page="teacherSettings";
       if(!window.__roleModuleBootstrap)render();
     }else{
       state.teacherSetupInitPromise=state.teacherSetupInitPromise||loadTeacherSettings().then(()=>{
         const c=state.me?.capabilities||{};
-        if(!c.section&&!c.ensemble&&!c.private&&!state.teacherSetup?.profile?.comprehensiveEnabled)state.page="teacherSettings";
+        if(!c.section&&!c.ensemble&&!c.private&&!c.practice&&!state.teacherSetup?.profile?.comprehensiveEnabled)state.page="teacherSettings";
         if(!window.__roleModuleBootstrap)render();
       });
     }
