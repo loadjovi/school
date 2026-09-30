@@ -144,6 +144,9 @@
   function globalRating(value){return value===null||value===undefined?"—":Number(value).toFixed(1)+" / 5"}
   const globalCourseLabels={section:"分部課",ensemble:"合奏課",comprehensive:"綜合課",practice:"加練課",privateLesson:"個別課"};
   const globalCourseIcons={section:"🎼",ensemble:"🎻",comprehensive:"🎶",practice:"⏱️",privateLesson:"👤"};
+  const globalCourseTypes=Object.keys(globalCourseLabels);
+  const globalTeacherKey=(school,teacher)=>String(teacher.teacherEmail||"").trim().toLowerCase()||String(school.schoolId||"")+":"+String(teacher.teacherKey||teacher.teacherName||"");
+  const globalActionArg=value=>esc(JSON.stringify(String(value||"")));
 
   function globalCourseCard(key,item){
     item=item||{};const privateType=key==="privateLesson",unavailable=item.available===false;
@@ -158,10 +161,10 @@
     return '<div class="global-ops-course-card '+(unavailable?"is-unavailable":"")+'"><b>'+globalCourseIcons[key]+' '+globalCourseLabels[key]+'</b><strong>'+main+'</strong><small>'+detail+'</small></div>';
   }
   function crossSchoolTeacherTotals(schools){
-    const map=new Map(),types=["section","ensemble","comprehensive","practice","privateLesson"];
+    const map=new Map(),types=globalCourseTypes;
     for(const school of schools||[])for(const teacher of school.teachers||[]){
-      const email=String(teacher.teacherEmail||"").toLowerCase(),key=email||school.schoolId+":"+String(teacher.teacherKey||teacher.teacherName||"");
-      if(!map.has(key))map.set(key,{teacherName:teacher.teacherName||email,schools:[],minutes:0,course:Object.fromEntries(types.map(type=>[type,{sessions:0,minutes:0}]))});
+      const key=globalTeacherKey(school,teacher);
+      if(!map.has(key))map.set(key,{key,teacherName:teacher.teacherName||teacher.teacherEmail||key,schools:[],minutes:0,course:Object.fromEntries(types.map(type=>[type,{sessions:0,minutes:0}]))});
       const total=map.get(key);total.schools.push(school.schoolName||school.schoolId);total.minutes+=Number(teacher.totalMinutes||0);
       for(const type of types){total.course[type].sessions+=Number(teacher.course?.[type]?.sessions||0);total.course[type].minutes+=Number(teacher.course?.[type]?.minutes||0)}
     }
@@ -175,9 +178,9 @@
   }
   function globalOpsLayer1(report,busy){
     const total=report.totals||{},schools=(report.schools||[]);
-    const teachers=crossSchoolTeacherTotals(schools),types=["section","ensemble","comprehensive","practice","privateLesson"];
+    const teachers=crossSchoolTeacherTotals(schools),types=globalCourseTypes;
     const courseTotals=Object.fromEntries(types.map(type=>[type,schools.reduce((out,school)=>{const course=school.courseSummary?.[type]||{};out.sessions+=Number(course.sessions||0);out.minutes+=Number(course.minutes||0);return out},{sessions:0,minutes:0})]));
-    const teacherRows=teachers.map(t=>'<div class="global-ops-teacher"><div class="global-ops-teacher-head"><div><b>👤 '+esc(t.teacherName)+'</b><small>'+esc([...new Set(t.schools)].join("、"))+'</small></div><strong class="global-ops-teacher-hours">'+globalHours(t.minutes/60)+'</strong></div><div class="global-ops-teacher-breakdown">'+types.map(type=>'<span>'+globalCourseIcons[type]+' '+globalCourseLabels[type]+'<br><b>'+Number(t.course[type].sessions)+' 堂｜'+globalHours(t.course[type].minutes/60)+'</b></span>').join("")+'</div></div>').join("");
+    const teacherRows=teachers.map(t=>'<div class="global-ops-teacher"><div class="global-ops-teacher-head"><div><b>👤 '+esc(t.teacherName)+'</b><small>'+esc([...new Set(t.schools)].join("、"))+'</small></div><strong class="global-ops-teacher-hours">'+globalHours(t.minutes/60)+'</strong></div><div class="global-ops-teacher-breakdown">'+types.map(type=>'<span>'+globalCourseIcons[type]+' '+globalCourseLabels[type]+'<br><b>'+Number(t.course[type].sessions)+' 堂｜'+globalHours(t.course[type].minutes/60)+'</b></span>').join("")+'</div><button class="secondary" style="width:auto;margin:9px 0 0;padding:7px 10px" onclick="exportGlobalTeacherAttendance('+globalActionArg(t.key)+')">⬇️ 匯出這位老師課堂明細 CSV</button></div>').join("");
     const cards=schools.map(school=>{
       const s=school.summary||{},att=s.groupAttendance||{};
       return '<div class="global-ops-school-card"><div class="student"><div><b style="font-size:16px">🏫 '+esc(school.schoolName||school.schoolId)+'</b><small>'+esc(st[school.status]||school.status||"")+(school.cityName?'｜'+esc(school.cityName):'')+'</small></div><button class="secondary" style="width:auto;margin:0" onclick="openGlobalOpsSchool(\''+esc(school.schoolId)+'\')">查看老師工時 →</button></div>'+
@@ -187,7 +190,7 @@
     }).join("");
     return '<div class="card"><div class="section-title"><div><h2>📊 月度課務／師資工時</h2><div class="muted">第一層｜各校月度總覽</div></div><span class="badge ok">'+esc(report.month||"")+'</span></div>'+
       '<div class="notice"><b>統計原則</b><br>分部、合奏、綜合課依已完成點名認列；個課依老師完課紀錄認列；加練依學校管理員確認的實際授課分鐘認列。未確認的行事曆活動不列入工時。按老師 Gmail 合併跨校工時，保留各校明細供核對。</div>'+
-      '<div class="row2" style="align-items:end"><div><label>統計月份</label><input type="month" value="'+esc(report.month||state.globalTenant.attendanceMonth)+'" onchange="changeGlobalAttendanceMonth(this.value)" '+(busy?'disabled':'')+'></div><div><button class="secondary" style="width:100%" onclick="exportGlobalAttendance()" '+(busy?'disabled':'')+'>⬇️ 匯出老師月工時 CSV</button></div></div><button class="secondary" style="width:100%;margin-top:8px" onclick="refreshGlobalAttendance()" '+(busy?'disabled':'')+'>🔄 重新統計此月份</button>'+
+      '<div class="row2" style="align-items:end"><div><label>統計月份</label><input type="month" value="'+esc(report.month||state.globalTenant.attendanceMonth)+'" onchange="changeGlobalAttendanceMonth(this.value)" '+(busy?'disabled':'')+'></div><div><button class="secondary" style="width:100%" onclick="exportGlobalAttendance()" '+(busy?'disabled':'')+'>⬇️ 匯出全體老師月工時 CSV（含五類上課日期）</button></div></div><button class="secondary" style="width:100%;margin-top:8px" onclick="refreshGlobalAttendance()" '+(busy?'disabled':'')+'>🔄 重新統計此月份</button><small style="display:block;margin-top:7px">總表每校每位老師一列；日期欄同日多堂會標註堂數。下方可依老師匯出逐堂明細，跨校授課會合併列出。</small>'+
       '<div class="global-ops-grid"><div class="global-ops-stat"><b>'+Number(total.groupSessions||0)+'</b><small>跨校團體課堂數</small></div><div class="global-ops-stat"><b>'+attendanceRateText(total.groupAttendance?.attendanceRate)+'</b><small>跨校團體課到課率</small></div><div class="global-ops-stat"><b>'+Number(total.privateLessons||0)+'</b><small>個課完成堂數</small></div><div class="global-ops-stat"><b>'+globalHours(total.totalTeachingHours||0)+'</b><small>老師總教學時數</small></div><div class="global-ops-stat"><b>'+globalRating(total.parentFeedbackAverage)+'</b><small>家長回饋｜'+Number(total.parentFeedbackCount||0)+' 筆</small></div></div>'+
       '<h3 style="margin:16px 0 6px">五類課程月度總計</h3><div class="global-ops-course-grid">'+types.map(type=>'<div class="global-ops-course-card"><b>'+globalCourseIcons[type]+' '+globalCourseLabels[type]+'</b><strong>'+courseTotals[type].sessions+' 堂</strong><small>已認列 '+globalHours(courseTotals[type].minutes/60)+'</small></div>').join("")+'</div>'+
       '<h3 style="margin:16px 0 6px">跨校老師月工時（'+teachers.length+' 人）</h3>'+(teacherRows||'<div class="notice">本月尚無老師資料。</div>')+
@@ -199,7 +202,7 @@
     const s=school.summary||{},teachers=school.teachers||[],courses=school.courseSummary||{};
     const rows=teachers.map(t=>{
       const c=t.course||{},privateInfo=c.privateLesson||{};
-      return '<div class="global-ops-teacher"><div class="global-ops-teacher-head"><div><b>👤 '+esc(t.teacherName||"老師")+'</b><small>家長回饋 '+Number(t.parentFeedbackCount||0)+' 筆｜'+globalRating(t.parentFeedbackAverage)+'</small></div><div><div class="global-ops-teacher-hours">'+globalHours(t.totalHours||0)+'</div><button class="secondary" style="width:auto;margin:5px 0 0;padding:6px 9px" onclick="openGlobalOpsTeacher(\''+esc(school.schoolId)+'\',\''+encodeURIComponent(String(t.teacherKey||""))+'\')">查看課堂稽核 →</button></div></div>'+
+      return '<div class="global-ops-teacher"><div class="global-ops-teacher-head"><div><b>👤 '+esc(t.teacherName||"老師")+'</b><small>家長回饋 '+Number(t.parentFeedbackCount||0)+' 筆｜'+globalRating(t.parentFeedbackAverage)+'</small></div><div><div class="global-ops-teacher-hours">'+globalHours(t.totalHours||0)+'</div><button class="secondary" style="width:auto;margin:5px 0 0;padding:6px 9px" onclick="openGlobalOpsTeacher(\''+esc(school.schoolId)+'\',\''+encodeURIComponent(String(t.teacherKey||""))+'\')">查看課堂稽核 →</button><button class="secondary" style="width:auto;margin:5px 0 0;padding:6px 9px" onclick="exportGlobalTeacherAttendance('+globalActionArg(globalTeacherKey(school,t))+','+globalActionArg(school.schoolId)+')">⬇️ 匯出逐堂明細 CSV</button></div></div>'+
         '<div class="global-ops-teacher-breakdown">'+
           '<span>🎼 分部<br><b>'+Number(c.section?.sessions||0)+' 堂｜'+globalHours(c.section?.hours||0)+'</b></span>'+
           '<span>🎻 合奏<br><b>'+Number(c.ensemble?.sessions||0)+' 堂｜'+globalHours(c.ensemble?.hours||0)+'</b></span>'+
@@ -229,7 +232,7 @@
     }).join("");
     return '<div class="card">'+globalOpsBreadcrumb(school,teacher)+'<div class="section-title"><div><h2>🔎 '+esc(teacher.teacherName)+'｜課堂稽核</h2><div class="muted">第三層｜逐堂核對日期、課別、點名與工時來源</div></div><span class="badge ok">'+globalHours(teacher.totalHours||0)+'</span></div>'+
       '<div class="global-ops-grid"><div class="global-ops-stat"><b>'+Number(course.section?.sessions||0)+'</b><small>分部課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.ensemble?.sessions||0)+'</b><small>合奏課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.comprehensive?.sessions||0)+'</b><small>綜合課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.practice?.sessions||0)+'</b><small>加練課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.privateLesson?.sessions||0)+'</b><small>個課堂數</small></div></div>'+
-      '<div class="notice" style="margin-top:10px"><b>授課老師 ≠ 點名人</b><br>若 School Admin 協助點名，工時不會直接算到管理員；Global 會優先依老師授課設定與老師本人點名判斷。無法唯一判定的課堂不計入老師工時，避免誤算。</div>'+
+      '<div class="notice" style="margin-top:10px"><b>授課老師 ≠ 點名人</b><br>若 School Admin 協助點名，工時不會直接算到管理員；Global 會優先依老師授課設定與老師本人點名判斷。無法唯一判定的課堂不計入老師工時，避免誤算。</div><button class="secondary" style="width:auto;margin-top:9px" onclick="exportGlobalTeacherAttendance('+globalActionArg(globalTeacherKey(school,teacher))+','+globalActionArg(school.schoolId)+')">⬇️ 匯出這位老師逐堂明細 CSV</button>'+
       '<h3 style="margin:16px 0 6px">本月課堂明細</h3>'+(audits||'<div class="notice">本月沒有可稽核的課堂。</div>')+
     '</div>';
   }
@@ -324,15 +327,47 @@
     try{state.globalTenant.attendance=await api("/api/global-attendance?month="+encodeURIComponent(state.globalTenant.attendanceMonth))}catch(e){toast("❌ 月度工時讀取失敗："+e.message)}
     state.globalTenant.attendanceLoading=false;draw();
   };
+  function globalCourseDates(teacher,type){
+    const counts=new Map();
+    for(const session of teacher.sessions||[]){
+      if(session.courseType!==type)continue;
+      const date=String(session.eventDate||"").trim()||"日期未記錄";
+      counts.set(date,(counts.get(date)||0)+1);
+    }
+    return [...counts].sort(([a],[b])=>a.localeCompare(b)).map(([date,count])=>date+(count>1?"（"+count+" 堂）":"")).join("；");
+  }
+  function downloadGlobalCsv(rows,filename){
+    const cell=value=>{let valueText=String(value??"");if(/^\s*[=+\-@]/.test(valueText))valueText="'"+valueText;return '"'+valueText.replace(/"/g,'""')+'"'};
+    const blob=new Blob(["\ufeff"+rows.map(row=>row.map(cell).join(",")).join("\r\n")],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),link=document.createElement("a");
+    link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+  const globalCsvFilenamePart=value=>String(value||"teacher").replace(/[\\/:*?"<>|\x00-\x1f]/g,"_").trim().slice(0,80)||"teacher";
   window.exportGlobalAttendance=function(){
     const report=state.globalTenant.attendance;if(!report)return;
-    const rows=[["月份","schoolId","學校","老師","總教學時數","分部課堂數","分部課時數","合奏課堂數","合奏課時數","綜合課堂數","綜合課時數","加練課堂數","加練課時數","個課堂數","個課時數","家長回饋筆數","家長平均星等"]];
+    const rows=[["月份","schoolId","學校","老師","總教學時數","分部課堂數","分部課時數","合奏課堂數","合奏課時數","綜合課堂數","綜合課時數","加練課堂數","加練課時數","個課堂數","個課時數","家長回饋筆數","家長平均星等","分部課上課日期","合奏課上課日期","綜合課上課日期","加練課上課日期","個別課上課日期"]];
     for(const school of report.schools||[]){
-      for(const t of school.teachers||[]){const c=t.course||{};rows.push([report.month,school.schoolId,school.schoolName,t.teacherName,Number(t.totalHours||0),Number(c.section?.sessions||0),Number(c.section?.hours||0),Number(c.ensemble?.sessions||0),Number(c.ensemble?.hours||0),Number(c.comprehensive?.sessions||0),Number(c.comprehensive?.hours||0),Number(c.practice?.sessions||0),Number(c.practice?.hours||0),Number(c.privateLesson?.sessions||0),Number(c.privateLesson?.hours||0),Number(t.parentFeedbackCount||0),t.parentFeedbackAverage==null?"":Number(t.parentFeedbackAverage)])}
+      for(const t of school.teachers||[]){const c=t.course||{};rows.push([report.month,school.schoolId,school.schoolName,t.teacherName,Number(t.totalHours||0),Number(c.section?.sessions||0),Number(c.section?.hours||0),Number(c.ensemble?.sessions||0),Number(c.ensemble?.hours||0),Number(c.comprehensive?.sessions||0),Number(c.comprehensive?.hours||0),Number(c.practice?.sessions||0),Number(c.practice?.hours||0),Number(c.privateLesson?.sessions||0),Number(c.privateLesson?.hours||0),Number(t.parentFeedbackCount||0),t.parentFeedbackAverage==null?"":Number(t.parentFeedbackAverage),...globalCourseTypes.map(type=>globalCourseDates(t,type))])}
     }
-    const cell=value=>{let text=String(value??"");if(/^[=+\-@]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"'};
-    const blob=new Blob(["\ufeff"+rows.map(row=>row.map(cell).join(",")).join("\r\n")],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),link=document.createElement("a");
-    link.href=url;link.download="global-teacher-workload-"+report.month+".csv";document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    downloadGlobalCsv(rows,"global-teacher-workload-"+report.month+".csv");
+  };
+  window.exportGlobalTeacherAttendance=function(key,schoolId){
+    const report=state.globalTenant.attendance;if(!report)return;
+    const selected=[];
+    for(const school of report.schools||[]){
+      if(schoolId&&String(school.schoolId)!==String(schoolId))continue;
+      for(const teacher of school.teachers||[])if(globalTeacherKey(school,teacher)===String(key))selected.push({school,teacher});
+    }
+    if(!selected.length){toast("找不到這位老師的月度資料，請重新統計月份");return}
+    const lessons=selected.flatMap(({school,teacher})=>(teacher.sessions||[]).filter(session=>globalCourseTypes.includes(session.courseType)).map(session=>({school,teacher,session})));
+    if(!lessons.length){toast("這位老師本月沒有可匯出的課堂明細");return}
+    lessons.sort((a,b)=>String(a.session.eventDate||"").localeCompare(String(b.session.eventDate||""))||globalCourseTypes.indexOf(a.session.courseType)-globalCourseTypes.indexOf(b.session.courseType)||String(a.school.schoolId).localeCompare(String(b.school.schoolId))||String(a.session.sessionKey||"").localeCompare(String(b.session.sessionKey||"")));
+    const rows=[["月份","schoolId","學校","老師","上課日期","課別","授課分鐘","教學時數","課程／團別","分部","工時認列來源","點名／紀錄人"]];
+    for(const {school,teacher,session} of lessons){
+      rows.push([report.month,school.schoolId,school.schoolName,teacher.teacherName,String(session.eventDate||"").trim()||"日期未記錄",globalCourseLabels[session.courseType],Number(session.durationMinutes||0),Number(session.teachingHours||0),session.courseType==="practice"?session.courseLabel||"":session.groupName||"",session.section||"",session.teacherSource||"",session.recordedBy||""]);
+    }
+    const totalMinutes=lessons.reduce((sum,{session})=>sum+Number(session.durationMinutes||0),0);
+    rows.push(["合計","","",selected[0].teacher.teacherName,"","",totalMinutes,Math.round(totalMinutes/60*100)/100,"","","",""]);
+    downloadGlobalCsv(rows,"global-teacher-detail-"+report.month+"-"+globalCsvFilenamePart(selected[0].teacher.teacherName)+(schoolId?"-"+globalCsvFilenamePart(schoolId):"")+".csv");
   };
   window.refreshGlobalHealth=async function(){
     if(state.globalTenant.healthLoading)return;state.globalTenant.healthLoading=true;draw();
