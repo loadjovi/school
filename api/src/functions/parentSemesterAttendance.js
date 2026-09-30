@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, ensureStudentAccess, getStudentIdAliases, json } from "../lib/auth.js";
 import { listByStudent, getStudentMaster, semesterLabel, activityStudentId, ensureTenantTables, table, tenantStudentPartition } from "../lib/storage.js";
+import { uniquePracticeRows } from "../lib/practiceRecords.js";
 
 function safeInt(v){const n=Number.parseInt(String(v||""),10);return Number.isFinite(n)?n:0}
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
@@ -34,7 +35,7 @@ async function practiceForAliases(aliases,start,end,schoolId){
     const old=latest.get(key),stamp=`${String(row.createdAt||"")}|${String(row.rowKey||"")}`,oldStamp=old?`${String(old.createdAt||"")}|${String(old.rowKey||"")}`:"";
     if(!old||stamp>=oldStamp)latest.set(key,row);
   }
-  return [...latest.values()];
+  return uniquePracticeRows([...latest.values()]);
 }
 async function learningEvaluationsForAliases(aliases,schoolId){
   const rows=[],seen=new Set();

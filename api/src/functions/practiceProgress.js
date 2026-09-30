@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, getStudentAliasInfo, canonicalizeStudents, json } from "../lib/auth.js";
 import { listActivityRange, listStudentMaster, activityStudentId } from "../lib/storage.js";
+import { uniquePracticeRows } from "../lib/practiceRecords.js";
 
 function clean(v,max=20){return String(v||"").trim().slice(0,max)}
 function monthRange(raw){
@@ -63,7 +64,6 @@ app.http("practiceProgress",{
       const aliasSet=new Set(aliasInfo.aliases.map(String));
       const parentSet=new Set(aliasInfo.safeParentEmails.map(x=>String(x).toLowerCase()));
       const unique=new Map();
-      let matchedByIdCount=0,matchedByParentCount=0;
       for(const r of monthRows){
         const partition=activityStudentId(r);
         const creator=String(r.createdBy||"").trim().toLowerCase();
@@ -71,12 +71,11 @@ app.http("practiceProgress",{
         const byParent=!byId&&creator&&parentSet.has(creator);
         if(!byId&&!byParent)continue;
         const key=`${partition}|${String(r.rowKey||"")}`;
-        if(!unique.has(key)){
-          unique.set(key,r);
-          if(byId)matchedByIdCount++;else if(byParent)matchedByParentCount++;
-        }
+        if(!unique.has(key))unique.set(key,r);
       }
-      const rows=[...unique.values()];
+      const rows=uniquePracticeRows([...unique.values()]);
+      const matchedByIdCount=rows.filter(r=>aliasSet.has(activityStudentId(r))).length;
+      const matchedByParentCount=rows.length-matchedByIdCount;
       const records=rows.map(r=>viewPractice(r,qualifiedMinutes)).sort((a,b)=>
         String(b.practiceDate).localeCompare(String(a.practiceDate))||String(b.createdAt).localeCompare(String(a.createdAt))
       );

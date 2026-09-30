@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, ensureStudentAccess, getStudentIdAliases, json } from "../lib/auth.js";
 import { listByStudent, getStudentMaster, activityStudentId } from "../lib/storage.js";
+import { uniquePracticeRows } from "../lib/practiceRecords.js";
 import { resolveSchoolCourses } from "./schoolSchedule.js";
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
 function latestForDate(rows,date){return [...(rows||[])].filter(x=>String(x.eventDate||"").slice(0,10)===date).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")))[0]||null}
@@ -24,7 +25,8 @@ async function rowsForAliases(key,aliases,start,end,schoolId){
     const old=latest.get(dedupe),stamp=`${String(row.createdAt||"")}|${String(row.rowKey||"")}`,oldStamp=old?`${String(old.createdAt||"")}|${String(old.rowKey||"")}`:"";
     if(!old||stamp>=oldStamp)latest.set(dedupe,row);
   }
-  return [...latest.values()];
+  const rows=[...latest.values()];
+  return key==="practice"?uniquePracticeRows(rows):rows;
 }
 app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handler:async(request)=>{
   const context=await getTenantContext(request);if(context.error)return context.error;

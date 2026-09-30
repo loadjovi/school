@@ -102,6 +102,12 @@
     html=html.replace('家長確認：我確認學生已完成上述自主練習。','我確認本次練習紀錄正確。');
     html=html.replace('送出今天的打卡','完成並送出紀錄');
     html=html.replace('<h2>最近打卡</h2>','<h2>最近練習</h2>');
+    const repeated=(state.practice||[]).filter(x=>x.duplicateRecords?.length);
+    const repeatedCount=repeated.reduce((count,x)=>count+x.duplicateRecords.length,0);
+    if(repeatedCount){
+      const details=repeated.map(x=>`${esc(x.practiceDate)} ${esc(x.startTime)}～${esc(x.endTime)}（多 ${x.duplicateRecords.length} 筆）`).join("、");
+      html=html.replace('<h2>最近練習</h2>',`<h2>最近練習</h2><div class="notice" style="margin-bottom:10px">⚠️ 發現 ${repeatedCount} 筆相同日期與時段的重複紀錄：${details}。目前只顯示每個時段最早的一筆，重複筆數不計入練習分鐘與成績。<button class="secondary" style="width:100%;margin-top:10px" onclick="cleanupPracticeDuplicates()">清理重複紀錄</button></div>`);
+    }
 
     const panel=`<div class="card"><h2>⏱️ 今天開始練習</h2>
       <div id="practiceTimerControls"><div style="text-align:center;padding:10px 0 12px"><div id="practiceTimerValue" style="font-size:36px;font-weight:900;letter-spacing:2px">${durationText(elapsedSeconds(t))}</div><div id="practiceTimerStatus" class="muted" style="margin-top:6px">${t?.autoStopped?"⏱️ 已達 60 分鐘上限，系統已自動停止":running?"🎻 練習計時中，可切換頁面、App 或鎖定畫面":t?.startedAt?"⏸️ 已暫停，可稍後繼續練習":"按「開始練習」後會自動記錄時間"}</div></div>
@@ -115,11 +121,26 @@
 
   const baseSavePractice=savePractice;
   savePractice=async function(){
-    if(mode()==="timer"&&timerIsRunning()){toast("請先停止計時，再送出紀錄");return}
+    if(mode()==="timer"&&timerIsRunning()){toast("請先停止計時，再送出紀錄");return false}
     const confirmBox=document.getElementById("pConfirm");
-    if(confirmBox&&!confirmBox.checked){toast("請先確認本次練習紀錄正確");return}
-    await baseSavePractice();
-    if(readTimer()?.startedAt&&!timerIsRunning())writeTimer(null);
+    if(confirmBox&&!confirmBox.checked){toast("請先確認本次練習紀錄正確");return false}
+    const saved=await baseSavePractice();
+    if(saved&&readTimer()?.startedAt&&!timerIsRunning())writeTimer(null);
+    return saved;
+  };
+
+  window.cleanupPracticeDuplicates=async function(){
+    if(state.me?.role!=="parent"||!state.student)return;
+    const records=[...new Map((state.practice||[]).flatMap(x=>x.duplicateRecords||[]).map(x=>[`${x.sourceStudentId}|${x.practiceId}`,x])).values()];
+    if(!records.length)return;
+    if(!confirm(`確定清理 ${records.length} 筆相同時段的重複練習紀錄？\n\n每個時段會保留最早的一筆，清理後無法還原。`))return;
+    const studentId=state.student.studentId;
+    let removed=0;
+    try{
+      for(const {practiceId,sourceStudentId} of records){await api("/api/practice",{method:"DELETE",body:JSON.stringify({studentId,practiceId,sourceStudentId})});removed++}
+      toast(`✅ 已清理 ${removed} 筆重複練習紀錄`);
+    }catch(e){toast(`❌ 已清理 ${removed} 筆，其餘未完成：${e.message}`)}
+    finally{try{await refreshStudent();render()}catch(e){toast("❌ 重新讀取練習紀錄失敗："+e.message)}}
   };
 
   const baseShell=typeof shell==="function"?shell:null;
