@@ -3,6 +3,7 @@ import { getTenantContext, getStudentAliasInfo, json } from "../lib/auth.js";
 import { ensureTenantTables, listActivityRange, activityStudentId, listStudentMaster, getTeacherDirectory, getTeacherProfile, listUserStudentMappings } from "../lib/storage.js";
 import { getSystemSettings, saveSystemSettings } from "../lib/settings.js";
 import { resolveSchoolCourses } from "./schoolSchedule.js";
+import { sectionRecorderSummary } from "../lib/sectionRecorderSummary.js";
 
 function clean(v,max=80){return String(v||"").trim().slice(0,max)}
 function monthRange(month){
@@ -31,6 +32,9 @@ async function listRange(key,start,end,allowedIds,schoolId,canonicalCache){
       status:String(e.status||""),
       minutes:Number(e.minutes||0),
       teacher:String(e.teacher||""),
+      teacherName:String(e.teacherName||""),
+      actorRole:String(e.actorRole||"teacher"),
+      mergeTargetSection:String(e.mergeTargetSection||""),
       createdAt:String(e.createdAt||""),
       rowKey:String(e.rowKey||""),
       sessionId:String(e.sessionId||"")
@@ -101,6 +105,23 @@ app.http("attendanceReport",{
   }
 });
 
+app.http("sectionRecorderSummary",{
+  methods:["GET"],authLevel:"anonymous",route:"section-recorder-summary",
+  handler:async(request)=>{
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access:a,schoolId}=context;
+    if(a.role!=="admin")return json({error:"Forbidden"},403);
+    const input=String(request.query.get("month")||"");
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(input))return json({error:"月份格式不正確"},400);
+    await ensureTenantTables();
+    const {month,start,end}=monthRange(input);
+    const rows=await listRange("section",start,end,null,schoolId,new Map());
+    const teacherNames=new Map();
+    await Promise.all([...new Set(rows.map(r=>String(r.teacher||"").trim().toLowerCase()).filter(Boolean))].map(email=>dailyTeacherName(email,teacherNames,schoolId)));
+    return json({month,items:sectionRecorderSummary(rows,teacherNames)});
+  }
+});
+
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
 function emailConfigured(){return !!(String(process.env.ACS_EMAIL_CONNECTION_STRING||"").trim()&&String(process.env.ACS_EMAIL_SENDER||"").trim())}
 async function notificationSettingsResponse(request,a,schoolId){
@@ -130,7 +151,7 @@ async function collectDaily(key,date,schoolId){
   for(const e of await listActivityRange(key,schoolId,"","",date)){
     const rawStudentId=activityStudentId(e);
     const classType=key==="ensemble"?"ensemble":key==="comprehensive"?"comprehensive":key==="privateLesson"?"private":"section";
-    const row={rawStudentId,eventDate:String(e.eventDate||date),classType,groupName:String(e.groupName||""),section:String(e.section||""),status:String(e.status||""),teacher:String(e.teacher||""),teacherName:String(e.teacherName||""),startTime:String(e.startTime||""),endTime:String(e.endTime||""),minutes:Number(e.minutes||0),lessonContent:String(e.lessonContent||""),parentConfirmation:String(e.parentConfirmation||""),teacherRating:Number(e.teacherRating||0),teacherReview:String(e.teacherReview||""),emailNotificationStatus:String(e.emailNotificationStatus||""),emailNotificationAt:String(e.emailNotificationAt||""),emailNotificationRecipients:Number(e.emailNotificationRecipients||0),emailNotificationSentCount:Number(e.emailNotificationSentCount||0),emailNotificationFailedCount:Number(e.emailNotificationFailedCount||0),emailNotificationResendCount:Number(e.emailNotificationResendCount||0),emailNotificationLastResentAt:String(e.emailNotificationLastResentAt||""),emailNotificationLastResentBy:String(e.emailNotificationLastResentBy||""),createdAt:String(e.createdAt||""),rowKey:String(e.rowKey||""),sessionId:String(e.sessionId||"")};
+    const row={rawStudentId,eventDate:String(e.eventDate||date),classType,groupName:String(e.groupName||""),section:String(e.section||""),mergeTargetSection:String(e.mergeTargetSection||""),status:String(e.status||""),teacher:String(e.teacher||""),teacherName:String(e.teacherName||""),actorRole:String(e.actorRole||"teacher"),startTime:String(e.startTime||""),endTime:String(e.endTime||""),minutes:Number(e.minutes||0),lessonContent:String(e.lessonContent||""),parentConfirmation:String(e.parentConfirmation||""),teacherRating:Number(e.teacherRating||0),teacherReview:String(e.teacherReview||""),emailNotificationStatus:String(e.emailNotificationStatus||""),emailNotificationAt:String(e.emailNotificationAt||""),emailNotificationRecipients:Number(e.emailNotificationRecipients||0),emailNotificationSentCount:Number(e.emailNotificationSentCount||0),emailNotificationFailedCount:Number(e.emailNotificationFailedCount||0),emailNotificationResendCount:Number(e.emailNotificationResendCount||0),emailNotificationLastResentAt:String(e.emailNotificationLastResentAt||""),emailNotificationLastResentBy:String(e.emailNotificationLastResentBy||""),createdAt:String(e.createdAt||""),rowKey:String(e.rowKey||""),sessionId:String(e.sessionId||"")};
     const privateSessionKey=row.sessionId||[rawStudentId,row.eventDate,row.startTime,row.endTime,row.teacher.trim().toLowerCase()].join("|");
     const d=key==="privateLesson"
       ?[rawStudentId,row.eventDate,row.classType,privateSessionKey].join("|")
@@ -192,6 +213,7 @@ app.http("dailyFollowup",{
     const effectiveSectionRows=sectionRows.filter(x=>!isBlockedRow(x));
     const effectiveEnsembleRows=ensembleRows.filter(x=>!isBlockedRow(x));
     const effectiveComprehensiveRows=comprehensiveRows.filter(x=>!isBlockedRow(x));
+    await Promise.all([...new Set(effectiveSectionRows.map(r=>String(r.teacher||"").trim().toLowerCase()).filter(Boolean))].map(email=>dailyTeacherName(email,teacherCache,schoolId)));
     const allDailyRows=[...effectiveSectionRows,...effectiveEnsembleRows,...effectiveComprehensiveRows,...privateRows];
     const attendedCount=rows=>rows.filter(x=>x.status==="present"||x.status==="late").length;
     const statusCount=(rows,status)=>rows.filter(x=>x.status===status).length;
@@ -207,7 +229,8 @@ app.http("dailyFollowup",{
         reason:String(meta.reason||""),
         newDate:String(meta.newDate||""),
         newStartTime:String(meta.newStartTime||""),
-        newEndTime:String(meta.newEndTime||"")
+        newEndTime:String(meta.newEndTime||""),
+        sectionRecorders:sectionRecorderSummary(rows.filter(x=>x.classType==="section"),teacherCache)
       });
     };
     const typeRows={section:effectiveSectionRows,ensemble:effectiveEnsembleRows,comprehensive:effectiveComprehensiveRows};
