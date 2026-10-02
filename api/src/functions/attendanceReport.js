@@ -115,10 +115,14 @@ app.http("sectionRecorderSummary",{
     if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(input))return json({error:"月份格式不正確"},400);
     await ensureTenantTables();
     const {month,start,end}=monthRange(input);
-    const rows=await listRange("section",start,end,null,schoolId,new Map());
+    const [rows,masters]=await Promise.all([
+      listRange("section",start,end,null,schoolId,new Map()),
+      listStudentMaster("",schoolId)
+    ]);
     const teacherNames=new Map();
     await Promise.all([...new Set(rows.map(r=>String(r.teacher||"").trim().toLowerCase()).filter(Boolean))].map(email=>dailyTeacherName(email,teacherNames,schoolId)));
-    return json({month,items:sectionRecorderSummary(rows,teacherNames)});
+    const students=new Map(masters.map(e=>[String(e.rowKey),studentView(e)]));
+    return json({month,items:sectionRecorderSummary(rows,teacherNames,students)});
   }
 });
 
@@ -213,16 +217,26 @@ app.http("dailyFollowup",{
     const effectiveSectionRows=sectionRows.filter(x=>!isBlockedRow(x));
     const effectiveEnsembleRows=ensembleRows.filter(x=>!isBlockedRow(x));
     const effectiveComprehensiveRows=comprehensiveRows.filter(x=>!isBlockedRow(x));
-    await Promise.all([...new Set(effectiveSectionRows.map(r=>String(r.teacher||"").trim().toLowerCase()).filter(Boolean))].map(email=>dailyTeacherName(email,teacherCache,schoolId)));
+    const groupRows=[...effectiveSectionRows,...effectiveEnsembleRows,...effectiveComprehensiveRows];
+    await Promise.all(groupRows.map(async r=>{r.studentId=await canonicalDailyId(r.rawStudentId,students,canonicalCache,schoolId)}));
+    await Promise.all([...new Set(groupRows.map(r=>String(r.teacher||"").trim().toLowerCase()).filter(Boolean))].map(email=>dailyTeacherName(email,teacherCache,schoolId)));
     const allDailyRows=[...effectiveSectionRows,...effectiveEnsembleRows,...effectiveComprehensiveRows,...privateRows];
     const attendedCount=rows=>rows.filter(x=>x.status==="present"||x.status==="late").length;
     const statusCount=(rows,status)=>rows.filter(x=>x.status===status).length;
     const courseSummary=[];
     const pushCourse=(key,label,groups,expected,rows,time="",meta={})=>{
       const attended=attendedCount(rows);
+      const studentAlerts={late:[],absent:[]};
+      if(key!=="private")for(const r of rows){
+        if(r.status!=="late"&&r.status!=="absent")continue;
+        const studentId=String(r.studentId||r.rawStudentId||""),student=students.get(studentId);
+        studentAlerts[r.status].push({studentId,name:String(student?.name||`學生 ${studentId}`),groupName:String(r.groupName||student?.groupName||""),section:String(r.section||student?.section||""),teacherName:teacherCache.get(String(r.teacher||"").trim().toLowerCase())||String(r.teacherName||"")});
+      }
+      for(const type of ["absent","late"])studentAlerts[type].sort((a,b)=>a.name.localeCompare(b.name,"zh-Hant"));
       courseSummary.push({
         key,label,groups,time,expected,attended,
         leave:statusCount(rows,"leave"),absent:statusCount(rows,"absent"),late:statusCount(rows,"late"),
+        studentAlerts,
         recorded:rows.filter(x=>x.status!=="cancelled").length,
         attendanceRate:expected?Math.round(attended/expected*1000)/10:null,
         scheduleStatus:String(meta.scheduleStatus||"active"),
@@ -230,7 +244,7 @@ app.http("dailyFollowup",{
         newDate:String(meta.newDate||""),
         newStartTime:String(meta.newStartTime||""),
         newEndTime:String(meta.newEndTime||""),
-        sectionRecorders:sectionRecorderSummary(rows.filter(x=>x.classType==="section"),teacherCache)
+        sectionRecorders:sectionRecorderSummary(rows.filter(x=>x.classType==="section"),teacherCache,students)
       });
     };
     const typeRows={section:effectiveSectionRows,ensemble:effectiveEnsembleRows,comprehensive:effectiveComprehensiveRows};

@@ -53,7 +53,7 @@
       "/attendance-support.js?v=20260928-2148",
       "/attendance-edit.js?v=20260930-section-merge",
       "/practice-progress.js?v=20260929-0205",
-      "/admin-operations.js?v=20261001-section-recorder",
+      "/admin-operations.js?v=20261002-student-alerts",
       "/admin-followup-summary-fix.js?v=20260917-1320",
       "/system-backup.js?v=20260919-2305",
       "/school-access.js?v=20260920-0010",

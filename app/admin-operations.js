@@ -117,8 +117,9 @@
   window.exportAdminSectionSummary=function(){
     const d=state.adminOps.sectionSummary;
     if(!d||state.adminOps.loadingSectionSummary||state.adminOps.sectionSummaryError){toast("請先載入分部課點名總表");return}
-    const rows=[["日期","團別","點名分部","併班來源分部","點名者","身分","點名者 Gmail","此人點名人數","該堂已點名人數","出席","遲到","請假","缺席","最近儲存時間"]];
-    for(const x of d.items||[])for(const r of x.recorders||[])rows.push([x.eventDate,x.groupName,x.section,(x.mergedSections||[]).join("、"),r.name,r.role==="admin"?"校方管理員":"老師",r.email,r.count,x.recorded,x.present,x.late,x.leave,x.absent,x.lastSavedAt]);
+    const rows=[["日期","團別","點名分部","併班來源分部","點名者","身分","點名者 Gmail","此人點名人數","該堂已點名人數","出席","遲到","遲到學生","請假","缺席","缺席學生","最近儲存時間"]];
+    const names=(list,section)=>(list||[]).map(s=>`${s.name}（${s.studentId}${s.sourceSection&&s.sourceSection!==section?`／${s.sourceSection}`:""}）`).join("、");
+    for(const x of d.items||[])for(const r of x.recorders||[])rows.push([x.eventDate,x.groupName,x.section,(x.mergedSections||[]).join("、"),r.name,r.role==="admin"?"校方管理員":"老師",r.email,r.count,x.recorded,x.present,x.late,names(x.lateStudents,x.section),x.leave,x.absent,names(x.absentStudents,x.section),x.lastSavedAt]);
     if(rows.length===1){toast("這個月尚無分部課點名紀錄");return}
     downloadCsv(`${d.month}_分部課點名總表.csv`,rows);toast(`📥 已匯出 ${rows.length-1} 筆分部課點名者明細`);
   };
@@ -146,17 +147,28 @@
     return `<label>查詢日期（整日）</label><div style="display:grid;grid-template-columns:48px 1fr 48px;gap:8px;align-items:center"><button class="secondary" style="margin:0;padding:12px 6px" onclick="shiftAdminFollowupDate(-1)" title="前一天">←</button><input id="adminFollowupDate" type="date" value="${esc(state.adminOps.date)}" onchange="changeAdminFollowupDate(this.value)"><button class="secondary" style="margin:0;padding:12px 6px" onclick="shiftAdminFollowupDate(1)" title="後一天">→</button></div><div class="row2" style="margin-top:8px"><button class="secondary" style="margin:0" onclick="todayAdminFollowup()">今天</button><button class="secondary" style="margin:0" onclick="refreshAdminFollowup()">🔄 重新整理</button></div>`;
   }
 
+  function studentAlertsHtml(course,monthly=false){
+    const alerts=monthly?{absent:course.absentStudents||[],late:course.lateStudents||[]}:(course.studentAlerts||{});
+    const rows=[["absent","缺席","bad"],["late","遲到","warn"]].filter(([type])=>(alerts[type]||[]).length);
+    if(!rows.length)return "";
+    const person=x=>{
+      const detail=monthly?(x.sourceSection&&x.sourceSection!==course.section?x.sourceSection:""):[x.groupName?`${x.groupName}團`:"",x.section||""].filter(Boolean).join("／");
+      return `${esc(x.name||`學生 ${x.studentId||""}`)}${detail?`（${esc(detail)}）`:""}`;
+    };
+    return `<div class="notice" style="margin-top:8px">${rows.map(([type,label,style])=>`<div style="margin-top:4px"><span class="badge ${style}">${label} ${alerts[type].length}</span>　${alerts[type].map(person).join("、")}</div>`).join("")}</div>`;
+  }
+
   function sectionRecorderHtml(course){
     const entries=course.sectionRecorders||[];
-    if(!entries.length)return "";
-    return `<div class="notice" style="margin-top:8px"><b>實際點名者</b><br>${entries.map(x=>`${esc(x.groupName)}團｜${esc(x.section)}${x.mergedSections?.length?`（併入：${esc(x.mergedSections.join("、"))}）`:""}：${x.recorders.map(r=>`${esc(r.name)}${r.role==="admin"?"（校方管理員代點名）":"（老師）"} ${Number(r.count||0)} 人`).join("、")}`).join("<br>")}</div>`;
+    const recorders=entries.length?`<div class="notice" style="margin-top:8px"><b>實際點名者</b><br>${entries.map(x=>`${esc(x.groupName)}團｜${esc(x.section)}${x.mergedSections?.length?`（併入：${esc(x.mergedSections.join("、"))}）`:""}：${x.recorders.map(r=>`${esc(r.name)}${r.role==="admin"?"（校方管理員代點名）":"（老師）"} ${Number(r.count||0)} 人`).join("、")}`).join("<br>")}</div>`:"";
+    return recorders+studentAlertsHtml(course);
   }
 
   function sectionSummaryHtml(){
     const s=state.adminOps,d=s.sectionSummary,open=s.sectionSummaryOpen;
     if(!open)return `<button class="secondary" style="width:100%;margin-top:12px" onclick="toggleAdminSectionSummary()">🎼 查看分部課點名總表（依月份／老師）</button>`;
     const loading=s.loadingSectionSummary,error=s.sectionSummaryError,items=d?.items||[];
-    return `<div class="notice" style="margin-top:12px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>🎼 分部課點名總表</b><button class="secondary" style="width:auto;margin:0;padding:6px 10px" onclick="toggleAdminSectionSummary()">收合</button></div><small>依實際儲存的點名紀錄彙整；同堂多人點名會分別列出。校方代點名會標示管理員身分，這裡不代表工時認列老師。</small><label for="adminSectionMonth">統計月份</label><input id="adminSectionMonth" type="month" value="${esc(s.sectionMonth)}" onchange="changeAdminSectionMonth(this.value)"><div class="row2" style="margin-top:8px"><button class="secondary" style="margin:0" onclick="refreshAdminSectionSummary()" ${loading?"disabled":""}>🔄 重新整理</button><button class="secondary" style="margin:0" onclick="exportAdminSectionSummary()" ${loading||!items.length?"disabled":""}>📥 匯出 CSV</button></div>${error?`<div class="error" style="margin-top:8px">讀取失敗：${esc(error)}</div>`:loading?`<div class="notice" style="margin-top:8px">正在彙整分部課點名紀錄…</div>`:d?`<div style="margin-top:10px"><b>${esc(d.month)}｜${items.length} 堂分部課已點名</b>${items.length?items.map(x=>`<div class="item" style="align-items:flex-start"><div><b>${esc(x.eventDate)}｜${esc(x.groupName)}團｜${esc(x.section)}</b>${x.mergedSections?.length?`<small>併班來源：${esc(x.mergedSections.join("、"))}</small>`:""}<small>已點名 ${Number(x.recorded||0)} 人｜出席 ${Number(x.present||0)}｜遲到 ${Number(x.late||0)}｜請假 ${Number(x.leave||0)}｜缺席 ${Number(x.absent||0)}</small><small><b>點名者：</b>${(x.recorders||[]).map(r=>`${esc(r.name)}${r.role==="admin"?"（校方管理員）":"（老師）"} ${Number(r.count||0)} 人`).join("、")||"未記錄"}</small></div></div>`).join(""):`<div class="notice" style="margin-top:8px">這個月尚無分部課點名紀錄。</div>`}</div>`:""}</div>`;
+    return `<div class="notice" style="margin-top:12px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>🎼 分部課點名總表</b><button class="secondary" style="width:auto;margin:0;padding:6px 10px" onclick="toggleAdminSectionSummary()">收合</button></div><small>依實際儲存的點名紀錄彙整；同堂多人點名會分別列出。校方代點名會標示管理員身分，這裡不代表工時認列老師。</small><label for="adminSectionMonth">統計月份</label><input id="adminSectionMonth" type="month" value="${esc(s.sectionMonth)}" onchange="changeAdminSectionMonth(this.value)"><div class="row2" style="margin-top:8px"><button class="secondary" style="margin:0" onclick="refreshAdminSectionSummary()" ${loading?"disabled":""}>🔄 重新整理</button><button class="secondary" style="margin:0" onclick="exportAdminSectionSummary()" ${loading||!items.length?"disabled":""}>📥 匯出 CSV</button></div>${error?`<div class="error" style="margin-top:8px">讀取失敗：${esc(error)}</div>`:loading?`<div class="notice" style="margin-top:8px">正在彙整分部課點名紀錄…</div>`:d?`<div style="margin-top:10px"><b>${esc(d.month)}｜${items.length} 堂分部課已點名</b>${items.length?items.map(x=>`<div class="item" style="align-items:flex-start"><div><b>${esc(x.eventDate)}｜${esc(x.groupName)}團｜${esc(x.section)}</b>${x.mergedSections?.length?`<small>併班來源：${esc(x.mergedSections.join("、"))}</small>`:""}<small>已點名 ${Number(x.recorded||0)} 人｜出席 ${Number(x.present||0)}｜遲到 ${Number(x.late||0)}｜請假 ${Number(x.leave||0)}｜缺席 ${Number(x.absent||0)}</small><small><b>點名者：</b>${(x.recorders||[]).map(r=>`${esc(r.name)}${r.role==="admin"?"（校方管理員）":"（老師）"} ${Number(r.count||0)} 人`).join("、")||"未記錄"}</small>${studentAlertsHtml(x,true)}</div></div>`).join(""):`<div class="notice" style="margin-top:8px">這個月尚無分部課點名紀錄。</div>`}</div>`:""}</div>`;
   }
 
   function followupHtml(){
