@@ -4,7 +4,7 @@
   state.privateStudentFilters=state.privateStudentFilters||{group:"",section:"",q:"",selectedOnly:false};
 
   const originalRoleText=roleText;
-  roleText=function(){if(teacherAccount())return "教學老師";return originalRoleText()};
+  roleText=function(){if(teacherAccount())return state.me?.capabilities?.privateOnly?"個課限定老師":"教學老師";return originalRoleText()};
 
   const originalNav=nav;
   nav=function(){
@@ -30,6 +30,11 @@
       return `<div class="card hero"><h2>🎻 短期跨校支援</h2><div class="notice">支援期間：<b>${esc(t.startDate)} 至 ${esc(t.endDate)}</b><br>課別：${esc(names[t.courseType]||t.courseType)}｜${esc(t.groupName==="ALL"?"全團":t.groupName||"—")}${t.section?"｜"+esc(t.section):""}<br>期滿或 Global 提前取消後，該校代課權限即失效。教學範圍由 Global 管理員設定。</div></div>`;
     }
     const p=d.profile||{},sectionSet=new Set((p.sectionAssignments||[]).map(x=>`${x.groupName}|${x.section}`));
+    if(state.me?.capabilities?.privateOnly){
+      const allowed=new Set(privateIds());
+      const names=(d.students||[]).filter(s=>allowed.has(String(s.studentId))).map(s=>esc(s.name)).join("、");
+      return `<div class="card hero"><h2>🔒 個課限定老師</h2><div class="notice">此帳號僅能安排個別課。可授課學生由學校管理員設定，如需調整請聯繫校方。</div></div><div class="card"><h2>👤 可授課學生（${allowed.size} 人）</h2><div class="notice">${names||"目前尚無可授課學生"}</div></div>`;
+    }
     const ensembleSet=new Set((p.ensembleGroups||[]).map(String));
     const groups=d.choices?.groups||["A","B","儲備"],sections=d.choices?.sections||["小提一部","小提二部","中提","大提"];
     const schedule=d.schedule||{};
@@ -46,6 +51,7 @@
   }
 
   function privateStudentSettingsPage(){
+    if(state.me?.capabilities?.privateOnly)return teacherSettingsPage();
     const d=state.teacherSetup;
     if(!d)return `<div class="card"><h2>👤 個別課學生管理</h2><div class="notice">正在載入學生名單…</div></div>`;
     const selected=new Set(privateIds());
@@ -94,6 +100,7 @@
   };
 
   window.saveTeacherSettings=async function(){
+    if(state.me?.capabilities?.privateOnly){toast("個課限定帳號的授課範圍由學校管理員設定");return}
     const sectionAssignments=[...document.querySelectorAll(".teacherSectionPick:checked")].map(x=>({groupName:x.dataset.group,section:x.dataset.section}));
     const ensembleGroups=[...document.querySelectorAll(".teacherEnsemblePick:checked")].map(x=>x.value);
     const comprehensiveEnabled=!!$("teacherComprehensivePick")?.checked;
@@ -109,6 +116,7 @@
   };
 
   window.savePrivateStudents=async function(){
+    if(state.me?.capabilities?.privateOnly){toast("個課限定學生由學校管理員設定");return}
     const p=state.teacherSetup?.profile||{};
     const privateStudentIds=[...document.querySelectorAll(".teacherPrivatePick:checked")].map(x=>x.value);
     try{
@@ -135,6 +143,7 @@
   const teacherGo=go;
   go=async function(p){
     if((p==="teacherSettings"||p==="privateStudents")&&teacherAccount()){
+      if(p==="privateStudents"&&state.me?.capabilities?.privateOnly)p="teacherSettings";
       state.page=p;if(!state.teacherSetup)await loadTeacherSettings();render();return;
     }
     return teacherGo(p);

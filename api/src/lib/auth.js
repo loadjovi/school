@@ -1,5 +1,6 @@
 import { OAuth2Client } from "google-auth-library";
 import { getMappedStudentsByEmail, listStudentMaster, getTeacherProfile, getTeacherDirectory, activeTeacherSupport, listUserStudentMappings, ensureDefaultTenant, ensureBootstrapGlobalAdmin, listTenantRolesByEmail, getTenantDirectory, defaultTenantId, tenantIdValue } from "./storage.js";
+import { teacherCourseAccess } from "./teacherAccountType.js";
 
 const googleClient = new OAuth2Client();
 const aliasCaches=new Map();
@@ -325,10 +326,10 @@ export async function getAccess(request){
   }
   if(directory?.status==="active"&&(!requestedContext||requestedContext==="teacher")){
     const profile=await getTeacherProfile(email,roleSchoolId);
-    const {sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds:rawPrivateStudentIds}=normalizeProfile(profile);
+    const {privateOnly,sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds:rawPrivateStudentIds,role}=teacherCourseAccess(directory,normalizeProfile(profile));
     const index=await buildStudentAliasIndex(roleSchoolId);
     const privateStudentIds=[...new Set(rawPrivateStudentIds.map(id=>index.aliasToCanonical.get(String(id))||String(id)))];
-    const capabilities={section:sectionAssignments.length>0,ensemble:ensembleGroups.length>0,comprehensive:comprehensiveEnabled,private:privateStudentIds.length>0,teacherSettings:true,tenantOnboarding:roleTenantOnboarding};
+    const capabilities={section:sectionAssignments.length>0,ensemble:ensembleGroups.length>0,comprehensive:comprehensiveEnabled,private:privateStudentIds.length>0,privateOnly,teacherSettings:true,tenantOnboarding:roleTenantOnboarding};
     const masters=await listStudentMaster("active",roleSchoolId);
     const byId=new Map();
     for(const m of masters){
@@ -341,7 +342,6 @@ export async function getAccess(request){
       const privateMatch=privateStudentIds.includes(v.studentId);
       if(sectionMatch||ensembleMatch||comprehensiveMatch||privateMatch)byId.set(v.studentId,v);
     }
-    const role=capabilities.section?"sectionTeacher":capabilities.ensemble?"ensembleTeacher":capabilities.comprehensive?"comprehensiveTeacher":capabilities.private?"privateTeacher":"teacher";
     return {authenticated:true,...identity,displayName:directory.teacherName||identity.displayName,role,schoolId:roleSchoolId,schoolName:String(roleTenant?.schoolName||roleSchoolId),systemName:String(roleTenant?.systemName||roleTenant?.schoolName||roleSchoolId),capabilities,sectionAssignments,assignments:sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,students:[...byId.values()]};
   }
 

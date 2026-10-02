@@ -76,7 +76,7 @@ app.http("attendanceReport",{
         studentId:String(x.studentId),name:x.name,grade:x.grade,groupName:x.groupName,instrument:x.instrument,section:x.section||"待確認",schoolYear:x.schoolYear||"",status:x.status||"active"
       }]));
       const profile=await getTeacherProfile(a.email,schoolId);
-      if(profile?.comprehensiveEnabled===true){
+      if(!a.capabilities?.privateOnly&&profile?.comprehensiveEnabled===true){
         for(const s of (await listStudentMaster("active",schoolId)).map(studentView))map.set(String(s.studentId),s);
       }
       students=[...map.values()];
@@ -85,9 +85,9 @@ app.http("attendanceReport",{
     const allowedIds=new Set(byId.keys());
     const canonicalCache=new Map();
     const [sectionRows,ensembleRows,comprehensiveRows,privateRows]=await Promise.all([
-      listRange("section",start,end,allowedIds,schoolId,canonicalCache),
-      listRange("ensemble",start,end,allowedIds,schoolId,canonicalCache),
-      listRange("comprehensive",start,end,allowedIds,schoolId,canonicalCache),
+      a.capabilities?.privateOnly?[]:listRange("section",start,end,allowedIds,schoolId,canonicalCache),
+      a.capabilities?.privateOnly?[]:listRange("ensemble",start,end,allowedIds,schoolId,canonicalCache),
+      a.capabilities?.privateOnly?[]:listRange("comprehensive",start,end,allowedIds,schoolId,canonicalCache),
       listRange("privateLesson",start,end,allowedIds,schoolId,canonicalCache)
     ]);
     const records=[...sectionRows,...ensembleRows,...comprehensiveRows,...privateRows]

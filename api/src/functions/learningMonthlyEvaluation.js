@@ -59,6 +59,7 @@ app.http("learningMonthlyEvaluation",{
     const context=await getTenantContext(request);if(context.error)return context.error;
     const {access:a,schoolId}=context;
     if(a.temporaryAssignment)return json({error:"短期代課不執行學期評量"},403);
+    if(a.capabilities?.privateOnly)return json({error:"個課限定老師不使用分部課評量"},403);
     await ensureTenantTables();
     const isTeacher=!!a.capabilities?.teacherSettings;
 

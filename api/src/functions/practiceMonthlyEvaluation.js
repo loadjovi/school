@@ -27,6 +27,7 @@ app.http("practiceMonthlyEvaluation",{
   handler:async(request)=>{
     const context=await getTenantContext(request);if(context.error)return context.error;
     const {access:a,schoolId}=context;
+    if(a.capabilities?.privateOnly)return json({error:"個課限定老師不使用自主練習評量"},403);
     await ensureTenantTables();
     const isTeacher=!!a.capabilities?.teacherSettings;
     const month=monthValue(request.method==="GET"?request.query.get("month"):undefined);

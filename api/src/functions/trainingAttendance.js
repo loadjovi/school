@@ -39,7 +39,7 @@ async function savedRecords(schoolId,eventId){
 app.http("trainingAttendance",{methods:["GET","POST"],authLevel:"anonymous",route:"training-attendance",handler:async request=>{
   const context=await getTenantContext(request);if(context.error)return context.error;
   const {access:a,schoolId}=context;
-  if(a.role!=="admin"&&!a.capabilities?.teacherSettings)return json({error:"僅授課老師與學校管理員可使用加練點名"},403);
+  if(a.capabilities?.privateOnly||a.role!=="admin"&&!a.capabilities?.teacherSettings)return json({error:"僅加練授課老師與學校管理員可使用加練點名"},403);
   await ensureTenantTables();
   const sid=tenantSchoolPartition(schoolId),eventsClient=table("tenantCalendarEvent");
   const teachers=a.role==="admin"?[]:await listTeacherDirectory(schoolId);

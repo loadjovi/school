@@ -37,7 +37,7 @@ app.http("practiceProgress",{
     const context=await getTenantContext(request);if(context.error)return context.error;
     const {access:a,schoolId}=context;
     const isTeacher=!!a.capabilities?.teacherSettings;
-    if(a.role!=="admin"&&!isTeacher)return json({error:"Forbidden"},403);
+    if(a.capabilities?.privateOnly||a.role!=="admin"&&!isTeacher)return json({error:"Forbidden"},403);
 
     const {month,start,end}=monthRange(clean(request.query.get("month"),12));
     const qualifiedMinutes=Math.max(1,Number(process.env.PRACTICE_QUALIFIED_MINUTES||15));

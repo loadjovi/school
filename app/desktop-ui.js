@@ -23,6 +23,10 @@
       item("teacherAdmin","👩‍🏫","老師帳號"),item("schoolSchedule","📅","課程管理"),
       item("specialCalendar","🏆","加練與活動"),item("help","ℹ️","操作說明")
     ];
+    if(isTeacher()&&c.privateOnly)return [
+      item("teacherHome","🎓","今日教學"),item("private","👤","個別課"),
+      item("teacherSettings","⚙️","我的教學"),item("help","ℹ️","操作說明")
+    ];
     if(isTeacher())return [
       item("teacherHome","🎓","今日教學"),item("attendance","📋","出勤概況"),
       ...(c.section?[item("section","🎼","分部課點名")]:[]),

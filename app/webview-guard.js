@@ -46,8 +46,8 @@
       "/student-number-support.js?v=20260918-1105",
       "/student-change-admin.js?v=20260918-1015",
       "/parent-link-admin.js?v=20260921-0135",
-      "/teacher-settings.js?v=20260930-teacher-support",
-      "/teacher-admin.js?v=20260925-0315",
+      "/teacher-settings.js?v=20261002-teacher-types",
+      "/teacher-admin.js?v=20261002-teacher-types",
       "/batch-upgrade.js",
       "/roster-import.js?v=20260915-1135",
       "/attendance-support.js?v=20260928-2148",
@@ -65,12 +65,12 @@
       "/roster-support.js",
       "/section-support.js?v=20260930-section-merge",
       "/teacher-support.js?v=20260929-late10",
-      "/teacher-settings.js?v=20260930-teacher-support",
+      "/teacher-settings.js?v=20261002-teacher-types",
       "/private-student-bottom-back.js?v=20260915-1432",
       "/attendance-support.js?v=20260930-section-merge",
       "/attendance-edit.js?v=20260930-section-merge",
       "/practice-progress.js?v=20260929-0205",
-      "/teacher-navigation.js?v=20260930-section-merge",
+      "/teacher-navigation.js?v=20261002-teacher-types",
       "/training-attendance.js?v=20260929-late10",
       "/comprehensive-support.js?v=20260929-late10",
       "/private-lesson-confirmation.js?v=20260929-late10"
@@ -116,7 +116,7 @@
   async function loadRoleModules(){
     await waitForProfileReady();
     if(typeof state==="undefined"||!state.me)return;
-    const list=[...roleModules(),"/desktop-ui.js?v=20260930-teacher-support"];
+    const list=[...roleModules(),"/desktop-ui.js?v=20261002-teacher-types"];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");

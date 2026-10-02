@@ -15,7 +15,7 @@
   state.teacherTrainingEvents=state.teacherTrainingEvents||[];
   state.teacherLearningEvaluation=state.teacherLearningEvaluation||null;
   state.teacherLearningEvaluationMonth=state.teacherLearningEvaluationMonth||"";
-  async function loadTeacherTodayStatus(date){try{const month=date.slice(0,7),finalMonth=teacherFinalEvalMonth(month),needFallback=!!cap().section&&month===finalMonth;const now=new Date(),from=new Date(now),to=new Date(now);from.setMonth(from.getMonth()-5);to.setMonth(to.getMonth()+5);const dateText=d=>d.toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"});const trainingUrl=`/api/training-attendance?from=${encodeURIComponent(dateText(from))}&to=${encodeURIComponent(dateText(to))}`;const [att,practice,schedule,learning,training]=await Promise.all([api(`/api/attendance-report?month=${encodeURIComponent(month)}`),api(`/api/practice-progress?month=${encodeURIComponent(month)}`),api(`/api/school-schedule?date=${encodeURIComponent(date)}`),needFallback?api(`/api/learning-monthly-evaluation?month=${encodeURIComponent(finalMonth)}&mode=semesterFallback`).catch(()=>({items:[]})):Promise.resolve(null),api(trainingUrl).catch(()=>({items:[]}))]);state.teacherTodayStatus=att;state.teacherAttention=practice;state.teacherTodayCourses=(schedule?.items||[]).filter(x=>String(x.effectiveStatus||"active")!=="cancelled");state.teacherTrainingEvents=training?.items||[];state.teacherLearningEvaluation=learning;state.teacherLearningEvaluationMonth=month;state.teacherTodayStatusDate=date;render()}catch{state.teacherTodayStatus=null;state.teacherAttention=null;state.teacherTodayCourses=[];state.teacherTrainingEvents=[];state.teacherLearningEvaluation=null;state.teacherLearningEvaluationMonth=date.slice(0,7);state.teacherTodayStatusDate=date}}
+  async function loadTeacherTodayStatus(date){try{const month=date.slice(0,7),finalMonth=teacherFinalEvalMonth(month),needFallback=!!cap().section&&month===finalMonth;const now=new Date(),from=new Date(now),to=new Date(now);from.setMonth(from.getMonth()-5);to.setMonth(to.getMonth()+5);const dateText=d=>d.toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"});const trainingUrl=`/api/training-attendance?from=${encodeURIComponent(dateText(from))}&to=${encodeURIComponent(dateText(to))}`;const [att,practice,schedule,learning,training]=await Promise.all([api(`/api/attendance-report?month=${encodeURIComponent(month)}`),cap().privateOnly?Promise.resolve({items:[]}):api(`/api/practice-progress?month=${encodeURIComponent(month)}`),api(`/api/school-schedule?date=${encodeURIComponent(date)}`),needFallback?api(`/api/learning-monthly-evaluation?month=${encodeURIComponent(finalMonth)}&mode=semesterFallback`).catch(()=>({items:[]})):Promise.resolve(null),cap().privateOnly?Promise.resolve({items:[]}):api(trainingUrl).catch(()=>({items:[]}))]);state.teacherTodayStatus=att;state.teacherAttention=practice;state.teacherTodayCourses=(schedule?.items||[]).filter(x=>String(x.effectiveStatus||"active")!=="cancelled");state.teacherTrainingEvents=training?.items||[];state.teacherLearningEvaluation=learning;state.teacherLearningEvaluationMonth=month;state.teacherTodayStatusDate=date;render()}catch{state.teacherTodayStatus=null;state.teacherAttention=null;state.teacherTodayCourses=[];state.teacherTrainingEvents=[];state.teacherLearningEvaluation=null;state.teacherLearningEvaluationMonth=date.slice(0,7);state.teacherTodayStatusDate=date}}
   const detailPages=new Set(["section","ensemble","comprehensive","private"]);
   function mountTeacherBack(){
     if(!teacherAccount()||!detailPages.has(state.page)||document.getElementById("teacherHomeBack"))return;
@@ -98,7 +98,7 @@
     if(hasTodayComprehensive)addTask("弦樂團體課",progress("comprehensive","",comprehensiveExpected));
     for(const x of todayTraining)addTask(x.title||"週六加練",{expected:x.expected,recorded:x.recorded});
     const completedTasks=taskRows.filter(x=>x.done).length,totalTasks=taskRows.length,pct=totalTasks?Math.round(completedTasks/totalTasks*100):100;
-    const taskHtml=taskRows.length?taskRows.map(x=>`<div class="item" style="padding:10px 12px"><div><b>${x.done?"✅":"🔴"} ${esc(x.title)}</b><small>${esc(x.text)}</small></div></div>`).join(""):`<div class="notice">今天沒有需要固定點名的團體課；個別課請先建立預約，上課後再送家長確認。</div>`;
+    const taskHtml=taskRows.length?taskRows.map(x=>`<div class="item" style="padding:10px 12px"><div><b>${x.done?"✅":"🔴"} ${esc(x.title)}</b><small>${esc(x.text)}</small></div></div>`).join(""):`<div class="notice">${c.privateOnly?"請先建立個別課預約，上課後再送家長確認。":"今天沒有需要固定點名的團體課；個別課請先建立預約，上課後再送家長確認。"}</div>`;
     const teachingCards=[
       courseCard("section","🎼",sectionGroup?sectionGroup+"團分部課":"分部課",sectionGroup?todayName+"｜依老師設定的團別＋分部帶入學生點名":"",c.section&&hasTodaySection,mergedRosterReady?{expected:sectionExpected,recorded:state.sectionSessionLoaded}:progress("section",sectionGroup,sectionExpected),sectionGroup,date),
       courseCard("ensemble","🎻","A／B團合奏課","今天 12:30–13:20｜依老師設定的 A／B 團帶入學生",c.ensemble&&hasTodayEnsemble,progress("ensemble","",ensembleExpected)),
@@ -132,18 +132,20 @@
       <div class="card"><h2>今日課程</h2>${teachingCards||'<div class="notice">今天沒有符合您授課權限的固定課程。</div>'}</div>
       ${trainingEntry}
       ${evaluationSection}
-      <div class="card"><h2>需要關注 <span class="badge warn">${practiceAttentionAll.length}</span></h2><div class="notice">這裡只協助老師掌握自主練習狀況；需要時可給日常鼓勵，但不影響正式成績。${stablePractice?`另有 ${stablePractice} 位學生近期穩定練習。`:""}</div>${attentionHtml}${practiceAttentionAll.length>5?`<small style="margin:8px 2px;display:block">目前先顯示最需關注的 5 人，完整名單請進入下方查看。</small>`:""}${progressCard}</div>`;
+      ${c.privateOnly?"":`<div class="card"><h2>需要關注 <span class="badge warn">${practiceAttentionAll.length}</span></h2><div class="notice">這裡只協助老師掌握自主練習狀況；需要時可給日常鼓勵，但不影響正式成績。${stablePractice?`另有 ${stablePractice} 位學生近期穩定練習。`:""}</div>${attentionHtml}${practiceAttentionAll.length>5?`<small style="margin:8px 2px;display:block">目前先顯示最需關注的 5 人，完整名單請進入下方查看。</small>`:""}${progressCard}</div>`}`;
   }
 
   const previousNav=nav;
   nav=function(){
     if(state.page==="contextSelect")return previousNav();
     if(!teacherAccount())return previousNav();
+    if(cap().privateOnly)return `<nav class="nav">${navBtn("teacherHome","🎓","教學")}${navBtn("private","👤","個別課")}${navBtn("teacherSettings","⚙️","我的教學")}<button></button></nav>`;
     return `<nav class="nav">${navBtn("teacherHome","🎓","教學")}${navBtn("attendance","📋","出勤")}${cap().section?navBtn("teacherEvaluation","📊","期末評量"):""}${navBtn("teacherSettings","⚙️","我的教學")}</nav>`;
   };
 
   const previousGo=go;
   go=async function(p){
+    if(cap().privateOnly&&["section","ensemble","comprehensive","attendance","trainingAttendance","practiceProgress","teacherEvaluation"].includes(p)){toast("個課限定帳號僅能使用個別課");return}
     if(p==="teacherHome"&&teacherAccount()){
       state.page="teacherHome";
       render();

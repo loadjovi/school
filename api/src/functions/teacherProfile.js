@@ -26,24 +26,32 @@ app.http("teacherProfile",{
     const email=access.email;
     const current=await getTeacherProfile(email,schoolId);
     const all=(await listStudentMaster("active",schoolId)).map(studentView);
+    const privateOnly=access.capabilities?.privateOnly===true;
 
     if(request.method==="GET"){
+      const privateStudentIds=current?parse(current.privateStudentIds,[]):access.privateStudentIds||[];
+      const allowed=new Set((access.students||[]).map(s=>String(s.studentId||"")));
+      const visibleStudents=privateOnly?all.filter(s=>allowed.has(String(s.studentId))):all;
       return json({
         email,
         profile:{
-          sectionAssignments:current?parse(current.sectionAssignments,[]):access.sectionAssignments||[],
-          ensembleGroups:current?parse(current.ensembleGroups,[]):access.ensembleGroups||[],
-          comprehensiveEnabled:current?.comprehensiveEnabled===true,
-          privateStudentIds:current?parse(current.privateStudentIds,[]):access.privateStudentIds||[]
+          sectionAssignments:privateOnly?[]:current?parse(current.sectionAssignments,[]):access.sectionAssignments||[],
+          ensembleGroups:privateOnly?[]:current?parse(current.ensembleGroups,[]):access.ensembleGroups||[],
+          comprehensiveEnabled:!privateOnly&&current?.comprehensiveEnabled===true,
+          privateStudentIds,
+          privateOnly
         },
-        students:all,
-        choices:{groups:["A","B","儲備"],sections:["小提一部","小提二部","中提","大提","低音提"],ensembleGroups:["A","B"],comprehensiveGroups:["A","B","儲備"]},
-        schedule:{A:["週一","週三"],B:["週二","週四"],"儲備":["週五"]},
-        ensembleSchedule:{groups:["A","B"],day:"週二",time:"12:30–13:20"},
-        comprehensiveSchedule:{groups:["A","B","儲備"],day:"週五",time:"08:45–10:15",dates:["2026-09-18","2026-10-02","2026-10-16","2026-10-30","2026-11-20","2026-11-27","2026-12-04"]}
+        students:visibleStudents,
+        choices:privateOnly?{groups:[],sections:[],ensembleGroups:[],comprehensiveGroups:[]}:{groups:["A","B","儲備"],sections:["小提一部","小提二部","中提","大提","低音提"],ensembleGroups:["A","B"],comprehensiveGroups:["A","B","儲備"]},
+        ...(privateOnly?{}:{
+          schedule:{A:["週一","週三"],B:["週二","週四"],"儲備":["週五"]},
+          ensembleSchedule:{groups:["A","B"],day:"週二",time:"12:30–13:20"},
+          comprehensiveSchedule:{groups:["A","B","儲備"],day:"週五",time:"08:45–10:15",dates:["2026-09-18","2026-10-02","2026-10-16","2026-10-30","2026-11-20","2026-11-27","2026-12-04"]}
+        })
       });
     }
 
+    if(privateOnly)return json({error:"個課限定帳號的學生綁定與課程權限僅能由學校管理員調整"},403);
     const body=await request.json();
     const rawAssignments=Array.isArray(body.sectionAssignments)?body.sectionAssignments:[];
     const sectionAssignments=[];

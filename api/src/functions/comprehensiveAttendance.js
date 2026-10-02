@@ -8,7 +8,7 @@ const safe=v=>String(v||"").replaceAll("'","''");
 
 async function canUse(access,schoolId){
   if(access.role==="admin")return true;
-  if(!access.capabilities?.teacherSettings)return false;
+  if(!access.capabilities?.teacherSettings||access.capabilities?.privateOnly||!access.capabilities?.comprehensive)return false;
   if(access.temporaryAssignment)return access.temporaryAssignment.courseType==="comprehensive";
   const p=await getTeacherProfile(access.email,schoolId);
   return p?.comprehensiveEnabled===true;

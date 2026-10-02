@@ -103,6 +103,7 @@ app.http("schoolSchedule",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
   if(request.method==="GET"){
     const date=String(request.query.get("date")||"").trim(),preview=String(request.query.get("preview")||"")==="1";
     const scheduleState=await getScheduleState(schoolId);
+    if(a.capabilities?.privateOnly)return json(date?{date,scheduleState,items:[]}:{scheduleState,items:[],exceptions:[]});
     if(date){
       const includeDraft=preview&&a.role==="admin";
       return json({date,scheduleState,items:await resolveSchoolCourses(schoolId,date,null,{includeDraft})});
