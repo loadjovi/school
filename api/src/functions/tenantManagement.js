@@ -15,6 +15,18 @@ function tenantView(t){return {
   createdAt:String(t.createdAt||""),updatedAt:String(t.updatedAt||""),updatedBy:String(t.updatedBy||"")
 }}
 function adminView(x){return {email:String(x.partitionKey||""),schoolId:String(x.schoolId||x.rowKey||""),role:String(x.role||""),status:String(x.status||""),createdAt:String(x.createdAt||""),updatedAt:String(x.updatedAt||""),updatedBy:String(x.updatedBy||"")}}
+function schoolAccessOverview(admins,teachers){
+  const email=x=>String(x||"").trim().toLowerCase();
+  const teacherByEmail=new Map(teachers.map(t=>[email(t.teacherEmail||t.rowKey),t]));
+  const activeAdmins=new Set(admins.filter(a=>a.status==="active").map(a=>email(a.partitionKey)));
+  return {
+    admins:admins.map(a=>{
+      const teacher=teacherByEmail.get(email(a.partitionKey));
+      return {...adminView(a),teacherName:String(teacher?.teacherName||""),teacherStatus:teacher?String(teacher.status||"active"):"none"};
+    }),
+    teachers:teachers.map(t=>({email:email(t.teacherEmail||t.rowKey),teacherName:String(t.teacherName||""),status:String(t.status||"active"),hasSchoolAdmin:activeAdmins.has(email(t.teacherEmail||t.rowKey))}))
+  };
+}
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
 const CITY_MAP={
   "keelung":"基隆市","taipei":"臺北市","new-taipei":"新北市","taoyuan":"桃園市","hsinchu-city":"新竹市","hsinchu-county":"新竹縣",
@@ -79,8 +91,9 @@ app.http("tenantAdmins",{
     if(request.method==="GET"){
       if(!schoolId)return json({error:"缺少 schoolId"},400);
       if(!await getTenantDirectory(schoolId))return json({error:"找不到學校 Tenant"},404);
-      const items=await listTenantAdmins(schoolId,"");
-      return json({schoolId,items:items.map(adminView)});
+      const [admins,teachers]=await Promise.all([listTenantAdmins(schoolId,""),listTeacherDirectory(schoolId)]);
+      const access=schoolAccessOverview(admins,teachers);
+      return json({schoolId,items:access.admins,teachers:access.teachers});
     }
     const body=await request.json(),sid=tenantIdValue(body.schoolId),email=clean(body.email,320).toLowerCase(),action=clean(body.action,20).toLowerCase();
     if(!sid||!await getTenantDirectory(sid))return json({error:"找不到學校 Tenant"},404);
@@ -273,15 +286,18 @@ function resolveTeachingTeacher(type,rows,profiles,directoryMap,isAuthorized,sup
 }
 async function teacherOperationsForSchool(tenant,startDate,endDate,globalEvents=[]){
   const schoolId=String(tenant.rowKey||tenant.schoolId||"");
-  const [sectionRaw,ensembleRaw,comprehensiveRaw,privateRaw,directory,profiles,trainingRaw,support]=await Promise.all([
+  const [sectionRaw,ensembleRaw,comprehensiveRaw,privateRaw,directory,profiles,trainingRaw,support,admins]=await Promise.all([
     listActivityRange("section",schoolId,startDate,endDate),
     listActivityRange("ensemble",schoolId,startDate,endDate),
     listActivityRange("comprehensive",schoolId,startDate,endDate),
     listActivityRange("privateLesson",schoolId,startDate,endDate),
     listTeacherDirectory(schoolId),
     globalTeacherProfiles(schoolId),
-    confirmedTrainingEvents(schoolId,startDate,endDate),listTeacherSupport(schoolId,startDate,endDate)
+    confirmedTrainingEvents(schoolId,startDate,endDate),listTeacherSupport(schoolId,startDate,endDate),listTenantAdmins(schoolId,"active")
   ]);
+  const schoolAccess=schoolAccessOverview(admins,directory);
+  const schoolAdminEmails=new Set(schoolAccess.admins.map(x=>x.email));
+  const teacherAccounts=new Map(schoolAccess.teachers.map(x=>[x.email,x.status]));
   const directoryMap=new Map(directory.map(x=>[teacherKeyValue(x.teacherEmail||x.rowKey),x]));
   const permanentEmails=new Set(directory.filter(x=>x.status==="active").map(x=>teacherKeyValue(x.teacherEmail||x.rowKey)));
   for(const x of support)if(!directoryMap.has(teacherKeyValue(x.teacherEmail)))directoryMap.set(teacherKeyValue(x.teacherEmail),{teacherName:x.teacherName,teacherEmail:x.teacherEmail});
@@ -392,6 +408,8 @@ async function teacherOperationsForSchool(tenant,startDate,endDate,globalEvents=
     const ratings=t._ratings||[];delete t._ratings;
     t.parentFeedbackAverage=ratings.length?Math.round(ratings.reduce((a,b)=>a+b,0)/ratings.length*100)/100:null;
     t.totalHours=hoursTextNumber(t.totalMinutes);
+    t.hasSchoolAdmin=schoolAdminEmails.has(t.teacherEmail);
+    t.teacherAccountStatus=teacherAccounts.get(t.teacherEmail)||((support.some(x=>teacherKeyValue(x.teacherEmail)===t.teacherEmail))?"temporary":"none");
     t.sessions=t.sessions.sort((a,b)=>String(b.eventDate).localeCompare(String(a.eventDate))||String(a.courseType).localeCompare(String(b.courseType)));
     return t;
   }).filter(t=>t.totalMinutes>0||directoryMap.has(t.teacherEmail)).sort((a,b)=>b.totalMinutes-a.totalMinutes||String(a.teacherName).localeCompare(String(b.teacherName),"zh-Hant"));
@@ -402,7 +420,7 @@ async function teacherOperationsForSchool(tenant,startDate,endDate,globalEvents=
   return {
     schoolId,schoolName:String(tenant.schoolName||schoolId),shortName:String(tenant.shortName||""),cityName:String(tenant.cityName||""),schoolLevelName:String(tenant.schoolLevelName||""),status:String(tenant.status||"setup"),
     summary:{groupSessions:schoolCourses.section.sessions+schoolCourses.ensemble.sessions+schoolCourses.comprehensive.sessions,groupAttendance,practiceSessions:schoolCourses.practice.sessions,practiceMinutes:schoolCourses.practice.minutes,privateLessons:schoolCourses.privateLesson.sessions,privateMinutes:schoolCourses.privateLesson.minutes,performanceSessions:schoolCourses.performance.sessions,performanceMinutes:schoolCourses.performance.minutes,parentFeedbackCount:schoolCourses.privateLesson.feedbackCount,parentFeedbackAverage:schoolCourses.privateLesson.feedbackAverage,totalTeachingMinutes:teachingMinutes,totalTeachingHours:hoursTextNumber(teachingMinutes),unassignedSessions:unassigned.length},
-    courseSummary:schoolCourses,teachers,audit:sessions,unassignedAudit:unassigned
+    courseSummary:schoolCourses,teachers,schoolAdmins:schoolAccess.admins,audit:sessions,unassignedAudit:unassigned
   };
 }
 

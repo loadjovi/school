@@ -15,6 +15,7 @@
   if(state.globalTenant.teacherSupport===undefined)state.globalTenant.teacherSupport=null;
   if(state.globalTenant.supportLoading===undefined)state.globalTenant.supportLoading=false;
   if(state.globalTenant.supportSourceSchoolId===undefined)state.globalTenant.supportSourceSchoolId="";
+  if(!Array.isArray(state.globalTenant.schoolTeachers))state.globalTenant.schoolTeachers=[];
   if(!Array.isArray(state.globalTenant.onboarding))state.globalTenant.onboarding=[];
   if(state.globalTenant.onboardingBusy===undefined)state.globalTenant.onboardingBusy=false;
   state.globalBrandingAdmin=state.globalBrandingAdmin||{loading:false,error:""};
@@ -35,9 +36,12 @@
 
   async function loadAdmins(sid){
     state.globalTenant.selectedSchoolId=String(sid||"");
-    if(!sid){state.globalTenant.admins=[];return}
+    state.globalTenant.admins=[];state.globalTenant.schoolTeachers=[];
+    if(!sid)return;
     const d=await api("/api/tenant-admins?schoolId="+encodeURIComponent(sid));
-    state.globalTenant.admins=d.items||[];
+    if(state.globalTenant.selectedSchoolId!==String(sid))return;
+    state.globalTenant.admins=d.admins||d.items||[];
+    state.globalTenant.schoolTeachers=d.teachers||[];
   }
   async function loadGlobal(force){
     if(!canGlobal()||state.globalTenant.loading)return;
@@ -61,7 +65,11 @@
     const rows=(state.globalTenant.admins||[]).filter(a=>a.status==="active"),revoked=(state.globalTenant.admins||[]).filter(a=>a.status!=="active");
     const selfEmail=String(state.me?.email||"").toLowerCase();
     const selfIsAdmin=rows.some(a=>String(a.email||"").toLowerCase()===selfEmail);
-    const list=rows.length?rows.map(a=>'<div class="item"><div><b>'+esc(a.email)+'</b><small>School Admin<span class="global-action-hint">移除權限不會刪除帳號或學校資料</span></small></div><button class="global-danger-btn" style="margin:0" onclick="revokeSchoolAdmin(\''+esc(sid)+'\',\''+esc(a.email)+'\')">🗑️ 移除權限</button></div>').join(""):'<div class="notice" style="margin-top:10px">尚未指定學校管理員。</div>';
+    const adminLabel=a=>a.teacherStatus==="active"?"老師＋學校後台":a.teacherStatus==="inactive"?"僅學校後台（老師帳號已停用）":"僅學校後台（未建本校老師帳號）";
+    const list=rows.length?rows.map(a=>'<div class="item"><div><b>'+esc(a.teacherName||a.email)+'</b><small>'+esc(a.email)+'｜<b>'+adminLabel(a)+'</b><span class="global-action-hint">移除權限不會刪除帳號或學校資料</span></small></div><button class="global-danger-btn" style="margin:0" onclick="revokeSchoolAdmin(\''+esc(sid)+'\',\''+esc(a.email)+'\')">🗑️ 移除權限</button></div>').join(""):'<div class="notice" style="margin-top:10px">尚未指定學校管理員。</div>';
+    const teachers=state.globalTenant.schoolTeachers||[],activeTeachers=teachers.filter(t=>t.status==="active"),inactiveTeachers=teachers.filter(t=>t.status!=="active");
+    const teacherRow=t=>'<div class="item"><div><b>'+esc(t.teacherName||t.email)+'</b><small>'+esc(t.email)+'｜'+(t.status==="active"?(t.hasSchoolAdmin?'老師＋學校後台':'只有老師權限'):(t.hasSchoolAdmin?'老師帳號已停用，仍有學校後台權限':'老師帳號已停用'))+'</small></div></div>';
+    const teacherList='<div class="global-inline-admin"><h3>👩‍🏫 老師與學校後台權限對照</h3><div class="notice">老師兼後台 '+rows.filter(a=>a.teacherStatus==="active").length+' 人｜僅後台 '+rows.filter(a=>a.teacherStatus!=="active").length+' 人｜只有老師 '+activeTeachers.filter(t=>!t.hasSchoolAdmin).length+' 人。以此校啟用中的老師帳號及 School Admin 指派為準；短期跨校支援另列於師資調度。</div>'+(activeTeachers.length?activeTeachers.map(teacherRow).join(""):'<div class="notice">目前沒有啟用中的老師帳號。</div>')+(inactiveTeachers.length?'<details style="margin-top:10px"><summary>已停用老師帳號（'+inactiveTeachers.length+'）</summary>'+inactiveTeachers.map(teacherRow).join("")+'</details>':'')+'</div>';
     const revokedList=revoked.length?'<details style="margin-top:10px"><summary><b>已停用權限紀錄（'+revoked.length+'）</b></summary>'+revoked.map(a=>'<div class="item"><div><b>'+esc(a.email)+'</b><small>停用於 '+esc(a.updatedAt||"未記錄")+'</small></div><button class="secondary" style="margin:0" onclick="grantKnownSchoolAdmin(\''+esc(sid)+'\',\''+esc(a.email)+'\')">重新啟用</button></div>').join("")+'</details>':'';
     let selfAction="";
     if(selfIsAdmin&&["active","onboarding"].includes(x.status)){
@@ -77,7 +85,7 @@
     const lifecycleLocked=sid==="sacred-heart"||["onboarding","active"].includes(x.status);
     const statusOptions=sid==="sacred-heart"?'<option value="active">啟用（固定）</option>':lifecycleLocked?'<option value="'+esc(x.status)+'">'+esc(st[x.status]||x.status)+'（由 Phase 4 管理）</option>':['setup','inactive'].map(value=>'<option value="'+value+'" '+(value===x.status?'selected':'')+'>'+esc(st[value]||value)+'</option>').join("");
     const schoolForm='<div class="global-inline-admin"><h3>🏫 學校基本設定</h3><div class="notice"><b>schoolId：'+esc(sid)+'</b><br>schoolId 建立後不可修改；「隔離驗證中」與「正式啟用」只能由 Phase 4 安全流程切換。</div><label>學校名稱</label><input id="tenantName_'+esc(sid)+'" value="'+esc(x.schoolName||'')+'" maxlength="120"><div class="row2"><div><label>簡稱</label><input id="tenantShort_'+esc(sid)+'" value="'+esc(x.shortName||'')+'" maxlength="60"></div><div><label>系統名稱</label><input id="tenantSystem_'+esc(sid)+'" value="'+esc(x.systemName||'')+'" maxlength="160"></div></div><div class="row2"><div><label>縣市</label><select id="tenantCity_'+esc(sid)+'">'+cityOptions+'</select></div><div><label>學制</label><select id="tenantLevel_'+esc(sid)+'">'+levelOptions+'</select></div></div><div class="row2"><div><label>時區</label><select id="tenantTimezone_'+esc(sid)+'"><option value="Asia/Taipei" selected>Asia/Taipei</option></select></div><div><label>狀態</label><select id="tenantStatus_'+esc(sid)+'" '+(lifecycleLocked?'disabled':'')+'>'+statusOptions+'</select></div></div><button class="primary" onclick="saveSchoolTenant(\''+esc(sid)+'\')">💾 儲存學校設定</button></div>';
-    return schoolForm+'<div class="global-inline-admin"><h3>🔐 '+esc(x.schoolName)+'｜學校管理員</h3><div class="notice">Global 可管理此校 School Admin 權限；只有已被指定為此校管理員的帳號，才可以進入該校營運後台。</div>'+selfAction+list+revokedList+'<label>新增此校管理員 Google Email</label><input id="globalAdminEmail_'+esc(sid)+'" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 '+esc(x.schoolName)+' School Admin</button></div>';
+    return schoolForm+'<div class="global-inline-admin"><h3>🔐 '+esc(x.schoolName)+'｜學校管理員</h3><div class="notice">Global 可管理此校 School Admin 權限；權限與工時分開呈現；工時仍依實際授課紀錄認列。學校啟用後，已指派者才可進入營運後台。</div>'+selfAction+list+revokedList+'<label>新增此校管理員 Google Email</label><input id="globalAdminEmail_'+esc(sid)+'" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 '+esc(x.schoolName)+' School Admin</button></div>'+teacherList;
   }
   function schoolCard(x){
     const mode=x.dataMode==="tenant-scoped-operational"?"學生、家長、老師、出勤、練習與個別課資料均已 Tenant 化。":x.dataMode==="tenant-onboarding-testing"?"正在隔離驗證；測試帳號只能操作此校 Tenant，尚未正式啟用。":"Tenant 結構已備妥，但維持建置狀態且尚未加入正式營運資料。";
@@ -168,8 +176,9 @@
     const map=new Map(),types=globalCourseTypes;
     for(const school of schools||[])for(const teacher of school.teachers||[]){
       const key=globalTeacherKey(school,teacher);
-      if(!map.has(key))map.set(key,{key,teacherName:teacher.teacherName||teacher.teacherEmail||key,schools:[],minutes:0,course:Object.fromEntries(types.map(type=>[type,{sessions:0,minutes:0}]))});
+      if(!map.has(key))map.set(key,{key,teacherName:teacher.teacherName||teacher.teacherEmail||key,schools:[],accessNotes:[],minutes:0,course:Object.fromEntries(types.map(type=>[type,{sessions:0,minutes:0}]))});
       const total=map.get(key);total.schools.push(school.schoolName||school.schoolId);total.minutes+=Number(teacher.totalMinutes||0);
+      total.accessNotes.push((school.schoolName||school.schoolId)+'：'+teacherRoleLabel(teacher));
       for(const type of types){total.course[type].sessions+=Number(teacher.course?.[type]?.sessions||0);total.course[type].minutes+=Number(teacher.course?.[type]?.minutes||0)}
     }
     return [...map.values()].sort((a,b)=>b.minutes-a.minutes||String(a.teacherName).localeCompare(String(b.teacherName),"zh-Hant"));
@@ -180,15 +189,28 @@
     if(teacher)html+='<span>›</span><b>'+esc(teacher.teacherName)+'</b>';
     return html+'</div>';
   }
+  function schoolAdminRoleSummary(school){
+    const admins=school.schoolAdmins||[],overlap=admins.filter(a=>a.teacherStatus==="active"),only=admins.filter(a=>a.teacherStatus!=="active");
+    const accounts=only.map(a=>esc(a.teacherName||a.email)+(a.teacherStatus==="inactive"?'（老師帳號已停用）':'（未建本校老師帳號）')).join('、');
+    return '<div class="notice" style="margin-top:9px"><b>🔐 學校後台權限（目前狀態）</b>｜老師兼後台 '+overlap.length+' 人｜僅後台 '+only.length+' 人'+(accounts?'<br>僅後台帳號：'+accounts:'')+'</div>';
+  }
+  const teacherRoleLabel=t=>{
+    const status=String(t.teacherAccountStatus||"active");
+    if(status==="active")return t.hasSchoolAdmin?'老師＋學校後台':'只有老師權限';
+    if(status==="inactive")return t.hasSchoolAdmin?'老師帳號已停用，仍有學校後台':'老師帳號已停用';
+    if(status==="temporary")return t.hasSchoolAdmin?'短期支援＋學校後台':'短期跨校支援';
+    return t.hasSchoolAdmin?'僅學校後台（無本校老師帳號）':'本校未建老師帳號（依授課紀錄）';
+  };
   function globalOpsLayer1(report,busy){
     const total=report.totals||{},schools=(report.schools||[]);
     const teachers=crossSchoolTeacherTotals(schools),types=globalCourseTypes;
     const courseTotals=Object.fromEntries(types.map(type=>[type,schools.reduce((out,school)=>{const course=school.courseSummary?.[type]||{};out.sessions+=Number(course.sessions||0);out.minutes+=Number(course.minutes||0);return out},{sessions:0,minutes:0})]));
-    const teacherRows=teachers.map(t=>'<div class="global-ops-teacher"><div class="global-ops-teacher-head"><div><b>👤 '+esc(t.teacherName)+'</b><small>'+esc([...new Set(t.schools)].join("、"))+'</small></div><strong class="global-ops-teacher-hours">'+globalHours(t.minutes/60)+'</strong></div><div class="global-ops-teacher-breakdown">'+types.map(type=>'<span>'+globalCourseIcons[type]+' '+globalCourseLabels[type]+'<br><b>'+Number(t.course[type].sessions)+(type==="performance"?' 場｜':' 堂｜')+globalHours(t.course[type].minutes/60)+'</b></span>').join("")+'</div><button class="secondary" style="width:auto;margin:9px 0 0;padding:7px 10px" onclick="exportGlobalTeacherAttendance('+globalActionArg(t.key)+')">⬇️ 匯出這位老師課堂明細 CSV</button></div>').join("");
+    const teacherRows=teachers.map(t=>'<div class="global-ops-teacher"><div class="global-ops-teacher-head"><div><b>👤 '+esc(t.teacherName)+'</b><small>'+esc([...new Set(t.schools)].join("、"))+'</small><small>🔐 '+esc([...new Set(t.accessNotes)].join("；"))+'</small></div><strong class="global-ops-teacher-hours">'+globalHours(t.minutes/60)+'</strong></div><div class="global-ops-teacher-breakdown">'+types.map(type=>'<span>'+globalCourseIcons[type]+' '+globalCourseLabels[type]+'<br><b>'+Number(t.course[type].sessions)+(type==="performance"?' 場｜':' 堂｜')+globalHours(t.course[type].minutes/60)+'</b></span>').join("")+'</div><button class="secondary" style="width:auto;margin:9px 0 0;padding:7px 10px" onclick="exportGlobalTeacherAttendance('+globalActionArg(t.key)+')">⬇️ 匯出這位老師課堂明細 CSV</button></div>').join("");
     const cards=schools.map(school=>{
       const s=school.summary||{},att=s.groupAttendance||{};
       return '<div class="global-ops-school-card"><div class="student"><div><b style="font-size:16px">🏫 '+esc(school.schoolName||school.schoolId)+'</b><small>'+esc(st[school.status]||school.status||"")+(school.cityName?'｜'+esc(school.cityName):'')+'</small></div><button class="secondary" style="width:auto;margin:0" onclick="openGlobalOpsSchool(\''+esc(school.schoolId)+'\')">查看老師工時 →</button></div>'+
         '<div class="global-ops-grid"><div class="global-ops-stat"><b>'+Number(s.groupSessions||0)+'</b><small>團體課已點名堂數</small></div><div class="global-ops-stat"><b>'+attendanceRateText(att.attendanceRate)+'</b><small>分部／合奏／綜合到課率</small></div><div class="global-ops-stat"><b>'+Number(s.privateLessons||0)+'</b><small>個課完成堂數</small></div><div class="global-ops-stat"><b>'+globalHours(s.totalTeachingHours||0)+'</b><small>已辨識老師工時（含展演）</small></div><div class="global-ops-stat"><b>'+globalRating(s.parentFeedbackAverage)+'</b><small>家長個課回饋｜'+Number(s.parentFeedbackCount||0)+' 筆</small></div></div>'+
+        schoolAdminRoleSummary(school)+
         (Number(s.unassignedSessions||0)?'<div class="notice" style="margin-top:8px">⚠️ 有 '+Number(s.unassignedSessions||0)+' 堂團體課無法唯一辨識授課老師，暫不計入老師工時；第三層仍保留點名人供稽核。</div>':'')+
       '</div>';
     }).join("");
@@ -206,7 +228,7 @@
     const s=school.summary||{},teachers=school.teachers||[],courses=school.courseSummary||{};
     const rows=teachers.map(t=>{
       const c=t.course||{},privateInfo=c.privateLesson||{};
-      return '<div class="global-ops-teacher"><div class="global-ops-teacher-head"><div><b>👤 '+esc(t.teacherName||"老師")+'</b><small>家長回饋 '+Number(t.parentFeedbackCount||0)+' 筆｜'+globalRating(t.parentFeedbackAverage)+'</small></div><div><div class="global-ops-teacher-hours">'+globalHours(t.totalHours||0)+'</div><button class="secondary" style="width:auto;margin:5px 0 0;padding:6px 9px" onclick="openGlobalOpsTeacher(\''+esc(school.schoolId)+'\',\''+encodeURIComponent(String(t.teacherKey||""))+'\')">查看課堂稽核 →</button><button class="secondary" style="width:auto;margin:5px 0 0;padding:6px 9px" onclick="exportGlobalTeacherAttendance('+globalActionArg(globalTeacherKey(school,t))+','+globalActionArg(school.schoolId)+')">⬇️ 匯出逐堂明細 CSV</button></div></div>'+
+      return '<div class="global-ops-teacher"><div class="global-ops-teacher-head"><div><b>👤 '+esc(t.teacherName||"老師")+'</b><small>🔐 '+teacherRoleLabel(t)+'</small><small>家長回饋 '+Number(t.parentFeedbackCount||0)+' 筆｜'+globalRating(t.parentFeedbackAverage)+'</small></div><div><div class="global-ops-teacher-hours">'+globalHours(t.totalHours||0)+'</div><button class="secondary" style="width:auto;margin:5px 0 0;padding:6px 9px" onclick="openGlobalOpsTeacher(\''+esc(school.schoolId)+'\',\''+encodeURIComponent(String(t.teacherKey||""))+'\')">查看課堂稽核 →</button><button class="secondary" style="width:auto;margin:5px 0 0;padding:6px 9px" onclick="exportGlobalTeacherAttendance('+globalActionArg(globalTeacherKey(school,t))+','+globalActionArg(school.schoolId)+')">⬇️ 匯出逐堂明細 CSV</button></div></div>'+
         '<div class="global-ops-teacher-breakdown">'+
           '<span>🎼 分部<br><b>'+Number(c.section?.sessions||0)+' 堂｜'+globalHours(c.section?.hours||0)+'</b></span>'+
           '<span>🎻 合奏<br><b>'+Number(c.ensemble?.sessions||0)+' 堂｜'+globalHours(c.ensemble?.hours||0)+'</b></span>'+
@@ -220,6 +242,7 @@
       '<div class="global-ops-grid"><div class="global-ops-stat"><b>'+Number(s.groupSessions||0)+'</b><small>團體課已點名堂數</small></div><div class="global-ops-stat"><b>'+attendanceRateText(s.groupAttendance?.attendanceRate)+'</b><small>團體課到課率</small></div><div class="global-ops-stat"><b>'+Number(s.privateLessons||0)+'</b><small>個課堂數</small></div><div class="global-ops-stat"><b>'+globalHours(s.totalTeachingHours||0)+'</b><small>已辨識工時（含展演）</small></div><div class="global-ops-stat"><b>'+Number(s.unassignedSessions||0)+'</b><small>待確認授課老師堂數</small></div></div>'+
       '<h3 style="margin:16px 0 6px">課別與展演月度概況</h3><div class="global-ops-course-grid">'+globalCourseTypes.map(k=>globalCourseCard(k,courses[k])).join("")+'</div>'+
       '<div class="notice" style="margin-top:10px"><b>⏱️ 加練課</b><br>由各校管理員在加練後確認實際授課老師及分鐘數；僅已確認、未取消的活動計入工時。此欄不代表學生出勤。</div>'+
+      schoolAdminRoleSummary(school)+
       '<h3 style="margin:16px 0 6px">老師月度工時</h3>'+(rows||'<div class="notice">本月尚無可辨識的老師教學紀錄。</div>')+
     '</div>';
   }
@@ -237,7 +260,7 @@
           :'應到 '+Number(att.total||0)+'｜到課 '+Number(att.attended||0)+'｜請假 '+Number(att.leave||0)+'｜缺席 '+Number(att.absent||0)+'｜遲到 '+Number(att.late||0)+'｜'+attendanceRateText(att.attendanceRate);
       return '<div class="global-ops-audit"><div class="global-ops-audit-head"><b>'+globalCourseIcons[x.courseType]+' '+esc(x.eventDate)+'｜'+esc(x.courseLabel||globalCourseLabels[x.courseType]||x.courseType)+(where?'｜'+esc(where):'')+'</b><strong>'+globalHours(x.teachingHours||0)+'</strong></div><small>'+detail+'<br>授課認列：'+esc(x.teacherSource||"")+'｜'+recorder+'</small></div>';
     }).join("");
-    return '<div class="card">'+globalOpsBreadcrumb(school,teacher)+'<div class="section-title"><div><h2>🔎 '+esc(teacher.teacherName)+'｜課堂稽核</h2><div class="muted">第三層｜逐堂核對日期、課別、點名與工時來源</div></div><span class="badge ok">'+globalHours(teacher.totalHours||0)+'</span></div>'+
+    return '<div class="card">'+globalOpsBreadcrumb(school,teacher)+'<div class="section-title"><div><h2>🔎 '+esc(teacher.teacherName)+'｜課堂稽核</h2><div class="muted">第三層｜逐堂核對日期、課別、點名與工時來源｜🔐 '+teacherRoleLabel(teacher)+'</div></div><span class="badge ok">'+globalHours(teacher.totalHours||0)+'</span></div>'+
       '<div class="global-ops-grid"><div class="global-ops-stat"><b>'+Number(course.section?.sessions||0)+'</b><small>分部課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.ensemble?.sessions||0)+'</b><small>合奏課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.comprehensive?.sessions||0)+'</b><small>綜合課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.practice?.sessions||0)+'</b><small>加練課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.privateLesson?.sessions||0)+'</b><small>個課堂數</small></div><div class="global-ops-stat"><b>'+Number(course.performance?.sessions||0)+'</b><small>展演活動場次</small></div></div>'+
       '<div class="notice" style="margin-top:10px"><b>授課老師 ≠ 點名人</b><br>若 School Admin 協助點名，工時不會直接算到管理員；Global 會優先依老師授課設定與老師本人點名判斷。無法唯一判定的課堂不計入老師工時，避免誤算。</div><button class="secondary" style="width:auto;margin-top:9px" onclick="exportGlobalTeacherAttendance('+globalActionArg(globalTeacherKey(school,teacher))+','+globalActionArg(school.schoolId)+')">⬇️ 匯出這位老師逐堂明細 CSV</button>'+
       '<h3 style="margin:16px 0 6px">本月課堂明細</h3>'+(audits||'<div class="notice">本月沒有可稽核的課堂。</div>')+
@@ -497,7 +520,7 @@
   window.selectGlobalSchool=async function(sid){
     try{
       if(String(state.globalTenant.selectedSchoolId||"")===String(sid||"")){
-        state.globalTenant.selectedSchoolId="";state.globalTenant.admins=[];draw();return;
+        state.globalTenant.selectedSchoolId="";state.globalTenant.admins=[];state.globalTenant.schoolTeachers=[];draw();return;
       }
       await loadAdmins(sid);draw();
       setTimeout(()=>document.getElementById("globalAdminEmail_"+sid)?.scrollIntoView({behavior:"smooth",block:"nearest"}),50);
