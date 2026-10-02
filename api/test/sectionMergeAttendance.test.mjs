@@ -29,8 +29,9 @@ test("receiving teacher takes both rosters while each student retains the origin
 
 test("the final teacher attendance screen displays and saves the merged roster",async()=>{
   const posts=[],roster=[{studentId:"target",name:"乙",groupName:"A",section:"小提二部",grade:"五年級",instrument:"小提琴"},{studentId:"source",name:"甲",groupName:"A",section:"小提一部",grade:"五年級",instrument:"小提琴"}];
+  let saved=[];
   const state={me:{assignments:[{groupName:"A",section:"小提二部"}],capabilities:{section:true,teacherSettings:true}},students:[roster[0]],sectionSelectedDate:"2026-09-29",page:"teacherHome"};
-  const context={state,sectionPage:()=>"",ensemblePage:()=>"",go:async()=>{},api:async(url,options)=>{if(options?.method==="POST"){posts.push(JSON.parse(options.body));return {ok:true}}return {items:[],roster,merges:[{sourceSection:"小提一部"}]}},esc:v=>String(v),toast:()=>{},render:()=>{},setInterval:()=>1,clearInterval:()=>{},setTimeout:()=>1};
+  const context={state,sectionPage:()=>"",ensemblePage:()=>"",go:async()=>{},api:async(url,options)=>{if(options?.method==="POST"){const body=JSON.parse(options.body);posts.push(body);saved=body.items;return {ok:true,count:saved.length}}return {items:saved.length?[...saved,{studentId:"former",status:"present"}]:[],roster,merges:[{sourceSection:"小提一部"}],lastSavedAt:"2026-09-29T02:00:00Z"}},esc:v=>String(v),toast:()=>{},render:()=>{},document:{getElementById:()=>null},setInterval:()=>1,clearInterval:()=>{},setTimeout:()=>1};
   context.window=context;
   const src=readFileSync(new URL("../../app/attendance-edit.js",import.meta.url),"utf8");
   runInNewContext(src,context);
@@ -43,6 +44,9 @@ test("the final teacher attendance screen displays and saves the merged roster",
   assert.deepEqual(Array.from(posts[0].items,x=>x.studentId).sort(),["source","target"]);
   assert.equal(posts[0].items.find(x=>x.studentId==="source").status,"leave");
   assert.equal(posts[0].items.find(x=>x.studentId==="source").minutes,0);
+  assert.equal(state.sectionSaveFeedback.phase,"success");
+  assert.equal(state.sectionSessionLoaded,2);
+  assert.match(state.sectionSaveFeedback.message,/伺服器已確認儲存/);
 });
 
 test("school admin alone can create and cancel a one-day section merge",async()=>{
