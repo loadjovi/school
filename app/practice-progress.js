@@ -2,7 +2,7 @@
   const isAdmin=()=>state.me?.role==="admin";
   const isTeacher=()=>state.me?.role!=="admin"&&!!state.me?.capabilities?.teacherSettings;
   const canView=()=>isAdmin()||isTeacher();
-  state.practiceProgressMonth=state.practiceProgressMonth||new Date().toISOString().slice(0,7);
+  state.practiceProgressMonth=state.practiceProgressMonth||new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"}).slice(0,7);
   state.practiceProgressData=state.practiceProgressData||null;
   state.practiceProgressGroup=state.practiceProgressGroup||"全部";
   state.practiceProgressSection=state.practiceProgressSection||"全部";
@@ -27,7 +27,7 @@
   }
   async function loadPracticeProgress(){
     if(!canView())return;
-    const month=encodeURIComponent(state.practiceProgressMonth);
+    const requestedMonth=state.practiceProgressMonth,month=encodeURIComponent(requestedMonth);
     const [progress,feedback]=await Promise.all([
       api(`/api/practice-progress?month=${month}`),
       api(`/api/practice-feedback?month=${month}`).catch(()=>({items:[]}))
@@ -40,7 +40,7 @@
       item.monthlyScore=scoreParts(item,progress);
       return item;
     });
-    state.practiceProgressData=progress;
+    if(state.practiceProgressMonth===requestedMonth)state.practiceProgressData=progress;
   }
 
   function taipeiMonth(){
@@ -112,9 +112,9 @@
 
   function detailHtml(x){
     if(state.practiceProgressSelected!==String(x.studentId))return "";
-    const rows=isAdmin()?(x.records||[]):(x.recent||[]);
+    const rows=x.records||[];
     const records=rows.length?`<div style="margin-top:10px">${rows.map(r=>`<div class="item" style="display:block"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(r.practiceDate)}｜${r.minutes} 分鐘</b><small>當日累計 ${Number(r.dayMinutes||r.minutes||0)} 分鐘</small><span class="badge ${r.qualified?'ok':'warn'}">${r.qualified?'計入練習日':'練習紀錄'}</span></div>${r.startTime||r.endTime?`<small>${esc(r.startTime||'')}～${esc(r.endTime||'')}</small>`:''}${r.practiceContent?`<small style="margin-top:7px"><b>練習內容：</b>${esc(r.practiceContent)}</small>`:''}${r.focus?`<small><b>練習重點：</b>${esc(r.focus)}</small>`:''}</div>`).join("")}</div>`:`<div class="notice" style="margin-top:10px">本月尚無家長回填的自主練習紀錄。</div>`;
-    return records+feedbackPanel(x);
+    return `<div class="muted" style="margin-top:10px">${esc(state.practiceProgressMonth)} 完整紀錄｜${rows.length} 筆</div>`+records+feedbackPanel(x);
   }
 
   const fallbackRatingText={1:"需加強",2:"持續努力",3:"穩定",4:"良好",5:"優異"};
@@ -214,6 +214,8 @@
     const sections=["全部",...new Set((d.items||[]).map(x=>String(x.section)).filter(Boolean))];
     const all=(d.items||[]),items=filteredItems();
     const counts={none:all.filter(x=>Number(x.activeDays||0)===0).length,below:all.filter(x=>Number(x.activeDays||0)>0&&Number(x.practiceRatePercent||0)<80).length,ok:all.filter(x=>Number(x.practiceRatePercent||0)>=80).length};
+    const now=taipeiMonth(),[year,monthNumber]=now.split("-").map(Number),lastMonth=new Date(Date.UTC(year,monthNumber-2,1)).toISOString().slice(0,7);
+    const monthShort=month=>`${Number(month.slice(0,4))} 年 ${Number(month.slice(5))} 月`;
     const filterBtn=(key,label,count)=>`<button class="secondary" style="width:100%;min-width:0;padding:9px 8px;margin:0;font-weight:800;white-space:nowrap;${state.practiceProgressStatus===key?'background:#eef2ff;border-width:2px':''}" onclick="changePracticeProgressStatus('${key}')">${label}${count==null?'':' '+count}</button>`;
     const rows=items.map(x=>{const active=Number(x.activeDays||0),rate=Number(x.practiceRatePercent||0),gap=x.daysSincePractice==null?999:Number(x.daysSincePractice),status=active===0?'⚪ 本月尚無紀錄':gap>=7?`🟡 距上次練習 ${gap} 天`:gap>=3?`🟡 距上次練習 ${gap} 天`:rate<80?'🟡 持續累積中':'🟢 本月練習目標已完成',fb=feedbackLevelMeta(x.feedback?.level),fbText=fb?`<span class="practice-feedback-chip">💛 本月 ${Number(x.feedbackCount||0)} 次｜${fb.icon} ${esc(fb.label)}</span>`:"",ms=x.monthlyScore||scoreParts(x,d),scoreText=`<span class="monthly-score-chip">🎯 自主 ${ms.total}/10｜系統計算｜${esc(ms.status)}</span>`;return `<div class="item" style="align-items:center"><div style="min-width:0"><b>${esc(x.name)} <span style="font-size:13px">${status}</span></b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.instrument)}<br>${active} 天｜${Number(x.totalMinutes||0)} 分鐘｜最近 ${esc(x.lastPracticeDate||'尚無紀錄')}${x.lastPracticeDate&&x.daysSincePractice!=null?`｜距今 ${Number(x.daysSincePractice)} 天`:''}</small>${scoreText}${fbText}</div><button class="secondary" style="width:auto;padding:7px 10px;margin:0" onclick="togglePracticeProgressDetail('${esc(x.studentId)}')">›</button></div>${detailHtml(x)}`}).join("");
     return `${!isAdmin()?'<button class="secondary" style="width:auto;margin:0 0 12px;padding:9px 14px;border-radius:999px;font-weight:800" onclick="go(\'teacherHome\')">← 返回今日教學</button>':''}
@@ -221,7 +223,7 @@
       <div class="notice">此頁只用來查看自主練習進度與提供日常鼓勵；<b>老師不需要在這裡做正式成績評量。</b></div>
       <div class="monthly-score-policy"><b>🎯 自主練習｜期末 10%｜系統自動計分</b><small>單日累計 ≥ ${d.qualifiedMinutes||20} 分鐘計 1 個有效練習日；月分數＝有效練習天數 ÷ 當月目標天數 × 10，最高 10 分。老師不需另外評分。9 月為試營運，正式計分自 10 月起。</small></div>
       <div class="monthly-score-policy" style="margin-top:8px"><b>🎻 學習表現｜期末 5%</b><small>有完成個別課的學生，由系統依完成次數自動換算：每月 4 次 = 5 分，上學期 10～12 月取學期平均；整學期沒有完成個課的學生，才由分部老師在學期末評量一次。</small></div>
-      <label>月份</label><input type="month" value="${esc(state.practiceProgressMonth)}" onchange="changePracticeProgressMonth(this.value)">
+      <label>月份</label>${isTeacher()?`<div class="row2" style="margin-bottom:8px"><button class="secondary" type="button" style="margin:0" onclick="changePracticeProgressMonth('${now}')" ${state.practiceProgressMonth===now?'disabled':''}>本月｜${monthShort(now)}</button><button class="secondary" type="button" style="margin:0" onclick="changePracticeProgressMonth('${lastMonth}')" ${state.practiceProgressMonth===lastMonth?'disabled':''}>上月｜${monthShort(lastMonth)}</button></div><small style="display:block;margin-bottom:8px;color:var(--muted)">切到上月並展開學生，可查看該月全部練習日期、時間與內容，作為日常鼓勵參考。</small>`:''}<input type="month" value="${esc(state.practiceProgressMonth)}" onchange="changePracticeProgressMonth(this.value)">
       <div class="grid"><div class="kpi"><b>${all.length}</b><span>授課學生</span></div><div class="kpi"><b>${all.length-counts.none}</b><span>已有練習</span></div><div class="kpi"><b>${counts.below}</b><span>持續累積中</span></div><div class="kpi"><b>${counts.ok}</b><span>已完成目標</span></div></div>
       <div style="margin-top:10px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px">${filterBtn('全部','全部',all.length)}${filterBtn('尚未練習','⚪ 本月尚無紀錄',counts.none)}${filterBtn('未達標','🟡 持續累積中',counts.below)}${filterBtn('已達標','🟢 已完成目標',counts.ok)}</div>
       <div class="row2"><div><label>團別</label><select onchange="changePracticeProgressGroup(this.value)">${groups.map(g=>`<option value="${esc(g)}" ${g===state.practiceProgressGroup?'selected':''}>${esc(g==='全部'?'全部團別':g+'團')}</option>`).join('')}</select></div><div><label>分部</label><select onchange="changePracticeProgressSection(this.value)">${sections.map(v=>`<option value="${esc(v)}" ${v===state.practiceProgressSection?'selected':''}>${esc(v)}</option>`).join('')}</select></div></div>
@@ -265,7 +267,12 @@
     finally{state.practiceFeedbackSaving="";render()}
   };
   window.changePracticeProgressStatus=function(v){state.practiceProgressStatus=String(v||"全部");state.practiceProgressSelected="";render()};
-  window.changePracticeProgressMonth=async function(v){state.practiceProgressMonth=String(v||new Date().toISOString().slice(0,7));try{await loadPracticeProgress();render()}catch(e){toast('❌ '+e.message)}};
+  window.changePracticeProgressMonth=async function(v){
+    const old=state.practiceProgressMonth,oldData=state.practiceProgressData,requested=String(v||taipeiMonth());
+    state.practiceProgressMonth=requested;state.practiceProgressSelected="";state.practiceProgressData=null;render();
+    try{await loadPracticeProgress();if(state.practiceProgressMonth===requested)render()}
+    catch(e){if(state.practiceProgressMonth===requested){state.practiceProgressMonth=old;state.practiceProgressData=oldData;toast('❌ '+e.message);render()}}
+  };
   window.changePracticeProgressGroup=function(v){state.practiceProgressGroup=String(v||'全部');render()};
   window.changePracticeProgressSection=function(v){state.practiceProgressSection=String(v||'全部');render()};
   window.changePracticeProgressSearch=function(v){state.practiceProgressSearch=String(v||'');render()};
