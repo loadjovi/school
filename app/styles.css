@@ -292,6 +292,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
 .practice-leaderboard-rank{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#e9efff;color:#26499e;font-weight:900;font-size:13px}
 .practice-leaderboard-item b{display:block;font-size:13px;color:#172554}
 .practice-leaderboard-item small{display:block;margin-top:2px;font-size:10px;color:var(--muted);line-height:1.4}
+.practice-leaderboard-feedback{display:block;margin-top:5px;color:#76540d;font-size:10px;font-weight:800;line-height:1.4}
 .practice-leaderboard-item strong{font-size:15px;color:#26499e;white-space:nowrap}
 .practice-leaderboard-mine{margin-top:10px;padding:9px 10px;border-radius:10px;background:#f0f8f1;color:#24583b;font-size:12px;font-weight:800}
 .practice-leaderboard-foot{margin-top:11px;color:var(--muted);font-size:10px;line-height:1.6}

@@ -21,7 +21,19 @@ export function maskedStudentName(name){
   return chars.length?`${chars[0]}${"○".repeat(Math.max(1,chars.length-1))}`:"學生";
 }
 
-export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,studentId,qualifiedMinutes=15,targetDays=30}){
+export function latestLeaderboardFeedback(students=[],feedbackRows=[]){
+  const aliasOwner=new Map(students.flatMap(student=>(student.aliases||[]).map(alias=>[String(alias),String(student.studentId)])));
+  const latest=new Map();
+  for(const row of feedbackRows){
+    const owner=aliasOwner.get(String(row.studentId||"")),level=Number(row.level||0);
+    if(!owner||!Number.isInteger(level)||level<1||level>5)continue;
+    const updatedAt=String(row.updatedAt||"");
+    if(updatedAt>String(latest.get(owner)?.updatedAt||""))latest.set(owner,{level,date:String(row.feedbackDate||updatedAt.slice(0,10)),updatedAt});
+  }
+  return new Map([...latest].map(([id,value])=>[id,{level:value.level,date:value.date}]));
+}
+
+export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,studentId,qualifiedMinutes=15,targetDays=30,feedbackByStudentId=new Map()}){
   const includedMonths=months.filter(month=>month<=String(today).slice(0,7));
   const byMonth=new Map(includedMonths.map(month=>[month,{
     target:Math.max(1,Math.min(targetDays,month===String(today).slice(0,7)
@@ -56,7 +68,11 @@ export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,st
   ranked.sort((a,b)=>b.score10-a.score10||b.qualifiedDays-a.qualifiedDays||b.minutes-a.minutes||a.studentId.localeCompare(b.studentId));
   const selected=String(studentId||"");
   const myIndex=ranked.findIndex(x=>x.studentId===selected);
-  const view=(x,index)=>({rank:index+1,name:x.studentId===selected?x.name:maskedStudentName(x.name),isMine:x.studentId===selected,score10:x.score10,qualifiedDays:x.qualifiedDays,minutes:x.minutes});
+  const view=(x,index)=>({
+    rank:index+1,name:x.studentId===selected?x.name:maskedStudentName(x.name),isMine:x.studentId===selected,
+    score10:x.score10,qualifiedDays:x.qualifiedDays,minutes:x.minutes,
+    feedback:feedbackByStudentId.get(x.studentId)||null
+  });
   return {
     includedMonths,
     participantCount:ranked.length,

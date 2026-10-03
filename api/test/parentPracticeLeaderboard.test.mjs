@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPracticeLeaderboard, practiceScoreMonths } from "../src/lib/practiceLeaderboard.js";
+import { buildPracticeLeaderboard, latestLeaderboardFeedback, practiceScoreMonths } from "../src/lib/practiceLeaderboard.js";
 
 const student=(studentId,name,aliases=[studentId])=>({studentId,name,aliases,safeParentEmails:[]});
 const row=(id,date,minutes,start="18:00",rowKey=`${id}-${date}-${start}`)=>({
@@ -44,4 +44,19 @@ test("September trial has no official ranking; January shows completed October�
   assert.equal(trial.participantCount,0);
   assert.deepEqual(trial.items,[]);
   assert.deepEqual(practiceScoreMonths("2027-01-01"),["2026-10","2026-11","2026-12"]);
+});
+
+test("latest monthly teacher encouragement is shown without affecting score or exposing the comment",()=>{
+  const students=[student("s1","王小明",["s1","old-1"]),student("s2","陳小華")];
+  const feedbackRows=[
+    {studentId:"old-1",level:2,feedbackDate:"2026-10-01",updatedAt:"2026-10-01T09:00:00Z",comment:"私下鼓勵",teacherEmail:"teacher@example.com"},
+    {studentId:"s1",level:4,feedbackDate:"2026-10-02",updatedAt:"2026-10-02T09:00:00Z",comment:"最新私訊",teacherEmail:"teacher@example.com"},
+    {studentId:"unknown",level:5,feedbackDate:"2026-10-03",updatedAt:"2026-10-03T09:00:00Z"}
+  ];
+  const feedbackByStudentId=latestLeaderboardFeedback(students,feedbackRows);
+  const result=buildPracticeLeaderboard({students,rows:[row("s1","2026-10-01",20),row("s2","2026-10-01",16)],months:practiceScoreMonths("2026-10-03"),today:"2026-10-03",studentId:"s2",feedbackByStudentId});
+  assert.deepEqual(result.items[0].feedback,{level:4,date:"2026-10-02"});
+  assert.equal(result.items[1].feedback,null);
+  assert.equal(result.items[0].score10,result.items[1].score10);
+  assert.doesNotMatch(JSON.stringify(result),/私訊|私下鼓勵|teacher@example.com/);
 });

@@ -79,6 +79,11 @@
     const studentId=String(state.student?.studentId||"");
     if(studentId&&!state.parentPracticeLeaderboardLoading){loadParentPracticeLeaderboard(studentId);render()}
   };
+  function leaderboardFeedback(x){
+    const level=feedbackLevels[Number(x.feedback?.level||0)];
+    const status=level?`${level.icon} ${esc(level.label)}${x.feedback?.date?`｜${esc(shortDate(x.feedback.date))}`:""}`:"本月尚無回饋";
+    return `<span class="practice-leaderboard-feedback">💛 老師日常鼓勵：${status}</span>`;
+  }
   function parentPracticeLeaderboardCard(){
     const data=state.parentPracticeLeaderboard,d=data||{},studentId=String(state.student?.studentId||"");
     if(!state.parentPracticeLeaderboardLoading&&(!state.parentPracticeLeaderboardLoadedAt||Date.now()-state.parentPracticeLeaderboardLoadedAt>120000||state.parentPracticeLeaderboardStudentId!==studentId)){
@@ -94,8 +99,8 @@
       :!current?`<div class="notice">正在讀取本校自主練習排名…</div>`
       :!months.length?`<div class="notice">9 月為測試期。正式分數自 10 月起計算，屆時可在此查看 TOP 5。</div>`
       :!rows.length?`<div class="notice">目前尚無學生在正式計分月份留下練習紀錄。</div>`
-      :`<ol class="practice-leaderboard-list">${rows.map(x=>`<li class="practice-leaderboard-item ${x.isMine?"is-mine":""}"><span class="practice-leaderboard-rank">${Number(x.rank)}</span><div><b>${esc(x.name)}${x.isMine?"（我的孩子）":""}</b><small>有效練習 ${Number(x.qualifiedDays)} 天｜累計 ${Number(x.minutes)} 分鐘</small></div><strong>${Number(x.score10)}/10</strong></li>`).join("")}</ol>${d.mine&&Number(d.mine.rank)>5?`<div class="practice-leaderboard-mine">我的孩子目前第 ${Number(d.mine.rank)} 名｜${Number(d.mine.score10)}/10（有效練習 ${Number(d.mine.qualifiedDays)} 天）</div>`:""}`;
-    return `<section class="card practice-leaderboard"><div class="practice-leaderboard-head"><div><h2>🏅 自主練習分數 TOP 5</h2><small>本校本學期有練習紀錄的學生｜${esc(title)}</small></div><button class="secondary" type="button" onclick="refreshParentPracticeLeaderboard()" ${state.parentPracticeLeaderboardLoading?"disabled":""}>更新</button></div>${content}<div class="practice-leaderboard-foot">${current&&d.asOf?`截至 ${esc(shortDate(d.asOf))}｜共 ${Number(d.participantCount||0)} 位有練習紀錄。`:""}依有效練習日換算 10 分，再平均已進行的正式月份；當月分數為暫估。同分依有效日數、練習分鐘排序。其他學生姓名已遮蔽。</div></section>`;
+      :`<ol class="practice-leaderboard-list">${rows.map(x=>`<li class="practice-leaderboard-item ${x.isMine?"is-mine":""}"><span class="practice-leaderboard-rank">${Number(x.rank)}</span><div><b>${esc(x.name)}${x.isMine?"（我的孩子）":""}</b><small>有效練習 ${Number(x.qualifiedDays)} 天｜累計 ${Number(x.minutes)} 分鐘</small>${leaderboardFeedback(x)}</div><strong>${Number(x.score10)}/10</strong></li>`).join("")}</ol>${d.mine&&Number(d.mine.rank)>5?`<div class="practice-leaderboard-mine">我的孩子目前第 ${Number(d.mine.rank)} 名｜${Number(d.mine.score10)}/10（有效練習 ${Number(d.mine.qualifiedDays)} 天）${leaderboardFeedback(d.mine)}</div>`:""}`;
+    return `<section class="card practice-leaderboard"><div class="practice-leaderboard-head"><div><h2>🏅 自主練習分數 TOP 5</h2><small>本校本學期有練習紀錄的學生｜${esc(title)}</small></div><button class="secondary" type="button" onclick="refreshParentPracticeLeaderboard()" ${state.parentPracticeLeaderboardLoading?"disabled":""}>更新</button></div>${content}<div class="practice-leaderboard-foot">${current&&d.asOf?`截至 ${esc(shortDate(d.asOf))}｜共 ${Number(d.participantCount||0)} 位有練習紀錄。`:""}依有效練習日換算 10 分，再平均已進行的正式月份；當月分數為暫估。同分依有效日數、練習分鐘排序。其他學生姓名已遮蔽。老師日常鼓勵顯示本月最新狀態，僅供鼓勵參考，不參與排名及正式成績。</div></section>`;
   }
   function parentMonthlyScoreCard(){
     const s=state.summary||{},qualified=Number(s.practiceQualifiedDays||0),target=Math.max(1,Number(s.practiceEffectiveTargetDays||s.practiceTargetDays||30)),total=Math.round(Math.min(qualified/target,1)*1000)/100,trial=/^\d{4}-09$/.test(String(s.month||"")),current=String(s.month||"")===localDate().slice(0,7);
