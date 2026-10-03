@@ -85,7 +85,7 @@
       "/private-lesson-confirmation.js?v=20260929-late10",
       "/parent-semester-attendance.js?v=20261003-practice20",
       "/parent-home-summary.js?v=20261003-practice20",
-      "/parent-practice-history.js?v=20261003-practice-history"
+      "/parent-practice-history.js?v=20261003-practice-history-toggle"
     ];
     if(role==="globalAdmin")return [
       "/school-access.js?v=20260920-0010",
@@ -131,7 +131,7 @@
   }
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261003-practice-history",()=>{
+    appendScript("/app-v3.js?v=20261003-practice-history-toggle",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);

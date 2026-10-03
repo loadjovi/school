@@ -17,7 +17,7 @@ function makeParent(iso,fetchPractice){
   const context={
     Date:fixedDate(iso),Intl,encodeURIComponent,
     state:{me:{role:"parent"},student:{studentId:"child-a",name:"甲同學"},page:"practice"},
-    window:{},practicePage:()=>"<div>本月練習</div>",recordPage:()=>"<div>出勤紀錄</div>",savePractice:async()=>true,
+    window:{},practicePage:()=>"<div class=\"card\"><h2>最近練習</h2><div>本月練習</div></div>",recordPage:()=>"<div>出勤紀錄</div>",savePractice:async()=>true,
     setTimeout:callback=>scheduled.push(callback),api:fetchPractice,esc:escapeHtml,
     render(){context.latest=context.practicePage()}
   };
@@ -39,12 +39,33 @@ test("parent sees all previous-month practice sessions on practice and record pa
   await scheduled.shift()();
   assert.deepEqual(calls,["/api/practice?studentId=child-a&month=2026-09"]);
   assert.match(context.latest,/上月自主練習｜2026 年 9 月/);
-  assert.match(context.latest,/共 2 筆｜20 分鐘｜達標 1 天/);
+  assert.match(context.latest,/2 筆｜20 分鐘｜達標 1 天/);
+  assert.match(context.latest,/<details (?!open)/);
+  assert.match(context.latest,/<h2>最近練習<\/h2><button[^>]*>更新<\/button>/);
+  assert.doesNotMatch(context.latest,/parent-previous-practice[^]*onclick="refreshParentPracticeHistory\(\)"/);
   assert.match(context.latest,/音階/);
   assert.match(context.latest,/練習曲/);
   assert.match(context.latest,/9 月為測試期/);
   assert.match(context.recordPage(),/練習重點：基本功/);
+  context.window.setParentPracticeHistoryOpen(true);
+  assert.match(context.practicePage(),/<details open/);
   assert.equal(scheduled.length,0);
+});
+
+test("refresh in recent practice reloads both current and previous months",async()=>{
+  const calls=[];
+  const {context,scheduled}=makeParent("2026-10-03T02:00:00Z",async url=>{
+    calls.push(url);
+    return {items:[{practiceDate:"2026-09-29",minutes:20,qualified:true,practiceContent:"昨日練習"}]};
+  });
+  context.refreshStudent=async()=>{calls.push("refresh-current")};
+  context.toast=()=>{};
+  context.practicePage();
+  await scheduled.shift()();
+  await context.window.refreshParentPracticeHistory();
+  assert.deepEqual(calls,["/api/practice?studentId=child-a&month=2026-09","refresh-current","/api/practice?studentId=child-a&month=2026-09"]);
+  assert.match(context.latest,/昨日練習/);
+  assert.match(context.latest,/<h2>最近練習<\/h2><button[^>]*>更新<\/button>/);
 });
 
 test("parent history crosses year boundary and does not show another child's response",async()=>{
