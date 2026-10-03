@@ -7,6 +7,20 @@
   state.parentPracticeFeedbackData=state.parentPracticeFeedbackData||null;
   state.parentPracticeFeedbackStudentId=state.parentPracticeFeedbackStudentId||"";
   state.parentPracticeFeedbackLoading=false;
+  state.parentPracticeLeaderboard=null;
+  state.parentPracticeLeaderboardStudentId="";
+  state.parentPracticeLeaderboardLoadedAt=0;
+  state.parentPracticeLeaderboardLoading=false;
+  state.parentPracticeLeaderboardError="";
+
+  const baseRefreshStudent=refreshStudent;
+  refreshStudent=async function(){
+    const oldId=String(state.student?.studentId||"");
+    const oldSignature=JSON.stringify((state.practice||[]).map(x=>[x.practiceId,x.practiceDate,x.minutes]));
+    await baseRefreshStudent();
+    const newSignature=JSON.stringify((state.practice||[]).map(x=>[x.practiceId,x.practiceDate,x.minutes]));
+    if(oldId!==String(state.student?.studentId||"")||oldSignature!==newSignature)state.parentPracticeLeaderboardLoadedAt=0;
+  };
 
   function localDate(){const d=new Date(),y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${day}`}
   function shortDate(v){const s=String(v||""),m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);return m?`${Number(m[2])}/${Number(m[3])}`:s}
@@ -37,6 +51,51 @@
       }
     }catch(e){state.parentPracticeFeedback=null;state.parentPracticeFeedbackData=null}
     finally{state.parentPracticeFeedbackLoading=false;if(String(state.student?.studentId)===String(studentId))render()}
+  }
+  async function loadParentPracticeLeaderboard(studentId){
+    if(!studentId||state.parentPracticeLeaderboardLoading)return;
+    state.parentPracticeLeaderboardLoading=true;
+    state.parentPracticeLeaderboardError="";
+    try{
+      const data=await api("/api/parent-practice-leaderboard?studentId="+encodeURIComponent(studentId));
+      if(state.me?.role==="parent"&&String(state.student?.studentId)===String(studentId)){
+        state.parentPracticeLeaderboard=data;
+        state.parentPracticeLeaderboardStudentId=studentId;
+        state.parentPracticeLeaderboardLoadedAt=Date.now();
+      }
+    }catch(e){
+      if(state.me?.role==="parent"&&String(state.student?.studentId)===String(studentId)){
+        state.parentPracticeLeaderboardError=e.message||"排名暫時無法取得";
+        state.parentPracticeLeaderboardStudentId=studentId;
+        state.parentPracticeLeaderboardLoadedAt=Date.now();
+      }
+    }finally{
+      state.parentPracticeLeaderboardLoading=false;
+      if(state.me?.role==="parent"&&state.page==="home")render();
+    }
+  }
+  window.refreshParentPracticeLeaderboard=function(){
+    state.parentPracticeLeaderboardLoadedAt=0;
+    const studentId=String(state.student?.studentId||"");
+    if(studentId&&!state.parentPracticeLeaderboardLoading){loadParentPracticeLeaderboard(studentId);render()}
+  };
+  function parentPracticeLeaderboardCard(){
+    const data=state.parentPracticeLeaderboard,d=data||{},studentId=String(state.student?.studentId||"");
+    if(!state.parentPracticeLeaderboardLoading&&(!state.parentPracticeLeaderboardLoadedAt||Date.now()-state.parentPracticeLeaderboardLoadedAt>120000||state.parentPracticeLeaderboardStudentId!==studentId)){
+      state.parentPracticeLeaderboardLoadedAt=Date.now();
+      setTimeout(()=>loadParentPracticeLeaderboard(studentId),0);
+    }
+    const current=state.parentPracticeLeaderboardStudentId===studentId&&data&&!state.parentPracticeLeaderboardError;
+    const months=current?d.includedMonths||[]:[],monthText=months.map(m=>Number(String(m).slice(5))+"月").join("、");
+    const title=months.length>1?`${monthText}平均`:months.length?`${monthText}分數`:"正式計分月份";
+    const rows=current?(d.items||[]):[];
+    const content=state.parentPracticeLeaderboardError
+      ?`<div class="notice">暫時無法取得排名：${esc(state.parentPracticeLeaderboardError)}。請按「更新」。</div>`
+      :!current?`<div class="notice">正在讀取本校自主練習排名…</div>`
+      :!months.length?`<div class="notice">9 月為測試期。正式分數自 10 月起計算，屆時可在此查看 TOP 5。</div>`
+      :!rows.length?`<div class="notice">目前尚無學生在正式計分月份留下練習紀錄。</div>`
+      :`<ol class="practice-leaderboard-list">${rows.map(x=>`<li class="practice-leaderboard-item ${x.isMine?"is-mine":""}"><span class="practice-leaderboard-rank">${Number(x.rank)}</span><div><b>${esc(x.name)}${x.isMine?"（我的孩子）":""}</b><small>有效練習 ${Number(x.qualifiedDays)} 天｜累計 ${Number(x.minutes)} 分鐘</small></div><strong>${Number(x.score10)}/10</strong></li>`).join("")}</ol>${d.mine&&Number(d.mine.rank)>5?`<div class="practice-leaderboard-mine">我的孩子目前第 ${Number(d.mine.rank)} 名｜${Number(d.mine.score10)}/10（有效練習 ${Number(d.mine.qualifiedDays)} 天）</div>`:""}`;
+    return `<section class="card practice-leaderboard"><div class="practice-leaderboard-head"><div><h2>🏅 自主練習分數 TOP 5</h2><small>本校本學期有練習紀錄的學生｜${esc(title)}</small></div><button class="secondary" type="button" onclick="refreshParentPracticeLeaderboard()" ${state.parentPracticeLeaderboardLoading?"disabled":""}>更新</button></div>${content}<div class="practice-leaderboard-foot">${current&&d.asOf?`截至 ${esc(shortDate(d.asOf))}｜共 ${Number(d.participantCount||0)} 位有練習紀錄。`:""}依有效練習日換算 10 分，再平均已進行的正式月份；當月分數為暫估。同分依有效日數、練習分鐘排序。其他學生姓名已遮蔽。</div></section>`;
   }
   function parentMonthlyScoreCard(){
     const s=state.summary||{},qualified=Number(s.practiceQualifiedDays||0),target=Math.max(1,Number(s.practiceEffectiveTargetDays||s.practiceTargetDays||30)),total=Math.round(Math.min(qualified/target,1)*1000)/100,trial=/^\d{4}-09$/.test(String(s.month||"")),current=String(s.month||"")===localDate().slice(0,7);
@@ -125,7 +184,7 @@
   window.switchParentStudent=async function(studentId){
     const next=(state.students||[]).find(s=>String(s.studentId)===String(studentId));
     if(!next||String(next.studentId)===String(state.student?.studentId))return;
-    state.student=next;state.summary=null;state.practice=[];state.parentPracticeFeedback=null;state.parentPracticeFeedbackData=null;state.parentPracticeFeedbackStudentId="";
+    state.student=next;state.summary=null;state.practice=[];state.parentPracticeFeedback=null;state.parentPracticeFeedbackData=null;state.parentPracticeFeedbackStudentId="";state.parentPracticeLeaderboard=null;state.parentPracticeLeaderboardStudentId="";state.parentPracticeLeaderboardLoadedAt=0;state.parentPracticeLeaderboardError="";
     try{await refreshStudent();render();toast(`已切換為 ${next.name}`)}catch(e){toast("❌ "+e.message)}
   };
 
@@ -135,7 +194,7 @@
     const feedbackStudentId=String(state.student.studentId||"");if(state.parentPracticeFeedbackStudentId!==feedbackStudentId&&!state.parentPracticeFeedbackLoading){state.parentPracticeFeedbackStudentId=feedbackStudentId;setTimeout(()=>loadParentPracticeFeedback(feedbackStudentId),0)}
     const action=todayDone?`<div class="notice"><b>✅ 今天已完成自主練習</b><br><span style="display:block;margin-top:6px">${todayMinutes} 分鐘｜今天已有 ${todayRows.length} 筆紀錄</span></div><button class="primary" onclick="go('record')">查看今日／近期紀錄</button><button class="secondary" style="width:100%;margin-top:10px" onclick="go('practice')">＋ 補登另一筆練習</button>`:`<div class="notice"><b>🎻 今天尚未有自主練習紀錄</b><br><span style="display:block;margin-top:6px">完成練習後，記得幫${esc(state.student.name)}留下紀錄。</span></div><button class="primary" onclick="go('practice')">立即自主練習打卡</button>`;
     const privateLessonPanel=typeof window.privateLessonParentPanels==="function"?window.privateLessonParentPanels("home"):"";
-    return `${studentSwitcher()}${todayCourseReminder()}${privateLessonPanel}<div class="card hero"><div class="student"><div class="studentleft"><div class="avatar">${esc(state.student.name?.[0]||"學")}</div><div><div class="name">${esc(state.student.name)}</div><div class="muted">${esc(state.student.groupName)}團${sectionName?`｜${esc(sectionName)}`:""}｜${esc(state.student.instrument)}｜${esc(state.student.grade)}</div></div></div><div class="pill">${new Date().getMonth()+1}月</div></div><div style="margin-top:14px;font-weight:900">本月自主練習</div><div class="grid" style="margin-top:8px"><div class="kpi"><b>${s.practiceQualifiedDays||0} 天</b><span>練習達標天數</span></div><div class="kpi"><b>${s.practiceMinutes||0} 分鐘</b><span>累計練習時間</span></div></div><div class="notice" style="margin-top:10px"><b>最近一次自主練習</b><br>${esc(latestText)}</div>${parentMonthlyScoreOverview()}${parentFeedbackCard()}<div class="parent-detail-heading"><b>本月上課出勤明細</b><small>分部／合奏／綜合課與個別課的實際點名紀錄；上課開始後超過 10 分鐘才到課記為遲到，10 分鐘內記為出席。</small></div><div class="grid" style="margin-top:8px">${attendanceKpi("分部課",s.sectionPresent,s.sectionTotal,s.sectionLeave,s.sectionAbsent,sectionName||"目前分部")}${attendanceKpi("合奏課",s.ensemblePresent,s.ensembleTotal,s.ensembleLeave,s.ensembleAbsent,"A／B 團合奏")}${attendanceKpi("綜合課（團體課）",s.comprehensivePresent,s.comprehensiveTotal,s.comprehensiveLeave,s.comprehensiveAbsent,"A／B／儲備團")}${attendanceKpi("個別課",s.privatePresent,s.privateTotal,s.privateLeave,s.privateAbsent,"不納入課程點名 5%")}</div><button class="secondary" style="width:100%;margin-top:12px" onclick="go('record')">查看整學期上課紀錄 ›</button></div><div class="card"><h2>今天要做什麼？</h2>${action}</div><div class="card"><h2>📌 自主練習登記提醒</h2><div class="notice">自主練習紀錄將作為後續練習統計與成績計算依據。為保障學生權益，請家長於每次練習完成後確認紀錄已成功送出，並可至「紀錄」頁再次核對。<br><br><b>達標規則：單日累計自主練習達 15 分鐘以上，計為 1 個達標日；同一天多筆紀錄的分鐘數會累計，但達標日仍以 1 天計算。</b><br><br>若主要登記之家長因出差、工作或其他因素無法操作，可由另一位已綁定之監護人登入完成登記。<b>系統以「學生」為統計單位</b>，不同監護人登記的紀錄皆累計於同一位學生名下。</div></div>`;
+    return `${studentSwitcher()}${todayCourseReminder()}${privateLessonPanel}<div class="card hero"><div class="student"><div class="studentleft"><div class="avatar">${esc(state.student.name?.[0]||"學")}</div><div><div class="name">${esc(state.student.name)}</div><div class="muted">${esc(state.student.groupName)}團${sectionName?`｜${esc(sectionName)}`:""}｜${esc(state.student.instrument)}｜${esc(state.student.grade)}</div></div></div><div class="pill">${new Date().getMonth()+1}月</div></div><div style="margin-top:14px;font-weight:900">本月自主練習</div><div class="grid" style="margin-top:8px"><div class="kpi"><b>${s.practiceQualifiedDays||0} 天</b><span>練習達標天數</span></div><div class="kpi"><b>${s.practiceMinutes||0} 分鐘</b><span>累計練習時間</span></div></div><div class="notice" style="margin-top:10px"><b>最近一次自主練習</b><br>${esc(latestText)}</div>${parentMonthlyScoreOverview()}${parentFeedbackCard()}<div class="parent-detail-heading"><b>本月上課出勤明細</b><small>分部／合奏／綜合課與個別課的實際點名紀錄；上課開始後超過 10 分鐘才到課記為遲到，10 分鐘內記為出席。</small></div><div class="grid" style="margin-top:8px">${attendanceKpi("分部課",s.sectionPresent,s.sectionTotal,s.sectionLeave,s.sectionAbsent,sectionName||"目前分部")}${attendanceKpi("合奏課",s.ensemblePresent,s.ensembleTotal,s.ensembleLeave,s.ensembleAbsent,"A／B 團合奏")}${attendanceKpi("綜合課（團體課）",s.comprehensivePresent,s.comprehensiveTotal,s.comprehensiveLeave,s.comprehensiveAbsent,"A／B／儲備團")}${attendanceKpi("個別課",s.privatePresent,s.privateTotal,s.privateLeave,s.privateAbsent,"不納入課程點名 5%")}</div><button class="secondary" style="width:100%;margin-top:12px" onclick="go('record')">查看整學期上課紀錄 ›</button></div>${parentPracticeLeaderboardCard()}<div class="card"><h2>今天要做什麼？</h2>${action}</div><div class="card"><h2>📌 自主練習登記提醒</h2><div class="notice">自主練習紀錄將作為後續練習統計與成績計算依據。為保障學生權益，請家長於每次練習完成後確認紀錄已成功送出，並可至「紀錄」頁再次核對。<br><br><b>達標規則：單日累計自主練習達 15 分鐘以上，計為 1 個達標日；同一天多筆紀錄的分鐘數會累計，但達標日仍以 1 天計算。</b><br><br>若主要登記之家長因出差、工作或其他因素無法操作，可由另一位已綁定之監護人登入完成登記。<b>系統以「學生」為統計單位</b>，不同監護人登記的紀錄皆累計於同一位學生名下。</div></div>`;
   };
   if(baseNav){nav=function(){if(state.page==="contextSelect")return baseNav();if(isParent())return `<nav class="nav">${navBtn("home","🏠","首頁")}${navBtn("practice","⏱️","自主打卡")}${navBtn("record","📊","紀錄")}${navBtn("register","➕","綁定孩子")}</nav>`;return baseNav()}}
   window.parentHomeSummaryReady=true;
