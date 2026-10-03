@@ -12,16 +12,16 @@ test("official fall leaderboard excludes September, deduplicates an old ID and u
   const first=row("old-1","2026-10-01",16),copy={...first,studentId:"s1",rowKey:"migrated-copy"};
   const result=buildPracticeLeaderboard({
     students:[student("s1","王小明",["s1","old-1"]),student("s2","陳小華")],
-    rows:[row("s1","2026-09-30",90),first,copy,row("s1","2026-10-02",20),row("s2","2026-10-01",15)],
+    rows:[row("s1","2026-09-30",90),first,copy,row("s1","2026-10-01",4,"19:00"),row("s1","2026-10-02",20),row("s2","2026-10-01",15)],
     months,today:"2026-10-03",studentId:"s2"
   });
   assert.deepEqual(months,["2026-10","2026-11","2026-12"]);
   assert.deepEqual(result.includedMonths,["2026-10"]);
   assert.equal(result.items[0].score10,6.67);
-  assert.equal(result.items[0].minutes,36);
+  assert.equal(result.items[0].minutes,40);
   assert.equal(result.items[0].name,"王○○");
   assert.equal(result.items[1].name,"陳小華");
-  assert.equal(result.items[1].score10,3.33);
+  assert.equal(result.items[1].score10,0);
   assert.equal(result.items[1].isMine,true);
 });
 
@@ -54,7 +54,7 @@ test("latest monthly teacher encouragement is shown without affecting score or e
     {studentId:"unknown",level:5,feedbackDate:"2026-10-03",updatedAt:"2026-10-03T09:00:00Z"}
   ];
   const feedbackByStudentId=latestLeaderboardFeedback(students,feedbackRows);
-  const result=buildPracticeLeaderboard({students,rows:[row("s1","2026-10-01",20),row("s2","2026-10-01",16)],months:practiceScoreMonths("2026-10-03"),today:"2026-10-03",studentId:"s2",feedbackByStudentId});
+  const result=buildPracticeLeaderboard({students,rows:[row("s1","2026-10-01",20),row("s2","2026-10-01",20)],months:practiceScoreMonths("2026-10-03"),today:"2026-10-03",studentId:"s2",feedbackByStudentId});
   assert.deepEqual(result.items[0].feedback,{level:4,date:"2026-10-02"});
   assert.equal(result.items[1].feedback,null);
   assert.equal(result.items[0].score10,result.items[1].score10);

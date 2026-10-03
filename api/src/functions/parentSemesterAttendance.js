@@ -1,7 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, ensureStudentAccess, getStudentIdAliases, json } from "../lib/auth.js";
 import { listByStudent, getStudentMaster, semesterLabel, activityStudentId, ensureTenantTables, table, tenantStudentPartition } from "../lib/storage.js";
-import { uniquePracticeRows } from "../lib/practiceRecords.js";
+import { uniquePracticeRows, qualifiedPracticeDates, PRACTICE_QUALIFIED_MINUTES } from "../lib/practiceRecords.js";
 
 function safeInt(v){const n=Number.parseInt(String(v||""),10);return Number.isFinite(n)?n:0}
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
@@ -124,13 +124,13 @@ app.http("parentSemesterAttendance",{
     // 點名 5% 僅計分部課、合奏課、綜合課；個別課不納入此 5%。
     // 學習表現 5%：有完成個課者，每月完成 4 次 = 5 分，正式月份取學期平均；整學期沒有完成個課者，才由分部老師於學期末評量一次。
     const months=scoreMonths(schoolYear,semester),currentMonth=today.slice(0,7),lastScoreMonth=months[months.length-1];
-    const qualifiedMinutes=Number(process.env.PRACTICE_QUALIFIED_MINUTES||15);
+    const qualifiedMinutes=PRACTICE_QUALIFIED_MINUTES;
     const practiceTargetDays=Number(process.env.PRACTICE_TARGET_DAYS||30);
     const privateMonthlyTarget=4;
     const monthlyScores=months.map(month=>{
       const future=month>currentMonth;
       const p=practiceRows.filter(x=>String(x.eventDate||"").startsWith(month));
-      const qualifiedDays=new Set(p.filter(x=>x.qualified===true||Number(x.minutes||0)>=qualifiedMinutes).map(x=>String(x.eventDate||""))).size;
+      const qualifiedDays=qualifiedPracticeDates(p).size;
       const days=monthDays(month),elapsed=month===currentMonth?Number(today.slice(8,10)):days;
       const targetDays=Math.max(1,Math.min(practiceTargetDays,elapsed));
       const practiceScore10=future?null:round2(Math.min(qualifiedDays/targetDays,1)*10);
@@ -201,7 +201,7 @@ app.http("parentSemesterAttendance",{
       studentId,schoolYear,semester,semesterName:semesterLabel(semester)||`${semester}學期`,
       start:range.start,end,termEnd:range.end,asOf:today,
       student:master?{name:String(master.studentName||""),grade:String(master.grade||""),groupName:String(master.groupName||""),section:String(master.section||"待確認"),instrument:String(master.instrument||"")}:null,
-      scorePolicy:{practiceWeight:10,attendanceWeight:5,performanceWeight:5,learningWeight:5,totalWeight:20,months,trialMonth:String(semester)==="1"?`${safeInt(schoolYear)+1911}-09`:"",practiceSource:"system",attendanceSource:"groupCourses",attendanceTypes:["section","ensemble","comprehensive"],attendanceLeaveExcluded:true,performanceRule:"privateLessonFrequencyFirst",privateLessonScoreSource:"monthlyCompletedCount",privateLessonMonthlyTarget:privateMonthlyTarget,sectionFallback:true,sectionFallbackMonth:lastScoreMonth},
+      scorePolicy:{practiceWeight:10,practiceQualifiedMinutes:qualifiedMinutes,attendanceWeight:5,performanceWeight:5,learningWeight:5,totalWeight:20,months,trialMonth:String(semester)==="1"?`${safeInt(schoolYear)+1911}-09`:"",practiceSource:"system",attendanceSource:"groupCourses",attendanceTypes:["section","ensemble","comprehensive"],attendanceLeaveExcluded:true,performanceRule:"privateLessonFrequencyFirst",privateLessonScoreSource:"monthlyCompletedCount",privateLessonMonthlyTarget:privateMonthlyTarget,sectionFallback:true,sectionFallbackMonth:lastScoreMonth},
       monthlyScores,semesterScore,
       stats,records
     });

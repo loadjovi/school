@@ -2,6 +2,7 @@ import { app } from "@azure/functions";
 import { getTenantContext, ensureStudentAccess, canonicalizeStudents, getStudentAliasInfo, json } from "../lib/auth.js";
 import { ensureTenantTables, table, tenantSchoolPartition, listActivityRange, listStudentMaster } from "../lib/storage.js";
 import { buildPracticeLeaderboard, latestLeaderboardFeedback, practiceScoreMonths } from "../lib/practiceLeaderboard.js";
+import { PRACTICE_QUALIFIED_MINUTES } from "../lib/practiceRecords.js";
 
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
 async function monthlyFeedback(schoolId,month){
@@ -21,7 +22,7 @@ app.http("parentPracticeLeaderboard",{
     if(!studentId||!ensureStudentAccess(access,studentId))return json({error:"Forbidden"},403);
     const asOf=taipeiDate(),months=practiceScoreMonths(asOf);
     const includedMonths=months.filter(month=>month<=asOf.slice(0,7));
-    const qualifiedMinutes=Math.max(1,Number(process.env.PRACTICE_QUALIFIED_MINUTES||15));
+    const qualifiedMinutes=PRACTICE_QUALIFIED_MINUTES;
     const targetDays=Math.max(1,Number(process.env.PRACTICE_TARGET_DAYS||30));
     if(!includedMonths.length)return json({asOf,months,includedMonths,qualifiedMinutes,targetDays,participantCount:0,items:[],mine:null});
 
@@ -38,7 +39,7 @@ app.http("parentPracticeLeaderboard",{
     }));
     // 家長只收到顯示所需的狀態與日期；老師留言、姓名和帳號不在排行榜回傳。
     const feedbackByStudentId=latestLeaderboardFeedback(students,feedbackRows);
-    const result=buildPracticeLeaderboard({students,rows,months,today:asOf,studentId,qualifiedMinutes,targetDays,feedbackByStudentId});
+    const result=buildPracticeLeaderboard({students,rows,months,today:asOf,studentId,targetDays,feedbackByStudentId});
     return json({asOf,months,qualifiedMinutes,targetDays,...result});
   }
 });

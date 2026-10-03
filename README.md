@@ -15,7 +15,7 @@
 - 自主練習：10%
 - 個別課：5%
 - 分部團練：5%
-- 自主練習單日 ≥ 15 分鐘視為達標
+- 自主練習同一天累計 ≥ 20 分鐘視為達標
 
 ## 專案目錄
 
@@ -66,8 +66,9 @@ Azure Static Web App → Settings / Configuration（名稱依 Portal 畫面可�
 - `SECTION_TEACHER_MAP_JSON`
 - `PRIVATE_TEACHER_MAP_JSON`
 - `ADMIN_EMAILS`
-- `PRACTICE_QUALIFIED_MINUTES=15`
 - `PRACTICE_TARGET_DAYS=30`
+
+自主練習達標門檻固定為同一天累計 20 分鐘。舊的 `PRACTICE_QUALIFIED_MINUTES` 環境設定不再影響達標與成績計算。
 
 ### 5. 修改帳號對應
 不要直接使用 example.com。

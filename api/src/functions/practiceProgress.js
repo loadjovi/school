@@ -1,7 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, getStudentAliasInfo, canonicalizeStudents, json } from "../lib/auth.js";
 import { listActivityRange, listStudentMaster, activityStudentId } from "../lib/storage.js";
-import { uniquePracticeRows } from "../lib/practiceRecords.js";
+import { uniquePracticeRows, practiceDayTotals, qualifiedPracticeDates, PRACTICE_QUALIFIED_MINUTES } from "../lib/practiceRecords.js";
 
 function clean(v,max=20){return String(v||"").trim().slice(0,max)}
 function monthRange(raw){
@@ -18,14 +18,15 @@ function viewStudent(x){
     instrument:String(x.instrument||"待確認")
   };
 }
-function viewPractice(r,qualifiedMinutes){
+function viewPractice(r,qualifiedDates,dayTotals){
   const minutes=Number(r.minutes||0);
   return {
     practiceDate:String(r.eventDate||""),
     startTime:String(r.startTime||""),
     endTime:String(r.endTime||""),
     minutes,
-    qualified:r.qualified===true||minutes>=qualifiedMinutes,
+    qualified:qualifiedDates.has(String(r.eventDate||"")),
+    dayMinutes:dayTotals.get(String(r.eventDate||""))||0,
     practiceContent:String(r.practiceContent||""),
     focus:String(r.focus||""),
     createdAt:String(r.createdAt||"")
@@ -40,7 +41,7 @@ app.http("practiceProgress",{
     if(a.capabilities?.privateOnly||a.role!=="admin"&&!isTeacher)return json({error:"Forbidden"},403);
 
     const {month,start,end}=monthRange(clean(request.query.get("month"),12));
-    const qualifiedMinutes=Math.max(1,Number(process.env.PRACTICE_QUALIFIED_MINUTES||15));
+    const qualifiedMinutes=PRACTICE_QUALIFIED_MINUTES;
     const targetDays=Math.max(1,Number(process.env.PRACTICE_TARGET_DAYS||30));
     const now=new Date(),taipeiToday=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(now);
     const currentMonth=taipeiToday.slice(0,7),dayOfMonth=Number(taipeiToday.slice(8,10));
@@ -76,10 +77,10 @@ app.http("practiceProgress",{
       const rows=uniquePracticeRows([...unique.values()]);
       const matchedByIdCount=rows.filter(r=>aliasSet.has(activityStudentId(r))).length;
       const matchedByParentCount=rows.length-matchedByIdCount;
-      const records=rows.map(r=>viewPractice(r,qualifiedMinutes)).sort((a,b)=>
+      const qualifiedDates=qualifiedPracticeDates(rows),dayTotals=practiceDayTotals(rows);
+      const records=rows.map(r=>viewPractice(r,qualifiedDates,dayTotals)).sort((a,b)=>
         String(b.practiceDate).localeCompare(String(a.practiceDate))||String(b.createdAt).localeCompare(String(a.createdAt))
       );
-      const qualifiedDates=new Set(records.filter(r=>r.qualified).map(r=>r.practiceDate).filter(Boolean));
       const activeDates=new Set(records.map(r=>r.practiceDate).filter(Boolean));
       const totalMinutes=records.reduce((n,r)=>n+r.minutes,0);
       const qualifiedDays=qualifiedDates.size;

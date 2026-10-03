@@ -1,7 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, ensureStudentAccess, getStudentIdAliases, json } from "../lib/auth.js";
 import { listByStudent, getStudentMaster, activityStudentId } from "../lib/storage.js";
-import { uniquePracticeRows } from "../lib/practiceRecords.js";
+import { uniquePracticeRows, qualifiedPracticeDates, PRACTICE_QUALIFIED_MINUTES } from "../lib/practiceRecords.js";
 import { resolveSchoolCourses } from "./schoolSchedule.js";
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
 function latestForDate(rows,date){return [...(rows||[])].filter(x=>String(x.eventDate||"").slice(0,10)===date).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")))[0]||null}
@@ -41,8 +41,8 @@ app.http("summary",{methods:["GET"],authLevel:"anonymous",route:"summary",handle
     rowsForAliases("comprehensive",aliases,start,end,schoolId),
     rowsForAliases("privateLesson",aliases,start,end,schoolId)
   ]);
-  const qualifiedMinutes=Number(process.env.PRACTICE_QUALIFIED_MINUTES||15);
-  const qualifiedDays=new Set(p.filter(x=>x.qualified===true||Number(x.minutes||0)>=qualifiedMinutes).map(x=>x.eventDate)).size;
+  const qualifiedMinutes=PRACTICE_QUALIFIED_MINUTES;
+  const qualifiedDays=qualifiedPracticeDates(p).size;
   const practiceMinutes=p.reduce((n,x)=>n+Number(x.minutes||0),0);
   const targetDays=Number(process.env.PRACTICE_TARGET_DAYS||30);
   const currentMonth=today.slice(0,7);

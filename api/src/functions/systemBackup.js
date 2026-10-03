@@ -20,7 +20,7 @@ const PHASE2_TABLES=new Set(["TenantPracticeLog","TenantSectionAttendance","Tena
 const SETTINGS_TABLE=()=>process.env.SYSTEM_SETTINGS_TABLE||"SystemSettings";
 const BRANDING_CONTAINER=()=>process.env.BRANDING_BLOB_CONTAINER||"branding";
 const conn=()=>process.env.STORAGE_CONNECTION_STRING;
-const REQUIRED_ENV=["STORAGE_CONNECTION_STRING","ADMIN_EMAILS","GOOGLE_CLIENT_ID","ACS_EMAIL_CONNECTION_STRING","ACS_EMAIL_SENDER","PRACTICE_QUALIFIED_MINUTES","PRACTICE_TARGET_DAYS"];
+const REQUIRED_ENV=["STORAGE_CONNECTION_STRING","ADMIN_EMAILS","GOOGLE_CLIENT_ID","ACS_EMAIL_CONNECTION_STRING","ACS_EMAIL_SENDER","PRACTICE_TARGET_DAYS"];
 
 function cleanEntity(entity={}){const out={};for(const [k,v] of Object.entries(entity)){if(k==="etag"||k==="timestamp")continue;if(v!==undefined)out[k]=v}if(!out.partitionKey&&out.PartitionKey)out.partitionKey=out.PartitionKey;if(!out.rowKey&&out.RowKey)out.rowKey=out.RowKey;delete out.PartitionKey;delete out.RowKey;return out}
 function checksumFor(backup){const payload={schemaVersion:backup.schemaVersion,tables:backup.tables};if(backup.brandingAsset)payload.brandingAsset=backup.brandingAsset;return createHash("sha256").update(JSON.stringify(payload),"utf8").digest("hex")}

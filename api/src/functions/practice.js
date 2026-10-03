@@ -1,7 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, ensureStudentAccess, getStudentIdAliases, json } from "../lib/auth.js";
 import { ensureTenantTables, table, listByStudent, tenantStudentPartition, activityStudentId } from "../lib/storage.js";
-import { groupPracticeRows, practiceSessionKey, practiceSessionId } from "../lib/practiceRecords.js";
+import { groupPracticeRows, practiceDayTotals, practiceSessionKey, practiceSessionId, PRACTICE_QUALIFIED_MINUTES } from "../lib/practiceRecords.js";
 function minutesBetween(start,end){
   const [sh,sm]=String(start||"").split(":").map(Number),[eh,em]=String(end||"").split(":").map(Number);
   if([sh,sm,eh,em].some(Number.isNaN))return -1;
@@ -19,7 +19,8 @@ app.http("practice",{methods:["GET","POST","DELETE"],authLevel:"anonymous",route
     const aliases=await getStudentIdAliases(studentId,schoolId);
     const groups=groupPracticeRows((await Promise.all(aliases.map(id=>listByStudent("practice",id,start,end,schoolId)))).flat())
       .sort((a,b)=>String(b.record.eventDate||"").localeCompare(String(a.record.eventDate||""))||String(b.record.createdAt||"").localeCompare(String(a.record.createdAt||"")));
-    return json({items:groups.map(({record:x,duplicates})=>({practiceId:String(x.rowKey||""),studentId:activityStudentId(x),sourceStudentId:partitionStudentId(x),practiceDate:x.eventDate,startTime:x.startTime,endTime:x.endTime,minutes:x.minutes,qualified:x.qualified,practiceContent:x.practiceContent,focus:x.focus,createdBy:String(x.createdBy||""),createdAt:String(x.createdAt||""),duplicateRecords:duplicates.map(r=>({practiceId:String(r.rowKey||""),sourceStudentId:partitionStudentId(r)})).filter(r=>r.practiceId&&r.sourceStudentId)}))});
+    const dayTotals=practiceDayTotals(groups.map(x=>x.record));
+    return json({qualifiedMinutes:PRACTICE_QUALIFIED_MINUTES,items:groups.map(({record:x,duplicates})=>({practiceId:String(x.rowKey||""),studentId:activityStudentId(x),sourceStudentId:partitionStudentId(x),practiceDate:x.eventDate,startTime:x.startTime,endTime:x.endTime,minutes:x.minutes,dailyMinutes:dayTotals.get(String(x.eventDate||""))||0,qualified:(dayTotals.get(String(x.eventDate||""))||0)>=PRACTICE_QUALIFIED_MINUTES,practiceContent:x.practiceContent,focus:x.focus,createdBy:String(x.createdBy||""),createdAt:String(x.createdAt||""),duplicateRecords:duplicates.map(r=>({practiceId:String(r.rowKey||""),sourceStudentId:partitionStudentId(r)})).filter(r=>r.practiceId&&r.sourceStudentId)}))});
   }
 
   if(request.method==="DELETE"){
@@ -51,11 +52,13 @@ app.http("practice",{methods:["GET","POST","DELETE"],authLevel:"anonymous",route
   if(!/^\d{4}-\d{2}-\d{2}$/.test(String(body.practiceDate||"")))return json({error:"練習日期不合法"},400);
   const aliases=await getStudentIdAliases(body.studentId,schoolId),canonicalStudentId=aliases[0]||String(body.studentId);
   const sessionKey=practiceSessionKey(body);
-  const existing=(await Promise.all(aliases.map(id=>listByStudent("practice",id,body.practiceDate,body.practiceDate,schoolId)))).flat()
-    .find(x=>practiceSessionKey(x)===sessionKey);
-  if(existing)return json({ok:true,duplicate:true,practiceId:existing.rowKey,studentId:canonicalStudentId,minutes:existing.minutes,qualified:existing.qualified});
+  const dayRows=(await Promise.all(aliases.map(id=>listByStudent("practice",id,body.practiceDate,body.practiceDate,schoolId)))).flat();
+  const existing=dayRows.find(x=>practiceSessionKey(x)===sessionKey);
+  const existingDailyMinutes=practiceDayTotals(dayRows).get(body.practiceDate)||0;
+  if(existing)return json({ok:true,duplicate:true,practiceId:existing.rowKey,studentId:canonicalStudentId,minutes:existing.minutes,dailyMinutes:existingDailyMinutes,qualified:existingDailyMinutes>=PRACTICE_QUALIFIED_MINUTES});
   const practiceId=practiceSessionId(schoolId,canonicalStudentId,body);
-  const qualified=minutes>=Number(process.env.PRACTICE_QUALIFIED_MINUTES||15);
+  const qualified=minutes>=PRACTICE_QUALIFIED_MINUTES;
+  const dailyMinutes=existingDailyMinutes+minutes,dailyQualified=dailyMinutes>=PRACTICE_QUALIFIED_MINUTES;
   await ensureTenantTables();
   try{
     await table("tenantPractice").createEntity({
@@ -64,6 +67,6 @@ app.http("practice",{methods:["GET","POST","DELETE"],authLevel:"anonymous",route
       practiceContent:String(body.practiceContent||"").slice(0,500),focus:String(body.focus||"").slice(0,100),
       confirmed:true,createdBy:a.email,createdAt:new Date().toISOString()
     });
-  }catch(e){if(e.statusCode!==409)throw e;return json({ok:true,duplicate:true,practiceId,studentId:canonicalStudentId,minutes,qualified})}
-  return json({ok:true,practiceId,studentId:canonicalStudentId,minutes,qualified},201);
+  }catch(e){if(e.statusCode!==409)throw e;return json({ok:true,duplicate:true,practiceId,studentId:canonicalStudentId,minutes,dailyMinutes,qualified:dailyQualified})}
+  return json({ok:true,practiceId,studentId:canonicalStudentId,minutes,dailyMinutes,qualified:dailyQualified},201);
 }});

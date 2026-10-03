@@ -52,10 +52,10 @@
       "/roster-import.js?v=20260915-1135",
       "/attendance-support.js?v=20260928-2148",
       "/attendance-edit.js?v=20261002-save-confirm",
-      "/practice-progress.js?v=20260929-0205",
+      "/practice-progress.js?v=20261003-practice20",
       "/admin-operations.js?v=20261002-student-alerts",
       "/admin-followup-summary-fix.js?v=20260917-1320",
-      "/system-backup.js?v=20260919-2305",
+      "/system-backup.js?v=20261003-practice20",
       "/school-access.js?v=20260920-0010",
       "/school-access-audit-admin.js?v=20260918-0005",
       "/school-access-refresh-fix.js?v=20261002-school-admin-roles",
@@ -69,7 +69,7 @@
       "/private-student-bottom-back.js?v=20260915-1432",
       "/attendance-support.js?v=20260930-section-merge",
       "/attendance-edit.js?v=20261002-save-confirm",
-      "/practice-progress.js?v=20260929-0205",
+      "/practice-progress.js?v=20261003-practice20",
       "/teacher-navigation.js?v=20261002-teacher-types",
       "/training-attendance.js?v=20261002-save-confirm",
       "/comprehensive-support.js?v=20261002-save-confirm",
@@ -81,10 +81,10 @@
     ];
     if(role==="school")return ["/school-access.js?v=20260929-1305"];
     if(role==="parent")return [
-      "/practice-timer.js?v=20260930-practice-unique",
+      "/practice-timer.js?v=20261003-practice20",
       "/private-lesson-confirmation.js?v=20260929-late10",
-      "/parent-semester-attendance.js?v=20260929-late10",
-      "/parent-home-summary.js?v=20261003-top5-feedback"
+      "/parent-semester-attendance.js?v=20261003-practice20",
+      "/parent-home-summary.js?v=20261003-practice20"
     ];
     if(role==="globalAdmin")return [
       "/school-access.js?v=20260920-0010",
@@ -130,7 +130,7 @@
   }
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20260930-practice-unique",()=>{
+    appendScript("/app-v3.js?v=20261003-practice20",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);

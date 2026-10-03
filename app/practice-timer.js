@@ -15,10 +15,12 @@
   function mode(){return document.querySelector('input[name="practiceMode"]:checked')?.value||"timer"}
 
   function achievement(minutes){
-    const m=Number(minutes||0);
-    if(m>=15)return {cls:"ok",text:"🟢 今日練習達標"};
-    const left=Math.max(0,15-m);
-    return {cls:"warn",text:`🟡 再練 ${left} 分鐘即可達標`};
+    const m=Number(minutes||0),date=document.getElementById("pDate")?.value||"";
+    const registered=(state.practice||[]).filter(x=>String(x.practiceDate||"")===date).reduce((sum,x)=>sum+Number(x.minutes||0),0);
+    const total=registered+m;
+    if(m<=0)return {cls:"warn",text:"🟡 本次尚未有練習時間"};
+    if(total>=20)return {cls:"ok",text:"🟢 當日累計已達標"};
+    return {cls:"warn",text:`🟡 當日再練 ${20-total} 分鐘達標`};
   }
   function updateAchievement(){
     const mins=Number(document.getElementById("pMins")?.textContent||0),q=document.getElementById("pQual");

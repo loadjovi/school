@@ -1,4 +1,4 @@
-import { uniquePracticeRows } from "./practiceRecords.js";
+import { uniquePracticeRows, qualifiedPracticeDates } from "./practiceRecords.js";
 
 const round2=value=>Math.round(value*100)/100;
 // Match the tenant storage reader's handling of old rows without an explicit studentId.
@@ -33,7 +33,7 @@ export function latestLeaderboardFeedback(students=[],feedbackRows=[]){
   return new Map([...latest].map(([id,value])=>[id,{level:value.level,date:value.date}]));
 }
 
-export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,studentId,qualifiedMinutes=15,targetDays=30,feedbackByStudentId=new Map()}){
+export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,studentId,targetDays=30,feedbackByStudentId=new Map()}){
   const includedMonths=months.filter(month=>month<=String(today).slice(0,7));
   const byMonth=new Map(includedMonths.map(month=>[month,{
     target:Math.max(1,Math.min(targetDays,month===String(today).slice(0,7)
@@ -56,7 +56,7 @@ export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,st
       byMonth.has(String(row.eventDate||"").slice(0,7))&&String(row.eventDate||"")<=today&&Number(row.minutes||0)>0
     );
     if(!valid.length)continue;
-    const qualified=new Set(valid.filter(row=>row.qualified===true||Number(row.minutes||0)>=qualifiedMinutes).map(row=>String(row.eventDate||"")));
+    const qualified=qualifiedPracticeDates(valid);
     const qualifiedDays=qualified.size,minutes=valid.reduce((n,row)=>n+Number(row.minutes||0),0);
     const monthlyScores=includedMonths.map(month=>{
       const days=[...qualified].filter(date=>date.startsWith(month)).length;

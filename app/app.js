@@ -48,14 +48,14 @@ function home(){
   return `<div class="card hero"><div class="student"><div class="studentleft"><div class="avatar">${esc(state.student.name?.[0]||"學")}</div><div><div class="name">${esc(state.student.name)}</div><div class="muted">${esc(state.student.groupName)}團｜${esc(state.student.instrument)}｜${esc(state.student.grade)}</div></div></div><div class="pill">${new Date().getMonth()+1}月</div></div>
   <div class="grid"><div class="kpi"><b>${s.practiceQualifiedDays||0}</b><span>自主練習達標天數</span></div><div class="kpi"><b>${s.practiceMinutes||0}</b><span>累計練習分鐘</span></div><div class="kpi"><b>${s.sectionPresent||0} / ${s.sectionTotal||0}</b><span>分部團練</span></div><div class="kpi"><b>${s.privatePresent||0} / ${s.privateTotal||0}</b><span>個別課</span></div></div>
   <div style="margin-top:12px;font-size:12px;font-weight:800">自主練習達標率 <span style="float:right">${rate}%</span></div><div class="progress"><i style="width:${Math.min(rate,100)}%"></i></div></div>
-  <div class="card"><h2>今天要做什麼？</h2><div class="notice">每天自主練習達 <b>15 分鐘以上</b>即列為一個達標日；送出資料會直接寫入 Azure Table Storage。</div><button class="primary" onclick="go('practice')">立即自主練習打卡</button></div>`;
+  <div class="card"><h2>今天要做什麼？</h2><div class="notice">每天自主練習達 <b>20 分鐘以上</b>即列為一個達標日；送出資料會直接寫入 Azure Table Storage。</div><button class="primary" onclick="go('practice')">立即自主練習打卡</button></div>`;
 }
 function calcMinutes(start,end){if(!start||!end)return 0;const[a,b]=start.split(":").map(Number),[c,d]=end.split(":").map(Number);let m=(c*60+d)-(a*60+b);if(m<0)m+=1440;return m}
 function practicePage(){
   const today=new Date().toISOString().slice(0,10); const st=state.student;
   const logs=state.practice.slice(0,8);
   return `<div class="card"><h2>自主練習打卡</h2><div class="notice">登入學生：<b>${esc(st?.name)}</b>｜${esc(st?.groupName)}團｜${esc(st?.instrument)}</div>
-  <label>練習日期</label><input id="pDate" type="date" value="${today}">
+  <label>練習日期</label><input id="pDate" type="date" value="${today}" onchange="updateMinutes()">
   <div class="row2"><div><label>開始時間</label><input id="pStart" type="time" value="18:00" oninput="updateMinutes()"></div><div><label>結束時間</label><input id="pEnd" type="time" value="18:20" oninput="updateMinutes()"></div></div>
   <div class="minutes"><div><div class="muted">本次練習時間</div><strong><span id="pMins">20</span> 分鐘</strong></div><span id="pQual" class="badge ok">✅ 已達標</span></div>
   <label>練習內容／曲目</label><textarea id="pContent" rows="3" placeholder="例：G 大調音階、考試曲第 1 段"></textarea>
@@ -63,13 +63,13 @@ function practicePage(){
   <div class="check"><input id="pConfirm" type="checkbox"><div>家長確認：我確認學生已完成上述自主練習，填寫內容與時間屬實。</div></div><button class="primary" onclick="savePractice()">送出今天的打卡</button></div>
   <div class="card"><h2>最近打卡</h2>${logs.length?logs.map(x=>scoreItem(`${x.practiceDate}｜${x.practiceContent||"自主練習"}`,`${x.startTime}～${x.endTime}｜${x.minutes} 分鐘`,x.qualified?"達標":"未達",x.qualified?"ok":"bad")).join(""):`<div class="notice">本月尚無紀錄。</div>`}</div>`;
 }
-function updateMinutes(){const m=calcMinutes($("pStart").value,$("pEnd").value);$("pMins").textContent=m;$("pQual").className=`badge ${m>=15?"ok":"bad"}`;$("pQual").textContent=m>=15?"✅ 已達標":"⚠️ 未達 15 分鐘"}
+function updateMinutes(){const m=calcMinutes($("pStart").value,$("pEnd").value),date=$("pDate").value,registered=(state.practice||[]).filter(x=>String(x.practiceDate||"")===date).reduce((sum,x)=>sum+Number(x.minutes||0),0),total=registered+m;$("pMins").textContent=m;$("pQual").className=`badge ${m>0&&total>=20?"ok":"bad"}`;$("pQual").textContent=m<=0?"⚠️ 本次尚未練習":total>=20?"✅ 當日累計達標":`⚠️ 當日還差 ${20-total} 分鐘`}
 async function savePractice(){
   if(!$("pConfirm").checked){toast("請先完成家長確認");return}
   const body={studentId:state.student.studentId,practiceDate:$("pDate").value,startTime:$("pStart").value,endTime:$("pEnd").value,practiceContent:$("pContent").value.trim(),focus:$("pFocus").value,parentConfirmed:true};
   try{await api("/api/practice",{method:"POST",body:JSON.stringify(body)});toast("✅ 自主練習已送出");await refreshStudent();render()}catch(e){toast("❌ "+e.message)}
 }
-function recordPage(){const s=state.summary||{};return `<div class="card hero"><h2>${esc(state.student?.name)}｜學習紀錄</h2><div class="score">${s.weightedScore??"—"}</div><div class="muted">目前系統統計（考試成績可於後續版本串接）</div></div><div class="card"><h2>本月統計</h2>${scoreItem("自主練習達標","每日 ≥ 15 分鐘",`${s.practiceQualifiedDays||0} 天`)}${scoreItem("自主練習時數","累計",`${Math.floor((s.practiceMinutes||0)/60)} 小時 ${(s.practiceMinutes||0)%60} 分`)}${scoreItem("分部團練","老師確認",`${s.sectionPresent||0} / ${s.sectionTotal||0}`)}${scoreItem("個別課","老師確認",`${s.privatePresent||0} / ${s.privateTotal||0}`)}</div>`}
+function recordPage(){const s=state.summary||{};return `<div class="card hero"><h2>${esc(state.student?.name)}｜學習紀錄</h2><div class="score">${s.weightedScore??"—"}</div><div class="muted">目前系統統計（考試成績可於後續版本串接）</div></div><div class="card"><h2>本月統計</h2>${scoreItem("自主練習達標","每日 ≥ 20 分鐘",`${s.practiceQualifiedDays||0} 天`)}${scoreItem("自主練習時數","累計",`${Math.floor((s.practiceMinutes||0)/60)} 小時 ${(s.practiceMinutes||0)%60} 分`)}${scoreItem("分部團練","老師確認",`${s.sectionPresent||0} / ${s.sectionTotal||0}`)}${scoreItem("個別課","老師確認",`${s.privatePresent||0} / ${s.privateTotal||0}`)}</div>`}
 function sectionPage(){
   const today=new Date().toISOString().slice(0,10);
   return `<div class="card"><h2>分部團練點名</h2><div class="row2"><div><label>上課日期</label><input id="sDate" type="date" value="${today}"></div><div><label>聲部</label><input id="sSection" value="${esc(state.me.section||"")}"></div></div><div class="notice" style="margin-top:10px">只顯示此老師被授權的學生。</div></div><div class="card"><h2>學生名單</h2>${state.students.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.groupName)}團｜${esc(s.instrument)}</small></div><select id="att_${s.studentId}" class="status-select"><option value="present">出席</option><option value="late">遲到</option><option value="leave">請假</option><option value="absent">缺席</option><option value="cancelled">停課</option></select></div>`).join("")}<button class="primary" onclick="saveSection()">儲存本次點名</button></div>`;

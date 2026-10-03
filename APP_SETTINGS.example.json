@@ -3,7 +3,6 @@
   "STORAGE_CONNECTION_STRING": "<Azure Storage connection string>",
   "STUDENT_MAP_JSON": "{\"parent@gmail.com\": [{\"studentId\": \"SH001\", \"name\": \"林心澄\", \"grade\": \"三年級\", \"groupName\": \"A\", \"instrument\": \"小提琴\", \"section\": \"小提一部\"}]}",
   "ADMIN_EMAILS": "admin@gmail.com",
-  "PRACTICE_QUALIFIED_MINUTES": "15",
   "PRACTICE_TARGET_DAYS": "30",
   "PRACTICE_TABLE": "PracticeLog",
   "SECTION_TABLE": "SectionAttendance",
