@@ -81,7 +81,7 @@
     ];
     if(role==="school")return ["/school-access.js?v=20260929-1305"];
     if(role==="parent")return [
-      "/practice-timer.js?v=20261003-practice20",
+      "/practice-timer.js?v=20261004-manual4h",
       "/private-lesson-confirmation.js?v=20260929-late10",
       "/parent-semester-attendance.js?v=20261003-practice20",
       "/parent-home-summary.js?v=20261003-practice20",

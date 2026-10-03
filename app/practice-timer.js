@@ -19,6 +19,7 @@
     const registered=(state.practice||[]).filter(x=>String(x.practiceDate||"")===date).reduce((sum,x)=>sum+Number(x.minutes||0),0);
     const total=registered+m;
     if(m<=0)return {cls:"warn",text:"🟡 本次尚未有練習時間"};
+    if(mode()==="manual"&&m>240)return {cls:"bad",text:"⚠️ 手動登記單筆最多 4 小時"};
     if(total>=20)return {cls:"ok",text:"🟢 當日累計已達標"};
     return {cls:"warn",text:`🟡 當日再練 ${20-total} 分鐘達標`};
   }
@@ -27,9 +28,11 @@
     if(!q)return;const a=achievement(mins);q.className=`badge ${a.cls}`;q.textContent=a.text;
   }
   function setMode(v){
-    const manual=document.getElementById("practiceManualTimes"),timer=document.getElementById("practiceTimerControls");
+    const manual=document.getElementById("practiceManualTimes"),timer=document.getElementById("practiceTimerControls"),manualLimit=document.getElementById("practiceManualLimitNote");
     if(manual)manual.style.display=v==="manual"?"grid":"none";
     if(timer)timer.style.display=v==="timer"?"":"none";
+    if(manualLimit)manualLimit.style.display=v==="manual"?"block":"none";
+    if(v==="manual"&&typeof updateMinutes==="function")updateMinutes();
     if(v==="timer"){
       const t=readTimer();
       if(t?.startedAt){
@@ -99,7 +102,7 @@
   practicePage=function(){
     let html=basePracticePage(),t=enforceMax(readTimer()),running=!!t?.runningSince;
     html=html.replace('<div class="row2"><div><label>開始時間</label>','<div id="practiceManualTimes" class="row2" style="display:none"><div><label>開始時間</label>');
-    html=html.replace('<label>練習內容／曲目</label>','<div style="margin-top:14px;font-weight:900">記錄方式</div><div class="row2" style="margin-top:8px"><label class="check" style="margin:0"><input type="radio" name="practiceMode" value="timer" checked onchange="setPracticeMode(\'timer\')"><div>⏱️ 即時計時</div></label><label class="check" style="margin:0"><input type="radio" name="practiceMode" value="manual" onchange="setPracticeMode(\'manual\')"><div>✏️ 手動登記</div></label></div><label>今天練什麼？</label>');
+    html=html.replace('<label>練習內容／曲目</label>','<div style="margin-top:14px;font-weight:900">記錄方式</div><div class="row2" style="margin-top:8px"><label class="check" style="margin:0"><input type="radio" name="practiceMode" value="timer" checked onchange="setPracticeMode(\'timer\')"><div>⏱️ 即時計時</div></label><label class="check" style="margin:0"><input type="radio" name="practiceMode" value="manual" onchange="setPracticeMode(\'manual\')"><div>✏️ 手動登記</div></label></div><div id="practiceManualLimitNote" class="notice" role="status" style="display:none;margin-top:8px">✏️ 手動登記單筆最多 4 小時（240 分鐘）；請填寫實際開始與結束時間。</div><label>今天練什麼？</label>');
     html=html.replace('<label>練習重點</label>','<label>練習類型</label>');
     html=html.replace('家長確認：我確認學生已完成上述自主練習。','我確認本次練習紀錄正確。');
     html=html.replace('送出今天的打卡','完成並送出紀錄');
@@ -124,6 +127,7 @@
   const baseSavePractice=savePractice;
   savePractice=async function(){
     if(mode()==="timer"&&timerIsRunning()){toast("請先停止計時，再送出紀錄");return false}
+    if(mode()==="manual"&&Number(document.getElementById("pMins")?.textContent||0)>240){toast("手動登記單筆最多 4 小時（240 分鐘），請調整時間");return false}
     const confirmBox=document.getElementById("pConfirm");
     if(confirmBox&&!confirmBox.checked){toast("請先確認本次練習紀錄正確");return false}
     const saved=await baseSavePractice();
