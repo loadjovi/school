@@ -72,12 +72,12 @@
     state.schoolViewer.loading=false;
   }
 
-  window.changeSchoolFollowupDate=async function(v){if(!/^\d{4}-\d{2}-\d{2}$/.test(String(v||"")))return;if(state.me?.role==="admin"&&v>=localDate()){toast("請選擇過去的上課日期");return}state.schoolViewer.date=v;state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render()};
-  window.shiftSchoolFollowupDate=async function(days){state.schoolViewer.date=shiftDate(state.schoolViewer.date,days);state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render()};
-  window.todaySchoolFollowup=async function(){state.schoolViewer.date=localDate();state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render()};
+  window.changeSchoolFollowupDate=async function(v){if(!/^\d{4}-\d{2}-\d{2}$/.test(String(v||"")))return;if(state.me?.role==="admin"&&v>=localDate()){toast("請選擇過去的上課日期");return}state.schoolViewer.date=v;if(state.me?.role==="admin")state.schoolViewer.correctionStudentId="";state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render()};
+  window.shiftSchoolFollowupDate=async function(days){state.schoolViewer.date=shiftDate(state.schoolViewer.date,days);state.schoolViewer.correctionStudentId="";state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render()};
+  window.todaySchoolFollowup=async function(){state.schoolViewer.date=localDate();state.schoolViewer.correctionStudentId="";state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render()};
   window.refreshSchoolFollowup=async function(){state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render();if(!state.schoolViewer.error)toast("✅ 已更新校方出缺勤資料")};
   window.setSchoolFollowupFilter=function(v){state.schoolViewer.filter=v;render()};
-  window.searchAdminSectionCorrection=function(v){state.schoolViewer.correctionSearch=String(v||"").trim().toLowerCase();mountAdminSchoolCorrection()};
+  window.selectAdminSectionStudent=function(v){state.schoolViewer.correctionStudentId=String(v||"");mountAdminSchoolCorrection()};
   window.toggleAdminSchoolCorrection=async function(){
     if(state.me?.role!=="admin"||state.page!=="admin")return;
     state.schoolViewer.adminCorrectionOpen=!state.schoolViewer.adminCorrectionOpen;
@@ -117,7 +117,7 @@
     return `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px"><button class="${f==="followup"?"primary":"secondary"}" style="margin:0;padding:9px 4px" onclick="setSchoolFollowupFilter('followup')">需追蹤</button><button class="${f==="absent"?"primary":"secondary"}" style="margin:0;padding:9px 4px" onclick="setSchoolFollowupFilter('absent')">缺席</button><button class="${f==="leave"?"primary":"secondary"}" style="margin:0;padding:9px 4px" onclick="setSchoolFollowupFilter('leave')">請假</button><button class="${f==="all"?"primary":"secondary"}" style="margin:0;padding:9px 4px" onclick="setSchoolFollowupFilter('all')">全部</button></div>`;
   }
   function filteredItems(items=[]){const f=state.schoolViewer.filter;if(f==="all")return items;if(f==="followup")return items.filter(x=>x.status==="absent");return items.filter(x=>x.status===f)}
-  function adminCorrectionItems(){const q=state.schoolViewer.correctionSearch||"";return q?(state.schoolViewer.data?.items||[]).filter(x=>x.classType==="section"&&[x.name,x.studentId,x.grade,x.groupName,x.section].some(v=>String(v||"").toLowerCase().includes(q))):[]}
+  function adminCorrectionItems(){const id=state.schoolViewer.correctionStudentId||"";return id?(state.schoolViewer.data?.items||[]).filter(x=>x.classType==="section"&&String(x.studentId)===id):[]}
 
   function schoolPage(){
     const s=state.schoolViewer,d=s.data,c=d?.counts||{},items=filteredItems(d?.items||[]);
@@ -134,10 +134,11 @@
     const main=document.querySelector(".main");if(!main)return;
     let root=document.getElementById("adminSchoolCorrection");
     if(!root){root=document.createElement("div");root.id="adminSchoolCorrection";main.prepend(root)}
-    const s=state.schoolViewer,items=adminCorrectionItems();
+    const s=state.schoolViewer,items=adminCorrectionItems(),students=new Map();
+    for(const x of s.data?.items||[])if(x.classType==="section"&&!students.has(String(x.studentId)))students.set(String(x.studentId),x);
+    const studentOptions=[...students.values()].sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"zh-Hant")).map(x=>`<option value="${esc(x.studentId)}" ${String(x.studentId)===s.correctionStudentId?"selected":""}>${esc(x.name)}｜${esc(x.grade||"")}｜${esc(x.studentId)}</option>`).join("");
     const rows=items.map((x,i)=>`<details class="item" style="display:block"><summary><b>${esc(x.name)}｜${esc(x.groupName)}團 ${esc(x.section)}</b>　<span class="badge ${badgeClass(x.status)}">${esc(statusText[x.status]||x.status)}</span></summary><small>${esc(x.grade||"")}｜點名老師：${esc(x.teacherName||"—")}</small><label>修正為</label><select id="schoolCorrection_${i}">${Object.entries(statusText).filter(([v])=>["present","late","leave","absent"].includes(v)).map(([v,t])=>`<option value="${v}" ${v===x.status?"selected":""}>${t}</option>`).join("")}</select><label>查證原因（必填）</label><input id="schoolCorrectionReason_${i}" maxlength="300" placeholder="例：已核對請假紀錄"><button class="secondary" onclick="correctSchoolSection(${i})">確認修正</button></details>`).join("");
-    root.innerHTML=`<div class="card"><div class="section-title"><h2>📝 歷史分部課點名修正</h2></div><button class="secondary" onclick="toggleAdminSchoolCorrection()">${s.adminCorrectionOpen?"收合":"開啟修正畫面"}</button>${s.adminCorrectionOpen?`<label>上課日期（僅可修正過去日期）</label><input type="date" max="${esc(shiftDate(localDate(),-1))}" value="${esc(s.date)}" onchange="changeSchoolFollowupDate(this.value)"><label>搜尋學生姓名或學號</label><input id="adminCorrectionSearch" placeholder="輸入姓名或學號" value="${esc(s.correctionSearch||"")}" oninput="searchAdminSectionCorrection(this.value)">${s.error?`<div class="error">${esc(s.error)}</div>`:s.loading?`<div class="notice">載入中…</div>`:s.data?s.correctionSearch?`<div class="notice">符合的分部課紀錄：${items.length} 筆。原因會保留於異動紀錄。</div>${rows||`<div class="notice">此日期沒有符合的分部課點名紀錄。</div>`}`:`<div class="notice">輸入學生姓名或學號，查找該日既有點名紀錄。</div>`:`<div class="notice">請選擇日期查詢。</div>`}`:""}</div>`;
-    if(s.adminCorrectionOpen&&s.correctionSearch){const search=document.getElementById("adminCorrectionSearch");search?.focus();search?.setSelectionRange(search.value.length,search.value.length)}
+    root.innerHTML=`<div class="card"><div class="section-title"><h2>📝 歷史分部課點名修正</h2></div><button class="secondary" onclick="toggleAdminSchoolCorrection()">${s.adminCorrectionOpen?"收合":"開啟修正畫面"}</button>${s.adminCorrectionOpen?`<label>上課日期（僅可修正過去日期）</label><input type="date" max="${esc(shiftDate(localDate(),-1))}" value="${esc(s.date)}" onchange="changeSchoolFollowupDate(this.value)">${s.error?`<div class="error">${esc(s.error)}</div>`:s.loading?`<div class="notice">載入中…</div>`:s.data?`<label>選擇學生</label><select id="adminCorrectionStudent" onchange="selectAdminSectionStudent(this.value)"><option value="">請選擇學生</option>${studentOptions}</select>${s.correctionStudentId?`<div class="notice">該生分部課紀錄：${items.length} 筆。原因會保留於異動紀錄。</div>${rows||`<div class="notice">此日期沒有該生的分部課點名紀錄。</div>`}`:students.size?`<div class="notice">請從下拉選單選擇當日有分部課紀錄的學生。</div>`:`<div class="notice">此日期沒有分部課點名紀錄。</div>`}`:`<div class="notice">請選擇日期查詢。</div>`}`:""}</div>`;
   }
 
   const baseRoleText=roleText;
