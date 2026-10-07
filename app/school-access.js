@@ -73,8 +73,8 @@
   }
 
   window.changeSchoolFollowupDate=async function(v){if(!/^\d{4}-\d{2}-\d{2}$/.test(String(v||"")))return;if(state.me?.role==="admin"&&v>=localDate()){toast("請選擇過去的上課日期");return}state.schoolViewer.date=v;if(state.me?.role==="admin")state.schoolViewer.correctionStudentId="";state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render()};
-  window.shiftSchoolFollowupDate=async function(days){state.schoolViewer.date=shiftDate(state.schoolViewer.date,days);state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render()};
-  window.todaySchoolFollowup=async function(){state.schoolViewer.date=localDate();state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render()};
+  window.shiftSchoolFollowupDate=async function(days){state.schoolViewer.date=shiftDate(state.schoolViewer.date,days);state.schoolViewer.correctionStudentId="";state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render()};
+  window.todaySchoolFollowup=async function(){state.schoolViewer.date=localDate();state.schoolViewer.correctionStudentId="";state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render()};
   window.refreshSchoolFollowup=async function(){state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render();if(!state.schoolViewer.error)toast("✅ 已更新校方出缺勤資料")};
   window.setSchoolFollowupFilter=function(v){state.schoolViewer.filter=v;render()};
   window.selectAdminSectionStudent=function(v){state.schoolViewer.correctionStudentId=String(v||"");mountAdminSchoolCorrection()};
