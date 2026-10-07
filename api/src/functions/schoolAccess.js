@@ -1,7 +1,7 @@
 import { app } from "@azure/functions";
 import { TableClient, TableServiceClient } from "@azure/data-tables";
 import { getAccess, getTenantContext, getStudentAliasInfo, json } from "../lib/auth.js";
-import { ensureTenantTables, listActivityRange, activityStudentId, listStudentMaster, getTeacherDirectory, getTenantDirectory, listTenantDirectory, defaultTenantId, tenantIdValue, tenantSchoolPartition } from "../lib/storage.js";
+import { ensureTenantTables, table, listActivityRange, activityStudentId, listStudentMaster, getTeacherDirectory, getTenantDirectory, listTenantDirectory, defaultTenantId, tenantIdValue, tenantSchoolPartition } from "../lib/storage.js";
 
 const settingsTableName=()=>process.env.SYSTEM_SETTINGS_TABLE||"SystemSettings";
 const accessLogTableName=()=>process.env.SCHOOL_ACCESS_LOG_TABLE||"SchoolAccessLog";
@@ -41,7 +41,7 @@ async function isSchoolViewer(email,schoolId=defaultTenantId()){return (await ge
 function studentView(e){return {studentId:e.rowKey,name:e.studentName,grade:e.grade,groupName:e.groupName,instrument:e.instrument,section:e.section||"待確認",schoolYear:e.schoolYear||"",status:e.status||"active"}}
 async function canonicalId(id,students,cache,schoolId){const key=String(id||"");if(students.has(key))return key;if(cache.has(key))return cache.get(key);try{const a=await getStudentAliasInfo(key,schoolId);const c=String(a.canonicalStudentId||key);cache.set(key,c);return c}catch{cache.set(key,key);return key}}
 async function teacherName(email,cache,schoolId){const key=String(email||"").trim().toLowerCase();if(!key)return "";if(cache.has(key))return cache.get(key);try{const d=await getTeacherDirectory(key,schoolId);const name=String(d?.teacherName||"").trim()||key;cache.set(key,name);return name}catch{cache.set(key,key);return key}}
-async function collectDaily(key,date,schoolId){const latest=new Map();for(const e of await listActivityRange(key,schoolId,"","",date)){const rawStudentId=activityStudentId(e);const classType=key==="ensemble"?"ensemble":key==="comprehensive"?"comprehensive":"section";const row={rawStudentId,eventDate:String(e.eventDate||date),classType,groupName:String(e.groupName||""),section:String(e.section||""),status:String(e.status||""),teacher:String(e.teacher||""),createdAt:String(e.createdAt||""),rowKey:String(e.rowKey||"")};const k=[rawStudentId,row.eventDate,row.classType,row.groupName,row.section].join("|");const old=latest.get(k),stamp=`${row.createdAt}|${row.rowKey}`,oldStamp=old?`${old.createdAt}|${old.rowKey}`:"";if(!old||stamp>=oldStamp)latest.set(k,row)}return [...latest.values()]}
+async function collectDaily(key,date,schoolId){const latest=new Map();for(const e of await listActivityRange(key,schoolId,"","",date)){const rawStudentId=activityStudentId(e);const classType=key==="ensemble"?"ensemble":key==="comprehensive"?"comprehensive":"section";const row={rawStudentId,eventDate:String(e.eventDate||date),classType,groupName:String(e.groupName||""),section:String(e.section||""),status:String(e.status||""),teacher:String(e.teacher||""),createdAt:String(e.createdAt||""),rowKey:String(e.rowKey||""),partitionKey:String(e.partitionKey||"")};const k=[rawStudentId,row.eventDate,row.classType,row.groupName,row.section].join("|");const old=latest.get(k),stamp=`${row.createdAt}|${row.rowKey}`,oldStamp=old?`${old.createdAt}|${old.rowKey}`:"";if(!old||stamp>=oldStamp)latest.set(k,row)}return [...latest.values()]}
 async function viewerContext(request,{discover=false}={}){
   const access=await getAccess(request);
   if(!access.authenticated)return {access,error:json({error:"Unauthorized"},401)};
@@ -65,5 +65,38 @@ async function viewerContext(request,{discover=false}={}){
 }
 app.http("schoolAccessAdmin",{methods:["GET","PATCH"],authLevel:"anonymous",route:"school-access",handler:async(request)=>{const context=await getTenantContext(request);if(context.error)return context.error;const {access:a,schoolId}=context;if(a.role!=="admin")return json({error:"Forbidden"},403);if(request.method==="PATCH"){const body=await request.json();if(!Array.isArray(body.emails))return json({error:"emails 必須為陣列"},400);const raw=body.emails.map(x=>String(x||"").trim()).filter(Boolean),emails=normalizeEmails(raw);if(emails.length!==new Set(raw.map(x=>x.toLowerCase())).size)return json({error:"請確認所有校方帳號皆為有效 Email"},400);return json(await saveSchoolEmails(emails,a.email,schoolId))}const emails=await getSchoolEmails(schoolId);return json({schoolId,emails,accessStats:await schoolAccessStats(emails,schoolId)})}});
 app.http("schoolAccessSelf",{methods:["GET"],authLevel:"anonymous",route:"school-access-self",handler:async(request)=>{const context=await viewerContext(request,{discover:true});if(context.error){if(context.error.status===401)return context.error;const a=context.access;return json({allowed:false,email:a?.email||"",role:a?.role||"unassigned",reason:context.reason||"notAuthorized"})}const {access:a,schoolId,tenant}=context;try{await recordSchoolAccess(a.email,"login","",schoolId)}catch(e){console.warn("school login audit failed",e?.message||e)}return json({allowed:true,email:a.email,role:"school",schoolId,schoolName:String(tenant.schoolName||schoolId),systemName:String(tenant.systemName||tenant.schoolName||schoolId)})}});
+app.http("schoolSectionCorrection",{methods:["PATCH"],authLevel:"anonymous",route:"school-section-correction",handler:async(request)=>{
+  const admin=await getTenantContext(request);
+  let context;
+  if(!admin.error&&admin.access.role==="admin")context=admin;
+  else context=await viewerContext(request);
+  if(context.error)return context.error;
+  const {access:a,schoolId}=context;
+  if(a.role!=="admin"&&["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(a.role))return json({error:"老師帳號不能修正過去點名"},403);
+  let body;try{body=await request.json()}catch{return json({error:"資料格式錯誤"},400)}
+  const date=clean(body.date,20),studentId=clean(body.studentId,120),groupName=clean(body.groupName,40),section=clean(body.section,80),status=clean(body.status,20),previousStatus=clean(body.previousStatus,20),reason=clean(body.reason,300);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||date>=taipeiDate()||!studentId||!groupName||!section)return json({error:"僅可修正過去日期既有的分部課點名"},400);
+  if(!["present","late","leave","absent"].includes(status)||!["present","late","leave","absent"].includes(previousStatus)||!reason)return json({error:"請選擇狀態並填寫修正原因"},400);
+  await ensureTenantTables();
+  const masters=await listStudentMaster("",schoolId),students=new Map(masters.map(e=>[String(e.rowKey),e])),aliases=new Map();
+  if(!students.has(studentId))return json({error:"找不到該校學生"},404);
+  const rows=await collectDaily("section",date,schoolId),matches=[];
+  for(const row of rows){
+    if(row.groupName!==groupName||row.section!==section)continue;
+    if(await canonicalId(row.rawStudentId,students,aliases,schoolId)===studentId)matches.push(row);
+  }
+  if(matches.length!==1)return json({error:"找不到唯一的原始點名紀錄，請聯繫管理員確認"},409);
+  const row=matches[0];
+  if(row.status!==previousStatus)return json({error:"點名狀態已變更，請重新整理後再修正"},409);
+  if(row.status===status)return json({error:"新舊狀態相同"},400);
+  const client=table("tenantSection"),entity=await client.getEntity(row.partitionKey,row.rowKey);
+  if(String(entity.schoolId||"")!==schoolId||String(entity.eventDate||"")!==date||String(entity.status||"")!==previousStatus)return json({error:"點名資料已更新，請重新整理"},409);
+  const at=new Date().toISOString(),historyEntry={at,by:a.email,from:previousStatus,to:status,reason};
+  let history=[];try{history=JSON.parse(String(entity.correctionHistory||"[]"))}catch{}
+  if(!Array.isArray(history))history=[];
+  entity.correctionHistory=JSON.stringify([...history,historyEntry]);entity.status=status;entity.minutes=["absent","leave"].includes(status)?0:Number(entity.minutes||45)||45;entity.correctedAt=at;entity.correctedBy=a.email;entity.correctionReason=reason;
+  await client.updateEntity(entity,"Merge");
+  return json({ok:true,date,studentId,from:previousStatus,to:status,correctedAt:at,correctedBy:a.email});
+}});
 app.http("schoolAttendanceExportAudit",{methods:["POST"],authLevel:"anonymous",route:"school-attendance-export-audit",handler:async(request)=>{const context=await viewerContext(request);if(context.error)return context.error;const {access:a,schoolId}=context;let body={};try{body=await request.json()}catch{}const date=clean(body.date||taipeiDate(),20);if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"日期格式不正確"},400);try{const createdAt=await recordSchoolAccess(a.email,"attendance_export",date,schoolId);return json({ok:true,schoolId,date,createdAt})}catch(e){console.error("school export audit failed",e);return json({error:"匯出紀錄寫入失敗"},500)}}});
 app.http("schoolFollowup",{methods:["GET"],authLevel:"anonymous",route:"school-followup",handler:async(request)=>{let schoolId;const tenantContext=await getTenantContext(request);if(!tenantContext.error&&tenantContext.access.role==="admin")schoolId=tenantContext.schoolId;else{const viewer=await viewerContext(request);if(viewer.error)return viewer.error;schoolId=viewer.schoolId}const date=clean(request.query.get("date")||taipeiDate(),20);if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"日期格式不正確"},400);await ensureTenantTables();const masters=await listStudentMaster("",schoolId),students=new Map(masters.map(e=>[String(e.rowKey),studentView(e)])),canonicalCache=new Map(),teacherCache=new Map();const [sectionRows,ensembleRows,comprehensiveRows]=await Promise.all([collectDaily("section",date,schoolId),collectDaily("ensemble",date,schoolId),collectDaily("comprehensive",date,schoolId)]);const latest=new Map();for(const r of [...sectionRows,...ensembleRows,...comprehensiveRows]){const studentId=await canonicalId(r.rawStudentId,students,canonicalCache,schoolId),row={...r,studentId};const k=[studentId,row.eventDate,row.classType,row.groupName,row.section].join("|");const old=latest.get(k),stamp=`${row.createdAt}|${row.rowKey}`,oldStamp=old?`${old.createdAt}|${old.rowKey}`:"";if(!old||stamp>=oldStamp)latest.set(k,row)}const items=[];for(const r of latest.values()){const s=students.get(String(r.studentId))||{studentId:r.studentId,name:`學生 ${r.studentId}`,grade:"",groupName:r.groupName,section:r.section||"待確認",instrument:""};items.push({date:r.eventDate,classType:r.classType,studentId:r.studentId,name:s.name,grade:s.grade,groupName:r.groupName||s.groupName,section:r.classType==="ensemble"?"四分部合班":r.section||s.section||"待確認",instrument:s.instrument,status:r.status,teacherName:await teacherName(r.teacher,teacherCache,schoolId)})}const order={absent:0,leave:1,late:2,present:3,cancelled:4};items.sort((x,y)=>(order[x.status]??9)-(order[y.status]??9)||String(x.classType).localeCompare(String(y.classType))||String(x.groupName).localeCompare(String(y.groupName),"zh-Hant")||String(x.section).localeCompare(String(y.section),"zh-Hant")||String(x.name).localeCompare(String(y.name),"zh-Hant"));const count=status=>items.filter(x=>x.status===status).length;return json({schoolId,date,scope:"00:00-23:59",readOnly:true,items,counts:{total:items.length,present:count("present"),late:count("late"),leave:count("leave"),absent:count("absent"),cancelled:count("cancelled"),followup:count("leave")+count("absent")}})}});

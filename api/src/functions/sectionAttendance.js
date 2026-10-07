@@ -4,6 +4,8 @@ import { ensureTenantTables, table, rowKey, getStudentMaster, listStudentMaster,
 import { enforceScheduledCourse } from "./schoolSchedule.js";
 import { listSectionMerges, receivingMerges, validMergeDate } from "../lib/sectionMerge.js";
 
+const taipeiDate=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+
 const safe=v=>String(v||"").replaceAll("'","''");
 
 async function existingRows(client,schoolId,studentId,sessionDate,groupName,section){
@@ -69,6 +71,7 @@ app.http("sectionAttendance",{
     const requestedGroup=String(body.groupName||"").trim();
     const requestedSection=String(body.section||"").trim();
     if(!validMergeDate(sessionDate)||!requestedGroup||!requestedSection||!items.length)return json({error:"缺少有效日期、團別、分部或點名資料"},400);
+    if(a.role!=="admin"&&sessionDate<taipeiDate())return json({error:"過去日期的分部課點名僅能由校方修正，請聯繫學校行政"},403);
     if(!ensureTemporaryCourseAccess(a,"section",sessionDate))return json({error:"此日期不在短期代課期間"},403);
     if(!ensureSectionAccess(a,{groupName:requestedGroup,section:requestedSection}))return json({error:"無此分部課權限"},403);
     const merge=mergeContext(await listSectionMerges(schoolId,sessionDate),a,sessionDate,requestedGroup,requestedSection);
