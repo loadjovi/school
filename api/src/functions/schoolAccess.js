@@ -67,12 +67,9 @@ app.http("schoolAccessAdmin",{methods:["GET","PATCH"],authLevel:"anonymous",rout
 app.http("schoolAccessSelf",{methods:["GET"],authLevel:"anonymous",route:"school-access-self",handler:async(request)=>{const context=await viewerContext(request,{discover:true});if(context.error){if(context.error.status===401)return context.error;const a=context.access;return json({allowed:false,email:a?.email||"",role:a?.role||"unassigned",reason:context.reason||"notAuthorized"})}const {access:a,schoolId,tenant}=context;try{await recordSchoolAccess(a.email,"login","",schoolId)}catch(e){console.warn("school login audit failed",e?.message||e)}return json({allowed:true,email:a.email,role:"school",schoolId,schoolName:String(tenant.schoolName||schoolId),systemName:String(tenant.systemName||tenant.schoolName||schoolId)})}});
 app.http("schoolSectionCorrection",{methods:["PATCH"],authLevel:"anonymous",route:"school-section-correction",handler:async(request)=>{
   const admin=await getTenantContext(request);
-  let context;
-  if(!admin.error&&admin.access.role==="admin")context=admin;
-  else context=await viewerContext(request);
-  if(context.error)return context.error;
-  const {access:a,schoolId}=context;
-  if(a.role!=="admin"&&["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(a.role))return json({error:"老師帳號不能修正過去點名"},403);
+  if(admin.error)return admin.error;
+  const {access:a,schoolId}=admin;
+  if(a.role!=="admin")return json({error:"僅學校管理員可修正過去點名"},403);
   let body;try{body=await request.json()}catch{return json({error:"資料格式錯誤"},400)}
   const date=clean(body.date,20),studentId=clean(body.studentId,120),groupName=clean(body.groupName,40),section=clean(body.section,80),status=clean(body.status,20),previousStatus=clean(body.previousStatus,20),reason=clean(body.reason,300);
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||date>=taipeiDate()||!studentId||!groupName||!section)return json({error:"僅可修正過去日期既有的分部課點名"},400);
