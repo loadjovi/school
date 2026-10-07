@@ -64,7 +64,7 @@
   }
 
   async function loadSchoolFollowup(force=false){
-    if(state.me?.role!=="school"||state.schoolViewer.loading)return;
+    if(!["school","admin"].includes(state.me?.role)||state.schoolViewer.loading)return;
     if(state.schoolViewer.data?.date===state.schoolViewer.date&&!force)return;
     state.schoolViewer.loading=true;state.schoolViewer.error="";render();
     try{state.schoolViewer.data=await api(`/api/school-followup?date=${encodeURIComponent(state.schoolViewer.date)}`)}
@@ -77,6 +77,15 @@
   window.todaySchoolFollowup=async function(){state.schoolViewer.date=localDate();state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render()};
   window.refreshSchoolFollowup=async function(){state.schoolViewer.data=null;render();await loadSchoolFollowup(true);render();if(!state.schoolViewer.error)toast("✅ 已更新校方出缺勤資料")};
   window.setSchoolFollowupFilter=function(v){state.schoolViewer.filter=v;render()};
+  window.toggleAdminSchoolCorrection=async function(){
+    if(state.me?.role!=="admin"||state.page!=="admin")return;
+    state.schoolViewer.adminCorrectionOpen=!state.schoolViewer.adminCorrectionOpen;
+    if(state.schoolViewer.adminCorrectionOpen&&!state.schoolViewer.data){
+      state.schoolViewer.date=shiftDate(localDate(),-1);
+      mountAdminSchoolCorrection();await loadSchoolFollowup(true);
+    }
+    mountAdminSchoolCorrection();
+  };
 
   window.correctSchoolSection=async function(index){
     const record=filteredItems(state.schoolViewer.data?.items||[])[index];
@@ -118,6 +127,13 @@
     return `<div class="card hero"><div class="section-title"><h2>🏫 校方出缺勤查詢</h2><span class="badge ok">校方</span></div><div class="notice">校方可查詢出缺勤，並於查證後修正過去日期的分部課點名；修正須填寫原因。其他課程與學生主檔維持查詢權限。</div></div><div class="card"><h2>📅 查詢日期</h2><div style="display:grid;grid-template-columns:48px 1fr 48px;gap:8px;align-items:center"><button class="secondary" style="margin:0;padding:12px 6px" onclick="shiftSchoolFollowupDate(-1)">←</button><input type="date" value="${esc(s.date)}" onchange="changeSchoolFollowupDate(this.value)"><button class="secondary" style="margin:0;padding:12px 6px" onclick="shiftSchoolFollowupDate(1)">→</button></div><div class="row2" style="margin-top:8px"><button class="secondary" style="margin:0" onclick="todaySchoolFollowup()">今天</button><button class="secondary" style="margin:0" onclick="refreshSchoolFollowup()">🔄 重新整理</button></div></div><div class="card"><h2>📊 當日出缺勤</h2>${body}${d?filterButtons():""}<div class="notice" style="margin-top:12px"><b>狀態說明</b><br>• <b>到課</b>：老師已確認學生正常到課；遲到仍屬已到課並保留遲到紀錄。<br>• <b>請假</b>：已有明確請假紀錄，不列入需追蹤。<br>• <b>缺席／需追蹤</b>：老師已完成點名，學生未到課且目前無請假紀錄，建議校方後續確認。<br>• <b>未點名</b>：屬老師尚未完成點名的作業狀態，不代表學生缺席。</div></div><div class="card"><div class="section-title"><h2>${esc(s.date)} 學生紀錄</h2>${d?`<span class="badge warn">${items.length} 筆</span>`:""}</div>${list}${d?`<button class="secondary" style="width:100%;margin-top:12px" onclick="exportSchoolFollowup()">📥 匯出當日出缺勤 CSV</button>`:""}</div>`;
   }
   function schoolHelpPage(){return `<div class="card"><h2>ℹ️ 校方查詢權限說明</h2><div class="notice">此權限提供學校行政人員查看弦樂團分部課、合奏課及綜合課的出缺勤資料，用於學生聯繫與後續追蹤。<br><br><b>校方可修正過去的分部課點名：</b>須查證並填寫原因；不能修改其他課程點名、學生主檔、老師設定或系統設定。</div></div>`}
+  function mountAdminSchoolCorrection(){
+    if(state.me?.role!=="admin"||state.page!=="admin")return;
+    const main=document.querySelector(".main");if(!main)return;
+    let root=document.getElementById("adminSchoolCorrection");
+    if(!root){root=document.createElement("div");root.id="adminSchoolCorrection";main.prepend(root)}
+    root.innerHTML=`<div class="card"><h2>📝 歷史分部課點名修正</h2><div class="notice">查詢過去的上課日期，找到學生的分部課紀錄後選擇新狀態並填寫查證原因。老師無法修改過去日期。</div><button class="secondary" onclick="toggleAdminSchoolCorrection()">${state.schoolViewer.adminCorrectionOpen?"收合修正畫面":"開啟修正畫面"}</button></div>${state.schoolViewer.adminCorrectionOpen?schoolPage():""}`;
+  }
 
   const baseRoleText=roleText;
   roleText=function(){return state.me?.role==="school"?"校方查詢":baseRoleText()};
@@ -134,10 +150,10 @@
       return;
     }
     const r=baseRender();
-    if(state.me?.role==="admin"&&state.page==="admin")setTimeout(mountAdminSchoolAccess,0);
+    if(state.me?.role==="admin"&&state.page==="admin")setTimeout(()=>{mountAdminSchoolAccess();mountAdminSchoolCorrection()},0);
     return r;
   };
 
-  if(state.me?.role==="admin"&&state.page==="admin")setTimeout(mountAdminSchoolAccess,0);
+  if(state.me?.role==="admin"&&state.page==="admin")setTimeout(()=>{mountAdminSchoolAccess();mountAdminSchoolCorrection()},0);
   setTimeout(checkSchoolAccess,0);
 })();
