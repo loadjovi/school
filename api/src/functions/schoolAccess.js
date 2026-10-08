@@ -93,7 +93,50 @@ app.http("schoolSectionCorrection",{methods:["PATCH"],authLevel:"anonymous",rout
   if(!Array.isArray(history))history=[];
   entity.correctionHistory=JSON.stringify([...history,historyEntry]);entity.status=status;entity.minutes=["absent","leave"].includes(status)?0:Number(entity.minutes||45)||45;entity.correctedAt=at;entity.correctedBy=a.email;entity.correctionReason=reason;
   await client.updateEntity(entity,"Merge");
+  // The source row is authoritative; audit-log failure cannot undo a saved correction.
+  try{await recordAdminAudit(schoolId,a.email,"section_correction",{studentId,studentName:String(students.get(studentId)?.studentName||""),classDate:date,groupName,section,fromStatus:previousStatus,toStatus:status,reason,at})}catch(e){console.warn("admin correction audit mirror failed",e)}
   return json({ok:true,date,studentId,from:previousStatus,to:status,correctedAt:at,correctedBy:a.email});
+}});
+// School administrators can inspect successful admin entries and attendance corrections.
+// Older corrections remain in the original attendance rows and are included on demand.
+function auditDate(at){try{return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(at))}catch{return ""}}
+function adminAuditPartition(schoolId){return `${tenantSchoolPartition(schoolId)}|admin-audit`}
+async function recordAdminAudit(schoolId,email,eventType,detail={}){
+  await ensureAccessLog();const at=new Date().toISOString();
+  await accessLogClient().createEntity({partitionKey:adminAuditPartition(schoolId),rowKey:logRowKey(),schoolId:tenantSchoolPartition(schoolId),actorEmail:String(email||"").toLowerCase(),eventType,createdAt:at,detailJson:JSON.stringify(detail).slice(0,3000)});
+  return at;
+}
+app.http("schoolAdminActivity",{methods:["GET","POST"],authLevel:"anonymous",route:"school-admin-activity",handler:async(request)=>{
+  const context=await getTenantContext(request);if(context.error)return context.error;
+  const {access:a,schoolId}=context;if(a.role!=="admin")return json({error:"Forbidden"},403);
+  if(request.method==="POST"){
+    try{return json({ok:true,at:await recordAdminAudit(schoolId,a.email,"admin_login")})}
+    catch(e){console.error("admin login audit failed",e);return json({error:"登入紀錄寫入失敗"},500)}
+  }
+  const from=clean(request.query.get("from"),20),to=clean(request.query.get("to"),20);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(from)||!/^\d{4}-\d{2}-\d{2}$/.test(to)||from>to||Date.parse(to)-Date.parse(from)>92*86400000)return json({error:"請選擇不超過 92 天的有效日期區間"},400);
+  await Promise.all([ensureAccessLog(),ensureTenantTables()]);
+  const events=[],partition=adminAuditPartition(schoolId).replaceAll("'","''");
+  for await(const e of accessLogClient().listEntities({queryOptions:{filter:`PartitionKey eq '${partition}'`}})){
+    const at=String(e.createdAt||"");if(auditDate(at)<from||auditDate(at)>to)continue;
+    let detail={};try{detail=JSON.parse(String(e.detailJson||"{}"))}catch{}
+    events.push({at,type:String(e.eventType||""),actor:String(e.actorEmail||""),...detail});
+  }
+  // Previous revisions were stored on the original record before this screen existed.
+  const known=new Set(events.filter(x=>x.type==="section_correction").map(x=>[x.at,x.studentId,x.actor].join("|")));
+  const students=new Map((await listStudentMaster("",schoolId)).map(x=>[String(x.rowKey),String(x.studentName||"")]));
+  const sid=tenantSchoolPartition(schoolId).replaceAll("'","''");
+  for await(const e of table("tenantSection").listEntities({queryOptions:{filter:`schoolId eq '${sid}'`}})){
+    if(!e.correctionHistory)continue;
+    let history=[];try{history=JSON.parse(String(e.correctionHistory))}catch{}
+    if(!Array.isArray(history))continue;
+    const studentId=activityStudentId(e);
+    for(const h of history){const at=String(h.at||""),actor=String(h.by||"");if(auditDate(at)<from||auditDate(at)>to||known.has([at,studentId,actor].join("|")))continue;
+      events.push({at,type:"section_correction",actor,studentId,studentName:students.get(studentId)||"",classDate:String(e.eventDate||""),groupName:String(e.groupName||""),section:String(e.section||""),fromStatus:String(h.from||""),toStatus:String(h.to||""),reason:String(h.reason||"")});
+    }
+  }
+  events.sort((x,y)=>y.at.localeCompare(x.at));
+  return json({from,to,items:events.slice(0,500),truncated:events.length>500});
 }});
 app.http("schoolAttendanceExportAudit",{methods:["POST"],authLevel:"anonymous",route:"school-attendance-export-audit",handler:async(request)=>{const context=await viewerContext(request);if(context.error)return context.error;const {access:a,schoolId}=context;let body={};try{body=await request.json()}catch{}const date=clean(body.date||taipeiDate(),20);if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"日期格式不正確"},400);try{const createdAt=await recordSchoolAccess(a.email,"attendance_export",date,schoolId);return json({ok:true,schoolId,date,createdAt})}catch(e){console.error("school export audit failed",e);return json({error:"匯出紀錄寫入失敗"},500)}}});
 app.http("schoolFollowup",{methods:["GET"],authLevel:"anonymous",route:"school-followup",handler:async(request)=>{let schoolId;const tenantContext=await getTenantContext(request);if(!tenantContext.error&&tenantContext.access.role==="admin")schoolId=tenantContext.schoolId;else{const viewer=await viewerContext(request);if(viewer.error)return viewer.error;schoolId=viewer.schoolId}const date=clean(request.query.get("date")||taipeiDate(),20);if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"日期格式不正確"},400);await ensureTenantTables();const masters=await listStudentMaster("",schoolId),students=new Map(masters.map(e=>[String(e.rowKey),studentView(e)])),canonicalCache=new Map(),teacherCache=new Map();const [sectionRows,ensembleRows,comprehensiveRows]=await Promise.all([collectDaily("section",date,schoolId),collectDaily("ensemble",date,schoolId),collectDaily("comprehensive",date,schoolId)]);const latest=new Map();for(const r of [...sectionRows,...ensembleRows,...comprehensiveRows]){const studentId=await canonicalId(r.rawStudentId,students,canonicalCache,schoolId),row={...r,studentId};const k=[studentId,row.eventDate,row.classType,row.groupName,row.section].join("|");const old=latest.get(k),stamp=`${row.createdAt}|${row.rowKey}`,oldStamp=old?`${old.createdAt}|${old.rowKey}`:"";if(!old||stamp>=oldStamp)latest.set(k,row)}const items=[];for(const r of latest.values()){const s=students.get(String(r.studentId))||{studentId:r.studentId,name:`學生 ${r.studentId}`,grade:"",groupName:r.groupName,section:r.section||"待確認",instrument:""};items.push({date:r.eventDate,classType:r.classType,studentId:r.studentId,name:s.name,grade:s.grade,groupName:r.groupName||s.groupName,section:r.classType==="ensemble"?"四分部合班":r.section||s.section||"待確認",instrument:s.instrument,status:r.status,teacherName:await teacherName(r.teacher,teacherCache,schoolId)})}const order={absent:0,leave:1,late:2,present:3,cancelled:4};items.sort((x,y)=>(order[x.status]??9)-(order[y.status]??9)||String(x.classType).localeCompare(String(y.classType))||String(x.groupName).localeCompare(String(y.groupName),"zh-Hant")||String(x.section).localeCompare(String(y.section),"zh-Hant")||String(x.name).localeCompare(String(y.name),"zh-Hant"));const count=status=>items.filter(x=>x.status===status).length;return json({schoolId,date,scope:"00:00-23:59",readOnly:true,items,counts:{total:items.length,present:count("present"),late:count("late"),leave:count("leave"),absent:count("absent"),cancelled:count("cancelled"),followup:count("leave")+count("absent")}})}});
