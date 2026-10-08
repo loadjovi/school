@@ -180,12 +180,22 @@ app.http("dailyFollowup",{
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"日期格式不正確"},400);
     await ensureTenantTables();
 
-    const masters=await listStudentMaster("",schoolId);
+    // Independent storage reads run together so the daily dashboard does not
+    // wait for the student roster and parent mappings before fetching attendance.
+    const [masters,mappings,sectionRows,ensembleRows,comprehensiveRows,privateRows,scheduleCourses]=await Promise.all([
+      listStudentMaster("",schoolId),
+      listUserStudentMappings("active",schoolId),
+      collectDaily("section",date,schoolId),
+      collectDaily("ensemble",date,schoolId),
+      collectDaily("comprehensive",date,schoolId),
+      collectDaily("privateLesson",date,schoolId),
+      resolveSchoolCourses(schoolId,date)
+    ]);
     const students=new Map(masters.map(e=>[String(e.rowKey),studentView(e)]));
     const canonicalCache=new Map(),teacherCache=new Map();
 
     const currentParentBindings=new Map();
-    for(const m of await listUserStudentMappings("active",schoolId)){
+    for(const m of mappings){
       const canonicalId=await canonicalDailyId(m.studentId,students,canonicalCache,schoolId);
       if(!currentParentBindings.has(canonicalId))currentParentBindings.set(canonicalId,[]);
       const rows=currentParentBindings.get(canonicalId);
@@ -194,13 +204,6 @@ app.http("dailyFollowup",{
         parentEmail:email,parentName:String(m.parentName||""),relationship:String(m.relationship||"家長")
       });
     }
-    const [sectionRows,ensembleRows,comprehensiveRows,privateRows,scheduleCourses]=await Promise.all([
-      collectDaily("section",date,schoolId),
-      collectDaily("ensemble",date,schoolId),
-      collectDaily("comprehensive",date,schoolId),
-      collectDaily("privateLesson",date,schoolId),
-      resolveSchoolCourses(schoolId,date)
-    ]);
     const activeMasters=masters.filter(e=>String(e.status||"active")!=="inactive");
     const normGroup=v=>String(v||"").trim().replace(/團$/,"");
     const targetGroups=v=>String(v||"").split(",").map(normGroup).filter(Boolean);
