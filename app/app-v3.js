@@ -77,7 +77,11 @@ async function loadProfile(){
     state.students=await api("/api/students");state.student=state.students[0]||null;
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me.role)||state.me?.capabilities?.teacherSettings)state.page="teacherHome";
     else state.page="home";
-    if(state.me.role==="parent"&&state.student)await refreshStudent();
+    if(state.me.role==="parent"&&state.student){
+      render();
+      refreshStudent().then(()=>render()).catch(e=>{console.warn("parent summary load failed",e);toast("資料載入失敗，請稍後重新整理")});
+      return;
+    }
   }
   render()
 }

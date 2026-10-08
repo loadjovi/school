@@ -131,7 +131,7 @@
   }
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261003-practice-history-toggle",()=>{
+    appendScript("/app-v3.js?v=20261008-parent-login-speed",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
