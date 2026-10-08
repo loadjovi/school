@@ -58,7 +58,7 @@
       "/system-backup.js?v=20261003-practice20",
       "/school-access.js?v=20261008-select-student",
       "/school-access-audit-admin.js?v=20260918-0005",
-      "/school-admin-activity.js?v=20261008-activity",
+      "/school-admin-activity.js?v=20261008-activity2",
       "/school-access-refresh-fix.js?v=20261002-school-admin-roles",
       "/training-attendance.js?v=20261002-save-confirm"
     ];

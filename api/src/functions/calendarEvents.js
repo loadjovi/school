@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
 import { ensureTenantTables, table, tenantSchoolPartition, rowKey, listTeacherDirectory, listTeacherSupport, teacherForDate } from "../lib/storage.js";
+import { auditSaved } from "../lib/adminAudit.js";
 
 const safe=v=>String(v||"").replaceAll("'","''");
 const validDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||""));
@@ -108,6 +109,7 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
         for(const key of ["teachingTeacherEmail","teachingTeacherName","teachingMinutes","teachingConfirmedAt","teachingConfirmedBy"])entity[key]=old[key];
       }
       await client.upsertEntity(entity,"Replace");saved.push(eventView(entity,true));
+      await auditSaved(schoolId,a.email,old?"calendar_event_update":"calendar_event_create",{eventId:deterministic,title:entity.title,eventDate,before:old?eventView(old,true):null,after:eventView(entity,true)});
     }
     return json({ok:true,count:saved.length,items:saved});
   }
@@ -125,15 +127,15 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
       const teacher=await teacherForDate(email,schoolId,String(old.eventDate||""),{historical:true});
       if(!teacher||teacher.temporary&&teacher.courseType!=="practice")return json({error:"授課老師需在活動日期具備本校加練權限"},400);
       const entity={...old,partitionKey:sid,rowKey:eventId,teachingTeacherEmail:email,teachingTeacherName:String(teacher.teacherName||email),teachingMinutes:minutes,teachingConfirmedAt:now,teachingConfirmedBy:a.email,updatedAt:now,updatedBy:a.email};
-      await client.upsertEntity(entity,"Replace");return json({ok:true,item:eventView(entity,true)});
+      await client.upsertEntity(entity,"Replace");await auditSaved(schoolId,a.email,"calendar_event_update",{eventId,title:entity.title,eventDate:entity.eventDate,action:"confirmTeaching",before:eventView(old,true),after:eventView(entity,true)});return json({ok:true,item:eventView(entity,true)});
     }
     const entity={...old,partitionKey:sid,rowKey:eventId,teachingTeacherEmail:"",teachingTeacherName:"",teachingMinutes:0,teachingConfirmedAt:"",teachingConfirmedBy:"",updatedAt:now,updatedBy:a.email};
-    await client.upsertEntity(entity,"Replace");return json({ok:true,item:eventView(entity,true)});
+    await client.upsertEntity(entity,"Replace");await auditSaved(schoolId,a.email,"calendar_event_update",{eventId,title:entity.title,eventDate:entity.eventDate,action:"revokeTeaching",before:eventView(old,true),after:eventView(entity,true)});return json({ok:true,item:eventView(entity,true)});
   }
   if(old.teachingConfirmedAt&&(["cancel","delete"].includes(String(body.action||""))||String(body.status||"active")!=="active"))return json({error:"請先撤銷加練工時確認，再取消或刪除活動"},409);
   if(body.action==="delete"){
     if(await hasTrainingAttendance(schoolId,eventId))return json({error:"此場已有點名紀錄，請保留活動並改為取消，以保存出勤歷史"},409);
-    await client.deleteEntity(sid,eventId);return json({ok:true,deleted:true});
+    await client.deleteEntity(sid,eventId);await auditSaved(schoolId,a.email,"calendar_event_delete",{eventId,title:String(old.title||""),eventDate:String(old.eventDate||""),before:eventView(old,true)});return json({ok:true,deleted:true});
   }
   const status=body.action==="cancel"?"cancelled":body.action==="restore"?"active":String(body.status||old.status||"active");
   const teacherEmail=String(body.teacherEmail??old.teacherEmail??"").trim().toLowerCase();
@@ -143,5 +145,5 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
   if(entity.requiresAttendance===true&&entity.eventType!=="competition_training")return json({error:"目前僅比賽加練支援獨立點名"},400);
   if((entity.eventDate!==old.eventDate||entity.targetGroups!==old.targetGroups||(needsTrainingAttendance(old)&&!needsTrainingAttendance(entity)))&&await hasTrainingAttendance(schoolId,eventId))return json({error:"此場已有點名紀錄，不能更改日期、團別或關閉點名"},409);
   if(old.teachingConfirmedAt&&["eventDate","startTime","endTime","teacherName"].some(key=>String(entity[key]||"")!==String(old[key]||"")))return json({error:"請先撤銷加練工時確認，再修改授課日期、時間或老師"},409);
-  await client.upsertEntity(entity,"Replace");return json({ok:true,item:eventView(entity,true)});
+  await client.upsertEntity(entity,"Replace");await auditSaved(schoolId,a.email,"calendar_event_update",{eventId,title:entity.title,eventDate:entity.eventDate,action:String(body.action||"edit"),before:eventView(old,true),after:eventView(entity,true)});return json({ok:true,item:eventView(entity,true)});
 }});

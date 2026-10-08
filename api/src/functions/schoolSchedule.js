@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
 import { ensureTenantTables, table, tenantSchoolPartition, rowKey } from "../lib/storage.js";
+import { auditSaved } from "../lib/adminAudit.js";
 
 const safe=v=>String(v||"").replaceAll("'","''");
 const normGroup=v=>String(v||"").trim().replace(/團$/,"");
@@ -147,6 +148,7 @@ app.http("schoolSchedule",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
       }
 
       const scheduleState=await saveScheduleState(schoolId,"draft",a.email);
+      await auditSaved(schoolId,a.email,"schedule_import",{count:prepared.length,mode:replacing?"replace":"append",courses:prepared.slice(0,12).map(x=>({courseName:x.courseName,sessionDate:x.sessionDate,startDate:x.startDate,endDate:x.endDate,startTime:x.startTime,endTime:x.endTime}))});
       return json({ok:true,count:prepared.length,mode:replacing?"replace":"append",scheduleState,items:prepared.map(scheduleView)});
     }catch(e){
       console.error("school schedule import failed",{schoolId:sid,mode:String(body.mode||"append"),count:rows.length,error:e?.message||String(e),statusCode:e?.statusCode||0});
@@ -174,7 +176,10 @@ app.http("schoolSchedule",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
       :(source.weekday===weekday&&(!source.startDate||sessionDate>=source.startDate)&&(!source.endDate||sessionDate<=source.endDate));
     if(!scheduled)return json({error:"所選日期不是此課程的上課日，請重新選擇日期"},400);
     const key=`${scheduleId}|${sessionDate}`,entity={partitionKey:sid,rowKey:key,schoolId:sid,scheduleId,sessionDate,status:["cancelled","rescheduled","active"].includes(body.status)?body.status:"cancelled",newDate:String(body.newDate||""),newStartTime:String(body.newStartTime||""),newEndTime:String(body.newEndTime||""),reason:String(body.reason||"").slice(0,300),updatedAt:now,updatedBy:a.email};
-    await table("tenantScheduleException").upsertEntity(entity,"Replace");return json({ok:true,item:exceptionView(entity)});
+    let previous=null;try{previous=exceptionView(await table("tenantScheduleException").getEntity(sid,key))}catch(e){if(e.statusCode!==404)throw e}
+    await table("tenantScheduleException").upsertEntity(entity,"Replace");
+    await auditSaved(schoolId,a.email,"schedule_exception",{scheduleId,courseName:source.courseName,classDate:sessionDate,before:previous,after:exceptionView(entity)});
+    return json({ok:true,item:exceptionView(entity)});
   }
   return json({error:"不支援的異動"},400);
 }});

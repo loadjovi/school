@@ -2,6 +2,7 @@ import { app } from "@azure/functions";
 import { TableClient, TableServiceClient } from "@azure/data-tables";
 import { getAccess, getTenantContext, getStudentAliasInfo, json } from "../lib/auth.js";
 import { ensureTenantTables, table, listActivityRange, activityStudentId, listStudentMaster, getTeacherDirectory, getTenantDirectory, listTenantDirectory, defaultTenantId, tenantIdValue, tenantSchoolPartition } from "../lib/storage.js";
+import { adminAuditPartition, recordAdminAudit } from "../lib/adminAudit.js";
 
 const settingsTableName=()=>process.env.SYSTEM_SETTINGS_TABLE||"SystemSettings";
 const accessLogTableName=()=>process.env.SCHOOL_ACCESS_LOG_TABLE||"SchoolAccessLog";
@@ -100,12 +101,6 @@ app.http("schoolSectionCorrection",{methods:["PATCH"],authLevel:"anonymous",rout
 // School administrators can inspect successful admin entries and attendance corrections.
 // Older corrections remain in the original attendance rows and are included on demand.
 function auditDate(at){try{return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(at))}catch{return ""}}
-function adminAuditPartition(schoolId){return `${tenantSchoolPartition(schoolId)}|admin-audit`}
-async function recordAdminAudit(schoolId,email,eventType,detail={}){
-  await ensureAccessLog();const at=new Date().toISOString();
-  await accessLogClient().createEntity({partitionKey:adminAuditPartition(schoolId),rowKey:logRowKey(),schoolId:tenantSchoolPartition(schoolId),actorEmail:String(email||"").toLowerCase(),eventType,createdAt:at,detailJson:JSON.stringify(detail).slice(0,3000)});
-  return at;
-}
 app.http("schoolAdminActivity",{methods:["GET","POST"],authLevel:"anonymous",route:"school-admin-activity",handler:async(request)=>{
   const context=await getTenantContext(request);if(context.error)return context.error;
   const {access:a,schoolId}=context;if(a.role!=="admin")return json({error:"Forbidden"},403);
