@@ -78,6 +78,15 @@
   function scheduleAdmin(){
     const data=state.schoolSchedule||{items:[],exceptions:[],scheduleState:{status:"draft"}},items=data.items||[],exceptions=data.exceptions||[],scheduleState=data.scheduleState||{status:"draft"};
     const active=items.filter(x=>x.status==="active"),isLive=scheduleState.status==="active",preview=state.schedulePreview;
+    const scheduleById=new Map(items.map(x=>[String(x.scheduleId),x]));
+    const groupLabel=group=>{
+      const names=String(group||"").split(",").map(x=>x.trim()).filter(Boolean);
+      return names.length?names.map(x=>x==="ALL"?"全團":x.endsWith("團")?x:`${x}團`).join("、"):"全團";
+    };
+    const exceptionLabel=x=>{
+      const course=scheduleById.get(String(x.scheduleId||""));
+      return course?`${groupLabel(course.groupName)}｜${course.courseName||typeText(course.courseType)}`:"課程已不在目前課表（請核對原紀錄）";
+    };
     const legacyWarning=active.length===14?`<div class="notice" style="margin-top:10px;border:1px solid #f59e0b"><b>⚠️ 偵測到舊版 14 筆課表</b><br>舊版課表可能包含不正確的固定規則。請下載「本校課表範本」確認後，再用「匯入並取代」修正。</div>`:"";
     const statePanel=isLive
       ?`<div class="notice" style="margin-top:12px;border:1px solid #16a34a"><b>🟢 課表已正式啟用</b><br>家長首頁與老師點名都會依此課表執行；非上課日、停課日不可點名。<br><small>啟用時間：${esc(scheduleState.activatedAt||"—")}</small></div><button class="secondary" style="width:100%;margin-top:8px" onclick="setScheduleDraft()">暫停正式課表／切回草稿</button>`
@@ -94,7 +103,7 @@
     ${previewPanel}
     ${sectionMergeCard()}
     <div class="card"><h2>目前課表</h2>${active.length?active.map(x=>`<div class="item"><div><b>${esc(x.courseName)}</b><small>${esc(typeText(x.courseType))}｜${esc(x.groupName||"全團")}｜${x.recurrence==="weekly"?esc(weekdayText(x.weekday)):esc(x.sessionDate)}｜${esc(x.startTime)}–${esc(x.endTime)}${x.location?`｜📍 ${esc(x.location)}`:""}</small></div><button class="secondary" style="width:auto;margin:0;padding:8px 10px" onclick="cancelSchedulePrompt('${esc(x.scheduleId)}','${esc(x.courseName)}')">停課</button></div>`).join(""):'<div class="notice">尚未建立課表，可先下載「本校課表範本」，用 Excel 編輯後再匯入。</div>'}</div>
-    <div class="card"><h2>近期異動</h2>${exceptions.length?exceptions.slice().sort((a,b)=>String(b.sessionDate).localeCompare(String(a.sessionDate))).slice(0,8).map(x=>`<div class="item"><div><b>${esc(x.sessionDate)}｜${x.status==="cancelled"?"停課":"課程異動"}</b><small>${esc(x.reason||"未填原因")}</small></div><span class="badge warn">已通知首頁</span></div>`).join(""):'<div class="notice">目前沒有課程異動。</div>'}</div>`;
+    <div class="card"><h2>近期異動</h2>${exceptions.length?exceptions.slice().sort((a,b)=>String(b.sessionDate).localeCompare(String(a.sessionDate))).slice(0,8).map(x=>`<div class="item"><div><b>${esc(x.sessionDate)}｜${esc(exceptionLabel(x))}｜${x.status==="cancelled"?"停課":x.status==="rescheduled"?"改期":"恢復上課"}</b><small>${esc(x.reason||"未填原因")}${x.newDate?`<br>新日期：${esc(x.newDate)} ${esc(x.newStartTime||"")}${x.newEndTime?`–${esc(x.newEndTime)}`:""}`:""}</small></div><span class="badge warn">已通知首頁</span></div>`).join(""):'<div class="notice">目前沒有課程異動。</div>'}</div>`;
   }
 
   window.cancelSchedulePrompt=async function(scheduleId,name){
