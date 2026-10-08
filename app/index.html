@@ -46,7 +46,7 @@
         try{
           if(typeof state!=="undefined"&&state.me?.role==="admin"&&typeof adminPage==="function"&&typeof render==="function"){
             clearInterval(timer);
-            const s=document.createElement("script");s.src="/schedule-admin.js?v=20260930-section-merge";document.body.appendChild(s);
+            const s=document.createElement("script");s.src="/schedule-admin.js?v=20261008-exception-group";document.body.appendChild(s);
           }else if(tries>400)clearInterval(timer);
         }catch(e){if(tries>400)clearInterval(timer)}
       },25);
