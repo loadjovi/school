@@ -20,8 +20,10 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
     addContext({key:"global",type:"global",role:"globalAdmin",label:"Global 管理中心",icon:"🌐",schoolId:null,schoolName:"",status:"active"});
   }
 
-  for(const r of tenantRoles.filter(x=>x.role==="schoolAdmin"&&x.schoolId&&x.schoolId!=="*")){
-    const t=await getTenantDirectory(r.schoolId);
+  const schoolAdminRoles=tenantRoles.filter(x=>x.role==="schoolAdmin"&&x.schoolId&&x.schoolId!=="*");
+  const schoolAdminTenants=await Promise.all(schoolAdminRoles.map(r=>getTenantDirectory(r.schoolId)));
+  for(const [i,r] of schoolAdminRoles.entries()){
+    const t=schoolAdminTenants[i];
     addContext({
       key:"schoolAdmin:"+r.schoolId,
       type:"schoolAdmin",role:"schoolAdmin",label:(t?.schoolName||r.schoolId)+"｜學校管理員",icon:"🏫",
@@ -33,21 +35,29 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
   const staticMap=parseJsonEnv("STUDENT_MAP_JSON",{}),staticParentDefault=!!staticMap[String(a.email||"").toLowerCase()];
   let tenants=[];try{tenants=await listTenantDirectory()}catch(e){console.warn("identity tenant lookup failed",e)}
   const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
-  for(const tenant of tenants.filter(x=>["active","onboarding"].includes(String(x.status||"")))){
+  const tenantContexts=await Promise.all(tenants.filter(x=>["active","onboarding"].includes(String(x.status||""))).map(async tenant=>{
     const schoolId=String(tenant.rowKey||tenant.schoolId||""),schoolName=String(tenant.schoolName||schoolId),tenantStatus=String(tenant.status||"active");
+    const found=[null,null];
+    const teacherLookup=(async()=>{
     try{
       const teacher=await getTeacherDirectory(a.email,schoolId);
-      if(teacher?.status==="active")addContext({key:"teacher:"+schoolId,type:"teacher",role:"teacher",label:schoolName+"｜老師",icon:"🎻",schoolId,schoolName,status:tenantStatus});
+      if(teacher?.status==="active")found[0]={key:"teacher:"+schoolId,type:"teacher",role:"teacher",label:schoolName+"｜老師",icon:"🎻",schoolId,schoolName,status:tenantStatus};
       else if(!teacher){
         const support=await activeTeacherSupport(a.email,schoolId,today);
-        if(support&&(await getTeacherDirectory(a.email,support.sourceSchoolId))?.status==="active")addContext({key:"teacher:"+schoolId,type:"teacher",role:"teacher",label:schoolName+"｜短期支援（至 "+support.endDate+"）",icon:"🎻",schoolId,schoolName,status:tenantStatus});
+        if(support&&(await getTeacherDirectory(a.email,support.sourceSchoolId))?.status==="active")found[0]={key:"teacher:"+schoolId,type:"teacher",role:"teacher",label:schoolName+"｜短期支援（至 "+support.endDate+"）",icon:"🎻",schoolId,schoolName,status:tenantStatus};
       }
     }catch(e){console.warn("teacher context lookup failed",schoolId,e)}
+    })();
+    const parentLookup=(async()=>{
     try{
       const staticParent=schoolId===defaultId&&staticParentDefault,dynamic=staticParent?[]:await getMappedStudentsByEmail(a.email,schoolId);
-      if(staticParent||dynamic.length)addContext({key:"parent:"+schoolId,type:"parent",role:"parent",label:schoolName+"｜家長",icon:"👨‍👩‍👧",schoolId,schoolName,status:tenantStatus});
+      if(staticParent||dynamic.length)found[1]={key:"parent:"+schoolId,type:"parent",role:"parent",label:schoolName+"｜家長",icon:"👨‍👩‍👧",schoolId,schoolName,status:tenantStatus};
     }catch(e){console.warn("parent context lookup failed",schoolId,e)}
-  }
+    })();
+    await Promise.all([teacherLookup,parentLookup]);
+    return found;
+  }));
+  for(const entries of tenantContexts)for(const entry of entries)if(entry)addContext(entry);
 
   const requestedType=String(request.headers.get("x-role-context")||"").trim();
   const requestedSchoolId=String(request.headers.get("x-school-id")||"").trim().toLowerCase();
