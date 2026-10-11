@@ -25,7 +25,31 @@ async function api(path,options={}){
 }
 let cachedRequests=[],cachedStock=[];
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-function show(id,data){el(id).textContent=JSON.stringify(data,null,2)}
+function renderConfigSummary(items){
+ const target=el("settings");
+ if(!items.length){target.textContent="目前尚無已儲存的活動或團服設定。";return}
+ const fmtDate=v=>{if(!v)return "未設定";const d=new Date(v);return Number.isNaN(d.getTime())?"日期格式有誤":new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(d)};
+ const money=v=>"NT$ "+Number(v||0).toLocaleString("zh-TW");
+ const names={yearEndDinner:"期末聚餐",fieldTrip:"校外所有活動",regularUniform:"團T（T-shirt）",competitionUniform:"A團比賽服"};
+ target.innerHTML="<h3>已建立設定（"+items.length+" 筆）</h3><p>此處顯示已儲存的管理設定，不代表已通知家長或已開放匯款。</p>"+items.map(x=>{
+  const activity=activityTypes.has(x.module);
+  return "<article style='border:1px solid #d9e3dd;border-radius:10px;padding:14px;margin:12px 0'>"+
+   "<strong>"+esc(x.title||names[x.module]||x.module)+"</strong>　<span>"+(x.enabled?"已啟用設定":"設定未啟用")+"</span>"+
+   (activity?"<p>類別："+esc(names[x.module])+"｜地點："+esc(x.location||"未設定")+"</p>"+
+   "<p>活動日期："+esc(fmtDate(x.startAt))+"</p>"+
+   "<p>報名期間："+esc(fmtDate(x.openAt))+" ～ "+esc(fmtDate(x.closeAt))+"</p>"+
+   "<p>學生："+money(x.studentFee)+"｜首位大人："+money(x.firstAdultFee)+"｜額外大人："+money(x.extraAdultFee)+"｜額外兒童："+money(x.extraChildFee)+"</p>":"<p>團服模組設定，非活動報名。</p>")+
+   "<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>"+
+   "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>編輯此設定</button></article>"
+ }).join("");
+}
+el("settings").addEventListener("click",e=>{
+ const button=e.target.closest("button[data-edit-id]");if(!button)return;
+ el("configModule").value=button.dataset.editModule;syncConfig();
+ if(activityTypes.has(button.dataset.editModule)){el("existingActivity").value=button.dataset.editId;populateActivity()}
+ else{const item=savedConfigs.find(x=>x.module===button.dataset.editModule&&x.id===button.dataset.editId);if(item)el("config").elements.enabled.value=String(item.enabled===true)}
+ el("config").scrollIntoView({behavior:"smooth",block:"start"});
+});
 function table(id,rows,columns,actions=false){
  const header=columns.map(([key,label])=>"<th>"+esc(label)+"</th>").join("");
  const body=rows.map((r,i)=>"<tr>"+columns.map(([key])=>"<td>"+esc(r[key])+"</td>").join("")+(actions?"<td><select data-index='"+i+"'><option value=''>選擇操作</option><option value='APPROVED'>核准</option><option value='CANCELLED'>取消</option><option value='PENDING'>待處理</option></select><button type='button' data-update='"+i+"'>更新</button></td>":"")+"</tr>").join("");
@@ -81,7 +105,7 @@ async function load(){
     el("familySummary").textContent="已報名家庭 "+items.length+" 戶；團員 "+totals.students+" 位；大人 "+totals.adults+" 位；非團員兒童 "+totals.children+" 位；總人數 "+(totals.students+totals.adults+totals.children)+" 位。";
     table("familyRows",items,[["kind","活動類別"],["activityId","活動 ID"],["parentEmail","家長帳號"],["adults","大人"],["extraChildren","其他兒童"],["paymentStatus","繳費狀態"]]);
   }},
-  {path:"uniform-events/config",status:"status",render:data=>{savedConfigs=data.items||[];show("settings",data);syncConfig()}},
+  {path:"uniform-events/config",status:"status",render:data=>{savedConfigs=data.items||[];renderConfigSummary(savedConfigs);syncConfig()}},
   {path:"uniform-events/requests",status:"requestsStatus",render:data=>{
     cachedRequests=data.items||[];
     const counts=cachedRequests.reduce((a,x)=>(a[x.status]=(a[x.status]||0)+1,a),{});
