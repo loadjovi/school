@@ -133,7 +133,8 @@ el("config").onsubmit=async e=>{
  }catch(err){feedback.textContent="儲存失敗："+err.message;el("status").textContent=feedback.textContent}
  finally{button.disabled=false}
 };
-document.getElementById("retryAdminAuth").addEventListener("click",start);\nstart();
+document.getElementById("retryAdminAuth").addEventListener("click",start);
+start();
 el("requests").addEventListener("click",async e=>{
  const i=e.target.dataset.update;if(i===undefined)return;
  const row=cachedRequests[Number(i)],select=el("requests").querySelector("select[data-index='"+i+"']");
