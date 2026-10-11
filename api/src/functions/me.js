@@ -80,6 +80,7 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
     memberships:a.memberships||[],capabilities:a.capabilities||{},
     assignments:a.sectionAssignments||a.assignments||[],ensembleGroups:a.ensembleGroups||[],
     comprehensiveEnabled:a.comprehensiveEnabled===true,privateStudentIds:a.privateStudentIds||[],temporaryAssignment:a.temporaryAssignment||null,
+    students:a.role==="parent"?(a.students||[]).map(student=>({studentId:String(student.studentId||""),name:String(student.name||student.studentName||""),groupName:String(student.groupName||"")})).filter(student=>student.studentId):[],
     contexts,activeContextKey
   });
 }});
