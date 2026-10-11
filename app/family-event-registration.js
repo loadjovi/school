@@ -24,8 +24,11 @@ function summary(){
  const count=selected().length,a=Number(el("adults").value),c=Number(el("children").value);
  const cfg=events.get(el("event").value);const rates=cfg&&["studentFee","firstAdultFee","extraAdultFee","extraChildFee"].every(k=>Number.isSafeInteger(cfg[k])&&cfg[k]>=0);
  const estimate=rates?(cfg.module==="yearEndDinner"?0:cfg.studentFee)*count+cfg.firstAdultFee+(a-1)*cfg.extraAdultFee+c*cfg.extraChildFee:null;
- el("summary").textContent="團員 "+count+" 位＋陪同大人 "+a+" 位＋其他兒童 "+c+" 位＝共 "+(count+a+c)+" 位。"+(estimate===null?"預估費用尚未設定。":"初步報價：NT$ "+estimate.toLocaleString("zh-TW")+"（僅供參考，非最終應繳金額）。")+" 待報名人數確認及廠商報價後，將另行通知實際匯款金額。";
- const now=Date.now(),notYet=cfg?.openAt&&Date.parse(cfg.openAt)>now,ended=cfg?.closeAt&&Date.parse(cfg.closeAt)<now;\n el("submit").disabled=count<1||a<1||!el("event").value||!!notYet||!!ended;\n const windowNotice=notYet?"報名尚未開始，開放時間："+new Date(cfg.openAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"}):ended?"報名已截止，截止時間："+new Date(cfg.closeAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"}):"";\n el("summary").textContent+=(windowNotice?" "+windowNotice:"");
+ el("summary").textContent="團員 "+count+" 位＋陪同大人 "+a+" 位＋其他兒童 "+c+" 位＝共 "+(count+a+c)+" 位。"+(estimate===null?"預估費用尚未設定。":"初步報價：NT$ "+estimate.toLocaleString("zh-TW")+"（僅供參考，非最終應繳金額）。")+(cfg?.module==="yearEndDinner"?" 報名成功後請依活動公布的收款資訊匯款，匯款仍須財務確認。":cfg?.paymentMode==="PAY_LATER"?" 本活動先確認報名人數，待主辦方通知後再匯款。":" 本活動可先報名，並依主辦方提供的資訊選擇立即匯款或稍後繳費；實際金額仍以通知為準。");
+ const now=Date.now(),notYet=cfg?.openAt&&Date.parse(cfg.openAt)>now,ended=cfg?.closeAt&&Date.parse(cfg.closeAt)<now;
+ el("submit").disabled=count<1||a<1||!el("event").value||!!notYet||!!ended;
+ const windowNotice=notYet?"報名尚未開始，開放時間："+new Date(cfg.openAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"}):ended?"報名已截止，截止時間："+new Date(cfg.closeAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"}):"";
+ el("summary").textContent+=(windowNotice?" "+windowNotice:"");
 }
 for(const id of ["adults","children","event"])el(id).addEventListener("change",summary);
 el("students").addEventListener("change",summary);
