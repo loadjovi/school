@@ -41,3 +41,18 @@ if(root){
   const a=document.createElement("a");a.href=url;a.download="A團比賽服_參考名單.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  });
 }
+
+// 供公發服歸還預覽選單使用：僅既有 15 位參考名單，不代表已核實 studentId 或公發資產。
+const selector=document.getElementById("competitionReturnStudent");
+if(selector){
+ const sorted=[...roster].sort((a,b)=>a[1].localeCompare(b[1],"zh-Hant"));
+ for(const r of sorted){const option=document.createElement("option");option.value=r[1];option.textContent=r[1]+"（"+r[0]+"｜"+r[2]+"款 "+r[3]+"）";selector.appendChild(option)}
+ const info=document.getElementById("competitionStudentInfo");
+ selector.addEventListener("change",()=>{
+  const match=roster.find(r=>r[1]===selector.value);
+  if(!match){if(info)info.textContent="請選擇 A 團學生";return}
+  const style=document.getElementById("competitionReturnStyle");style.value=match[2];style.dispatchEvent(new Event("change"));
+  document.getElementById("competitionReturnSize").value=match[3];
+  if(info)info.textContent="已帶入 "+match[0]+" "+match[1]+"｜"+match[2]+"款 "+match[3]+"｜歷史登記："+match[4]+"。此為名單尺寸，不代表已核對目前實際公發服，請確認後再操作。";
+ });
+}
