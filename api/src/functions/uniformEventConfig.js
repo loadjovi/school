@@ -1,0 +1,64 @@
+import { app } from "@azure/functions";
+import { TableClient } from "@azure/data-tables";
+import { getTenantContext, json } from "../lib/auth.js";
+
+// Phase 2: tenant-scoped administrative configuration. No automatic activation.
+const tableName=()=>process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig";
+let cached;
+async function table(){
+  if(!process.env.STORAGE_CONNECTION_STRING)throw new Error("Storage is not configured");
+  if(!cached){cached=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,tableName());await cached.createTable().catch(e=>{if(e.statusCode!==409)throw e})}
+  return cached;
+}
+const modules=new Set(["competitionUniform","regularUniform","fieldTrip","yearEndDinner"]);
+const rowKey=(type,id)=>type+":"+id;
+const safeId=(s)=>typeof s==="string"&&/^[a-zA-Z0-9_-]{1,80}$/.test(s);
+const cleanText=(s,max=500)=>typeof s==="string"&&s.trim().length>0&&s.length<=max;
+function validate(data){
+  if(!data||typeof data!=="object"||!modules.has(data.module)||typeof data.enabled!=="boolean")throw new Error("Invalid module configuration");
+  if(data.module==="fieldTrip"||data.module==="yearEndDinner"){
+    if(!cleanText(data.title,120)||!cleanText(data.location,300)||!Number.isFinite(Date.parse(data.startAt)))throw new Error("Activity requires title, location and startAt");
+    for(const f of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"]){const n=data[f]??0;if(!Number.isSafeInteger(n)||n<0)throw new Error("Invalid fee: "+f)}
+  }
+  if(data.openAt&&!Number.isFinite(Date.parse(data.openAt)))throw new Error("Invalid openAt");
+  if(data.closeAt&&!Number.isFinite(Date.parse(data.closeAt)))throw new Error("Invalid closeAt");
+  if(data.openAt&&data.closeAt&&Date.parse(data.openAt)>Date.parse(data.closeAt))throw new Error("Invalid date window");
+}
+function publicValue(row){
+  const payload=JSON.parse(row.payload||"{}");
+  return {...payload,id:row.rowKey.split(":").slice(1).join(":"),updatedAt:row.updatedAt};
+}
+app.http("uniformEventConfig",{
+  methods:["GET","POST"],authLevel:"anonymous",route:"uniform-events/config",
+  handler:async request=>{
+    const ctx=await getTenantContext(request);if(ctx.error)return ctx.error;
+    const {schoolId,access}=ctx;
+    if(!["admin","parent"].includes(access.role))return json({error:"Forbidden"},403);
+    try{
+      const client=await table();
+      if(request.method==="GET"){
+        const results=[];
+        for await(const row of client.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replace(/'/g,"''")}'`}})){
+          const item=publicValue(row);
+          if(access.role==="admin"||item.enabled===true)results.push(item);
+        }
+        return json({items:results});
+      }
+      if(access.role!=="admin")return json({error:"Admin only"},403);
+      const data=await request.json();
+      if(!safeId(data.id))return json({error:"Invalid id"},400);
+      validate(data);
+      const record={
+        partitionKey:schoolId,rowKey:rowKey(data.module,data.id),
+        payload:JSON.stringify({...data,enabled:data.enabled===true}),
+        updatedAt:new Date().toISOString(),updatedBy:String(access.email||"admin").slice(0,255)
+      };
+      await client.upsertEntity(record,"Replace");
+      return json({item:publicValue(record)});
+    }catch(error){
+      if(error instanceof SyntaxError||String(error.message||"").startsWith("Invalid")||String(error.message||"").includes("requires"))return json({error:error.message},400);
+      console.error("uniformEventConfig error",error);
+      return json({error:"Unable to process configuration"},500);
+    }
+  }
+});
