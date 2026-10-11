@@ -78,13 +78,13 @@ app.http("familyEventRegistration",{
     if(previous)return fail("This family has already registered; contact administrator to change attendees",409);
     const timestamp=now();
     const payload={kind:body.kind,activityId:body.activityId,studentIds:ids,studentId:ids[0],adults:body.adults,extraChildren:body.extraChildren,parentEmail:access.email,registrationStatus:"REGISTERED",paymentStatus:"NOT_OPEN",createdAt:timestamp,updatedAt:timestamp};
-    await records.createEntity({partitionKey:schoolId,rowKey:id,payload:JSON.stringify(payload),updatedAt:timestamp});
+    try{await records.createEntity({partitionKey:schoolId,rowKey:id,payload:JSON.stringify(payload),updatedAt:timestamp})}
+    catch(e){if(e.statusCode===409)return fail("This family has already registered",409);throw e}
     await log(schoolId,access,"family.registration",id,{studentIds:ids,adults:body.adults,extraChildren:body.extraChildren});
     return json({item:{...payload,id}},201);
    }
    if(request.method!=="PATCH")return fail("Method not allowed",405);
    const id=registrationId(body.kind,body.activityId,access.email);
-   const target=access.role==="admin"&&safeId(body.registrationId?.replaceAll(":","_"))?body.registrationId:id;
    // Parent may only submit transfer information for their own deterministic family key.
    const actual=access.role==="admin"?String(body.registrationId||""):id;
    if(access.role==="admin"&&!/^family:(fieldTrip|yearEndDinner):[A-Za-z0-9_-]{1,80}:[a-f0-9]{32}$/.test(actual))return fail("Invalid registration ID");
