@@ -1,4 +1,10 @@
 // Bank account details are never stored in the public event config endpoint.
+function bankAuthHeaders(){
+ const token=sessionStorage.getItem("google_id_token")||"";
+ const schoolId=sessionStorage.getItem("school_context_id")||"";
+ const roleContext=sessionStorage.getItem("role_context")||"";
+ return {...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(schoolId?{"X-School-Id":schoolId}:{}),...(roleContext?{"X-Role-Context":roleContext}:{})};
+}
 const moduleEl=document.getElementById("configModule");
 const activityEl=document.getElementById("existingActivity");
 const panel=document.getElementById("dinnerBankPanel");
@@ -15,7 +21,7 @@ async function refresh(){
  if(!id){message.textContent="請先按上方「儲存設定」建立活動；儲存成功後會自動選取活動，再設定收款帳戶。";for(const f of fields)form.elements[f].value="";return}
  message.textContent="目前活動："+activityEl.selectedOptions[0]?.textContent+"；讀取收款帳戶中…";
  try{
-  const res=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(id),{credentials:"same-origin"});
+  const res=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(id),{credentials:"same-origin",headers:bankAuthHeaders()});
   const data=await res.json();if(!res.ok)throw Error(data.error||"HTTP "+res.status);
   if(current!==id)return;
   for(const f of fields)form.elements[f].value=data.item?.[f]||"";
@@ -31,7 +37,7 @@ form.addEventListener("submit",async e=>{
  const payload={activityId:id};for(const f of fields)payload[f]=form.elements[f].value.trim();
  if(!confirm("確認儲存此期末聚餐的收款帳戶？帳戶只對管理員開放，尚未發布給家長。"))return;
  try{
-  const res=await fetch("/api/uniform-events/dinner-payment-account",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  const res=await fetch("/api/uniform-events/dinner-payment-account",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...bankAuthHeaders()},body:JSON.stringify(payload)});
   const data=await res.json();if(!res.ok)throw Error(data.error||"HTTP "+res.status);
   message.textContent="收款帳戶已儲存，正在重新讀取資料驗證…";await refresh();if(!message.textContent.startsWith("已載入收款帳戶"))throw Error("已送出儲存，但重新讀取未確認成功："+message.textContent);message.textContent="已成功儲存並重新讀取收款帳戶（管理員專用）。家長端繳費功能尚未開放。";
  }catch(err){message.textContent="儲存或讀回驗證未完成："+err.message}
@@ -43,7 +49,7 @@ const templateForm=document.getElementById("bankTemplateForm");
 let templates=[];
 async function loadTemplates(){
  try{
-  const response=await fetch("/api/uniform-events/payment-account-templates",{credentials:"same-origin"});
+  const response=await fetch("/api/uniform-events/payment-account-templates",{credentials:"same-origin",headers:bankAuthHeaders()});
   const data=await response.json();if(!response.ok)throw Error(data.error||"HTTP "+response.status);
   templates=data.items||[];
   const old=templateSelect.value;
@@ -67,7 +73,7 @@ templateForm.addEventListener("submit",async e=>{
  for(const key of fields)payload[key]=form.elements[key].value.trim();
  if(!confirm("儲存帳戶範本？已建立活動的收款帳戶不會自動變更。"))return;
  try{
-  const response=await fetch("/api/uniform-events/payment-account-templates",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  const response=await fetch("/api/uniform-events/payment-account-templates",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...bankAuthHeaders()},body:JSON.stringify(payload)});
   const data=await response.json();if(!response.ok)throw Error(data.error||"HTTP "+response.status);
   await loadTemplates();templateSelect.value=data.id;
   message.textContent="帳戶範本已儲存；活動帳戶未變更。若要套用，請按「儲存收款帳戶」。";
