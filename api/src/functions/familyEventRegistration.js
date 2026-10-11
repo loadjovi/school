@@ -77,7 +77,9 @@ app.http("familyEventRegistration",{
     const previous=await get(records,schoolId,id);
     if(previous)return fail("This family has already registered; contact administrator to change attendees",409);
     const timestamp=now();
-    const payload={kind:body.kind,activityId:body.activityId,studentIds:ids,studentId:ids[0],adults:body.adults,extraChildren:body.extraChildren,parentEmail:access.email,registrationStatus:"REGISTERED",paymentStatus:"NOT_OPEN",createdAt:timestamp,updatedAt:timestamp};
+    const initialRates=["studentFee","firstAdultFee","extraAdultFee","extraChildFee"].every(k=>integer(cfg[k],0,1000000));
+    const estimate=initialRates?(body.kind==="yearEndDinner"?0:cfg.studentFee)*ids.length+cfg.firstAdultFee+(body.adults-1)*cfg.extraAdultFee+body.extraChildren*cfg.extraChildFee:null;
+    const payload={estimatedAmount:estimate,estimateNotice:"初步報價，非實際應繳金額；待報名結束後另行通知匯款",kind:body.kind,activityId:body.activityId,studentIds:ids,studentId:ids[0],adults:body.adults,extraChildren:body.extraChildren,parentEmail:access.email,registrationStatus:"REGISTERED",paymentStatus:"NOT_OPEN",createdAt:timestamp,updatedAt:timestamp};
     try{await records.createEntity({partitionKey:schoolId,rowKey:id,payload:JSON.stringify(payload),updatedAt:timestamp})}
     catch(e){if(e.statusCode===409)return fail("This family has already registered",409);throw e}
     await log(schoolId,access,"family.registration",id,{studentIds:ids,adults:body.adults,extraChildren:body.extraChildren});
