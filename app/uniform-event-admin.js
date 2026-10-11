@@ -1,5 +1,21 @@
 const el=id=>document.getElementById(id);
-async function api(path,options={}){const r=await fetch("/api/"+path,{credentials:"same-origin",headers:{"Content-Type":"application/json"},...options});const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||"HTTP "+r.status);return data}
+let adminAuthenticated=false;
+function setAuthGate(reason=""){
+ adminAuthenticated=!reason;
+ const gate=document.getElementById("authGate"),area=document.getElementById("protectedAdminArea");
+ gate.style.display=reason?"block":"none";
+ area.inert=!!reason;
+ if(reason){document.getElementById("authGateReason").textContent=reason;document.getElementById("status").textContent=reason}
+ window.dispatchEvent(new CustomEvent("uniformAdminAuth",{detail:{authenticated:adminAuthenticated}}));
+}
+async function api(path,options={}){
+ const r=await fetch("/api/"+path,{credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json"},...options});
+ const data=await r.json().catch(()=>({}));
+ if(r.status===401){setAuthGate("API 回傳 401 Unauthorized：登入憑證未通過後端驗證，所有管理操作已停用。");throw Error("401 Unauthorized：請重新登入")}
+ if(r.status===403){setAuthGate("API 回傳 403 Forbidden：目前帳號沒有此校管理員權限。");throw Error("403 Forbidden：權限不足")}
+ if(!r.ok)throw Error(data.error||"HTTP "+r.status);
+ return data;
+}
 let cachedRequests=[],cachedStock=[];
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function show(id,data){el(id).textContent=JSON.stringify(data,null,2)}
@@ -85,10 +101,10 @@ async function load(){
 }
 async function start(){
  try{
-  const me=await api("me");if(me.role!=="admin")throw Error("僅限管理員");
+  setAuthGate("正在驗證管理員身分…");const me=await api("me");if(me.role!=="admin"){setAuthGate("登入帳號不是此校管理員，已停用管理操作。");throw Error("僅限管理員")}setAuthGate("");
   el("status").textContent="已驗證管理員："+(me.displayName||me.email||"");
   await load();
- }catch(e){el("status").textContent=e.message;el("config").querySelector("button").disabled=true}
+ }catch(e){if(!adminAuthenticated)setAuthGate(e.message);else el("status").textContent=e.message}
 }
 el("reload").onclick=()=>load().catch(e=>el("status").textContent=e.message);
 el("config").onsubmit=async e=>{
@@ -117,7 +133,7 @@ el("config").onsubmit=async e=>{
  }catch(err){feedback.textContent="儲存失敗："+err.message;el("status").textContent=feedback.textContent}
  finally{button.disabled=false}
 };
-start();
+document.getElementById("retryAdminAuth").addEventListener("click",start);\nstart();
 el("requests").addEventListener("click",async e=>{
  const i=e.target.dataset.update;if(i===undefined)return;
  const row=cachedRequests[Number(i)],select=el("requests").querySelector("select[data-index='"+i+"']");
