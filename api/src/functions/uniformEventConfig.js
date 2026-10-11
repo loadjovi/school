@@ -18,6 +18,8 @@ function validate(data){
   if(!data||typeof data!=="object"||!modules.has(data.module)||typeof data.enabled!=="boolean")throw new Error("Invalid module configuration");
   if(data.module==="fieldTrip"||data.module==="yearEndDinner"){
     if(!cleanText(data.title,120)||!cleanText(data.location,300)||!Number.isFinite(Date.parse(data.startAt)))throw new Error("Activity requires title, location and startAt");
+    if(data.paymentMode&&!["PAY_NOW","PAY_LATER","FLEXIBLE"].includes(data.paymentMode))throw new Error("Invalid paymentMode");
+    if(data.module==="yearEndDinner"&&data.paymentMode&&data.paymentMode!=="PAY_NOW")throw new Error("Year-end dinner requires pay-after-registration mode");
     for(const f of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"]){const n=data[f]??0;if(!Number.isSafeInteger(n)||n<0)throw new Error("Invalid fee: "+f)}
   }
   if(data.endAt){if(!Number.isFinite(Date.parse(data.endAt)))throw new Error("Invalid endAt");if(Date.parse(data.endAt)<Date.parse(data.startAt))throw new Error("Activity end must not precede start");}
