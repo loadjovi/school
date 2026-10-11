@@ -36,7 +36,7 @@ function renderConfigSummary(items){
   return "<article style='border:1px solid #d9e3dd;border-radius:10px;padding:14px;margin:12px 0'>"+
    "<strong>"+esc(x.title||names[x.module]||x.module)+"</strong>　<span>"+(x.enabled?"已啟用設定":"設定未啟用")+"</span>"+
    (activity?"<p>類別："+esc(names[x.module])+"｜地點："+esc(x.location||"未設定")+"</p>"+
-   "<p>活動日期："+esc(fmtDate(x.startAt))+"</p>"+
+   "<p>活動期間："+esc(fmtDate(x.startAt))+" ～ "+esc(fmtDate(x.endAt||x.startAt))+"</p>"+
    "<p>報名期間："+esc(fmtDate(x.openAt))+" ～ "+esc(fmtDate(x.closeAt))+"</p>"+
    "<p>學生："+money(x.studentFee)+"｜首位大人："+money(x.firstAdultFee)+"｜額外大人："+money(x.extraAdultFee)+"｜額外兒童："+money(x.extraChildFee)+"</p>":"<p>團服模組設定，非活動報名。</p>")+
    "<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>"+
@@ -92,10 +92,10 @@ function populateActivity(){
  if(!item)return;
  form.elements.id.value=item.id;form.elements.enabled.value=String(item.enabled===true);
  for(const k of ["title","location","studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=item[k]??(k.endsWith("Fee")?0:"");
- for(const k of ["openAt","closeAt","startAt"])form.elements[k].value=item[k]?new Date(item[k]).toISOString().slice(0,16):"";
+ for(const k of ["openAt","closeAt","startAt","endAt"])form.elements[k].value=item[k]?new Date(item[k]).toISOString().slice(0,16):"";
 }
 el("configModule").addEventListener("change",()=>{el("existingActivity").value="";syncConfig()});
-el("existingActivity").addEventListener("change",()=>{syncConfig();if(!el("existingActivity").value){const form=el("config");for(const k of ["title","location","openAt","closeAt","startAt"])form.elements[k].value="";for(const k of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=0;}});
+el("existingActivity").addEventListener("change",()=>{syncConfig();if(!el("existingActivity").value){const form=el("config");for(const k of ["title","location","openAt","closeAt","startAt","endAt"])form.elements[k].value="";for(const k of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=0;}});
 syncConfig();
 async function load(){
  const sections=[
@@ -150,6 +150,8 @@ el("config").onsubmit=async e=>{
   if(activity){
    item.title=String(f.get("title")||"");item.location=String(f.get("location")||"");
    if(f.get("startAt"))item.startAt=new Date(f.get("startAt")).toISOString();
+   if(f.get("endAt"))item.endAt=new Date(f.get("endAt")).toISOString();
+   if(item.endAt&&item.startAt&&Date.parse(item.endAt)<Date.parse(item.startAt))throw Error("活動結束時間不可早於開始時間");
    for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0);
   }
   if(!confirm("確定儲存設定？")){feedback.textContent="已取消儲存";return}
