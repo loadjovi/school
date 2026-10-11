@@ -85,3 +85,46 @@ export function validateActivityConfig(config) {
   }
   return config;
 }
+
+/** Allocate requests in deterministic order without overselling on-hand stock.
+ *  This is a preview only: final reservation requires atomic server-side writes.
+ */
+export function planUniformAllocation(requests,stockBySize) {
+  const remaining=Object.fromEntries(Object.entries(stockBySize||{}).map(([size,s])=>[size,availableStock(s.onHand,s.reserved,s.unavailable)]));
+  const ordered=[...(requests||[])].sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))||String(a.id||"").localeCompare(String(b.id||"")));
+  return ordered.map(req=>{
+    const quantity=Number(req.quantity);
+    if(!SHIRT_SIZES.some(s=>s.size===req.size)||!Number.isSafeInteger(quantity)||quantity<1)throw new Error("Invalid uniform demand");
+    const allocated=Math.min(quantity,remaining[req.size]||0);
+    remaining[req.size]=(remaining[req.size]||0)-allocated;
+    return {...req,allocated,shortage:quantity-allocated};
+  });
+}
+export function aggregateShortages(allocations) {
+  const demand={};
+  for(const row of allocations||[]) {
+    if(!SHIRT_SIZES.some(s=>s.size===row.size)||!Number.isSafeInteger(row.shortage)||row.shortage<0)throw new Error("Invalid shortage");
+    demand[row.size]=(demand[row.size]||0)+row.shortage;
+  }
+  return demand;
+}
+export function competitionInventoryKey(style,size) {
+  const allowed=style==="女"?COMPETITION_UNIFORM.femaleSizes:style==="男"?COMPETITION_UNIFORM.maleSizes:[];
+  if(!allowed.includes(size))throw new Error("Invalid competition inventory style/size");
+  return style+":"+size;
+}
+/** Same household accompanying adults are counted once by stable household key. */
+export function householdAttendance(registrations) {
+  const households=new Map();
+  let students=0,extraChildren=0;
+  for(const r of registrations||[]) {
+    if(!r.householdId||!r.studentId)throw new Error("Stable household and student IDs required");
+    if(!Number.isSafeInteger(r.adults)||r.adults<0||!Number.isSafeInteger(r.extraChildren||0)||(r.extraChildren||0)<0)throw new Error("Invalid attendee count");
+    students++;
+    extraChildren+=r.extraChildren||0;
+    households.set(r.householdId,Math.max(households.get(r.householdId)||0,r.adults));
+  }
+  const adults=[...households.values()].reduce((sum,n)=>sum+n,0);
+  const firstAdults=[...households.values()].filter(n=>n>0).length;
+  return {students,firstAdults,extraAdults:adults-firstAdults,extraChildren,totalAttendees:students+adults+extraChildren};
+}
