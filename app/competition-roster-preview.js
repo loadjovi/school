@@ -47,8 +47,7 @@ if(root){
  const btn=document.getElementById("exportCompetitionRoster");
  btn?.addEventListener("click",()=>{
   const rows=[["班級（原展示）","學生姓名","款式（待核）","尺寸（待核）","取得方式（歷史登記待核）","樂器","領用狀態","去年紙本班級","今年班級"],...roster.map(r=>[...r,confirmedReceived.has(r[1])?"已領用（紙本確認）":"待核對",confirmedReceived.get(r[1])||"",confirmedReceived.has(r[1])?promotedClass(confirmedReceived.get(r[1])):r[0]])];
-  const csv="\uFEFF"+rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r
-");
+  const csv="\uFEFF"+rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n");
   const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
   const a=document.createElement("a");a.href=url;a.download="A團比賽服_參考名單.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  });
