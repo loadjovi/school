@@ -34,3 +34,8 @@
 - 基本報名驗證：selectedStudentIds.length >= 1、adults >= 1、extraChildren >= 0；所有 selectedStudentIds 必須屬於目前家長授權關聯的學生，並以家庭／活動避免重複報名。
 - 報名成功即納入統計；費用待廠商確認後才發布。期末聚餐團員學生免費、校外教學團員學生需付費，成人與非團員兒童各依活動費率計算。
 - 目前 requests API 使用單一 studentId 且 adults 允許 0，**尚未符合本需求**；正式開放家長報名前必須修改 API 驗證及家庭報名資料結構。
+
+## 家庭陪同成人最終確認
+- 使用者確認：同一家庭有兩位或更多弦樂團學生參加，**只要至少一位家長／成人陪同即可**，不要求每位學生各配一位成人。
+- 陪同成人按家庭實際參加人數計算一次；例：兩位團員＋一位家長＋一位非團員兒童＝4 人。
+- 前端人數選單與後端報名驗證均採 `selectedStudentIds.length >= 1 && adults >= 1`，不採 `adults >= selectedStudentIds.length`。
