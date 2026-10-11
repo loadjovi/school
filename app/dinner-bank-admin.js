@@ -37,3 +37,40 @@ form.addEventListener("submit",async e=>{
  }catch(err){message.textContent="儲存或讀回驗證未完成："+err.message}
 });
 refresh();
+
+const templateSelect=document.getElementById("bankTemplateSelect");
+const templateForm=document.getElementById("bankTemplateForm");
+let templates=[];
+async function loadTemplates(){
+ try{
+  const response=await fetch("/api/uniform-events/payment-account-templates",{credentials:"same-origin"});
+  const data=await response.json();if(!response.ok)throw Error(data.error||"HTTP "+response.status);
+  templates=data.items||[];
+  const old=templateSelect.value;
+  templateSelect.replaceChildren(new Option("手動輸入／建立新範本",""));
+  for(const t of templates)templateSelect.add(new Option(t.label+(t.active?"":"（已停用）")+"｜"+t.bankName+" ****"+t.accountNumber.slice(-4),t.id));
+  if(templates.some(t=>t.id===old))templateSelect.value=old;
+ }catch(e){message.textContent="帳戶範本讀取失敗："+e.message}
+}
+templateSelect.addEventListener("change",()=>{
+ const selected=templates.find(t=>t.id===templateSelect.value);
+ if(!selected){templateForm.reset();return}
+ for(const key of fields)form.elements[key].value=selected[key]||"";
+ templateForm.elements.label.value=selected.label;
+ templateForm.elements.active.value=String(selected.active);
+ message.textContent="已帶入帳戶範本；如要套用到目前活動，請再按「儲存收款帳戶」。";
+});
+document.getElementById("reloadBankTemplates").addEventListener("click",loadTemplates);
+templateForm.addEventListener("submit",async e=>{
+ e.preventDefault();
+ const payload={id:templateSelect.value||undefined,label:templateForm.elements.label.value.trim(),active:templateForm.elements.active.value==="true"};
+ for(const key of fields)payload[key]=form.elements[key].value.trim();
+ if(!confirm("儲存帳戶範本？已建立活動的收款帳戶不會自動變更。"))return;
+ try{
+  const response=await fetch("/api/uniform-events/payment-account-templates",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  const data=await response.json();if(!response.ok)throw Error(data.error||"HTTP "+response.status);
+  await loadTemplates();templateSelect.value=data.id;
+  message.textContent="帳戶範本已儲存；活動帳戶未變更。若要套用，請按「儲存收款帳戶」。";
+ }catch(err){message.textContent="範本儲存失敗："+err.message}
+});
+loadTemplates();
