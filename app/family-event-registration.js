@@ -15,6 +15,7 @@ async function api(p,opts={}){
  return data;
 }
 const events=new Map();let students=[];
+el("switchParent").addEventListener("click",()=>{sessionStorage.setItem("role_context","parent");if(!sessionStorage.getItem("school_context_id"))sessionStorage.setItem("school_context_id","sacred-heart");location.reload()});
 const status=s=>el("status").textContent=s;
 for(let n=1;n<=20;n++)el("adults").add(new Option(n+" 位大人",n));
 for(let n=0;n<=20;n++)el("children").add(new Option(n+" 位兒童",n));
@@ -30,7 +31,8 @@ for(const id of ["adults","children","event"])el(id).addEventListener("change",s
 el("students").addEventListener("change",summary);
 async function load(){
  const [me,config,regs]=await Promise.all([api("me"),api("uniform-events/config"),api("uniform-events/family-registration")]);
- if(me.role!=="parent")throw Error("請切換至家長身分使用此頁面");
+ if(me.role!=="parent"){el("roleHelp").hidden=false;throw Error("目前角色為 "+(me.role||"未設定")+"，請先切換家長身分使用此頁面");}
+ el("roleHelp").hidden=true;
  students=(me.students||[]).filter(x=>x.studentId);
  const active=(config.items||[]).filter(x=>x.enabled&&["fieldTrip","yearEndDinner"].includes(x.module));
  el("event").innerHTML="<option value=''>請選擇活動</option>"+active.map(x=>{
@@ -52,4 +54,4 @@ el("registration").addEventListener("submit",async e=>{
   status("報名成功，尚未繳費。");await load();
  }catch(err){status("報名失敗："+err.message)}
 });
-load().catch(e=>{status("讀取失敗："+e.message);el("submit").disabled=true});
+load().catch(e=>{status("讀取失敗："+e.message);el("roleHelp").hidden=false;el("submit").disabled=true});
