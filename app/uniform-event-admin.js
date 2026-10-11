@@ -14,13 +14,52 @@ function csv(name,rows,keys){
  const blob=new Blob([content],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
  a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
 }
-async function load(){const values=await Promise.all([api("uniform-events/config"),api("uniform-events/requests"),api("uniform-events/inventory")]);show("settings",values[0]);
- cachedRequests=values[1].items||[];cachedStock=values[2].items||[];
- const counts=cachedRequests.reduce((a,x)=>(a[x.status]=(a[x.status]||0)+1,a),{});
- el("requestSummary").textContent="申請共 "+cachedRequests.length+" 筆；待處理 "+(counts.PENDING||0)+" 筆；核准 "+(counts.APPROVED||0)+" 筆";
- table("requests",cachedRequests,[["studentId","學生ID"],["kind","項目"],["size","尺寸"],["status","狀態"],["createdAt","建立時間"]],true);
- table("stock",cachedStock,[["key","類別與尺寸"],["onHand","現有"],["reserved","保留"],["unavailable","不可用"]])}
-async function start(){try{const me=await api("me");if(me.role!=="admin")throw Error("僅限管理員");el("status").textContent="已驗證管理員："+(me.displayName||me.email||"");await load()}catch(e){el("status").textContent=e.message;el("config").querySelector("button").disabled=true}}
+const sizeOptions={regularUniform:["8","10","12","XS","S","M","L","XL","2L","3L","5L"],"男":["S","M","L","2L"],"女":["XS","S","M","L"]};
+function syncSizes(){
+ const type=el("inventoryType").value,style=el("inventoryStyle"),size=el("inventorySize");
+ style.disabled=type==="regularUniform";
+ if(type==="regularUniform")style.value="";
+ else if(!["男","女"].includes(style.value))style.value="男";
+ const options=type==="regularUniform"?sizeOptions.regularUniform:sizeOptions[style.value];
+ const previous=size.value;size.innerHTML=options.map(v=>"<option value='"+v+"'>"+v+"</option>").join("");
+ if(options.includes(previous))size.value=previous;
+}
+el("inventoryType").addEventListener("change",syncSizes);
+el("inventoryStyle").addEventListener("change",syncSizes);
+syncSizes();
+async function load(){
+ const sections=[
+  {path:"uniform-events/config",status:"status",render:data=>show("settings",data)},
+  {path:"uniform-events/requests",status:"requestsStatus",render:data=>{
+    cachedRequests=data.items||[];
+    const counts=cachedRequests.reduce((a,x)=>(a[x.status]=(a[x.status]||0)+1,a),{});
+    el("requestSummary").textContent="申請共 "+cachedRequests.length+" 筆；待處理 "+(counts.PENDING||0)+" 筆；核准 "+(counts.APPROVED||0)+" 筆";
+    table("requests",cachedRequests,[["studentId","學生ID"],["kind","項目"],["size","尺寸"],["status","狀態"],["createdAt","建立時間"]],true);
+  }},
+  {path:"uniform-events/inventory",status:"stockStatus",render:data=>{
+    cachedStock=data.items||[];
+    table("stock",cachedStock,[["key","類別與尺寸"],["onHand","現有"],["reserved","保留"],["unavailable","不可用"]]);
+  }}
+ ];
+ const results=await Promise.allSettled(sections.map(async section=>{
+   const data=await api(section.path);section.render(data);
+   if(section.status!=="status")el(section.status).textContent="已載入 "+(data.items?.length??0)+" 筆";
+ }));
+ results.forEach((result,i)=>{
+   if(result.status==="rejected"){
+     const section=sections[i];el(section.status).textContent="讀取失敗："+result.reason.message;
+     if(section.path.includes("requests"))el("requests").textContent="申請資料讀取失敗，請檢查 API";
+     if(section.path.includes("inventory"))el("stock").textContent="庫存資料讀取失敗，請檢查 API";
+   }
+ });
+}
+async function start(){
+ try{
+  const me=await api("me");if(me.role!=="admin")throw Error("僅限管理員");
+  el("status").textContent="已驗證管理員："+(me.displayName||me.email||"");
+  await load();
+ }catch(e){el("status").textContent=e.message;el("config").querySelector("button").disabled=true}
+}
 el("reload").onclick=()=>load().catch(e=>el("status").textContent=e.message);
 el("config").onsubmit=async e=>{e.preventDefault();try{const f=new FormData(e.target);const module=f.get("module");const item={module,id:String(f.get("id")),enabled:f.get("enabled")==="true"};for(const key of ["openAt","closeAt"])if(f.get(key))item[key]=new Date(f.get(key)).toISOString();if(["fieldTrip","yearEndDinner"].includes(module)){item.title=String(f.get("title"));item.location=String(f.get("location"));if(f.get("startAt"))item.startAt=new Date(f.get("startAt")).toISOString();for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0)}if(!confirm("確定儲存設定？"))return;await api("uniform-events/config",{method:"POST",body:JSON.stringify(item)});await load();el("status").textContent="設定已儲存"}catch(e){el("status").textContent="儲存失敗："+e.message}};
 start();
@@ -43,3 +82,41 @@ el("inventoryForm").onsubmit=async e=>{
 };
 el("exportRequests").onclick=()=>csv("uniform-event-requests.csv",cachedRequests,["id","kind","studentId","activityId","style","size","quantity","acquisition","freeEligibility","status","createdAt","updatedAt"]);
 el("exportStock").onclick=()=>csv("uniform-inventory.csv",cachedStock,["key","onHand","reserved","unavailable"]);
+
+function parseCsv(text){
+ text=text.replace(/^\uFEFF/,"");
+ const rows=[],row=[];let value="",quoted=false;
+ for(let i=0;i<text.length;i++){
+  const c=text[i];
+  if(quoted){if(c==='"'&&text[i+1]==='"'){value+='"';i++}else if(c==='"')quoted=false;else value+=c}
+  else if(c==='"')quoted=true;
+  else if(c===","){row.push(value);value=""}
+  else if(c==="\n"){row.push(value.replace(/\r$/,""));rows.push([...row]);row.length=0;value=""}
+  else value+=c;
+ }
+ if(quoted)throw Error("CSV 引號未結束");
+ if(value||row.length){row.push(value.replace(/\r$/,""));rows.push([...row])}
+ return rows;
+}
+function setupImport(inputId,previewId,required){
+ el(inputId).addEventListener("change",async e=>{
+  const out=el(previewId),file=e.target.files?.[0];if(!file)return;
+  try{
+   if(file.size>1024*1024)throw Error("檔案超過 1MB");
+   const rows=parseCsv(await file.text());if(!rows.length)throw Error("CSV 是空檔");
+   const headers=rows[0].map(x=>x.trim());
+   const missing=required.filter(k=>!headers.includes(k));
+   if(missing.length)throw Error("缺少欄位："+missing.join("、"));
+   if(rows.some(r=>r.length!==headers.length))throw Error("CSV 有列的欄位數量不一致");
+   const data=rows.slice(1).filter(r=>r.some(v=>v.trim())).map(r=>Object.fromEntries(headers.map((h,i)=>[h,r[i]])));
+   out.innerHTML="<p>CSV 檢查通過，共 "+data.length+" 筆；僅供預覽，尚未寫入資料庫。</p>";
+   const keys=headers.slice(0,8);
+   const preview=data.slice(0,10);
+   const t=document.createElement("table");
+   t.innerHTML="<thead><tr>"+keys.map(k=>"<th>"+esc(k)+"</th>").join("")+"</tr></thead><tbody>"+preview.map(r=>"<tr>"+keys.map(k=>"<td>"+esc(r[k])+"</td>").join("")+"</tr>").join("")+"</tbody>";
+   out.appendChild(t);
+  }catch(err){out.textContent="CSV 檢查失敗："+err.message}
+ });
+}
+setupImport("importRequests","previewRequests",["kind","studentId"]);
+setupImport("importStock","previewStock",["key","onHand"]);
