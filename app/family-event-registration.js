@@ -10,7 +10,7 @@ async function api(p,opts={}){
  const r=await fetch("/api/"+p,{...opts,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...authHeaders(),...(opts.headers||{})}});
  const data=await r.json().catch(()=>({}));
  if(r.status===401)throw Error("401 登入驗證失敗：請返回平台首頁，重新以 Google 登入後再開啟報名頁面。");
- if(r.status===403)throw Error("403 權限不足：請確認已切換至此校家長身分並完成學生綁定。");
+ if(r.status===403)throw Error("403 報名未完成："+(data.error||"目前無法報名，請確認活動報名期間與學生資格。"));
  if(!r.ok)throw Error(data.error||"HTTP "+r.status);
  return data;
 }
@@ -25,7 +25,7 @@ function summary(){
  const cfg=events.get(el("event").value);const rates=cfg&&["studentFee","firstAdultFee","extraAdultFee","extraChildFee"].every(k=>Number.isSafeInteger(cfg[k])&&cfg[k]>=0);
  const estimate=rates?(cfg.module==="yearEndDinner"?0:cfg.studentFee)*count+cfg.firstAdultFee+(a-1)*cfg.extraAdultFee+c*cfg.extraChildFee:null;
  el("summary").textContent="團員 "+count+" 位＋陪同大人 "+a+" 位＋其他兒童 "+c+" 位＝共 "+(count+a+c)+" 位。"+(estimate===null?"預估費用尚未設定。":"初步報價：NT$ "+estimate.toLocaleString("zh-TW")+"（僅供參考，非最終應繳金額）。")+" 待報名人數確認及廠商報價後，將另行通知實際匯款金額。";
- el("submit").disabled=count<1||a<1||!el("event").value;
+ const now=Date.now(),notYet=cfg?.openAt&&Date.parse(cfg.openAt)>now,ended=cfg?.closeAt&&Date.parse(cfg.closeAt)<now;\n el("submit").disabled=count<1||a<1||!el("event").value||!!notYet||!!ended;\n const windowNotice=notYet?"報名尚未開始，開放時間："+new Date(cfg.openAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"}):ended?"報名已截止，截止時間："+new Date(cfg.closeAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"}):"";\n el("summary").textContent+=(windowNotice?" "+windowNotice:"");
 }
 for(const id of ["adults","children","event"])el(id).addEventListener("change",summary);
 el("students").addEventListener("change",summary);
