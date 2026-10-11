@@ -87,7 +87,7 @@ async function savePrivate(){
   try{await api("/api/private-lesson",{method:"POST",body:JSON.stringify(body)});toast("✅ 個別課紀錄已儲存")}catch(e){toast("❌ "+e.message)}
 }
 async function adminPage(){
-  return `<div class="card hero"><h2>管理員 Dashboard</h2><div class="grid"><div class="kpi"><b>${state.students.length}</b><span>授權可見學生</span></div><div class="kpi"><b>80%</b><span>考試權重</span></div><div class="kpi"><b>10%</b><span>自主練習</span></div><div class="kpi"><b>5% + 5%</b><span>個別課／分部課</span></div></div></div><div class="card"><h2>學生名單</h2>${state.students.map(s=>scoreItem(`${s.name}｜${s.groupName}團`,`${s.grade}｜${s.instrument}`,"查看","ok")).join("")}</div>`;
+  return `<div class="card"><h2>團服與活動管理（開發預覽）</h2><p>管理 A 團比賽服、一般團服及活動設定。尚未開放實際領用及付款。</p><a href="/uniform-event-admin.html">開啟團服與活動管理</a></div><div class="card hero"><h2>管理員 Dashboard</h2><div class="grid"><div class="kpi"><b>${state.students.length}</b><span>授權可見學生</span></div><div class="kpi"><b>80%</b><span>考試權重</span></div><div class="kpi"><b>10%</b><span>自主練習</span></div><div class="kpi"><b>5% + 5%</b><span>個別課／分部課</span></div></div></div><div class="card"><h2>學生名單</h2>${state.students.map(s=>scoreItem(`${s.name}｜${s.groupName}團`,`${s.grade}｜${s.instrument}`,"查看","ok")).join("")}</div>`;
 }
 function helpPage(){return `<div class="card"><h2>系統說明</h2><div class="notice">目前為 Azure Pilot：登入使用 Azure Static Web Apps 驗證；資料由 Azure Functions API 寫入 Azure Table Storage。正式上線前，請完成家長／老師帳號綁定、個資告知、資料保留政策與備份規則。</div></div>`}
 function render(){
