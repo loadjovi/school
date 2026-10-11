@@ -1,0 +1,8 @@
+const el=id=>document.getElementById(id);
+async function api(path,options={}){const r=await fetch("/api/"+path,{credentials:"same-origin",headers:{"Content-Type":"application/json"},...options});const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||"HTTP "+r.status);return data}
+function show(id,data){el(id).textContent=JSON.stringify(data,null,2)}
+async function load(){const values=await Promise.all([api("uniform-events/config"),api("uniform-events/requests"),api("uniform-events/inventory")]);show("settings",values[0]);show("requests",values[1]);show("stock",values[2])}
+async function start(){try{const me=await api("me");if(me.role!=="admin")throw Error("僅限管理員");el("status").textContent="已驗證管理員："+(me.displayName||me.email||"");await load()}catch(e){el("status").textContent=e.message;el("config").querySelector("button").disabled=true}}
+el("reload").onclick=()=>load().catch(e=>el("status").textContent=e.message);
+el("config").onsubmit=async e=>{e.preventDefault();try{const f=new FormData(e.target);const module=f.get("module");const item={module,id:String(f.get("id")),enabled:f.get("enabled")==="true"};for(const key of ["openAt","closeAt"])if(f.get(key))item[key]=new Date(f.get(key)).toISOString();if(["fieldTrip","yearEndDinner"].includes(module)){item.title=String(f.get("title"));item.location=String(f.get("location"));if(f.get("startAt"))item.startAt=new Date(f.get("startAt")).toISOString();for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0)}if(!confirm("確定儲存設定？"))return;await api("uniform-events/config",{method:"POST",body:JSON.stringify(item)});await load();el("status").textContent="設定已儲存"}catch(e){el("status").textContent="儲存失敗："+e.message}};
+start();
