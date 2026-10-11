@@ -91,7 +91,32 @@ async function start(){
  }catch(e){el("status").textContent=e.message;el("config").querySelector("button").disabled=true}
 }
 el("reload").onclick=()=>load().catch(e=>el("status").textContent=e.message);
-el("config").onsubmit=async e=>{e.preventDefault();try{const f=new FormData(e.target);const module=f.get("module");const activity=activityTypes.has(module);const id=activity?(el("existingActivity").value||createActivityId()):"default";const item={module,id,enabled:f.get("enabled")==="true"};for(const key of ["openAt","closeAt"])if(f.get(key))item[key]=new Date(f.get(key)).toISOString();if(["fieldTrip","yearEndDinner"].includes(module)){item.title=String(f.get("title"));item.location=String(f.get("location"));if(f.get("startAt"))item.startAt=new Date(f.get("startAt")).toISOString();for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0)}if(!confirm("確定儲存設定？"))return;await api("uniform-events/config",{method:"POST",body:JSON.stringify(item)});await load();if(activity){el("existingActivity").value=id;syncConfig();el("existingActivity").dispatchEvent(new Event("change"))}el("status").textContent="活動設定已儲存："+(item.title||module)+"；請確認下方既有活動選單及收款帳戶區塊。"}catch(e){el("status").textContent="儲存失敗："+e.message}};
+el("config").onsubmit=async e=>{
+ e.preventDefault();
+ const feedback=el("configSaveFeedback"),button=el("saveConfigButton");
+ feedback.textContent="正在儲存活動設定…";button.disabled=true;
+ try{
+  const f=new FormData(e.target),module=f.get("module"),activity=activityTypes.has(module);
+  const id=activity?(el("existingActivity").value||createActivityId()):"default";
+  const item={module,id,enabled:f.get("enabled")==="true"};
+  for(const key of ["openAt","closeAt"])if(f.get(key))item[key]=new Date(f.get(key)).toISOString();
+  if(activity){
+   item.title=String(f.get("title")||"");item.location=String(f.get("location")||"");
+   if(f.get("startAt"))item.startAt=new Date(f.get("startAt")).toISOString();
+   for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0);
+  }
+  if(!confirm("確定儲存設定？")){feedback.textContent="已取消儲存";return}
+  await api("uniform-events/config",{method:"POST",body:JSON.stringify(item)});
+  feedback.textContent="資料已送出，正在讀回驗證…";
+  await load();
+  if(activity){el("existingActivity").value=id;syncConfig();el("existingActivity").dispatchEvent(new Event("change"))}
+  const persisted=savedConfigs.find(x=>x.module===module&&x.id===id);
+  if(!persisted)throw Error("API 已回覆，但重新查詢未找到活動，請勿視為儲存成功");
+  feedback.textContent="儲存成功並已讀回驗證："+(persisted.title||module)+"（"+id+"）";
+  el("status").textContent=feedback.textContent;
+ }catch(err){feedback.textContent="儲存失敗："+err.message;el("status").textContent=feedback.textContent}
+ finally{button.disabled=false}
+};
 start();
 el("requests").addEventListener("click",async e=>{
  const i=e.target.dataset.update;if(i===undefined)return;
