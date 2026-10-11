@@ -29,6 +29,12 @@ el("inventoryStyle").addEventListener("change",syncSizes);
 syncSizes();
 async function load(){
  const sections=[
+  {path:"uniform-events/family-registration",status:"familyStatus",render:data=>{
+    const items=(data.items||[]).filter(x=>x.registrationStatus==="REGISTERED");
+    const totals=items.reduce((a,x)=>{a.students+=x.studentIds?.length||0;a.adults+=x.adults||0;a.children+=x.extraChildren||0;return a},{students:0,adults:0,children:0});
+    el("familySummary").textContent="已報名家庭 "+items.length+" 戶；團員 "+totals.students+" 位；大人 "+totals.adults+" 位；非團員兒童 "+totals.children+" 位；總人數 "+(totals.students+totals.adults+totals.children)+" 位。";
+    table("familyRows",items,[["kind","活動類別"],["activityId","活動 ID"],["parentEmail","家長帳號"],["adults","大人"],["extraChildren","其他兒童"],["paymentStatus","繳費狀態"]]);
+  }},
   {path:"uniform-events/config",status:"status",render:data=>show("settings",data)},
   {path:"uniform-events/requests",status:"requestsStatus",render:data=>{
     cachedRequests=data.items||[];
@@ -48,6 +54,7 @@ async function load(){
  results.forEach((result,i)=>{
    if(result.status==="rejected"){
      const section=sections[i];el(section.status).textContent="讀取失敗："+result.reason.message;
+     if(section.path.includes("family-registration"))el("familyRows").textContent="家庭報名讀取失敗";
      if(section.path.includes("requests"))el("requests").textContent="申請資料讀取失敗，請檢查 API";
      if(section.path.includes("inventory"))el("stock").textContent="庫存資料讀取失敗，請檢查 API";
    }
