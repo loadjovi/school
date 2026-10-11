@@ -9,7 +9,10 @@ function download(rows){
 }
 $("exportTshirtEligibility").addEventListener("click",async()=>{
  try{
-  const r=await fetch("/api/uniform-events/requests",{credentials:"same-origin"});
+  const headers=typeof window.uniformEventAuthHeaders==="function"?window.uniformEventAuthHeaders():{};
+  const r=await fetch("/api/uniform-events/requests",{credentials:"same-origin",cache:"no-store",headers});
+  if(r.status===401)throw Error("登入驗證失敗（HTTP 401）。請先返回平台首頁重新 Google 登入，再重新開啟管理頁。");
+  if(r.status===403)throw Error("權限不足（HTTP 403）。請確認已切換為此校管理員身分。");
   if(!r.ok)throw Error("無法取得團T申請紀錄（HTTP "+r.status+"）");
   const data=await r.json(),rows=(data.items||[]).filter(x=>x.kind==="regularUniform");
   const map=new Map();
