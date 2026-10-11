@@ -44,7 +44,13 @@ async function load(){
  el("students").innerHTML="<strong>參加的弦樂團學生（至少勾選一位）</strong>"+students.map(x=>"<label><input type='checkbox' name='student' value='"+escape(x.studentId)+"'> "+escape(x.name||x.studentName||x.studentId)+"</label>").join("");
  if(!students.length)el("students").textContent="尚未綁定學生，無法報名";
  const rows=regs.items||[];
- el("registrations").innerHTML=rows.length?rows.map(x=>"<section><strong>"+escape(events.get(x.kind+":"+x.activityId)?.title||x.kind+" / "+x.activityId)+"</strong><p>團員 "+x.studentIds.length+" 位／大人 "+x.adults+" 位／其他兒童 "+x.extraChildren+" 位</p><p>報名："+escape(x.registrationStatus)+"　繳費："+escape(x.paymentStatus)+"</p></section>").join(""):"目前尚無報名紀錄";
+ el("registrations").innerHTML=rows.length?rows.map(x=>{
+ const cfg=events.get(x.kind+":"+x.activityId),dinner=x.kind==="yearEndDinner";
+ const count=(x.studentIds||[]).length,a=Number(x.adults||0),c=Number(x.extraChildren||0);
+ const estimate=cfg?((dinner?0:Number(cfg.studentFee||0))*count+(a?Number(cfg.firstAdultFee||0)+(a-1)*Number(cfg.extraAdultFee||0):0)+c*Number(cfg.extraChildFee||0)):null;
+ const payment=dinner?(x.paymentStatus==="PAID"?"已確認入帳":x.paymentStatus==="NOT_OPEN"?"待公布收款帳戶／待匯款":"待匯款或核帳（請依活動公告）"):({"NOT_OPEN":"尚未開放繳費","PAID":"已確認入帳"}[x.paymentStatus]||x.paymentStatus||"待確認");
+ return "<section><strong>"+escape(cfg?.title||x.kind+" / "+x.activityId)+"</strong><p>團員 "+count+" 位／大人 "+a+" 位／其他兒童 "+c+" 位</p><p>報名："+(x.registrationStatus==="REGISTERED"?"已報名":escape(x.registrationStatus))+"　繳費："+escape(payment)+"</p>"+(dinner?"<p>依目前報名人數試算：NT$ "+(estimate===null?"待確認":estimate.toLocaleString("zh-TW"))+"（正式金額以主辦單位通知為準）</p><p class='hint'>本活動採報名後匯款。收款帳戶尚未透過家長安全公告流程發布，請勿使用未經確認的帳號匯款；匯款回報與核帳功能仍在開發中。</p>":"")+"</section>";
+ }).join(""):"目前尚無報名紀錄";
  status("已載入 "+active.length+" 場開放活動、"+rows.length+" 筆家庭報名");
  summary();
 }
