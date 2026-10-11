@@ -35,11 +35,11 @@ form.addEventListener("submit",async e=>{
  const id=activityEl.value;
  if(moduleEl.value!=="yearEndDinner"||!id){message.textContent="請先選取已儲存的期末聚餐活動";return}
  const payload={activityId:id};for(const f of fields)payload[f]=form.elements[f].value.trim();
- if(!confirm("確認儲存此期末聚餐的收款帳戶？帳戶只對管理員開放，尚未發布給家長。"))return;
+ if(!confirm("確認儲存此期末聚餐的活動收款帳戶？此帳戶將作為後續公布給家長匯款的資訊；目前尚不會自動發布。"))return;
  try{
   const res=await fetch("/api/uniform-events/dinner-payment-account",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...bankAuthHeaders()},body:JSON.stringify(payload)});
   const data=await res.json();if(!res.ok)throw Error(data.error||"HTTP "+res.status);
-  message.textContent="收款帳戶已儲存，正在重新讀取資料驗證…";await refresh();if(!message.textContent.startsWith("已載入收款帳戶"))throw Error("已送出儲存，但重新讀取未確認成功："+message.textContent);message.textContent="已成功儲存並重新讀取收款帳戶（管理員專用）。家長端繳費功能尚未開放。";
+  message.textContent="收款帳戶已儲存，正在重新讀取資料驗證…";await refresh();if(!message.textContent.startsWith("已載入收款帳戶"))throw Error("已送出儲存，但重新讀取未確認成功："+message.textContent);message.textContent="活動收款帳戶已儲存並完成讀回驗證，將作為後續提供家長匯款的資訊；目前尚未自動公布，家長端匯款回報與核帳功能尚未開放。";
  }catch(err){message.textContent="儲存或讀回驗證未完成："+err.message}
 });
 refresh();
@@ -64,19 +64,19 @@ templateSelect.addEventListener("change",()=>{
  for(const key of fields)form.elements[key].value=selected[key]||"";
  templateForm.elements.label.value=selected.label;
  templateForm.elements.active.value=String(selected.active);
- message.textContent="已帶入帳戶範本；如要套用到目前活動，請再按「儲存收款帳戶」。";
+ message.textContent="已帶入內部帳戶範本；若要作為家長匯款資訊，請再按「儲存活動收款帳戶（供家長匯款）」。";
 });
 document.getElementById("reloadBankTemplates").addEventListener("click",loadTemplates);
 templateForm.addEventListener("submit",async e=>{
  e.preventDefault();
  const payload={id:templateSelect.value||undefined,label:templateForm.elements.label.value.trim(),active:templateForm.elements.active.value==="true"};
  for(const key of fields)payload[key]=form.elements[key].value.trim();
- if(!confirm("儲存帳戶範本？已建立活動的收款帳戶不會自動變更。"))return;
+ if(!confirm("儲存內部帳戶範本？此範本僅供後台管理員選用，不會公布給家長，也不會自動變更已建立活動的收款帳戶。"))return;
  try{
   const response=await fetch("/api/uniform-events/payment-account-templates",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...bankAuthHeaders()},body:JSON.stringify(payload)});
   const data=await response.json();if(!response.ok)throw Error(data.error||"HTTP "+response.status);
   await loadTemplates();templateSelect.value=data.id;
-  message.textContent="帳戶範本已儲存；活動帳戶未變更。若要套用，請按「儲存收款帳戶」。";
+  message.textContent="內部帳戶範本已儲存，僅供後台管理員使用，不會對家長公布；活動收款帳戶未變更。若要套用，請按「儲存活動收款帳戶（供家長匯款）」。";
  }catch(err){message.textContent="範本儲存失敗："+err.message}
 });
 loadTemplates();
