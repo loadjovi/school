@@ -37,7 +37,7 @@ function render(){
 }
 render();
 document.getElementById("exportTshirtStockPreview")?.addEventListener("click",()=>{
- const rows=[["key","onHand","status"],...sizes.map(size=>["regular:"+size,counts[size]??"",Number.isInteger(counts[size])?"已盤點":"待盤點"])];
+ const rows=[["key","onHand","status","confirmedAt","confirmedBy"],...sizes.map(size=>["regular:"+size,counts[size]??"",Number.isInteger(counts[size])?"已盤點":"待盤點",confirmedAt||"",confirmedBy||""])];
  const csv="\uFEFF"+rows.map(row=>row.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(",")).join("\r\n");
  const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
  const a=document.createElement("a");a.href=url;a.download="團T_盤點預覽.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
