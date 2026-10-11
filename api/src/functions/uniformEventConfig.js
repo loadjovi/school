@@ -20,6 +20,7 @@ function validate(data){
     if(!cleanText(data.title,120)||!cleanText(data.location,300)||!Number.isFinite(Date.parse(data.startAt)))throw new Error("Activity requires title, location and startAt");
     for(const f of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"]){const n=data[f]??0;if(!Number.isSafeInteger(n)||n<0)throw new Error("Invalid fee: "+f)}
   }
+  if(data.endAt){if(!Number.isFinite(Date.parse(data.endAt)))throw new Error("Invalid endAt");if(Date.parse(data.endAt)<Date.parse(data.startAt))throw new Error("Activity end must not precede start");}
   if(data.openAt&&!Number.isFinite(Date.parse(data.openAt)))throw new Error("Invalid openAt");
   if(data.closeAt&&!Number.isFinite(Date.parse(data.closeAt)))throw new Error("Invalid closeAt");
   if(data.openAt&&data.closeAt&&Date.parse(data.openAt)>Date.parse(data.closeAt))throw new Error("Invalid date window");
