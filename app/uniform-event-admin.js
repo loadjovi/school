@@ -8,8 +8,15 @@ function setAuthGate(reason=""){
  if(reason){document.getElementById("authGateReason").textContent=reason;document.getElementById("status").textContent=reason}
  window.dispatchEvent(new CustomEvent("uniformAdminAuth",{detail:{authenticated:adminAuthenticated}}));
 }
+function adminAuthHeaders(){
+ const token=sessionStorage.getItem("google_id_token")||"";
+ const schoolId=sessionStorage.getItem("school_context_id")||"";
+ const roleContext=sessionStorage.getItem("role_context")||"";
+ return {...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(schoolId?{"X-School-Id":schoolId}:{}),...(roleContext?{"X-Role-Context":roleContext}:{})};
+}
+window.uniformEventAuthHeaders=adminAuthHeaders;
 async function api(path,options={}){
- const r=await fetch("/api/"+path,{credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json"},...options});
+ const r=await fetch("/api/"+path,{...options,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...adminAuthHeaders(),...(options.headers||{})}});
  const data=await r.json().catch(()=>({}));
  if(r.status===401){setAuthGate("API 回傳 401 Unauthorized：登入憑證未通過後端驗證，所有管理操作已停用。");throw Error("401 Unauthorized：請重新登入")}
  if(r.status===403){setAuthGate("API 回傳 403 Forbidden：目前帳號沒有此校管理員權限。");throw Error("403 Forbidden：權限不足")}
