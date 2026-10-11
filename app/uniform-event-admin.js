@@ -14,7 +14,7 @@ function csv(name,rows,keys){
  const blob=new Blob([content],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
  a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
 }
-const sizeOptions={regularUniform:["8","10","12","XS","S","M","L","XL","2L","3L","5L"],"男":["S","M","L","2L"],"女":["XS","S","M","L"]};
+const sizeOptions={regularUniform:["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"],"男":["S","M","L","2L"],"女":["XS","S","M","L"]};
 function syncSizes(){
  const type=el("inventoryType").value,style=el("inventoryStyle"),size=el("inventorySize");
  style.disabled=type==="regularUniform";
