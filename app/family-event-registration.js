@@ -11,7 +11,9 @@ for(let n=0;n<=20;n++)el("children").add(new Option(n+" 位兒童",n));
 function selected(){return [...document.querySelectorAll("input[name=student]:checked")].map(x=>x.value)}
 function summary(){
  const count=selected().length,a=Number(el("adults").value),c=Number(el("children").value);
- el("summary").textContent="團員 "+count+" 位＋陪同大人 "+a+" 位＋其他兒童 "+c+" 位＝共 "+(count+a+c)+" 位。費用待後台確認。";
+ const cfg=events.get(el("event").value);const rates=cfg&&["studentFee","firstAdultFee","extraAdultFee","extraChildFee"].every(k=>Number.isSafeInteger(cfg[k])&&cfg[k]>=0);
+ const estimate=rates?(cfg.module==="yearEndDinner"?0:cfg.studentFee)*count+cfg.firstAdultFee+(a-1)*cfg.extraAdultFee+c*cfg.extraChildFee:null;
+ el("summary").textContent="團員 "+count+" 位＋陪同大人 "+a+" 位＋其他兒童 "+c+" 位＝共 "+(count+a+c)+" 位。"+(estimate===null?"預估費用尚未設定。":"初步報價：NT$ "+estimate.toLocaleString("zh-TW")+"（僅供參考，非最終應繳金額）。")+" 待報名人數確認及廠商報價後，將另行通知實際匯款金額。";
  el("submit").disabled=count<1||a<1||!el("event").value;
 }
 for(const id of ["adults","children","event"])el(id).addEventListener("change",summary);
