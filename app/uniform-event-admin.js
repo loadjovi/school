@@ -27,6 +27,29 @@ function syncSizes(){
 el("inventoryType").addEventListener("change",syncSizes);
 el("inventoryStyle").addEventListener("change",syncSizes);
 syncSizes();
+let savedConfigs=[];
+const activityTypes=new Set(["fieldTrip","yearEndDinner"]);
+const createActivityId=()=> "event_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,8);
+function syncConfig(){
+ const form=el("config"),module=el("configModule").value,activity=activityTypes.has(module);
+ form.querySelectorAll("[data-activity-field]").forEach(x=>x.hidden=!activity);
+ el("existingActivityWrap").hidden=!activity;el("activityIdHint").hidden=!activity;
+ const select=el("existingActivity"),old=select.value;
+ select.innerHTML="<option value=''>建立新活動</option>"+savedConfigs.filter(x=>x.module===module).map(x=>"<option value='"+esc(x.id)+"'>"+esc(x.title||x.id)+"</option>").join("");
+ if([...select.options].some(x=>x.value===old))select.value=old;
+ form.elements.id.value=activity?(select.value||"default"):"default";
+ if(activity&&select.value)populateActivity();
+}
+function populateActivity(){
+ const form=el("config"),item=savedConfigs.find(x=>x.module===el("configModule").value&&x.id===el("existingActivity").value);
+ if(!item)return;
+ form.elements.id.value=item.id;form.elements.enabled.value=String(item.enabled===true);
+ for(const k of ["title","location","studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=item[k]??(k.endsWith("Fee")?0:"");
+ for(const k of ["openAt","closeAt","startAt"])form.elements[k].value=item[k]?new Date(item[k]).toISOString().slice(0,16):"";
+}
+el("configModule").addEventListener("change",()=>{el("existingActivity").value="";syncConfig()});
+el("existingActivity").addEventListener("change",()=>{syncConfig();if(!el("existingActivity").value){const form=el("config");for(const k of ["title","location","openAt","closeAt","startAt"])form.elements[k].value="";for(const k of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=0;}});
+syncConfig();
 async function load(){
  const sections=[
   {path:"uniform-events/family-registration",status:"familyStatus",render:data=>{
@@ -35,7 +58,7 @@ async function load(){
     el("familySummary").textContent="已報名家庭 "+items.length+" 戶；團員 "+totals.students+" 位；大人 "+totals.adults+" 位；非團員兒童 "+totals.children+" 位；總人數 "+(totals.students+totals.adults+totals.children)+" 位。";
     table("familyRows",items,[["kind","活動類別"],["activityId","活動 ID"],["parentEmail","家長帳號"],["adults","大人"],["extraChildren","其他兒童"],["paymentStatus","繳費狀態"]]);
   }},
-  {path:"uniform-events/config",status:"status",render:data=>show("settings",data)},
+  {path:"uniform-events/config",status:"status",render:data=>{savedConfigs=data.items||[];show("settings",data);syncConfig()}},
   {path:"uniform-events/requests",status:"requestsStatus",render:data=>{
     cachedRequests=data.items||[];
     const counts=cachedRequests.reduce((a,x)=>(a[x.status]=(a[x.status]||0)+1,a),{});
@@ -68,7 +91,7 @@ async function start(){
  }catch(e){el("status").textContent=e.message;el("config").querySelector("button").disabled=true}
 }
 el("reload").onclick=()=>load().catch(e=>el("status").textContent=e.message);
-el("config").onsubmit=async e=>{e.preventDefault();try{const f=new FormData(e.target);const module=f.get("module");const item={module,id:String(f.get("id")),enabled:f.get("enabled")==="true"};for(const key of ["openAt","closeAt"])if(f.get(key))item[key]=new Date(f.get(key)).toISOString();if(["fieldTrip","yearEndDinner"].includes(module)){item.title=String(f.get("title"));item.location=String(f.get("location"));if(f.get("startAt"))item.startAt=new Date(f.get("startAt")).toISOString();for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0)}if(!confirm("確定儲存設定？"))return;await api("uniform-events/config",{method:"POST",body:JSON.stringify(item)});await load();el("status").textContent="設定已儲存"}catch(e){el("status").textContent="儲存失敗："+e.message}};
+el("config").onsubmit=async e=>{e.preventDefault();try{const f=new FormData(e.target);const module=f.get("module");const activity=activityTypes.has(module);const id=activity?(el("existingActivity").value||createActivityId()):"default";const item={module,id,enabled:f.get("enabled")==="true"};for(const key of ["openAt","closeAt"])if(f.get(key))item[key]=new Date(f.get(key)).toISOString();if(["fieldTrip","yearEndDinner"].includes(module)){item.title=String(f.get("title"));item.location=String(f.get("location"));if(f.get("startAt"))item.startAt=new Date(f.get("startAt")).toISOString();for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0)}if(!confirm("確定儲存設定？"))return;await api("uniform-events/config",{method:"POST",body:JSON.stringify(item)});await load();if(activity){el("existingActivity").value=id;syncConfig()}el("status").textContent="設定已儲存"}catch(e){el("status").textContent="儲存失敗："+e.message}};
 start();
 el("requests").addEventListener("click",async e=>{
  const i=e.target.dataset.update;if(i===undefined)return;
