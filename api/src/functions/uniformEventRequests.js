@@ -25,6 +25,15 @@ async function audit(schoolId,access,action,id,details){
   const client=await table("audit");
   await client.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action,subjectId:id,actor:String(access.email||"unknown").slice(0,200),at:new Date().toISOString(),details:encode(details).slice(0,20000)});
 }
+async function configuredAndOpen(schoolId,data){
+  const client=TableClient.fromConnectionString(connection(),process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig");
+  const id=["fieldTrip","yearEndDinner"].includes(data.kind)?data.activityId:"default";
+  if(!validId(id))return false;
+  const row=await find(client,schoolId,data.kind+":"+id);
+  if(!row)return false;
+  const cfg=JSON.parse(row.payload||"{}"),now=Date.now();
+  return cfg.enabled===true&&(!cfg.openAt||Date.parse(cfg.openAt)<=now)&&(!cfg.closeAt||Date.parse(cfg.closeAt)>=now);
+}
 async function studentGuard(access,schoolId,studentId){
   if(!validId(studentId)||!ensureStudentAccess(access,studentId))return false;
   const student=await getStudentMaster(studentId,schoolId);
@@ -67,6 +76,7 @@ app.http("uniformEventRequests",{
       const data=await request.json();
       if(request.method==="POST"){
         if(!await studentGuard(access,schoolId,data.studentId))return err("Student not found or forbidden",403);
+        if(!await configuredAndOpen(schoolId,data))return err("Module or activity is not open",403);
         const student=await getStudentMaster(data.studentId,schoolId);
         const fields=validateRequest(data,student);
         const id=randomUUID(),createdAt=new Date().toISOString();
