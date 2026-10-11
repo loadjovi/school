@@ -1,8 +1,18 @@
 const el=id=>document.getElementById(id);
 const escape=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function authHeaders(){
+ const token=sessionStorage.getItem("google_id_token")||"";
+ const schoolId=sessionStorage.getItem("school_context_id")||"";
+ const roleContext=sessionStorage.getItem("role_context")||"";
+ return {...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(schoolId?{"X-School-Id":schoolId}:{}),...(roleContext?{"X-Role-Context":roleContext}:{})};
+}
 async function api(p,opts={}){
- const r=await fetch("/api/"+p,{credentials:"same-origin",headers:{"Content-Type":"application/json"},...opts});
- const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||"HTTP "+r.status);return data;
+ const r=await fetch("/api/"+p,{...opts,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...authHeaders(),...(opts.headers||{})}});
+ const data=await r.json().catch(()=>({}));
+ if(r.status===401)throw Error("401 登入驗證失敗：請返回平台首頁，重新以 Google 登入後再開啟報名頁面。");
+ if(r.status===403)throw Error("403 權限不足：請確認已切換至此校家長身分並完成學生綁定。");
+ if(!r.ok)throw Error(data.error||"HTTP "+r.status);
+ return data;
 }
 const events=new Map();let students=[];
 const status=s=>el("status").textContent=s;
