@@ -23,7 +23,7 @@ async function api(path,options={}){
  if(!r.ok)throw Error(data.error||"HTTP "+r.status);
  return data;
 }
-let cachedRequests=[],cachedStock=[];
+let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[];
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function renderConfigSummary(items){
  const target=el("settings");
@@ -39,9 +39,25 @@ function renderConfigSummary(items){
    "<p>活動期間："+esc(fmtDate(x.startAt))+" ～ "+esc(fmtDate(x.endAt||x.startAt))+"</p>"+
    "<p>報名期間："+esc(fmtDate(x.openAt))+" ～ "+esc(fmtDate(x.closeAt))+"</p>"+
    "<p>學生："+money(x.studentFee)+"｜首位大人："+money(x.firstAdultFee)+"｜額外大人："+money(x.extraAdultFee)+"｜額外兒童："+money(x.extraChildFee)+"</p>":"<p>團服模組設定，非活動報名。</p>")+
-   "<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>"+
+   (activity?renderActivityRegistrationStats(x):"")+"<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>"+
    "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>編輯此設定</button></article>"
  }).join("");
+}
+function renderActivityRegistrationStats(activity){
+ const rows=cachedFamilyRegistrations.filter(r=>r.kind===activity.module&&r.activityId===activity.id&&r.registrationStatus==="REGISTERED");
+ const sum=(fn)=>rows.reduce((n,r)=>n+fn(r),0);
+ const students=sum(r=>r.studentIds?.length||0),adults=sum(r=>Number(r.adults||0)),children=sum(r=>Number(r.extraChildren||0));
+ return "<div style='background:#f0f6f2;border-radius:8px;padding:12px;margin:12px 0'><strong>本活動家庭報名統計</strong>"+
+ "<p>已報名家庭："+rows.length+" 戶｜學生："+students+" 位｜陪同大人："+adults+" 位｜非團員兒童："+children+" 位｜總人數："+(students+adults+children)+" 位</p>"+
+ "<p style='font-size:0.9em'>僅統計本活動已成功報名資料，不代表已完成繳費。</p></div>";
+}
+function refreshFamilyStatistics(){
+ const rows=cachedFamilyRegistrations.filter(r=>r.registrationStatus==="REGISTERED");
+ const students=rows.reduce((n,r)=>n+(r.studentIds?.length||0),0),adults=rows.reduce((n,r)=>n+Number(r.adults||0),0),children=rows.reduce((n,r)=>n+Number(r.extraChildren||0),0);
+ el("familySummary").textContent="所有活動合計（"+rows.length+" 筆報名，跨活動可能重複計入家庭）：學生 "+students+" 位｜大人 "+adults+" 位｜非團員兒童 "+children+" 位。請以上方各活動卡片的獨立統計為準。";
+ const names={fieldTrip:"校外所有活動",yearEndDinner:"期末聚餐"};
+ table("familyRows",rows.map(r=>({...r,activityName:savedConfigs.find(c=>c.module===r.kind&&c.id===r.activityId)?.title||r.activityId,category:names[r.kind]||r.kind})),[["category","活動類別"],["activityName","活動名稱"],["parentEmail","家長帳號"],["adults","大人"],["extraChildren","其他兒童"],["paymentStatus","繳費狀態"]]);
+ renderConfigSummary(savedConfigs);
 }
 el("settings").addEventListener("click",e=>{
  const button=e.target.closest("button[data-edit-id]");if(!button)return;
@@ -99,13 +115,8 @@ el("existingActivity").addEventListener("change",()=>{syncConfig();if(!el("exist
 syncConfig();
 async function load(){
  const sections=[
-  {path:"uniform-events/family-registration",status:"familyStatus",render:data=>{
-    const items=(data.items||[]).filter(x=>x.registrationStatus==="REGISTERED");
-    const totals=items.reduce((a,x)=>{a.students+=x.studentIds?.length||0;a.adults+=x.adults||0;a.children+=x.extraChildren||0;return a},{students:0,adults:0,children:0});
-    el("familySummary").textContent="已報名家庭 "+items.length+" 戶；團員 "+totals.students+" 位；大人 "+totals.adults+" 位；非團員兒童 "+totals.children+" 位；總人數 "+(totals.students+totals.adults+totals.children)+" 位。";
-    table("familyRows",items,[["kind","活動類別"],["activityId","活動 ID"],["parentEmail","家長帳號"],["adults","大人"],["extraChildren","其他兒童"],["paymentStatus","繳費狀態"]]);
-  }},
-  {path:"uniform-events/config",status:"status",render:data=>{savedConfigs=data.items||[];renderConfigSummary(savedConfigs);syncConfig()}},
+  {path:"uniform-events/family-registration",status:"familyStatus",render:data=>{cachedFamilyRegistrations=data.items||[];refreshFamilyStatistics()}},
+  {path:"uniform-events/config",status:"status",render:data=>{savedConfigs=data.items||[];syncConfig();refreshFamilyStatistics()}},
   {path:"uniform-events/requests",status:"requestsStatus",render:data=>{
     cachedRequests=data.items||[];
     const counts=cachedRequests.reduce((a,x)=>(a[x.status]=(a[x.status]||0)+1,a),{});
