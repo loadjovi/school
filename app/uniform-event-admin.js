@@ -172,7 +172,7 @@ el("config").onsubmit=async e=>{
   if(activity){el("existingActivity").value=id;syncConfig();el("existingActivity").dispatchEvent(new Event("change"))}
   const persisted=savedConfigs.find(x=>x.module===module&&x.id===id);
   if(!persisted)throw Error("API 已回覆，但重新查詢未找到活動，請勿視為儲存成功");
-  feedback.textContent="儲存成功並已讀回驗證："+(persisted.title||module)+"（"+id+"）";
+  feedback.textContent="設定已儲存並確認成功："+(persisted.title||module)+"。此設定僅供後台管理使用，是否開放家長報名依活動啟用狀態與報名期間判定。";
   el("status").textContent=feedback.textContent;
  }catch(err){feedback.textContent="儲存失敗："+err.message;el("status").textContent=feedback.textContent}
  finally{button.disabled=false}
