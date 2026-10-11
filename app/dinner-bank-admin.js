@@ -12,8 +12,8 @@ async function refresh(){
  if(!dinner)return;
  const id=activityEl.value;current=id;
  form.querySelector("button").disabled=!id;
- if(!id){message.textContent="請先儲存活動，再從「編輯既有活動」選取該活動。";for(const f of fields)form.elements[f].value="";return}
- message.textContent="讀取收款帳戶中…";
+ if(!id){message.textContent="請先按上方「儲存設定」建立活動；儲存成功後會自動選取活動，再設定收款帳戶。";for(const f of fields)form.elements[f].value="";return}
+ message.textContent="目前活動："+activityEl.selectedOptions[0]?.textContent+"；讀取收款帳戶中…";
  try{
   const res=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(id),{credentials:"same-origin"});
   const data=await res.json();if(!res.ok)throw Error(data.error||"HTTP "+res.status);
@@ -33,7 +33,7 @@ form.addEventListener("submit",async e=>{
  try{
   const res=await fetch("/api/uniform-events/dinner-payment-account",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
   const data=await res.json();if(!res.ok)throw Error(data.error||"HTTP "+res.status);
-  message.textContent="收款帳戶已儲存（管理員專用）；家長端繳費功能尚未開放。";
- }catch(err){message.textContent="儲存失敗："+err.message}
+  message.textContent="收款帳戶已儲存，正在重新讀取資料驗證…";await refresh();if(!message.textContent.startsWith("已載入收款帳戶"))throw Error("已送出儲存，但重新讀取未確認成功："+message.textContent);message.textContent="已成功儲存並重新讀取收款帳戶（管理員專用）。家長端繳費功能尚未開放。";
+ }catch(err){message.textContent="儲存或讀回驗證未完成："+err.message}
 });
 refresh();
