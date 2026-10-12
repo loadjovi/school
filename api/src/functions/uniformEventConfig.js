@@ -1,5 +1,6 @@
 import { app } from "@azure/functions";
 import { TableClient } from "@azure/data-tables";
+import { randomUUID } from "node:crypto";
 import { getTenantContext, json } from "../lib/auth.js";
 
 // Phase 2: tenant-scoped administrative configuration. No automatic activation.
@@ -56,7 +57,12 @@ app.http("uniformEventConfig",{
         payload:JSON.stringify({...data,enabled:data.enabled===true}),
         updatedAt:new Date().toISOString(),updatedBy:String(access.email||"admin").slice(0,255)
       };
+      let before=null;
+      try{before=await client.getEntity(schoolId,record.rowKey)}catch(e){if(e.statusCode!==404)throw e}
+      const audit=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantUniformEventAudit");
+      await audit.createTable().catch(e=>{if(e.statusCode!==409)throw e});
       await client.upsertEntity(record,"Replace");
+      await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"config.save",subjectId:record.rowKey,actor:String(access.email||"admin").slice(0,200),at:record.updatedAt,details:JSON.stringify({before:before?JSON.parse(before.payload||"{}"):null,after:JSON.parse(record.payload)}).slice(0,20000)});
       return json({item:publicValue(record)});
     }catch(error){
       if(error instanceof SyntaxError||String(error.message||"").startsWith("Invalid")||String(error.message||"").includes("requires"))return json({error:error.message},400);
