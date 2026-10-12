@@ -16,7 +16,12 @@ function adminAuthHeaders(){
 }
 window.uniformEventAuthHeaders=adminAuthHeaders;
 async function api(path,options={}){
- const r=await fetch("/api/"+path,{...options,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...adminAuthHeaders(),...(options.headers||{})}});
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),12000);
+ let r;
+ try{r=await fetch("/api/"+path,{...options,signal:controller.signal,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...adminAuthHeaders(),...(options.headers||{})}})}
+ catch(e){if(e.name==="AbortError")throw Error("API 連線逾時（12 秒），請檢查預覽環境 API 或重新驗證登入");throw e}
+ finally{clearTimeout(timeout)}
  const data=await r.json().catch(()=>({}));
  if(r.status===401){setAuthGate("API 回傳 401 Unauthorized：登入憑證未通過後端驗證，所有管理操作已停用。");throw Error("401 Unauthorized：請重新登入")}
  if(r.status===403){setAuthGate("API 回傳 403 Forbidden：目前帳號沒有此校管理員權限。");throw Error("403 Forbidden：權限不足")}
@@ -201,7 +206,7 @@ async function start(){
   setAuthGate("正在驗證管理員身分…");const me=await api("me");if(me.role!=="admin"){setAuthGate("登入帳號不是此校管理員，已停用管理操作。");throw Error("僅限管理員")}setAuthGate("");
   el("status").textContent="已驗證管理員："+(me.displayName||me.email||"");
   await load();
- }catch(e){if(!adminAuthenticated)setAuthGate(e.message);else el("status").textContent=e.message}
+ }catch(e){setAuthGate("管理員驗證未完成："+(e.message||String(e))+"。請重新檢查登入。")}
 }
 el("reload").onclick=()=>load().catch(e=>el("status").textContent=e.message);
 el("config").onsubmit=async e=>{
