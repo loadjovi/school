@@ -201,29 +201,11 @@ async function load(){
   {path:"uniform-events/config",status:"status",render:data=>{savedConfigs=data.items||[];syncConfig();refreshFamilyStatistics()}},
   {path:"uniform-events/requests",status:"requestsStatus",render:data=>{
     cachedRequests=data.items||[];
-    const counts=cachedRequests.reduce((a,x)=>(a[x.status]=(a[x.status]||0)+1,a),{});
-    el("requestSummary").textContent="申請共 "+cachedRequests.length+" 筆；待處理 "+(counts.PENDING||0)+" 筆；核准 "+(counts.APPROVED||0)+" 筆";
-    table("requests",cachedRequests,[["studentId","學生ID"],["kind","項目"],["size","尺寸"],["status","狀態"],["createdAt","建立時間"]],true);
+    if(["regularUniform","competitionUniform"].includes(activeAdminTab))renderModuleRequests();
   }},
   {path:"uniform-events/inventory",status:"stockStatus",render:data=>{
     cachedStock=data.items||[];
-    const regularSizes=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"];
-    const stockByKey=new Map(cachedStock.map(item=>[item.key,item]));
-    const regularRows=regularSizes.map(size=>{
-      const item=stockByKey.get("regular:"+size);
-      return {displaySize:size,onHand:item?item.onHand+" 件":"—",state:item?"已建檔":"待盤點／未建檔"};
-    });
-    const competitionRows=cachedStock.filter(item=>String(item.key).startsWith("competition:")).map(item=>({displaySize:String(item.key).slice("competition:".length).replace(":","／"),onHand:item.onHand+" 件",reserved:item.reserved,unavailable:item.unavailable,state:"已建檔"}));
-    const target=el("stock");
-    target.replaceChildren();
-    const title=document.createElement("h3");title.textContent="團 T｜實際庫存";target.append(title);
-    const regularContainer=document.createElement("div");regularContainer.id="stockRegularTable";target.append(regularContainer);
-    table("stockRegularTable",regularRows,[["displaySize","尺寸"],["onHand","現有數量"],["state","盤點狀態"]]);
-    if(competitionRows.length){
-      const competitionTitle=document.createElement("h3");competitionTitle.textContent="A 團比賽服｜庫存";target.append(competitionTitle);
-      const competitionContainer=document.createElement("div");competitionContainer.id="stockCompetitionTable";target.append(competitionContainer);
-      table("stockCompetitionTable",competitionRows,[["displaySize","尺寸"],["onHand","現有"],["reserved","保留"],["unavailable","不可用"],["state","狀態"]]);
-    }
+    if(["regularUniform","competitionUniform"].includes(activeAdminTab))renderModuleStock();
     window.dispatchEvent(new CustomEvent("uniformInventoryLoaded",{detail:{items:cachedStock}}));
   }}
  ];
