@@ -40,7 +40,7 @@ function renderConfigSummary(items){
    "<p>報名期間："+esc(fmtDate(x.openAt))+" ～ "+esc(fmtDate(x.closeAt))+"</p>"+
    "<p>學生："+money(x.studentFee)+"｜首位大人："+money(x.firstAdultFee)+"｜額外大人："+money(x.extraAdultFee)+"｜額外兒童："+money(x.extraChildFee)+"</p>":"<p>團服模組設定，非活動報名。</p>")+
    (activity?renderActivityRegistrationStats(x):"")+"<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>"+
-   "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>編輯此設定</button></article>";
+   "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>"+(activity?"編輯此活動":"設定啟用狀態")+"</button></article>";
  };
  const enabled=items.filter(x=>x.enabled===true),disabled=items.filter(x=>x.enabled!==true);
  target.innerHTML="<h3>活動與團服設定（"+items.length+" 筆）</h3><p>已啟用與未啟用分區顯示；已啟用設定仍須確認報名期間及收款公告。</p>"+
@@ -101,11 +101,13 @@ function syncConfig(){
  const form=el("config"),module=el("configModule").value,activity=activityTypes.has(module);
  form.querySelectorAll("[data-activity-field]").forEach(x=>x.hidden=!activity);
  el("existingActivityWrap").hidden=!activity;el("activityIdHint").hidden=!activity;
+ el("configModeHint").textContent=activity?"活動可新增多筆，請選擇建立或編輯既有活動。":"團服模組僅有一組設定；只能啟用或關閉，不能新增活動。";
  const select=el("existingActivity"),old=select.value;
  select.innerHTML="<option value=''>建立新活動</option>"+savedConfigs.filter(x=>x.module===module).map(x=>"<option value='"+esc(x.id)+"'>"+esc(x.title||x.id)+"</option>").join("");
  if([...select.options].some(x=>x.value===old))select.value=old;
  form.elements.id.value=activity?(select.value||"default"):"default";
  if(activity&&select.value)populateActivity();
+ if(!activity){const item=savedConfigs.find(x=>x.module===module&&x.id==="default");form.elements.enabled.value=String(item?.enabled===true)}
 }
 function populateActivity(){
  const form=el("config"),item=savedConfigs.find(x=>x.module===el("configModule").value&&x.id===el("existingActivity").value);
