@@ -152,6 +152,7 @@ async function start(){
   setAuthGate("正在驗證管理員身分…");const me=await api("me");if(me.role!=="admin"){setAuthGate("登入帳號不是此校管理員，已停用管理操作。");throw Error("僅限管理員")}setAuthGate("");
   el("status").textContent="已驗證管理員："+(me.displayName||me.email||"");
   await load();
+  await loadUniformAudit();
  }catch(e){if(!adminAuthenticated)setAuthGate(e.message);else el("status").textContent=e.message}
 }
 el("reload").onclick=()=>load().catch(e=>el("status").textContent=e.message);
@@ -243,3 +244,25 @@ function setupImport(inputId,previewId,required){
 }
 setupImport("importRequests","previewRequests",["kind","studentId"]);
 setupImport("importStock","previewStock",["key","onHand"]);
+
+async function loadUniformAudit(){
+ const status=el("auditStatus"),target=el("uniformAuditRows");
+ if(!status||!target)return;
+ status.textContent="讀取操作紀錄中…";
+ try{
+  const data=await api("uniform-events/audit");
+  const items=data.items||[];
+  target.replaceChildren();
+  const tableEl=document.createElement("table"),head=document.createElement("thead"),body=document.createElement("tbody");
+  head.innerHTML="<tr><th>操作時間</th><th>操作人員</th><th>異動類型</th><th>異動對象</th><th>異動內容</th></tr>";
+  for(const item of items){
+   const tr=document.createElement("tr");
+   const fields=[item.at?new Date(item.at).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}):"—",item.actor,item.action,item.subjectId,item.details];
+   for(const value of fields){const td=document.createElement("td");td.textContent=String(value??"");td.style.overflowWrap="anywhere";tr.append(td)}
+   body.append(tr);
+  }
+  tableEl.append(head,body);target.append(tableEl);
+  status.textContent="已載入最近 "+items.length+" 筆操作紀錄（最多 200 筆）";
+ }catch(e){status.textContent="讀取失敗："+e.message}
+}
+el("reloadAudit")?.addEventListener("click",loadUniformAudit);
