@@ -10,18 +10,27 @@ function download(rows){
 $("exportTshirtEligibility").addEventListener("click",async()=>{
  try{
   const headers=typeof window.uniformEventAuthHeaders==="function"?window.uniformEventAuthHeaders():{};
-  const r=await fetch("/api/uniform-events/requests",{credentials:"same-origin",cache:"no-store",headers});
-  if(r.status===401)throw Error("登入驗證失敗（HTTP 401）。請先返回平台首頁重新 Google 登入，再重新開啟管理頁。");
-  if(r.status===403)throw Error("權限不足（HTTP 403）。請確認已切換為此校管理員身分。");
-  if(!r.ok)throw Error("無法取得團T申請紀錄（HTTP "+r.status+"）");
-  const data=await r.json(),rows=(data.items||[]).filter(x=>x.kind==="regularUniform");
-  const map=new Map();
-  for(const item of rows){
-   if(!item.studentId)continue;
-   if(!map.has(item.studentId))map.set(item.studentId,[item.studentId,item.studentName||"","", "UNKNOWN","UNKNOWN","","","待確認團別；115學年度 A/B 團已首次領取（李沛臻除外），尺寸未知；儲備團尚未領取。此非完整名冊"]);
+  const r=await fetch("/api/students",{credentials:"same-origin",cache:"no-store",headers});
+  if(r.status===401)throw Error("登入驗證失敗（HTTP 401）。請重新登入。");
+  if(r.status===403)throw Error("權限不足（HTTP 403）。請切換為此校管理員。");
+  if(!r.ok)throw Error("無法取得學生主檔（HTTP "+r.status+"）");
+  const payload=await r.json();
+  const students=Array.isArray(payload)?payload:(payload.items||[]);
+  const map=new Map(),unclassified=[];
+  for(const student of students){
+   const id=String(student.studentId||"").trim(),name=String(student.name||student.studentName||"").trim();
+   const raw=String(student.groupName||student.group||"").trim().toUpperCase();
+   const group=/^(A|A團|A 團)$/.test(raw)?"A":/^(B|B團|B 團)$/.test(raw)?"B":/^(C|C團|C 團|儲備團|儲備)$/.test(raw)?"儲備團":"";
+   if(!id)continue;
+   if(!group){unclassified.push(name||id);continue}
+   const exception=name==="李沛臻";
+   const issued=(group==="A"||group==="B")&&!exception;
+   const eligible=!issued;
+   map.set(id,[id,name,group,eligible?"YES":"NO",issued?"YES":"NO",issued?"UNKNOWN":"", "",issued?"115學年度首次已領取；尺寸未知，待家長補登；歷史資料未寫入正式領用庫存":exception?"李沛臻例外：尚未首次領取，保留免費申請資格":"115學年度儲備團：尚未首次領取，保留免費申請資格"]);
   }
+  if(!map.size)throw Error("學生主檔沒有可辨識的 A、B 或儲備團資料；請確認學生主檔團別及學校身分，未產生空白檔。");
   download([...map.values()]);
-  $("tshirtEligibilityPreview").textContent="已匯出 "+map.size+" 位有團T申請紀錄的學生。注意：這不是完整 A、B 團名冊；未申請者不會出現在檔案中，請由正式學生名冊補齊後再匯入預覽。";
+  $("tshirtEligibilityPreview").textContent="已由學生主檔匯出 "+map.size+" 位學生（A、B 團已領取但尺寸未知；李沛臻及儲備團未領取）。"+(unclassified.length?"另有 "+unclassified.length+" 位團別無法辨識，未列入；請檢查學生主檔團別。":"")+" 僅供核對，不會寫入資料庫或扣除庫存。";
  }catch(e){$("tshirtEligibilityPreview").textContent="匯出失敗："+e.message}
 });
 function parseCsv(src){
@@ -55,7 +64,7 @@ $("importTshirtEligibility").addEventListener("change",async e=>{
    ids.add(id);
    if(!["A","B","C","儲備團"].includes(group))errors.push("第 "+(i+2)+" 行：團別不正確");
    if(!statuses.has(eligible)||!statuses.has(issued))errors.push("第 "+(i+2)+" 行：資格與領用請使用 YES／NO／UNKNOWN");
-   if(issued==="YES"&&eligible==="NO")errors.push("第 "+(i+2)+" 行：領用與資格矛盾，需人工核對");
+   if(issued==="YES"&&eligible==="YES")errors.push("第 "+(i+2)+" 行：已領取卻仍標示免費可申請，需人工核對");
    if(issued==="YES"&&!date)errors.push("第 "+(i+2)+" 行：已領用但缺少日期（可填 UNKNOWN 待查）");
    data.push({id,name,group,eligible,issued,date,size,notes});
   }
