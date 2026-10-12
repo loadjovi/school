@@ -15,6 +15,7 @@ async function table(name){
 const fail=(message,status=400)=>json({error:message},status);
 async function get(t,schoolId,id){try{return await t.getEntity(schoolId,id)}catch(e){if(e.statusCode===404)return null;throw e}}
 const parse=r=>({...JSON.parse(r.payload||"{}"),studentId:r.rowKey,etag:r.etag});
+const eligible=student=>["A","B"].includes(String(student?.groupName||"").trim())&&String(student?.studentName||"").replace(/\\s+/g,"")!=="李沛臻";
 async function audit(schoolId,actor,action,studentId,details){
  const t=await table("TenantUniformEventAudit");
  await t.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action,subjectId:studentId,actor:String(actor||"unknown").slice(0,200),at:new Date().toISOString(),details:JSON.stringify(details)});
@@ -29,8 +30,17 @@ app.http("tshirtHistoricalSize",{
    const t=await table("TenantTshirtHistoricalIssue");
    if(request.method==="GET"){
     const items=[];
-    for await(const row of t.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
-     if(access.role==="admin"||ensureStudentAccess(access,row.rowKey))items.push(parse(row));
+    if(access.role==="parent"){
+     for(const linked of access.students||[]){
+      const id=String(linked?.studentId||"");
+      if(!validId(id)||!ensureStudentAccess(access,id))continue;
+      const student=await getStudentMaster(id,schoolId);
+      if(!student||!eligible(student))continue;
+      const existing=await get(t,schoolId,id);
+      items.push(existing?{...parse(existing),studentName:student.studentName}:{studentId:id,studentName:student.studentName,historicalIssued:true,issuedQuantity:1,size:null,sizeStatus:"PENDING_PARENT",autoBackfill:true});
+     }
+    }else{
+     for await(const row of t.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}}))items.push(parse(row));
     }
     return json({items});
    }
@@ -51,10 +61,19 @@ app.http("tshirtHistoricalSize",{
    }
    if(!ensureStudentAccess(access,body.studentId)&&access.role!=="admin")return fail("Forbidden",403);
    if(!SIZES.has(body.size))return fail("Invalid shirt size");
-   const row=await get(t,schoolId,body.studentId);
-   if(!row)return fail("No verified historical issuance",404);
+   let row=await get(t,schoolId,body.studentId);
+   if(!row){
+    if(access.role!=="parent"||!eligible(student))return fail("No eligible historical issuance",404);
+    const stamp=new Date().toISOString();
+    const initial={kind:"regularUniform",historicalIssued:true,issuedQuantity:1,size:body.size,sizeStatus:"PARENT_RECORDED",source:"PARENT_BACKFILL_2026",sizeUpdatedBy:access.email,sizeUpdatedAt:stamp,createdAt:stamp,updatedAt:stamp};
+    try{
+     await t.createEntity({partitionKey:schoolId,rowKey:body.studentId,payload:JSON.stringify(initial),updatedAt:stamp});
+    }catch(e){if(e.statusCode===409)return fail("Record changed, refresh and retry",409);throw e}
+    await audit(schoolId,access.email,"tshirt.history.parent.backfill",body.studentId,{size:body.size,issuedQuantity:1});
+    return json({item:{...initial,studentId:body.studentId}},201);
+   }
    const old=parse(row);
-   if(old.historicalIssued!==true||old.source!=="ADMIN_VERIFIED_HISTORICAL")return fail("Unverified history",409);
+   if(old.historicalIssued!==true||!["ADMIN_VERIFIED_HISTORICAL","PARENT_BACKFILL_2026"].includes(old.source))return fail("Unverified history",409);
    if(body.etag!==row.etag)return fail("Record changed, refresh and retry",409);
    const now=new Date().toISOString();
    const next={...JSON.parse(row.payload),size:body.size,sizeStatus:"PARENT_RECORDED",sizeUpdatedBy:access.email,sizeUpdatedAt:now,updatedAt:now};
