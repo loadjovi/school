@@ -27,6 +27,11 @@ app.http("tshirtHistoricalSize",{
   const {schoolId,access}=ctx;
   if(!["parent","admin"].includes(access.role))return fail("Forbidden",403);
   try{
+   if(access.role==="parent"){
+    const configs=await table(process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig");
+    const config=await get(configs,schoolId,"regularUniform:default");
+    if(!config||JSON.parse(config.payload||"{}").enabled!==true)return fail("團 T 模組目前未啟用",403);
+   }
    const t=await table("TenantTshirtHistoricalIssue");
    if(request.method==="GET"){
     const items=[];
