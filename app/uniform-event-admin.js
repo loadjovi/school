@@ -143,10 +143,19 @@ async function load(){
     const stockByKey=new Map(cachedStock.map(item=>[item.key,item]));
     const regularRows=regularSizes.map(size=>{
       const item=stockByKey.get("regular:"+size);
-      return {category:"團 T",displaySize:size,onHand:item?item.onHand+" 件":"—",reserved:item?item.reserved:"—",unavailable:item?item.unavailable:"—",state:item?"已建檔":"待盤點／未建檔"};
+      return {displaySize:size,onHand:item?item.onHand+" 件":"—",state:item?"已建檔":"待盤點／未建檔"};
     });
-    const competitionRows=cachedStock.filter(item=>String(item.key).startsWith("competition:")).map(item=>({category:"A 團比賽服",displaySize:String(item.key).slice("competition:".length).replace(":","／"),onHand:item.onHand+" 件",reserved:item.reserved,unavailable:item.unavailable,state:"已建檔"}));
-    table("stock",[...regularRows,...competitionRows],[["category","類別"],["displaySize","尺寸"],["onHand","現有"],["reserved","保留"],["unavailable","不可用"],["state","狀態"]]);
+    const competitionRows=cachedStock.filter(item=>String(item.key).startsWith("competition:")).map(item=>({displaySize:String(item.key).slice("competition:".length).replace(":","／"),onHand:item.onHand+" 件",reserved:item.reserved,unavailable:item.unavailable,state:"已建檔"}));
+    const target=el("stock");
+    target.replaceChildren();
+    const title=document.createElement("h3");title.textContent="團 T｜實際庫存";target.append(title);
+    const regularContainer=document.createElement("div");regularContainer.id="stockRegularTable";target.append(regularContainer);
+    table("stockRegularTable",regularRows,[["displaySize","尺寸"],["onHand","現有數量"],["state","盤點狀態"]]);
+    if(competitionRows.length){
+      const competitionTitle=document.createElement("h3");competitionTitle.textContent="A 團比賽服｜庫存";target.append(competitionTitle);
+      const competitionContainer=document.createElement("div");competitionContainer.id="stockCompetitionTable";target.append(competitionContainer);
+      table("stockCompetitionTable",competitionRows,[["displaySize","尺寸"],["onHand","現有"],["reserved","保留"],["unavailable","不可用"],["state","狀態"]]);
+    }
     window.dispatchEvent(new CustomEvent("uniformInventoryLoaded",{detail:{items:cachedStock}}));
   }}
  ];
