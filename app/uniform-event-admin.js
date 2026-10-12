@@ -31,17 +31,21 @@ function renderConfigSummary(items){
  const fmtDate=v=>{if(!v)return "未設定";const d=new Date(v);return Number.isNaN(d.getTime())?"日期格式有誤":new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(d)};
  const money=v=>"NT$ "+Number(v||0).toLocaleString("zh-TW");
  const names={yearEndDinner:"期末聚餐",fieldTrip:"校外所有活動",regularUniform:"團T（T-shirt）",competitionUniform:"A團比賽服"};
- target.innerHTML="<h3>已建立設定（"+items.length+" 筆）</h3><p>此處顯示已儲存的管理設定，不代表已通知家長或已開放匯款。</p>"+items.map(x=>{
+ const renderCard=x=>{
   const activity=activityTypes.has(x.module);
-  return "<article style='border:1px solid #d9e3dd;border-radius:10px;padding:14px;margin:12px 0'>"+
-   "<strong>"+esc(x.title||names[x.module]||x.module)+"</strong>　<span>"+(x.enabled?"已啟用設定":"設定未啟用")+"</span>"+
+  return "<article style='border:1px solid "+(x.enabled?"#8dbda2":"#d9e3dd")+";border-radius:10px;padding:14px;margin:12px 0;"+(x.enabled?"":"background:#f5f6f5;")+"'>"+
+   "<strong>"+esc(x.title||names[x.module]||x.module)+"</strong>　<span style='font-weight:700;color:"+(x.enabled?"#176543":"#66736d")+"'>"+(x.enabled?"● 已啟用":"○ 未啟用｜家長不可報名")+"</span>"+
    (activity?"<p>類別："+esc(names[x.module])+"｜地點："+esc(x.location||"未設定")+"</p>"+
    "<p>活動期間："+esc(fmtDate(x.startAt))+" ～ "+esc(fmtDate(x.endAt||x.startAt))+"</p>"+
    "<p>報名期間："+esc(fmtDate(x.openAt))+" ～ "+esc(fmtDate(x.closeAt))+"</p>"+
    "<p>學生："+money(x.studentFee)+"｜首位大人："+money(x.firstAdultFee)+"｜額外大人："+money(x.extraAdultFee)+"｜額外兒童："+money(x.extraChildFee)+"</p>":"<p>團服模組設定，非活動報名。</p>")+
    (activity?renderActivityRegistrationStats(x):"")+"<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>"+
-   "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>編輯此設定</button></article>"
- }).join("");
+   "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>編輯此設定</button></article>";
+ };
+ const enabled=items.filter(x=>x.enabled===true),disabled=items.filter(x=>x.enabled!==true);
+ target.innerHTML="<h3>活動與團服設定（"+items.length+" 筆）</h3><p>已啟用與未啟用分區顯示；已啟用設定仍須確認報名期間及收款公告。</p>"+
+ "<section aria-label='已啟用設定'><h4 style='color:#176543'>已啟用（"+enabled.length+"）</h4>"+(enabled.length?enabled.map(renderCard).join(""):"<p>目前沒有已啟用設定</p>")+"</section>"+
+ "<details style='margin-top:20px;border-top:2px solid #d9e3dd;padding-top:12px'><summary style='cursor:pointer;font-weight:700'>未啟用（"+disabled.length+"）｜點選展開</summary>"+(disabled.length?disabled.map(renderCard).join(""):"<p>目前沒有未啟用設定</p>")+"</details>";
 }
 function renderActivityRegistrationStats(activity){
  const rows=cachedFamilyRegistrations.filter(r=>r.kind===activity.module&&r.activityId===activity.id&&r.registrationStatus==="REGISTERED");
