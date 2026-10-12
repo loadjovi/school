@@ -25,12 +25,36 @@ async function api(path,options={}){
 }
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[];
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let activeAdminTab="settings";
+const adminTabDescriptions={
+ settings:"設定模組啟用狀態、建立活動及管理收款設定。",
+ regularUniform:"團 T：首次免費資格及歷史配發核對。",
+ competitionUniform:"A 團比賽服：學生尺寸、公發與歸還核對。",
+ events:"校外活動與期末聚餐的家庭報名統計。",
+ requests:"團服申請清單及 CSV 匯出／匯入預覽。",
+ inventory:"正式庫存、尺寸盤點及數量調整。"
+};
 function syncUniformModuleVisibility(){
- for(const panel of document.querySelectorAll("[data-uniform-module-panel]")){
-  const module=panel.dataset.uniformModulePanel;
-  panel.hidden=!savedConfigs.some(item=>item.module===module&&item.id==="default"&&item.enabled===true);
+ for(const panel of document.querySelectorAll("[data-admin-view]")){
+  const tab=panel.dataset.adminView;
+  const enabled=!panel.dataset.uniformModulePanel||savedConfigs.some(item=>item.module===tab&&item.id==="default"&&item.enabled===true);
+  panel.hidden=tab!==activeAdminTab||!enabled;
+ }
+ for(const button of document.querySelectorAll("[data-admin-tab]")){
+  button.setAttribute("aria-selected",String(button.dataset.adminTab===activeAdminTab));
+ }
+ const description=el("adminTabDescription");
+ if(description){
+  const isUniform=["regularUniform","competitionUniform"].includes(activeAdminTab);
+  const enabled=savedConfigs.some(item=>item.module===activeAdminTab&&item.id==="default"&&item.enabled===true);
+  description.textContent=isUniform&&!enabled?"此團服模組目前未啟用；請先至「模組與活動設定」啟用。":adminTabDescriptions[activeAdminTab];
  }
 }
+document.querySelectorAll("[data-admin-tab]").forEach(button=>button.addEventListener("click",()=>{
+ activeAdminTab=button.dataset.adminTab;
+ syncUniformModuleVisibility();
+}));
+syncUniformModuleVisibility();
 function renderConfigSummary(items){
  const target=el("settings");
  if(!items.length){target.textContent="目前尚無已儲存的活動或團服設定。";return}
