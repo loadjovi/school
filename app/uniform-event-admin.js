@@ -139,7 +139,14 @@ async function load(){
   }},
   {path:"uniform-events/inventory",status:"stockStatus",render:data=>{
     cachedStock=data.items||[];
-    table("stock",cachedStock.map(item=>({...item,displaySize:String(item.key||"").replace(/^regular:/,"").replace(/^competition:/,"比賽服 ").replace(/^competitionUniform:/,"比賽服 ")})),[["displaySize","尺寸"],["onHand","現有"],["reserved","保留"],["unavailable","不可用"]]);
+    const regularSizes=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"];
+    const stockByKey=new Map(cachedStock.map(item=>[item.key,item]));
+    const regularRows=regularSizes.map(size=>{
+      const item=stockByKey.get("regular:"+size);
+      return {category:"團 T",displaySize:size,onHand:item?item.onHand+" 件":"—",reserved:item?item.reserved:"—",unavailable:item?item.unavailable:"—",state:item?"已建檔":"待盤點／未建檔"};
+    });
+    const competitionRows=cachedStock.filter(item=>String(item.key).startsWith("competition:")).map(item=>({category:"A 團比賽服",displaySize:String(item.key).slice("competition:".length).replace(":","／"),onHand:item.onHand+" 件",reserved:item.reserved,unavailable:item.unavailable,state:"已建檔"}));
+    table("stock",[...regularRows,...competitionRows],[["category","類別"],["displaySize","尺寸"],["onHand","現有"],["reserved","保留"],["unavailable","不可用"],["state","狀態"]]);
     window.dispatchEvent(new CustomEvent("uniformInventoryLoaded",{detail:{items:cachedStock}}));
   }}
  ];
