@@ -25,6 +25,12 @@ async function api(path,options={}){
 }
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[];
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function syncUniformModuleVisibility(){
+ for(const panel of document.querySelectorAll("[data-uniform-module-panel]")){
+  const module=panel.dataset.uniformModulePanel;
+  panel.hidden=!savedConfigs.some(item=>item.module===module&&item.id==="default"&&item.enabled===true);
+ }
+}
 function renderConfigSummary(items){
  const target=el("settings");
  if(!items.length){target.textContent="目前尚無已儲存的活動或團服設定。";return}
@@ -62,6 +68,7 @@ function refreshFamilyStatistics(){
  const names={fieldTrip:"校外所有活動",yearEndDinner:"期末聚餐"};
  table("familyRows",rows.map(r=>({...r,activityName:savedConfigs.find(c=>c.module===r.kind&&c.id===r.activityId)?.title||r.activityId,category:names[r.kind]||r.kind})),[["category","活動類別"],["activityName","活動名稱"],["parentEmail","家長帳號"],["adults","大人"],["extraChildren","其他兒童"],["paymentStatus","繳費狀態"]]);
  renderConfigSummary(savedConfigs);
+ syncUniformModuleVisibility();
 }
 el("settings").addEventListener("click",e=>{
  const button=e.target.closest("button[data-edit-id]");if(!button)return;
