@@ -40,7 +40,24 @@ const adminTabDescriptions={
  requests:"團服申請清單及 CSV 匯出／匯入預覽。",
  inventory:"正式庫存、尺寸盤點及數量調整。"
 };
+function placeSharedUniformPanels(){
+ if(!["regularUniform","competitionUniform"].includes(activeAdminTab))return;
+ const requests=el("uniformRequestsPanel"),inventory=el("uniformInventoryPanel");
+ const sections=[...document.querySelectorAll("section[data-admin-view]")].filter(x=>x.dataset.adminView===activeAdminTab&&x!==requests&&x!==inventory);
+ const last=sections[sections.length-1];
+ if(!last)return;
+ requests.dataset.adminView=inventory.dataset.adminView=activeAdminTab;
+ requests.dataset.uniformModulePanel=inventory.dataset.uniformModulePanel=activeAdminTab;
+ last.insertAdjacentElement("afterend",requests);
+ requests.insertAdjacentElement("afterend",inventory);
+ el("inventoryType").value=activeAdminTab;
+ el("inventoryType").disabled=true;
+ syncSizes();
+ renderModuleStock();
+ renderModuleRequests();
+}
 function syncUniformModuleVisibility(){
+ placeSharedUniformPanels();
  for(const panel of document.querySelectorAll("[data-admin-view]")){
   const tab=panel.dataset.adminView;
   const enabled=!panel.dataset.uniformModulePanel||savedConfigs.some(item=>item.module===tab&&item.id==="default"&&item.enabled===true);
