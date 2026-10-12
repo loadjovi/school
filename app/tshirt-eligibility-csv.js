@@ -18,7 +18,7 @@ $("exportTshirtEligibility").addEventListener("click",async()=>{
   const map=new Map();
   for(const item of rows){
    if(!item.studentId)continue;
-   if(!map.has(item.studentId))map.set(item.studentId,[item.studentId,"","","UNKNOWN","UNKNOWN","",item.size||"","申請紀錄待核對；非完整 A/B 團名冊"]);
+   if(!map.has(item.studentId))map.set(item.studentId,[item.studentId,item.studentName||"","", "UNKNOWN","UNKNOWN","","","待確認團別；115學年度 A/B 團已首次領取（李沛臻除外），尺寸未知；儲備團尚未領取。此非完整名冊"]);
   }
   download([...map.values()]);
   $("tshirtEligibilityPreview").textContent="已匯出 "+map.size+" 位有團T申請紀錄的學生。注意：這不是完整 A、B 團名冊；未申請者不會出現在檔案中，請由正式學生名冊補齊後再匯入預覽。";
