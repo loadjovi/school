@@ -34,7 +34,7 @@ app.http("uniformInventory",{
       const data=await request.json(),id=key(data.type,data.style,data.size);
       if(!id||!["SET_COUNT","ADJUST","RESERVE","RELEASE"].includes(data.action))return json({error:"Invalid stock operation"},400);
       const amount=data.amount;
-      if(!Number.isSafeInteger(amount)||Math.abs(amount)>10000||amount===0)return json({error:"Invalid quantity"},400);
+      if(!Number.isSafeInteger(amount)||Math.abs(amount)>10000||(data.action==="SET_COUNT"?amount<0:amount===0))return json({error:"Invalid quantity"},400);
       let previous;
       try{previous=await client.getEntity(ctx.schoolId,id)}catch(e){if(e.statusCode!==404)throw e}
       const current={onHand:previous?.onHand??0,reserved:previous?.reserved??0,unavailable:previous?.unavailable??0};
