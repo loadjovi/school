@@ -207,7 +207,7 @@ el("inventoryForm").onsubmit=async e=>{
  e.preventDefault();const f=new FormData(e.target),type=String(f.get("type")),style=String(f.get("style"));
  const data={type,style,size:String(f.get("size")),action:String(f.get("action")),amount:Number(f.get("amount"))};
  if(type==="competitionUniform"&&!style){el("status").textContent="比賽服必須選男款或女款";return}
- if(!Number.isSafeInteger(data.amount)||data.amount===0){el("status").textContent="數量須為非零整數";return}
+ if(!Number.isSafeInteger(data.amount)||(data.action==="SET_COUNT"?data.amount<0:data.amount===0)){el("status").textContent=data.action==="SET_COUNT"?"盤點數量須為 0 或正整數":"調整數量須為非零整數";return}
  if(!confirm("庫存操作將寫入資料庫，確認已核對實體數量？"))return;
  try{await api("uniform-events/inventory",{method:"POST",body:JSON.stringify(data)});await load();el("status").textContent="庫存已更新"}
  catch(err){el("status").textContent="庫存更新失敗："+err.message}
