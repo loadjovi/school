@@ -73,7 +73,8 @@ function placeSharedUniformPanels(){
  last.insertAdjacentElement("afterend",requests);
  requests.insertAdjacentElement("afterend",inventory);
  el("inventoryType").value=activeAdminTab;
- el("inventoryType").disabled=true;
+ el("inventoryType").disabled=false;
+ el("inventoryType").closest("label").hidden=true;
  syncSizes();
  renderModuleStock();
  renderModuleRequests();
