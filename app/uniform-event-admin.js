@@ -30,6 +30,7 @@ async function api(path,options={}){
 }
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[];
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let savedConfigs=[];
 let activeAdminTab="settings";
 const adminTabDescriptions={
  settings:"設定模組啟用狀態、建立活動及管理收款設定。",
@@ -130,7 +131,6 @@ function syncSizes(){
 el("inventoryType").addEventListener("change",syncSizes);
 el("inventoryStyle").addEventListener("change",syncSizes);
 syncSizes();
-let savedConfigs=[];
 const activityTypes=new Set(["fieldTrip","yearEndDinner"]);
 const createActivityId=()=> "event_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,8);
 function syncConfig(){
