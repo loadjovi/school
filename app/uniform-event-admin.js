@@ -139,7 +139,7 @@ async function load(){
   }},
   {path:"uniform-events/inventory",status:"stockStatus",render:data=>{
     cachedStock=data.items||[];
-    table("stock",cachedStock,[["key","類別與尺寸"],["onHand","現有"],["reserved","保留"],["unavailable","不可用"]]);
+    table("stock",cachedStock.map(item=>({...item,displaySize:String(item.key||"").replace(/^regular:/,"").replace(/^competition:/,"比賽服 ").replace(/^competitionUniform:/,"比賽服 ")})),[["displaySize","尺寸"],["onHand","現有"],["reserved","保留"],["unavailable","不可用"]]);
     window.dispatchEvent(new CustomEvent("uniformInventoryLoaded",{detail:{items:cachedStock}}));
   }}
  ];
