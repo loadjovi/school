@@ -1,7 +1,20 @@
 // 使用者 2026-10-11 確認之團T盤點。此模組僅供畫面預覽與 CSV 匯出，不會寫入 Azure Storage。
 const initial={"8":1,"10":0,"12":3,"14":0,"XS":5,"S":1,"M":3,"L":1,"XL":1,"2L":0};
 const sizes=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"];
-const counts={...initial};
+const counts={};
+let inventoryLoaded=false;
+let inventoryError="";
+window.addEventListener("uniformInventoryLoaded",event=>{
+ inventoryLoaded=true;inventoryError="";
+ for(const size of sizes)delete counts[size];
+ for(const item of event.detail?.items||[]){
+  if(typeof item.key==="string"&&item.key.startsWith("regular:")&&Number.isSafeInteger(item.onHand)){
+   const size=item.key.slice(8);if(sizes.includes(size))counts[size]=item.onHand;
+  }
+ }
+ confirmedAt=null;confirmedBy="";render();
+});
+window.addEventListener("uniformInventoryLoadFailed",event=>{inventoryError=String(event.detail?.message||"讀取失敗");render()});
 let confirmedAt=null;
 let confirmedBy="";
 const confirmedSnapshots=[];
@@ -11,9 +24,9 @@ function render(){
  const total=known.reduce((sum,s)=>sum+counts[s],0);
  const table=document.createElement("table");
  const heading=document.createElement("p");
- heading.textContent="已確認 "+known.length+" 種尺寸，共 "+total+" 件；其他尺寸待盤點。";
+ heading.textContent=inventoryError?"庫存讀取失敗："+inventoryError:!inventoryLoaded?"正在讀取資料庫庫存…":"資料庫已有 "+known.length+" 種尺寸，共 "+total+" 件；未建檔尺寸顯示待盤點。";
  root.replaceChildren(heading);
- const note=document.createElement("p");note.textContent=confirmedAt?"本次預覽確認："+confirmedAt+"，盤點人員："+confirmedBy:"尚未確認本次盤點（此頁僅預覽，不會儲存到資料庫）";root.appendChild(note);
+ const note=document.createElement("p");note.textContent=confirmedAt?"本次預覽確認："+confirmedAt+"，盤點人員："+confirmedBy:"數量由 Azure 庫存資料庫載入；在此編輯僅為預覽，不會儲存。請使用下方「庫存盤點與調整」儲存。";root.appendChild(note);
  const thead=document.createElement("thead");thead.innerHTML="<tr><th>尺寸</th><th>盤點數量</th><th>狀態</th></tr>";table.appendChild(thead);
  const tbody=document.createElement("tbody");
  for(const size of sizes){
@@ -21,7 +34,7 @@ function render(){
   const name=document.createElement("td");name.textContent=size;
   const cell=document.createElement("td");const input=document.createElement("input");
   input.type="number";input.min="0";input.max="100000";input.step="1";input.style.maxWidth="110px";
-  input.placeholder="待盤點";input.value=counts[size]??"";
+  input.placeholder=inventoryLoaded?"未建檔":"讀取中";input.value=counts[size]??"";input.disabled=!inventoryLoaded||!!inventoryError;
   input.setAttribute("aria-label",size+" 號庫存數量");
   input.addEventListener("change",()=>{
    if(input.value==="")delete counts[size];
@@ -49,6 +62,7 @@ root.after(check);
 document.getElementById("stockCheckConfirm").addEventListener("click",()=>{
  const name=document.getElementById("stockCheckerName").value.trim();
  if(!name||!document.getElementById("stockCheckAgree").checked){document.getElementById("stockCheckMessage").textContent="請填寫盤點人員並勾選確認";return}
+ if(!inventoryLoaded||inventoryError){document.getElementById("stockCheckMessage").textContent="資料庫尚未成功載入，無法確認盤點";return}
  const unknown=sizes.filter(size=>!Number.isInteger(counts[size]));
  if(unknown.length){document.getElementById("stockCheckMessage").textContent="尚有未盤點尺寸："+unknown.join("、")+"；請先完成所有尺寸盤點，0 件請填 0。";return}
  confirmedAt=new Date().toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false});confirmedBy=name;
