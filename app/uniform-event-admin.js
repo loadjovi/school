@@ -29,6 +29,7 @@ async function api(path,options={}){
  return data;
 }
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[];
+let visibleModuleRequests=[];
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let savedConfigs=[];
 let activeAdminTab="settings";
@@ -45,10 +46,23 @@ function renderModuleRequests(){
   const kind=String(x.kind||x.type||"");
   return activeAdminTab==="regularUniform"?/regular|tshirt|t-shirt/i.test(kind):/competition/i.test(kind);
  });
+ visibleModuleRequests=rows;
  const counts=rows.reduce((a,x)=>(a[x.status]=(a[x.status]||0)+1,a),{});
- el("requestSummary").textContent="本模組申請 "+rows.length+" 筆；待處理 "+(counts.PENDING||0)+" 筆；核准 "+(counts.APPROVED||0)+" 筆";
- table("requests",rows,[["studentId","學生ID"],["kind","項目"],["size","尺寸"],["status","狀態"],["createdAt","建立時間"]],true);
+ const pending=rows.filter(x=>x.status==="PENDING");
+ const sizes=new Map();
+ for(const item of pending){
+  const size=String(item.size||"未填尺寸");
+  const quantity=Number(item.quantity);
+  const count=Number.isSafeInteger(quantity)&&quantity>0?quantity:1;
+  sizes.set(size,(sizes.get(size)||0)+count);
+ }
+ const total=[...sizes.values()].reduce((sum,n)=>sum+n,0);
+ const details=[...sizes].sort((a,b)=>a[0].localeCompare(b[0],"zh-Hant")).map(([size,n])=>size+"："+n+" 件").join("、");
+ const label=activeAdminTab==="regularUniform"?"團 T":"A 團比賽服";
+ el("requestSummary").textContent=label+" 家長申請 "+rows.length+" 筆；待處理 "+(counts.PENDING||0)+" 筆；核准 "+(counts.APPROVED||0)+" 筆。待處理需求共 "+total+" 件；尺寸統計："+(details||"尚無需求")+"。此為待處理需求，非已確認採購單；請核對免費資格及重複申請後再統一採購。";
+ table("requests",rows,[["studentId","學生ID"],["kind","項目"],["size","尺寸"],["quantity","申請件數"],["status","狀態"],["createdAt","建立時間"]],true);
 }
+
 function renderModuleStock(){
  if(activeAdminTab==="regularUniform"){
   const byKey=new Map(cachedStock.map(x=>[x.key,x]));
@@ -264,7 +278,7 @@ document.getElementById("retryAdminAuth").addEventListener("click",start);
 start();
 el("requests").addEventListener("click",async e=>{
  const i=e.target.dataset.update;if(i===undefined)return;
- const row=cachedRequests[Number(i)],select=el("requests").querySelector("select[data-index='"+i+"']");
+ const row=visibleModuleRequests[Number(i)],select=el("requests").querySelector("select[data-index='"+i+"']");
  const status=select?.value;if(!row||!status)return;
  if(!confirm("確定將這筆申請改為 "+status+"？"))return;
  try{await api("uniform-events/requests",{method:"PATCH",body:JSON.stringify({id:row.id,etag:row.etag,status})});await load();el("status").textContent="申請狀態已更新"}
@@ -279,7 +293,7 @@ el("inventoryForm").onsubmit=async e=>{
  try{await api("uniform-events/inventory",{method:"POST",body:JSON.stringify(data)});await load();el("status").textContent="庫存已更新"}
  catch(err){el("status").textContent="庫存更新失敗："+err.message}
 };
-el("exportRequests").onclick=()=>csv("uniform-event-requests.csv",cachedRequests,["id","kind","studentId","activityId","style","size","quantity","acquisition","freeEligibility","status","createdAt","updatedAt"]);
+el("exportRequests").onclick=()=>csv("uniform-event-requests.csv",visibleModuleRequests,["id","kind","studentId","activityId","style","size","quantity","acquisition","freeEligibility","status","createdAt","updatedAt"]);
 el("exportStock").onclick=()=>csv("uniform-inventory.csv",cachedStock,["key","onHand","reserved","unavailable"]);
 
 function parseCsv(text){
