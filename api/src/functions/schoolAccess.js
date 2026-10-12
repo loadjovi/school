@@ -117,6 +117,33 @@ app.http("schoolAdminActivity",{methods:["GET","POST"],authLevel:"anonymous",rou
     let detail={};try{detail=JSON.parse(String(e.detailJson||"{}"))}catch{}
     events.push({at,type:String(e.eventType||""),actor:String(e.actorEmail||""),...detail});
   }
+  // Consolidate the existing uniform/event audit source into the school's single audit viewer.
+  // Only return safe metadata: raw transfer details and bank account data are never exposed.
+  try{
+    const uniformAudit=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantUniformEventAudit");
+    const schoolPartition=String(schoolId).replaceAll("'","''");
+    for await(const e of uniformAudit.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolPartition}'`}})){
+      const at=String(e.at||e.timestamp||"");
+      if(!at||auditDate(at)<from||auditDate(at)>to)continue;
+      const action=String(e.action||"");
+      const type=action.startsWith("inventory.")?"uniform_inventory":action.startsWith("config.")?"uniform_config":action.startsWith("request.")?"uniform_request":action.startsWith("family.")?"uniform_family":action.startsWith("payment.")||action.startsWith("transfer.")?"uniform_payment":"uniform_other";
+      const subjectId=String(e.subjectId||"").slice(0,180);
+      let detail={};try{detail=JSON.parse(String(e.details||"{}"))}catch{}
+      const safe={};
+      for(const field of ["kind","studentId","adults","extraChildren","from","to","status"]){
+        if(["string","number","boolean"].includes(typeof detail[field]))safe[field]=String(detail[field]).slice(0,120);
+      }
+      if(Array.isArray(detail.studentIds))safe.studentCount=detail.studentIds.length;
+      if(detail.before&&typeof detail.before==="object"&&detail.after&&typeof detail.after==="object"){
+        for(const field of ["enabled","title","location","openAt","closeAt","startAt","endAt","paymentMode","studentFee","firstAdultFee","extraAdultFee","extraChildFee"]){
+          if(detail.before[field]!==detail.after[field])safe[field]={before:detail.before[field]??null,after:detail.after[field]??null};
+        }
+      }
+      events.push({at,type,actor:String(e.actor||"").slice(0,200),action,subjectId,reason:JSON.stringify(safe).slice(0,1000)});
+    }
+  }catch(e){
+    if(e.statusCode!==404)console.error("school uniform audit read failed",e);
+  }
   // Previous revisions were stored on the original record before this screen existed.
   const known=new Set(events.filter(x=>x.type==="section_correction").map(x=>[x.at,x.studentId,x.actor].join("|")));
   const students=new Map((await listStudentMaster("",schoolId)).map(x=>[String(x.rowKey),String(x.studentName||"")]));
