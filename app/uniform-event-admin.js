@@ -40,6 +40,28 @@ const adminTabDescriptions={
  requests:"團服申請清單及 CSV 匯出／匯入預覽。",
  inventory:"正式庫存、尺寸盤點及數量調整。"
 };
+function renderModuleRequests(){
+ const rows=cachedRequests.filter(x=>{
+  const kind=String(x.kind||x.type||"");
+  return activeAdminTab==="regularUniform"?/regular|tshirt|t-shirt/i.test(kind):/competition/i.test(kind);
+ });
+ const counts=rows.reduce((a,x)=>(a[x.status]=(a[x.status]||0)+1,a),{});
+ el("requestSummary").textContent="本模組申請 "+rows.length+" 筆；待處理 "+(counts.PENDING||0)+" 筆；核准 "+(counts.APPROVED||0)+" 筆";
+ table("requests",rows,[["studentId","學生ID"],["kind","項目"],["size","尺寸"],["status","狀態"],["createdAt","建立時間"]],true);
+}
+function renderModuleStock(){
+ if(activeAdminTab==="regularUniform"){
+  const byKey=new Map(cachedStock.map(x=>[x.key,x]));
+  const rows=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"].map(size=>{
+   const item=byKey.get("regular:"+size);
+   return {size,quantity:item?item.onHand+" 件":"—",state:item?"已建檔":"待盤點／未建檔"};
+  });
+  table("stock",rows,[["size","尺寸"],["quantity","現有數量"],["state","盤點狀態"]]);
+ }else if(activeAdminTab==="competitionUniform"){
+  const rows=cachedStock.filter(x=>String(x.key).startsWith("competition:")).map(x=>({size:String(x.key).slice("competition:".length).replace(":","／"),quantity:x.onHand+" 件",reserved:x.reserved,unavailable:x.unavailable}));
+  table("stock",rows,[["size","款式／尺寸"],["quantity","現有"],["reserved","保留"],["unavailable","不可用"]]);
+ }
+}
 function placeSharedUniformPanels(){
  if(!["regularUniform","competitionUniform"].includes(activeAdminTab))return;
  const requests=el("uniformRequestsPanel"),inventory=el("uniformInventoryPanel");
