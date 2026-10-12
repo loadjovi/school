@@ -131,6 +131,7 @@ async function load(){
   {path:"uniform-events/inventory",status:"stockStatus",render:data=>{
     cachedStock=data.items||[];
     table("stock",cachedStock,[["key","類別與尺寸"],["onHand","現有"],["reserved","保留"],["unavailable","不可用"]]);
+    window.dispatchEvent(new CustomEvent("uniformInventoryLoaded",{detail:{items:cachedStock}}));
   }}
  ];
  const results=await Promise.allSettled(sections.map(async section=>{
@@ -142,7 +143,7 @@ async function load(){
      const section=sections[i];el(section.status).textContent="讀取失敗："+result.reason.message;
      if(section.path.includes("family-registration"))el("familyRows").textContent="家庭報名讀取失敗";
      if(section.path.includes("requests"))el("requests").textContent="申請資料讀取失敗，請檢查 API";
-     if(section.path.includes("inventory"))el("stock").textContent="庫存資料讀取失敗，請檢查 API";
+     if(section.path.includes("inventory")){el("stock").textContent="庫存資料讀取失敗，請檢查 API";window.dispatchEvent(new CustomEvent("uniformInventoryLoadFailed",{detail:{message:result.reason.message}}))}
    }
  });
 }
