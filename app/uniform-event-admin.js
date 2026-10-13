@@ -304,6 +304,29 @@ async function start(){
  }catch(e){setAuthGate("管理員驗證未完成："+(e.message||String(e))+"。請重新檢查登入。")}
 }
 el("reload").onclick=()=>load().catch(e=>el("status").textContent=e.message);
+let fieldTripBankTemplates=[];
+async function refreshFieldTripBanks(){
+ const select=el("fieldTripBankTemplate"),message=el("fieldTripBankStatus");
+ if(!select)return;
+ try{
+  const result=await api("uniform-events/payment-account-templates");
+  fieldTripBankTemplates=(result.items||[]).filter(x=>x.active===true);
+  select.replaceChildren(new Option("請選擇已儲存帳戶",""));
+  for(const b of fieldTripBankTemplates)select.add(new Option(b.label+"｜"+b.bankName+"（"+b.bankCode+"）末四碼 "+String(b.accountNumber).slice(-4),b.id));
+  message.textContent=fieldTripBankTemplates.length?"請選擇要綁定的帳戶。":"尚無可用帳戶，請先至期末聚餐帳戶管理新增帳戶範本。";
+ }catch(e){message.textContent="讀取帳戶失敗："+e.message}
+}
+el("bindFieldTripBank").addEventListener("click",async()=>{
+ const message=el("fieldTripBankStatus"),activityId=el("existingActivity").value;
+ const bank=fieldTripBankTemplates.find(x=>x.id===el("fieldTripBankTemplate").value);
+ if(el("configModule").value!=="fieldTrip"||!activityId){message.textContent="請先儲存並選擇既有校外活動。";return}
+ if(!bank){message.textContent="請先選擇收款帳戶。";return}
+ if(!confirm("確定將此收款帳戶綁定目前活動？"))return;
+ try{await api("uniform-events/field-trip-payment-account",{method:"POST",body:JSON.stringify({activityId,bankName:bank.bankName,bankCode:bank.bankCode,accountHolder:bank.accountHolder,accountNumber:bank.accountNumber})});message.textContent="已綁定本活動收款帳戶；可再選擇開放第二階段收款並儲存設定。"}
+ catch(e){message.textContent="綁定失敗："+e.message}
+});
+el("configModule").addEventListener("change",()=>{if(el("configModule").value==="fieldTrip")refreshFieldTripBanks()});
+if(el("configModule").value==="fieldTrip")refreshFieldTripBanks();
 el("config").onsubmit=async e=>{
  e.preventDefault();
  const feedback=el("configSaveFeedback"),button=el("saveConfigButton");
@@ -319,7 +342,7 @@ el("config").onsubmit=async e=>{
    if(f.get("endAt"))item.endAt=new Date(f.get("endAt")).toISOString();
    if(item.endAt&&item.startAt&&Date.parse(item.endAt)<Date.parse(item.startAt))throw Error("活動結束時間不可早於開始時間");
    item.paymentMode=module==="yearEndDinner"?"PAY_NOW":"PAY_LATER";
-   if(module==="fieldTrip"){item.collectionOpen=false;if(f.get("collectionOpen")==="true")throw Error("第二階段收款尚需完成活動專屬帳戶及家長匯款回報串接，目前不可開放正式收費。");}
+   if(module==="fieldTrip"){item.collectionOpen=f.get("collectionOpen")==="true";item.feeStatus=item.collectionOpen?"PUBLISHED":"DRAFT";item.paymentOpen=item.collectionOpen;}
    if(module==="yearEndDinner"){item.feeStatus=item.enabled?"PUBLISHED":"DRAFT";item.paymentOpen=item.enabled&&f.get("paymentOpen")==="true";}
    for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0);
   }
