@@ -191,6 +191,7 @@ const createActivityId=()=> "event_"+Date.now().toString(36)+"_"+Math.random().t
 function updateActivityConfigClarity(){
  const form=el("config"),dinner=el("configModule").value==="yearEndDinner";
  const group=form.querySelector(".dinner-only");if(group)group.hidden=!dinner;
+ const payment=form.elements.paymentMode;if(payment){payment.value=dinner?"PAY_NOW":"PAY_LATER";payment.disabled=true;payment.title="依活動類型自動套用，避免選錯繳費流程";}
  const preview=el("activityFeePreview");if(!preview)return;
  const fees=["studentFee","firstAdultFee","extraAdultFee","extraChildFee"].map(k=>Number(form.elements[k]?.value));
  if(fees.some(n=>!Number.isFinite(n)||n<0)){preview.textContent="請輸入有效的非負費率。";return}
@@ -217,7 +218,7 @@ function populateActivity(){
  const form=el("config"),item=savedConfigs.find(x=>x.module===el("configModule").value&&x.id===el("existingActivity").value);
  if(!item)return;
  form.elements.id.value=item.id;form.elements.enabled.value=String(item.enabled===true);
- form.elements.paymentMode.value=item.paymentMode||(item.module==="yearEndDinner"?"PAY_NOW":"FLEXIBLE");
+ form.elements.paymentMode.value=item.module==="yearEndDinner"?"PAY_NOW":"PAY_LATER";
  form.elements.feeStatus.value=item.feeStatus||"DRAFT";form.elements.paymentOpen.value=String(item.paymentOpen===true);
  for(const k of ["title","location","studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=item[k]??(k.endsWith("Fee")?0:"");
  for(const k of ["openAt","closeAt","startAt","endAt"])form.elements[k].value=item[k]?localDateTimeValue(item[k]):"";
@@ -275,7 +276,7 @@ el("config").onsubmit=async e=>{
    if(f.get("startAt"))item.startAt=new Date(f.get("startAt")).toISOString();
    if(f.get("endAt"))item.endAt=new Date(f.get("endAt")).toISOString();
    if(item.endAt&&item.startAt&&Date.parse(item.endAt)<Date.parse(item.startAt))throw Error("活動結束時間不可早於開始時間");
-   item.paymentMode=module==="yearEndDinner"?"PAY_NOW":String(f.get("paymentMode")||"FLEXIBLE");
+   item.paymentMode=module==="yearEndDinner"?"PAY_NOW":"PAY_LATER";
    if(module==="yearEndDinner"){item.feeStatus=item.enabled?"PUBLISHED":"DRAFT";item.paymentOpen=item.enabled&&f.get("paymentOpen")==="true";}
    for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0);
   }
