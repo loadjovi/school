@@ -89,49 +89,75 @@ function renderCompetitionPurchase(students){
  });
 }
 
+
+function formatDate(v){if(!v)return "";const d=new Date(v);return Number.isNaN(d.getTime())?String(v):d.toLocaleString("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"})}
+function element(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e}
+async function parentApi(path,options={}){
+ const response=await fetch("/api/"+path,{...options,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...parentAuthHeaders(),...(options.headers||{})}});
+ const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"HTTP "+response.status);return data;
+}
 async function renderInlineActivities(){
- const hosts={events:document.getElementById("inlineEventRegistration"),performance:document.getElementById("inlinePerformanceRegistration")};
- const setText=(host,msg)=>{host.replaceChildren();const p=document.createElement("p");p.className="muted";p.textContent=msg;host.append(p)};
+ const hosts={events:document.getElementById("inlineEventRegistration"),performance:document.getElementById("inlinePerformanceRegistration"),history:document.getElementById("inlineHistory")};
  try{
-  const [meRes,configRes]=await Promise.all([fetch("/api/me",{credentials:"same-origin",headers:parentAuthHeaders()}),fetch("/api/uniform-events/config",{credentials:"same-origin",headers:parentAuthHeaders()})]);
-  if(!meRes.ok||!configRes.ok)throw Error("活動資料讀取失敗（"+meRes.status+"／"+configRes.status+"）");
-  const me=await meRes.json(),data=await configRes.json();
-  const students=me.students||[];
-  const cfg=(data.items||[]).filter(x=>x.enabled===true);
+  const [me,config,registration]=await Promise.all([parentApi("me"),parentApi("uniform-events/config"),parentApi("uniform-events/family-registration")]);
+  if(me.role!=="parent")throw Error("請切換至家長身分後重新載入");
+  const students=(me.students||[]).filter(x=>x.studentId);
+  const cfg=(config.items||[]).filter(x=>x.enabled===true);
+  const history=hosts.history;history.replaceChildren();
+  if(!(registration.items||[]).length)history.append(element("p","目前沒有活動報名或付款紀錄。","muted"));
+  for(const item of registration.items||[]){
+   const match=cfg.find(x=>x.module===item.kind&&x.id===item.activityId);
+   const card=element("div",undefined,"card");card.append(element("strong",match?.title||item.activityId));
+   card.append(element("p","學生 "+(item.studentIds||[]).length+" 位｜大人 "+item.adults+" 位｜其他兒童 "+item.extraChildren+" 位"));
+   const states={NOT_OPEN:"尚未開放付款",REPORTED_UNVERIFIED:"已回報匯款，待幹部核帳",VERIFIED:"已確認入帳"};
+   card.append(element("p","報名："+(item.registrationStatus==="REGISTERED"?"已送出":item.registrationStatus)+"｜付款："+(states[item.paymentStatus]||item.paymentStatus)));
+   if(item.estimatedAmount!=null)card.append(element("p","登記金額 NT$ "+Number(item.estimatedAmount).toLocaleString("zh-TW")));
+   history.append(card);
+  }
   const categories={events:["yearEndDinner","fieldTrip"],performance:["performance","flashMob","schoolExchange","jointConcert"]};
   for(const [category,host] of Object.entries(hosts)){
-   host.replaceChildren();
+   if(category==="history")continue;host.replaceChildren();
    const items=cfg.filter(x=>categories[category].includes(x.module));
-   if(!items.length){setText(host,"目前沒有已開放的"+(category==="events"?"報名活動。":"演出或交流活動。"));continue}
+   if(!items.length){host.append(element("p","目前沒有已開放的活動。","muted"));continue}
    for(const item of items){
-    const card=document.createElement("div");card.className="card";
-    const title=document.createElement("strong");title.textContent=item.title||item.name||"活動";
-    card.append(title);
-    const details=document.createElement("p");details.className="muted";
-    const dates=[item.eventAt||item.startAt||item.date,item.location||item.venue].filter(Boolean);
-    details.textContent=dates.join("｜")||"活動詳情依學校公告";card.append(details);
-    const notice=document.createElement("p");notice.className="hint";
-    notice.textContent=category==="events"?"活動報名與付款依學校公告辦理。":"演出參與及回覆依學校公告辦理。";card.append(notice);
-    if(["yearEndDinner","fieldTrip"].includes(item.module)){
-     const form=document.createElement("form");
-     const studentWrap=document.createElement("div");studentWrap.textContent="參加學生：";
-     for(const st of students){const label=document.createElement("label");label.style.display="block";const check=document.createElement("input");check.type="checkbox";check.value=st.studentId;label.append(check,document.createTextNode(" "+(st.name||st.studentName||st.studentId)));studentWrap.append(label)}
-     const adults=document.createElement("select");for(let i=1;i<=20;i++)adults.add(new Option(i+" 位陪同大人",i));
-     const children=document.createElement("select");for(let i=0;i<=20;i++)children.add(new Option(i+" 位其他兒童",i));
-     const btn=document.createElement("button");btn.type="submit";btn.textContent="確認報名";
-     const msg=document.createElement("p");msg.className="hint";msg.setAttribute("role","status");
-     form.append(studentWrap,document.createTextNode("陪同大人"),adults,document.createTextNode("其他兒童"),children,btn,msg);
-     form.addEventListener("submit",async e=>{
-      e.preventDefault();const ids=[...studentWrap.querySelectorAll("input:checked")].map(x=>x.value);
-      if(!ids.length){msg.textContent="請先選擇參加學生";return}
-      if(!confirm("確定送出家庭報名？報名不代表已繳費。"))return;
-      btn.disabled=true;
-      try{const response=await fetch("/api/uniform-events/family-registration",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...parentAuthHeaders()},body:JSON.stringify({kind:item.module,activityId:item.id,studentIds:ids,adults:Number(adults.value),extraChildren:Number(children.value)})});const result=await response.json().catch(()=>({}));if(!response.ok)throw Error(result.error||"HTTP "+response.status);msg.textContent="已送出報名；付款尚待確認。"}catch(e){msg.textContent="報名失敗："+e.message;btn.disabled=false}
-     });card.append(form);
+    const card=element("div",undefined,"card");card.append(element("h3",item.title||"活動"));
+    card.append(element("p",[formatDate(item.startAt),item.location].filter(Boolean).join("｜"),"muted"));
+    const already=(registration.items||[]).find(x=>x.kind===item.module&&x.activityId===item.id);
+    if(already){card.append(element("p","此活動已送出報名，可至「我的紀錄」查看狀態。"));host.append(card);continue}
+    if(!["yearEndDinner","fieldTrip"].includes(item.module)){card.append(element("p","活動資訊依校方公告。","hint"));host.append(card);continue}
+    const form=element("form");form.className="inline-activity-form";
+    const studentWrap=element("fieldset");studentWrap.append(element("legend","參加學生"));
+    for(const st of students){const label=element("label");const input=element("input");input.type="checkbox";input.value=st.studentId;label.append(input,document.createTextNode(" "+(st.name||st.studentName||st.studentId)));studentWrap.append(label)}
+    const adults=element("select"),children=element("select");
+    for(let i=1;i<=20;i++)adults.add(new Option(i+" 位大人",i));
+    for(let i=0;i<=20;i++)children.add(new Option(i+" 位其他兒童",i));
+    const adultLabel=element("label","陪同大人數量"),childLabel=element("label","其他兒童數量");adultLabel.append(adults);childLabel.append(children);
+    const total=element("p","","amount-summary");
+    const dinner=item.module==="yearEndDinner";
+    const rates=["firstAdultFee","extraAdultFee","extraChildFee"].every(k=>Number.isSafeInteger(item[k])&&item[k]>=0);
+    const calc=()=>{const n=studentWrap.querySelectorAll("input:checked").length,a=Number(adults.value),c=Number(children.value);const amount=rates?(dinner?0:Number(item.studentFee||0)*n)+item.firstAdultFee+(a-1)*item.extraAdultFee+c*item.extraChildFee:null;total.textContent="團員 "+n+" 位＋大人 "+a+" 位＋其他兒童 "+c+" 位｜"+(amount===null?"費率尚未公布":"合計 NT$ "+amount.toLocaleString("zh-TW"));return amount};
+    for(const input of [adults,children,studentWrap])input.addEventListener("change",calc);
+    form.append(studentWrap,adultLabel,childLabel,total);
+    let lastFive=null,accountReady=!dinner;
+    if(dinner){
+     const bank=element("div","正在讀取幹部收款帳戶…","payment-account");form.append(bank);
+     lastFive=element("input");lastFive.inputMode="numeric";lastFive.maxLength=5;lastFive.pattern="[0-9]{5}";lastFive.required=true;lastFive.placeholder="匯款帳號後五碼";
+     const label=element("label","匯款帳號後五碼");label.append(lastFive);form.append(label);
+     try{const info=await parentApi("uniform-events/dinner-payment-account?activityId="+encodeURIComponent(item.id));const b=info.item;if(!b)throw Error("尚未設定收款帳戶");bank.replaceChildren();bank.append(element("strong","幹部收款帳戶"));bank.append(element("p",b.bankName+"（"+b.bankCode+"）｜戶名："+b.accountHolder));bank.append(element("p","帳號："+b.accountNumber));accountReady=true}
+     catch(e){bank.textContent="目前尚未開放匯款："+e.message}
     }
-    host.append(card);
+    const submit=element("button",dinner?"確認報名並回報匯款":"確認報名");submit.type="submit";submit.disabled=!accountReady;
+    const message=element("p","","hint");message.setAttribute("role","status");form.append(submit,message);
+    form.addEventListener("submit",async e=>{
+     e.preventDefault();const ids=[...studentWrap.querySelectorAll("input:checked")].map(x=>x.value);if(!ids.length){message.textContent="請先選擇參加學生";return}
+     const amount=calc();if(dinner&&(amount===null||!/^[0-9]{5}$/.test(lastFive.value))){message.textContent="請確認費用與匯款帳號後五碼";return}
+     if(!confirm("確認送出報名"+(dinner?"及匯款回報（待幹部核帳）":"")+"？"))return;
+     submit.disabled=true;message.textContent="送出中…";
+     try{await parentApi("uniform-events/family-registration",{method:"POST",body:JSON.stringify({kind:item.module,activityId:item.id,studentIds:ids,adults:Number(adults.value),extraChildren:Number(children.value),...(dinner?{lastFive:lastFive.value}:{})})});message.textContent="已送出，"+(dinner?"匯款待幹部核帳。":"報名成功。");await renderInlineActivities()}
+     catch(err){message.textContent="送出失敗："+err.message;submit.disabled=false}
+    });card.append(form);host.append(card);calc();
    }
   }
- }catch(e){for(const host of Object.values(hosts))setText(host,e.message)}
+ }catch(e){for(const host of Object.values(hosts)){host.replaceChildren();host.append(element("p","資料讀取失敗："+e.message,"hint"))}}
 }
 renderInlineActivities();
