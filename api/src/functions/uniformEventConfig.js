@@ -56,7 +56,7 @@ app.http("uniformEventConfig",{
       if(data.module==="yearEndDinner"&&data.enabled===true){
         const accounts=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantEventPaymentAccounts");
         let bank;
-        try{bank=await accounts.getEntity(schoolId,data.id)}catch(e){if(e.statusCode===404)return json({error:"請先新增並儲存有效的期末聚餐收款帳戶，才能啟用期末聚餐活動。"},400);throw e}
+        try{bank=await accounts.getEntity(schoolId,"yearEndDinner:"+data.id)}catch(e){if(e.statusCode===404)return json({error:"請先新增並儲存有效的期末聚餐收款帳戶，才能啟用期末聚餐活動。"},400);throw e}
         const info=JSON.parse(bank.payload||"{}");
         if(!info.bankName||!info.accountHolder||!/^[0-9]{3}$/.test(info.bankCode||"")||!/^[0-9]{6,30}$/.test(info.accountNumber||""))return json({error:"收款帳戶資料不完整，無法啟用期末聚餐活動。"},400);
       }
