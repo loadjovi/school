@@ -283,7 +283,7 @@ el("config").onsubmit=async e=>{
   if(module==="yearEndDinner"&&item.enabled){
    const currentActivity=el("existingActivity").value;
    if(!currentActivity)throw Error("請先建立期末聚餐活動，再綁定活動專屬收款帳戶。");
-   const bankResponse=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(currentActivity),{credentials:"same-origin",headers:typeof bankAuthHeaders==="function"?bankAuthHeaders():{}});
+   const bankResponse=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(currentActivity),{credentials:"same-origin",cache:"no-store",headers:adminAuthHeaders()});
    const bankData=await bankResponse.json().catch(()=>({}));
    if(!bankResponse.ok)throw Error("無法驗證活動收款帳戶（HTTP "+bankResponse.status+"）："+(bankData.error||"請確認帳戶讀取權限"));
    if(!bankData.item?.accountNumber||!bankData.item?.bankCode||!bankData.item?.accountHolder)throw Error("目前活動「"+(item.title||currentActivity)+"」尚未綁定有效收款帳戶。請確認下方帳戶已按「套用至目前期末聚餐」，並核對活動名稱是否一致。");
