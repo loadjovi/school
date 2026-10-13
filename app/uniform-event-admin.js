@@ -188,9 +188,21 @@ el("inventoryStyle").addEventListener("change",syncSizes);
 syncSizes();
 const activityTypes=new Set(["fieldTrip","yearEndDinner"]);
 const createActivityId=()=> "event_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,8);
+function updateActivityConfigClarity(){
+ const form=el("config"),dinner=el("configModule").value==="yearEndDinner";
+ const group=form.querySelector(".dinner-only");if(group)group.hidden=!dinner;
+ const preview=el("activityFeePreview");if(!preview)return;
+ const fees=["studentFee","firstAdultFee","extraAdultFee","extraChildFee"].map(k=>Number(form.elements[k]?.value));
+ if(fees.some(n=>!Number.isFinite(n)||n<0)){preview.textContent="請輸入有效的非負費率。";return}
+ const [student,first,extra,child]=fees;
+ const amount=student+first+child;
+ preview.textContent="試算範例：1 位團員＋1 位大人＋1 位其他兒童＝NT$ "+amount.toLocaleString("zh-TW")+"（團員 "+student+"＋首位大人 "+first+"＋其他兒童 "+child+"）。第 2 位起每位大人加 NT$ "+extra.toLocaleString("zh-TW")+"。";
+}
+el("config").addEventListener("input",e=>{if(e.target.matches('input[name$="Fee"]'))updateActivityConfigClarity()});
 function syncConfig(){
  const form=el("config"),module=el("configModule").value,activity=activityTypes.has(module);
  form.querySelectorAll("[data-activity-field]").forEach(x=>x.hidden=!activity);
+ updateActivityConfigClarity();
  el("existingActivityWrap").hidden=!activity;el("activityIdHint").hidden=!activity;
  el("configModeHint").textContent=activity?"活動可新增多筆，請選擇建立或編輯既有活動。":"團服模組僅有一組設定；只能啟用或關閉，不能新增活動。";
  const select=el("existingActivity"),old=select.value;
@@ -208,6 +220,7 @@ function populateActivity(){
  form.elements.feeStatus.value=item.feeStatus||"DRAFT";form.elements.paymentOpen.value=String(item.paymentOpen===true);
  for(const k of ["title","location","studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=item[k]??(k.endsWith("Fee")?0:"");
  for(const k of ["openAt","closeAt","startAt","endAt"])form.elements[k].value=item[k]?new Date(item[k]).toISOString().slice(0,16):"";
+ updateActivityConfigClarity();
 }
 el("configModule").addEventListener("change",()=>{el("existingActivity").value="";syncConfig()});
 el("existingActivity").addEventListener("change",()=>{syncConfig();if(!el("existingActivity").value){const form=el("config");for(const k of ["title","location","openAt","closeAt","startAt","endAt"])form.elements[k].value="";for(const k of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=0;}});
