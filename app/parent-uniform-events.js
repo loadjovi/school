@@ -32,12 +32,17 @@ const TSHIRT_SIZES=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"];
 async function loadInlineSizes(){
  const host=document.getElementById("inlineTshirtSizes"),status=document.getElementById("inlineTshirtStatus");
  host.replaceChildren();status.textContent="";
+ const oldSummary=document.getElementById("tshirtRegisteredSummary");if(oldSummary)oldSummary.remove();
  try{
   const res=await fetch("/api/uniform-events/tshirt-historical-size",{credentials:"same-origin",cache:"no-store",headers:parentAuthHeaders()});
   const data=await res.json().catch(()=>({}));
   if(!res.ok)throw Error(data.error||"HTTP "+res.status);
   if(!data.items?.length){host.textContent="目前尚無已領取團 T 的歷史補登資料；未領取學生需由校方確認領用狀態。";return}
+  const summary=document.createElement("div");summary.id="tshirtRegisteredSummary";host.parentElement.insertBefore(summary,host);
   for(const item of data.items){
+   const grade=item.receivedGrade||item.gradeAtReceipt||item.receiptGrade||item.receivedAtGrade||"";
+   const gradeLabel=grade?(String(grade).includes("年級")?String(grade):String(grade)+"年級")+"領取":"領取年級待確認";
+   const line=document.createElement("p");line.textContent=(item.studentName||item.studentId)+"｜團 T："+(item.size||"待補登")+"｜"+(item.received===false?"未領取":"已領取 1 件")+"｜"+(item.received===false?"尚未領取":gradeLabel)+"｜"+(item.size?"尺寸已登錄":"尺寸待補登");summary.append(line);
    const box=document.createElement("div");box.className="size-row";
    const title=document.createElement("strong");title.textContent=(item.studentName||item.studentId)+"｜"+(item.received===false?"未領取":"已領取 1 件");
    const label=document.createElement("label");label.textContent="團 T 尺寸";
@@ -56,7 +61,14 @@ async function loadInlineSizes(){
      state.textContent="尺寸已儲存";await loadInlineSizes();
     }catch(e){state.textContent="儲存失敗："+e.message}finally{save.disabled=false}
    });
-   label.append(sel);box.append(title,label,save,state);host.append(box);
+   label.append(sel);
+   const editor=document.createElement("div");editor.append(label,save,state);
+   if(item.size){
+    editor.hidden=true;
+    const edit=document.createElement("button");edit.type="button";edit.textContent="修改尺寸";edit.addEventListener("click",()=>{editor.hidden=false;edit.hidden=true;sel.focus()});
+    box.append(edit,editor);
+   }else box.append(editor);
+   host.append(box);
   }
   renderTshirtPurchase(data.items);
  }catch(e){host.textContent="無法讀取尺寸補登資料";status.textContent=e.message}
