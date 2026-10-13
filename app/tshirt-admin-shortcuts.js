@@ -1,6 +1,6 @@
 // 團 T 後台：功能圖示切換及學生主檔核對（只讀，不寫入歷史領用）。
 const byId=id=>document.getElementById(id);
-let selected="students",students=[],rosterLoaded=false;
+let selected="students",students=[],rosterLoaded=false,historicalSizes=new Map(),historyLoadError="";
 const views=new Set(["students","requests","procurement","inventory","parents","reports"]);
 function regularActive(){return document.querySelector('[data-admin-tab="regularUniform"]')?.getAttribute("aria-selected")==="true"}
 function applyView(){
@@ -11,7 +11,7 @@ function applyView(){
  if(req?.dataset.adminView==="regularUniform")req.hidden=selected!=="requests";
  if(stock?.dataset.adminView==="regularUniform")stock.hidden=selected!=="inventory";
  if(selected==="procurement")renderProcurement();
- if(selected==="students"&&!rosterLoaded)loadRoster();
+ if(selected==="students")loadRoster();
 }
 function normalizedGroup(value){
  const x=String(value||"").trim().toUpperCase().replace(/\\s/g,"");
@@ -41,20 +41,33 @@ function renderRoster(){
   const tr=document.createElement("tr");
   const grade=currentGrade(s);
   const issuedGrade=unissued?"尚未領取":grade===null?"年級待確認":grade>1?(grade-1)+" 年級":"年級待確認";
-  for(const value of [name,group==="C"?"儲備團":group+" 團",unissued?"尚未領取（免費資格保留）":"已領取",issuedGrade,unissued?"待申請填寫":"未知／待補登",unissued?"首次免費申請":"歷史尺寸補登"]){
+  const studentId=String(s.studentId||s.id||"");
+  const history=historicalSizes.get(studentId);
+  const size=history&&history.historicalIssued===true&&history.size?String(history.size):"";
+  for(const value of [name,group==="C"?"儲備團":group+" 團",unissued?"尚未領取（免費資格保留）":"已領取",issuedGrade,unissued?"待申請填寫":size||"未知／待補登",unissued?"首次免費申請":size?"尺寸已登錄":"歷史尺寸補登"]){
    const td=document.createElement("td");td.textContent=value;tr.appendChild(td);
   }
   tbody.appendChild(tr);
  }
  table.appendChild(tbody);body.replaceChildren(table);
- byId("tshirtRosterStatus").textContent="學生主檔共 "+students.length+" 位符合 A、B、儲備團；目前顯示 "+data.length+" 位。此為依確認規則推導的核對狀態，不代表資料庫已有歷史領用紀錄。";
+ byId("tshirtRosterStatus").textContent="學生主檔共 "+students.length+" 位符合 A、B、儲備團；目前顯示 "+data.length+" 位。尺寸依家長已儲存的歷史尺寸紀錄顯示；未補登者仍標示待補登。"+(historyLoadError?" 歷史尺寸讀取失敗："+historyLoadError:"");
 }
 async function loadRoster(){
  rosterLoaded=true;
  try{
   const headers=typeof window.uniformEventAuthHeaders==="function"?window.uniformEventAuthHeaders():{};
-  const r=await fetch("/api/students",{credentials:"same-origin",cache:"no-store",headers});
+  const [rosterResult,historyResult]=await Promise.allSettled([
+   fetch("/api/students",{credentials:"same-origin",cache:"no-store",headers}),
+   fetch("/api/uniform-events/tshirt-historical-size",{credentials:"same-origin",cache:"no-store",headers})
+  ]);
+  if(rosterResult.status!=="fulfilled")throw rosterResult.reason;
+  const r=rosterResult.value;
   if(!r.ok)throw Error("學生主檔讀取失敗（HTTP "+r.status+"）");
+  historicalSizes=new Map();historyLoadError="";
+  if(historyResult.status==="fulfilled"&&historyResult.value.ok){
+   const history=await historyResult.value.json();
+   for(const item of history.items||[])if(item.studentId)historicalSizes.set(String(item.studentId),item);
+  }else historyLoadError=historyResult.status==="rejected"?String(historyResult.reason):"HTTP "+historyResult.value.status;
   const data=await r.json(),list=Array.isArray(data)?data:(data.items||[]);
   students=list.filter(s=>normalizedGroup(s.groupName||s.group));
   if(!students.length){byId("tshirtRosterStatus").textContent="學生主檔沒有可辨識的 A、B、儲備團資料，請核對團別欄位。";return}
