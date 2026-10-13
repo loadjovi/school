@@ -20,16 +20,28 @@ function normalizedGroup(value){
  if(["C","C團","儲備","儲備團"].includes(x))return "C";
  return "";
 }
+function currentGrade(student){
+ const raw=[student.grade,student.gradeName,student.className,student.class,student.classroom,student.gradeClass].filter(v=>v!==undefined&&v!==null).map(String);
+ for(const value of raw){
+  const match=value.match(/(?:^|[^0-9])([1-6])(?:年級|年|[A-Za-z班]|$)/);
+  if(match)return Number(match[1]);
+  const chinese=value.match(/([一二三四五六])年級/);
+  if(chinese)return "一二三四五六".indexOf(chinese[1])+1;
+ }
+ return null;
+}
 function renderRoster(){
  const filter=byId("tshirtGroupFilter").value,body=byId("tshirtRosterTable");
  const data=students.filter(s=>filter==="ALL"||normalizedGroup(s.groupName||s.group)===filter);
  const table=document.createElement("table"),head=document.createElement("thead");
- head.innerHTML="<tr><th>學生</th><th>團別</th><th>首次團 T</th><th>尺寸</th><th>家長操作</th></tr>";table.appendChild(head);
+ head.innerHTML="<tr><th>學生</th><th>團別</th><th>首次團 T</th><th>領取年級</th><th>尺寸</th><th>家長操作</th></tr>";table.appendChild(head);
  const tbody=document.createElement("tbody");
  for(const s of data){
   const name=String(s.name||s.studentName||""),group=normalizedGroup(s.groupName||s.group),unissued=group==="C"||name==="李沛臻";
   const tr=document.createElement("tr");
-  for(const value of [name,group==="C"?"儲備團":group+" 團",unissued?"尚未領取（免費資格保留）":"已領取（歷史待入庫）",unissued?"待申請填寫":"未知／待補登",unissued?"首次免費申請":"歷史尺寸補登"]){
+  const grade=currentGrade(s);
+  const issuedGrade=unissued?"尚未領取":grade===null?"年級待確認":grade>1?(grade-1)+" 年級":"年級待確認";
+  for(const value of [name,group==="C"?"儲備團":group+" 團",unissued?"尚未領取（免費資格保留）":"已領取",issuedGrade,unissued?"待申請填寫":"未知／待補登",unissued?"首次免費申請":"歷史尺寸補登"]){
    const td=document.createElement("td");td.textContent=value;tr.appendChild(td);
   }
   tbody.appendChild(tr);
