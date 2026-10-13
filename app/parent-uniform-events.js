@@ -159,6 +159,18 @@ async function renderInlineActivities(){
    const states={NOT_OPEN:"尚未開放付款",REPORTED_UNVERIFIED:"已回報匯款，待幹部核帳",VERIFIED:"已確認入帳"};
    card.append(element("p","報名："+(item.registrationStatus==="REGISTERED"?"已送出":item.registrationStatus)+"｜付款："+(states[item.paymentStatus]||item.paymentStatus)));
    if(item.estimatedAmount!=null)card.append(element("p","登記金額 NT$ "+Number(item.estimatedAmount).toLocaleString("zh-TW")));
+   if(item.kind==="fieldTrip"&&match?.collectionOpen===true&&item.paymentStatus!=="VERIFIED"){
+    const box=element("div",undefined,"payment-account");box.append(element("p","第二階段收款已開放，請核對帳戶及應繳金額後匯款。"));
+    const form=element("form"),amount=element("input"),last=element("input"),date=element("input"),message=element("p","","hint");
+    amount.type="number";amount.min="1";amount.required=true;amount.value=String(item.transferReport?.amount||item.estimatedAmount||"");
+    last.inputMode="numeric";last.pattern="[0-9]{5}";last.maxLength=5;last.required=true;last.placeholder="匯款帳號末五碼";
+    date.type="date";date.required=true;
+    for(const [label,input] of [["實際匯款金額",amount],["匯款帳號末五碼",last],["匯款日期",date]]){const l=element("label",label);l.append(input);form.append(l)}
+    const submit=element("button","回報匯款（待幹部核帳）");submit.type="submit";form.append(submit,message);box.append(form);card.append(box);
+    try{const result=await parentApi("uniform-events/field-trip-payment-account?activityId="+encodeURIComponent(item.activityId));const b=result.item;if(!b)throw Error("活動尚未綁定帳戶");box.prepend(element("p","收款帳戶："+b.bankName+"（"+b.bankCode+"）｜"+b.accountHolder+"｜帳號："+b.accountNumber))}
+    catch(e){submit.disabled=true;message.textContent="收款帳戶讀取失敗："+e.message}
+    form.addEventListener("submit",async e=>{e.preventDefault();if(!confirm("已確認匯款完成，送出末五碼供幹部核帳？"))return;submit.disabled=true;try{await parentApi("uniform-events/family-registration",{method:"PATCH",body:JSON.stringify({kind:item.kind,activityId:item.activityId,action:"REPORT_TRANSFER",amount:Number(amount.value),lastFive:last.value,transferDate:date.value})});message.textContent="已回報匯款，等待幹部核帳。";await renderInlineActivities()}catch(err){message.textContent="回報失敗："+err.message;submit.disabled=false}});
+   }
    history.append(card);
   }
   const categories={events:["yearEndDinner"],performance:["fieldTrip","performance","flashMob","schoolExchange","jointConcert"]};
