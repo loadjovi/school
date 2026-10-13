@@ -203,6 +203,7 @@ el("config").addEventListener("input",e=>{if(e.target.matches('input[name$="Fee"
 function syncConfig(){
  const form=el("config"),module=el("configModule").value,activity=activityTypes.has(module);
  form.querySelectorAll("[data-activity-field]").forEach(x=>x.hidden=!activity);
+ const stagePanel=el("fieldTripCollectionPanel");if(stagePanel)stagePanel.hidden=module!=="fieldTrip";
  updateActivityConfigClarity();
  el("existingActivityWrap").hidden=!activity;el("activityIdHint").hidden=!activity;
  el("configModeHint").textContent=activity?"活動可新增多筆，請選擇建立或編輯既有活動。":"團服模組僅有一組設定；只能啟用或關閉，不能新增活動。";
@@ -219,6 +220,7 @@ function populateActivity(){
  if(!item)return;
  form.elements.id.value=item.id;form.elements.enabled.value=String(item.enabled===true);
  form.elements.paymentMode.value=item.module==="yearEndDinner"?"PAY_NOW":"PAY_LATER";
+ if(form.elements.collectionOpen)form.elements.collectionOpen.value=String(item.collectionOpen===true);
  form.elements.feeStatus.value=item.feeStatus||"DRAFT";form.elements.paymentOpen.value=String(item.paymentOpen===true);
  for(const k of ["title","location","studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=item[k]??(k.endsWith("Fee")?0:"");
  for(const k of ["openAt","closeAt","startAt","endAt"])form.elements[k].value=item[k]?localDateTimeValue(item[k]):"";
@@ -277,6 +279,7 @@ el("config").onsubmit=async e=>{
    if(f.get("endAt"))item.endAt=new Date(f.get("endAt")).toISOString();
    if(item.endAt&&item.startAt&&Date.parse(item.endAt)<Date.parse(item.startAt))throw Error("活動結束時間不可早於開始時間");
    item.paymentMode=module==="yearEndDinner"?"PAY_NOW":"PAY_LATER";
+   if(module==="fieldTrip"){item.collectionOpen=false;if(f.get("collectionOpen")==="true")throw Error("第二階段收款尚需完成活動專屬帳戶及家長匯款回報串接，目前不可開放正式收費。");}
    if(module==="yearEndDinner"){item.feeStatus=item.enabled?"PUBLISHED":"DRAFT";item.paymentOpen=item.enabled&&f.get("paymentOpen")==="true";}
    for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0);
   }
