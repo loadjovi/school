@@ -102,7 +102,7 @@ async function renderInlineActivities(){
   const [me,config,registration]=await Promise.all([parentApi("me"),parentApi("uniform-events/config"),parentApi("uniform-events/family-registration")]);
   if(me.role!=="parent")throw Error("請切換至家長身分後重新載入");
   const students=(me.students||[]).filter(x=>x.studentId);
-  const cfg=(config.items||[]).filter(x=>x.enabled===true);
+  const cfg=(config.items||[]).filter(x=>x.enabled===true && (x.module!=="yearEndDinner" || x.feeStatus==="PUBLISHED"));
   const history=hosts.history;history.replaceChildren();
   if(!(registration.items||[]).length)history.append(element("p","目前沒有活動報名或付款紀錄。","muted"));
   for(const item of registration.items||[]){
