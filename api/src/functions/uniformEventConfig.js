@@ -52,6 +52,14 @@ app.http("uniformEventConfig",{
       const data=await request.json();
       if(!safeId(data.id))return json({error:"Invalid id"},400);
       validate(data);
+      // Never publish or enable dinner collection without a saved, valid bank account.
+      if(data.module==="yearEndDinner"&&data.enabled===true&&data.paymentOpen===true){
+        const accounts=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantEventPaymentAccounts");
+        let bank;
+        try{bank=await accounts.getEntity(schoolId,data.id)}catch(e){if(e.statusCode===404)return json({error:"請先新增並儲存有效的期末聚餐收款帳戶，再開放匯款。"},400);throw e}
+        const info=JSON.parse(bank.payload||"{}");
+        if(!info.bankName||!info.accountHolder||!/^[0-9]{3}$/.test(info.bankCode||"")||!/^[0-9]{6,30}$/.test(info.accountNumber||""))return json({error:"收款帳戶資料不完整，無法開放匯款。"},400);
+      }
       const record={
         partitionKey:schoolId,rowKey:rowKey(data.module,data.id),
         payload:JSON.stringify({...data,enabled:data.enabled===true}),
