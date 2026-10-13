@@ -212,6 +212,7 @@ function syncConfig(){
  if(activity&&select.value)populateActivity();
  if(!activity){const item=savedConfigs.find(x=>x.module===module&&x.id==="default");form.elements.enabled.value=String(item?.enabled===true)}
 }
+function localDateTimeValue(value){const d=new Date(value);if(!Number.isFinite(d.getTime()))return "";const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;}
 function populateActivity(){
  const form=el("config"),item=savedConfigs.find(x=>x.module===el("configModule").value&&x.id===el("existingActivity").value);
  if(!item)return;
@@ -219,7 +220,7 @@ function populateActivity(){
  form.elements.paymentMode.value=item.paymentMode||(item.module==="yearEndDinner"?"PAY_NOW":"FLEXIBLE");
  form.elements.feeStatus.value=item.feeStatus||"DRAFT";form.elements.paymentOpen.value=String(item.paymentOpen===true);
  for(const k of ["title","location","studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=item[k]??(k.endsWith("Fee")?0:"");
- for(const k of ["openAt","closeAt","startAt","endAt"])form.elements[k].value=item[k]?new Date(item[k]).toISOString().slice(0,16):"";
+ for(const k of ["openAt","closeAt","startAt","endAt"])form.elements[k].value=item[k]?localDateTimeValue(item[k]):"";
  updateActivityConfigClarity();
 }
 el("configModule").addEventListener("change",()=>{el("existingActivity").value="";syncConfig()});
