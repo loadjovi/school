@@ -161,7 +161,7 @@ async function renderInlineActivities(){
    if(item.estimatedAmount!=null)card.append(element("p","登記金額 NT$ "+Number(item.estimatedAmount).toLocaleString("zh-TW")));
    history.append(card);
   }
-  const categories={events:["yearEndDinner","fieldTrip"],performance:["performance","flashMob","schoolExchange","jointConcert"]};
+  const categories={events:["yearEndDinner"],performance:["fieldTrip","performance","flashMob","schoolExchange","jointConcert"]};
   for(const [category,host] of Object.entries(hosts)){
    if(category==="history")continue;host.replaceChildren();
    const items=cfg.filter(x=>categories[category].includes(x.module));
