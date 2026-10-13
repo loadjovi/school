@@ -21,7 +21,7 @@ async function eligibleUniforms(){
   regular.hidden=!active("regularUniform");
   if(!regular.hidden)loadInlineSizes();
   competition.hidden=!(active("competitionUniform")&&aStudents.length);
-  if(aStudents.length){const info=document.getElementById("competitionStudentInfo");info.replaceChildren();for(const st of aStudents){const p=document.createElement("p");p.textContent=(st.name||st.studentName||"A 團學生")+"（"+st.studentId+"）｜團別：A 團｜比賽服尺寸：待校方資料核對｜公費配發：待確認";info.append(p)}}
+  if(aStudents.length){const info=document.getElementById("competitionStudentInfo");info.replaceChildren();for(const st of aStudents){const p=document.createElement("p");p.textContent=(st.name||st.studentName||"A 團學生")+"（"+st.studentId+"）｜A 團｜正式領用紀錄待核對";info.append(p)}if(!competition.hidden)renderCompetitionPurchase(aStudents)}
   status.textContent=students.length?"已確認 "+students.length+" 位已綁定學生；團服依校方啟用狀態及學生團別顯示。":"目前無已綁定學生，團服申請功能不顯示。";
   if(!students.length){regular.hidden=true;competition.hidden=true}
  }catch(e){console.warn("家長團服資格查詢失敗",e);status.textContent="資格查詢失敗（"+e.message+"）。請確認預覽環境登入及 API 設定；暫不開放申請。"}
@@ -59,4 +59,32 @@ async function loadInlineSizes(){
    label.append(sel);box.append(title,label,save,state);host.append(box);
   }
  }catch(e){host.textContent="無法讀取尺寸補登資料";status.textContent=e.message}
+}
+
+function renderCompetitionPurchase(students){
+ const host=document.getElementById("competitionPurchaseArea");host.replaceChildren();
+ const heading=document.createElement("h3");heading.textContent="自費加購比賽服";host.append(heading);
+ const note=document.createElement("p");note.className="hint";note.textContent="孩子成長需要更換尺寸時可提出加購需求。參考價格 NT$2,625（含稅），送出僅為待審申請，不代表付款或已扣庫存。";host.append(note);
+ const form=document.createElement("form");
+ const studentLabel=document.createElement("label");studentLabel.textContent="學生";
+ const studentSelect=document.createElement("select");studentSelect.required=true;for(const st of students)studentSelect.add(new Option((st.studentName||st.name||"學生")+"（"+st.studentId+"）",st.studentId));studentLabel.append(studentSelect);
+ const styleLabel=document.createElement("label");styleLabel.textContent="款式";
+ const styleSelect=document.createElement("select");for(const style of ["女","男"])styleSelect.add(new Option(style+"款",style));styleLabel.append(styleSelect);
+ const sizeLabel=document.createElement("label");sizeLabel.textContent="新尺寸";
+ const sizeSelect=document.createElement("select");sizeSelect.required=true;sizeLabel.append(sizeSelect);
+ const sync=()=>{const sizes=styleSelect.value==="女"?["XS","S","M","L"]:["S","M","L","2L"];sizeSelect.replaceChildren(new Option("請選擇尺寸",""),...sizes.map(x=>new Option(x,x)))};styleSelect.addEventListener("change",sync);sync();
+ const button=document.createElement("button");button.type="submit";button.textContent="送出自費加購申請";
+ const message=document.createElement("p");message.className="hint";message.setAttribute("role","status");
+ form.append(studentLabel,styleLabel,sizeLabel,button,message);host.append(form);
+ form.addEventListener("submit",async e=>{
+  e.preventDefault();if(!sizeSelect.value)return;
+  if(!confirm("確認提出自費加購需求？此為待審申請，尚未付款或領用。"))return;
+  button.disabled=true;message.textContent="送出中…";
+  try{
+   const response=await fetch("/api/uniform-events/requests",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...parentAuthHeaders()},body:JSON.stringify({kind:"competitionUniform",studentId:studentSelect.value,style:styleSelect.value,size:sizeSelect.value,acquisition:"PURCHASE",note:"家長因成長需求提出自費加購，待校方確認金額與採購"})});
+   const data=await response.json().catch(()=>({}));
+   if(!response.ok)throw Error(data.error||"HTTP "+response.status);
+   message.textContent="申請已送出，狀態：待學校審核。尚未付款或發放。";button.textContent="已送出";
+  }catch(error){message.textContent="申請未完成："+error.message;button.disabled=false}
+ });
 }
