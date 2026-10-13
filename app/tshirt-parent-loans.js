@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-let links=[],records=[];
+let links=[],records=[],names=new Map();
 const headers=()=>({"Content-Type":"application/json",...(window.uniformEventAuthHeaders?.()||{})});
 async function call(path,options={}){
  const r=await fetch("/api/"+path,{credentials:"same-origin",cache:"no-store",...options,headers:{...headers(),...(options.headers||{})}});
@@ -12,13 +12,13 @@ function draw(){
  const student=$("tshirtParentStudent"),before=student.value,unique=new Map();
  for(const l of links){const key=String(l.studentId||"").trim();if(key&&!unique.has(key))unique.set(key,l)}
  student.replaceChildren(new Option("請選擇學生",""));
- for(const [id,l] of [...unique].sort((a,b)=>a[0].localeCompare(b[0])))student.add(new Option((l.studentName||"學生")+"（"+id+"）",id));
+ for(const [id,l] of [...unique].sort((a,b)=>a[0].localeCompare(b[0])))student.add(new Option((names.get(id)||l.studentName||"姓名待補登")+"（"+id+"）",id));
  if([...student.options].some(o=>o.value===before))student.value=before;
  drawParents();
  const container=$("tshirtParentRecords"),table=document.createElement("table"),head=document.createElement("tr");
  for(const title of ["家長","關聯學生","角色","尺寸","狀態","領取時間","歸還時間"]){const th=document.createElement("th");th.textContent=title;head.append(th)}
  table.append(head);
- for(const x of records){const tr=document.createElement("tr");for(const v of [x.parentName+"（"+x.parentEmail+"）",x.studentId,x.role==="CADRE"?"幹部":"志工",x.size,({ISSUED_LIFETIME:"終身已領取",BORROWED:"借用中",WASHING:"送洗中",RETURNED:"已洗淨歸還"})[x.status]||x.status,x.issuedAt||"",x.returnedAt||""])cell(tr,v);table.append(tr)}
+ for(const x of records){const tr=document.createElement("tr");for(const v of [x.parentName+"（"+x.parentEmail+"）",(names.get(x.studentId)||"姓名待補登")+"（"+x.studentId+"）",x.role==="CADRE"?"幹部":"志工",x.size,({ISSUED_LIFETIME:"終身已領取",BORROWED:"借用中",WASHING:"送洗中",RETURNED:"已洗淨歸還"})[x.status]||x.status,x.issuedAt||"",x.returnedAt||""])cell(tr,v);table.append(tr)}
  container.replaceChildren(table);
  $("tshirtParentListStatus").textContent="共 "+records.length+" 位家長有紀錄；同一家長只會有一筆目前狀態。";
 }
@@ -37,8 +37,8 @@ function drawParents(){
 async function reload(){
  $("tshirtParentListStatus").textContent="正在查詢家長綁定與領用紀錄…";
  try{
-  const [a,b]=await Promise.all([call("student-parent-links"),call("uniform-events/parent-loans")]);
-  links=a.items||[];records=b.items||[];draw();
+  const [a,b,students]=await Promise.all([call("student-parent-links"),call("uniform-events/parent-loans"),call("students")]);
+  links=a.items||[];records=b.items||[];const roster=Array.isArray(students)?students:(students.items||[]);names=new Map(roster.map(x=>[String(x.studentId||""),String(x.studentName||x.name||"").trim()]));draw();
  }catch(e){$("tshirtParentListStatus").textContent="無法載入："+e.message}
 }
 $("tshirtParentStudent")?.addEventListener("change",drawParents);
