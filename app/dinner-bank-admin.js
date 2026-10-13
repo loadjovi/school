@@ -101,12 +101,22 @@ function installQuickBankBinding(){
  const button=document.createElement("button");button.type="button";button.textContent="套用至目前期末聚餐";button.style.marginTop="6px";
  const status=document.createElement("p");status.setAttribute("role","status");
  label.appendChild(select);wrap.append(label,button,status);manage.insertAdjacentElement("afterend",wrap);
+ let boundAccountNumber="";
+ async function updateBound(){
+  const id=activityEl.value;
+  if(!id){boundAccountNumber="";fill();return}
+  try{const res=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(id),{credentials:"same-origin",headers:bankAuthHeaders()});const data=await res.json();if(id!==activityEl.value)return;boundAccountNumber=res.ok?String(data.item?.accountNumber||""):"";fill();}catch(e){status.textContent="讀取目前活動帳戶失敗："+e.message}
+ }
  function fill(){
+  const previous=select.value;
   select.replaceChildren(new Option("請選擇已啟用的帳戶範本",""));
   for(const t of templates.filter(t=>t.active))select.add(new Option(t.label+"｜"+t.bankName+"（"+t.bankCode+"）末四碼 "+String(t.accountNumber).slice(-4),t.id));
+  const matched=templates.find(t=>t.active&&String(t.accountNumber)===boundAccountNumber);
+  if(templates.some(t=>t.active&&t.id===previous))select.value=previous;
+  else if(matched)select.value=matched.id;
   const dinner=moduleEl.value==="yearEndDinner";wrap.hidden=!dinner;
   button.disabled=!dinner||!activityEl.value;
-  status.textContent=!activityEl.value?"請先儲存並選取期末聚餐活動。":"選擇帳戶後按套用，才會建立活動收款關聯。";
+  status.textContent=!activityEl.value?"請先儲存並選取期末聚餐活動。":matched?"此活動已綁定帳戶："+matched.label+"；重新儲存設定不會取消綁定。":"選擇帳戶後按套用，才會建立活動收款關聯。";
  }
  button.addEventListener("click",async()=>{
   const id=activityEl.value,t=templates.find(x=>x.id===select.value&&x.active);
@@ -120,14 +130,16 @@ function installQuickBankBinding(){
    const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"HTTP "+response.status);
    const verify=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(id),{credentials:"same-origin",headers:bankAuthHeaders()});
    const verified=await verify.json().catch(()=>({}));if(!verify.ok||!verified.item||String(verified.item.accountNumber)!==String(t.accountNumber))throw Error(verified.error||"儲存後讀回帳號未通過驗證");
+   boundAccountNumber=String(t.accountNumber);
    status.textContent="已成功綁定此活動的收款帳戶；可再儲存活動設定。";
    await refresh();
   }catch(e){status.textContent="帳戶綁定失敗："+e.message}
   finally{button.disabled=false}
  });
  moduleEl.addEventListener("change",()=>queueMicrotask(fill));
- activityEl.addEventListener("change",()=>queueMicrotask(fill));
+ activityEl.addEventListener("change",()=>queueMicrotask(updateBound));
  window.addEventListener("uniformBankTemplatesLoaded",fill);
  fill();
+ updateBound();
 }
 installQuickBankBinding();
