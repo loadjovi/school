@@ -11,7 +11,6 @@ async function store(){
 }
 const fail=(error,status=400)=>json({error},status);
 function paymentAccountHandler(module){return async request=>{
- methods:["GET","POST"],authLevel:"anonymous",route:"uniform-events/dinner-payment-account",
 
   const ctx=await getTenantContext(request);if(ctx.error)return ctx.error;
   const {access,schoolId}=ctx;
