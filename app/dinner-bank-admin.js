@@ -18,7 +18,7 @@ async function refresh(){
  if(!dinner)return;
  const id=activityEl.value;current=id;
  form.querySelector("button").disabled=!id;
- if(!id){message.textContent="請先按上方「儲存設定」建立活動；儲存成功後會自動選取活動，再設定收款帳戶。";for(const f of fields)form.elements[f].value="";return}
+ if(!id){document.getElementById("bankCurrentSummary").textContent="請先儲存並選擇既有期末聚餐活動。";message.textContent="請先按上方「儲存設定」建立活動；儲存成功後會自動選取活動，再設定收款帳戶。";for(const f of fields)form.elements[f].value="";return}
  message.textContent="目前活動："+activityEl.selectedOptions[0]?.textContent+"；讀取收款帳戶中…";
  try{
   const res=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(id),{credentials:"same-origin",headers:bankAuthHeaders()});
@@ -26,6 +26,7 @@ async function refresh(){
   if(current!==id)return;
   for(const f of fields)form.elements[f].value=data.item?.[f]||"";
   message.textContent=data.item?"已載入收款帳戶（僅管理員可查看）。":"尚未設定收款帳戶。";
+  document.getElementById("bankCurrentSummary").textContent=data.item?"目前帳戶："+data.item.bankName+"（"+data.item.bankCode+"）｜"+data.item.accountHolder+"｜帳號末四碼 "+String(data.item.accountNumber||"").slice(-4):"尚未設定收款帳戶，請按「＋ 新增帳戶」。";
  }catch(e){message.textContent="讀取失敗："+e.message}
 }
 moduleEl.addEventListener("change",()=>queueMicrotask(refresh));
@@ -80,3 +81,10 @@ templateForm.addEventListener("submit",async e=>{
  }catch(err){message.textContent="範本儲存失敗："+err.message}
 });
 loadTemplates();
+
+const bankEditor=document.getElementById("dinnerBankForm");
+function showBankEditor(clear){if(!activityEl.value){message.textContent="請先儲存並選擇既有期末聚餐活動。";return}bankEditor.hidden=false;if(clear)for(const f of fields)bankEditor.elements[f].value="";bankEditor.scrollIntoView({behavior:"smooth",block:"center"});}
+document.getElementById("manageDinnerBank").addEventListener("click",()=>{if(moduleEl.value!=="yearEndDinner")return;panel.scrollIntoView({behavior:"smooth",block:"start"});});
+document.getElementById("bankAddNew").addEventListener("click",()=>showBankEditor(true));
+document.getElementById("bankEditCurrent").addEventListener("click",()=>showBankEditor(false));
+document.getElementById("bankTemplateToggle").addEventListener("click",()=>{templateForm.hidden=!templateForm.hidden;if(!templateForm.hidden)templateForm.scrollIntoView({behavior:"smooth",block:"center"});});
