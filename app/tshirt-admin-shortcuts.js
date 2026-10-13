@@ -4,7 +4,7 @@ let selected="students",students=[],rosterLoaded=false;
 const views=new Set(["students","requests","procurement","inventory","parents","reports"]);
 function regularActive(){return document.querySelector('[data-admin-tab="regularUniform"]')?.getAttribute("aria-selected")==="true"}
 function applyView(){
- if(!regularActive())return;
+ if(!regularActive()||byId("tshirtShortcutPanel")?.hidden)return;
  for(const button of document.querySelectorAll("[data-tshirt-view]"))button.setAttribute("aria-pressed",String(button.dataset.tshirtView===selected));
  for(const panel of document.querySelectorAll('[data-admin-view="regularUniform"][data-tshirt-panel]'))panel.hidden=panel.dataset.tshirtPanel!==selected;
  const req=byId("uniformRequestsPanel"),stock=byId("uniformInventoryPanel");
