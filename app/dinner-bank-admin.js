@@ -54,6 +54,7 @@ async function loadTemplates(){
   const response=await fetch("/api/uniform-events/payment-account-templates",{credentials:"same-origin",headers:bankAuthHeaders()});
   const data=await response.json();if(!response.ok)throw Error(data.error||"HTTP "+response.status);
   templates=data.items||[];
+  window.dispatchEvent(new Event("uniformBankTemplatesLoaded"));
   const old=templateSelect.value;
   templateSelect.replaceChildren(new Option("手動輸入／建立新範本",""));
   for(const t of templates)templateSelect.add(new Option(t.label+(t.active?"":"（已停用）")+"｜"+t.bankName+" ****"+t.accountNumber.slice(-4),t.id));
@@ -90,3 +91,43 @@ document.getElementById("manageDinnerBank").addEventListener("click",()=>{if(mod
 document.getElementById("bankAddNew").addEventListener("click",()=>showBankEditor(true));
 document.getElementById("bankEditCurrent").addEventListener("click",()=>showBankEditor(false));
 document.getElementById("bankTemplateToggle").addEventListener("click",()=>{templateForm.hidden=!templateForm.hidden;if(!templateForm.hidden){form.hidden=false;templateForm.scrollIntoView({behavior:"smooth",block:"center"});}});
+
+function installQuickBankBinding(){
+ const manage=document.getElementById("manageDinnerBank");
+ if(!manage||document.getElementById("quickBankBinding"))return;
+ const wrap=document.createElement("div");wrap.id="quickBankBinding";wrap.style.cssText="margin:12px 0;padding:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff";
+ const label=document.createElement("label");label.textContent="選擇已建立的收款帳戶（綁定本活動）";label.style.display="block";
+ const select=document.createElement("select");select.style.cssText="display:block;width:100%;margin:8px 0";
+ const button=document.createElement("button");button.type="button";button.textContent="套用至目前期末聚餐";button.style.marginTop="6px";
+ const status=document.createElement("p");status.setAttribute("role","status");
+ label.appendChild(select);wrap.append(label,button,status);manage.insertAdjacentElement("afterend",wrap);
+ function fill(){
+  select.replaceChildren(new Option("請選擇已啟用的帳戶範本",""));
+  for(const t of templates.filter(t=>t.active))select.add(new Option(t.label+"｜"+t.bankName+"（"+t.bankCode+"）末四碼 "+String(t.accountNumber).slice(-4),t.id));
+  const dinner=moduleEl.value==="yearEndDinner";wrap.hidden=!dinner;
+  button.disabled=!dinner||!activityEl.value;
+  status.textContent=!activityEl.value?"請先儲存並選取期末聚餐活動。":"選擇帳戶後按套用，才會建立活動收款關聯。";
+ }
+ button.addEventListener("click",async()=>{
+  const id=activityEl.value,t=templates.find(x=>x.id===select.value&&x.active);
+  if(!id||moduleEl.value!=="yearEndDinner"){status.textContent="請先儲存並選擇期末聚餐活動。";return}
+  if(!t){status.textContent="請選擇已啟用的帳戶。";return}
+  if(!confirm("將「"+t.label+"」綁定至目前期末聚餐？此操作不會自動對家長公布。"))return;
+  button.disabled=true;status.textContent="正在儲存並驗證…";
+  try{
+   const payload={activityId:id};for(const f of fields)payload[f]=t[f];
+   const response=await fetch("/api/uniform-events/dinner-payment-account",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...bankAuthHeaders()},body:JSON.stringify(payload)});
+   const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"HTTP "+response.status);
+   const verify=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(id),{credentials:"same-origin",headers:bankAuthHeaders()});
+   const verified=await verify.json().catch(()=>({}));if(!verify.ok||!verified.item||String(verified.item.accountNumber)!==String(t.accountNumber))throw Error(verified.error||"儲存後讀回帳號未通過驗證");
+   status.textContent="已成功綁定此活動的收款帳戶；可再儲存活動設定。";
+   await refresh();
+  }catch(e){status.textContent="帳戶綁定失敗："+e.message}
+  finally{button.disabled=false}
+ });
+ moduleEl.addEventListener("change",()=>queueMicrotask(fill));
+ activityEl.addEventListener("change",()=>queueMicrotask(fill));
+ window.addEventListener("uniformBankTemplatesLoaded",fill);
+ fill();
+}
+installQuickBankBinding();
