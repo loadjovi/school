@@ -278,6 +278,7 @@ el("config").onsubmit=async e=>{
    if(module==="yearEndDinner"){item.feeStatus=item.enabled?"PUBLISHED":"DRAFT";item.paymentOpen=item.enabled&&f.get("paymentOpen")==="true";}
    for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0);
   }
+  if(module==="yearEndDinner"&&item.enabled&& !el("existingActivity").value)throw Error("這是新建期末聚餐，尚未建立活動專屬收款帳戶。請先將「啟用」改為「關閉」並儲存活動，再點「管理收款帳戶」選擇範本、儲存活動收款帳戶，最後返回開啟活動。");
   if(!confirm("確定儲存設定？")){feedback.textContent="已取消儲存";return}
   await api("uniform-events/config",{method:"POST",body:JSON.stringify(item)});
   feedback.textContent="資料已送出，正在讀回驗證…";
@@ -287,7 +288,7 @@ el("config").onsubmit=async e=>{
   if(!persisted)throw Error("API 已回覆，但重新查詢未找到活動，請勿視為儲存成功");
   feedback.textContent="設定已儲存並確認成功："+(persisted.title||module)+"。此設定僅供後台管理使用，是否開放家長報名依活動啟用狀態與報名期間判定。";
   el("status").textContent=feedback.textContent;
- }catch(err){feedback.textContent="儲存失敗："+err.message;el("status").textContent=feedback.textContent}
+ }catch(err){const bankMissing=String(err.message).includes("收款帳戶");feedback.textContent="儲存失敗："+err.message+(bankMissing?"\n處理方式：先將活動設為「關閉」並儲存，再進入「管理收款帳戶」，選取範本後按「儲存活動收款帳戶（供家長匯款）」。確認儲存成功後，再啟用活動。":"");feedback.style.whiteSpace="pre-line";el("status").textContent=feedback.textContent}
  finally{button.disabled=false}
 };
 document.getElementById("retryAdminAuth").addEventListener("click",start);
