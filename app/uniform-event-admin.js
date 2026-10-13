@@ -275,7 +275,7 @@ el("config").onsubmit=async e=>{
    if(f.get("endAt"))item.endAt=new Date(f.get("endAt")).toISOString();
    if(item.endAt&&item.startAt&&Date.parse(item.endAt)<Date.parse(item.startAt))throw Error("活動結束時間不可早於開始時間");
    item.paymentMode=module==="yearEndDinner"?"PAY_NOW":String(f.get("paymentMode")||"FLEXIBLE");
-   if(module==="yearEndDinner"){item.feeStatus=String(f.get("feeStatus")||"DRAFT");item.paymentOpen=f.get("paymentOpen")==="true";if(item.paymentOpen&&item.feeStatus!=="PUBLISHED")throw Error("開放匯款前，請先將費率設定為已公布");}
+   if(module==="yearEndDinner"){item.feeStatus=item.enabled?"PUBLISHED":"DRAFT";item.paymentOpen=item.enabled&&f.get("paymentOpen")==="true";}
    for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0);
   }
   if(!confirm("確定儲存設定？")){feedback.textContent="已取消儲存";return}
