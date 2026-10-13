@@ -205,6 +205,7 @@ function populateActivity(){
  if(!item)return;
  form.elements.id.value=item.id;form.elements.enabled.value=String(item.enabled===true);
  form.elements.paymentMode.value=item.paymentMode||(item.module==="yearEndDinner"?"PAY_NOW":"FLEXIBLE");
+ form.elements.feeStatus.value=item.feeStatus||"DRAFT";form.elements.paymentOpen.value=String(item.paymentOpen===true);
  for(const k of ["title","location","studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=item[k]??(k.endsWith("Fee")?0:"");
  for(const k of ["openAt","closeAt","startAt","endAt"])form.elements[k].value=item[k]?new Date(item[k]).toISOString().slice(0,16):"";
 }
@@ -261,6 +262,7 @@ el("config").onsubmit=async e=>{
    if(f.get("endAt"))item.endAt=new Date(f.get("endAt")).toISOString();
    if(item.endAt&&item.startAt&&Date.parse(item.endAt)<Date.parse(item.startAt))throw Error("活動結束時間不可早於開始時間");
    item.paymentMode=module==="yearEndDinner"?"PAY_NOW":String(f.get("paymentMode")||"FLEXIBLE");
+   if(module==="yearEndDinner"){item.feeStatus=String(f.get("feeStatus")||"DRAFT");item.paymentOpen=f.get("paymentOpen")==="true";if(item.paymentOpen&&item.feeStatus!=="PUBLISHED")throw Error("開放匯款前，請先將費率設定為已公布");}
    for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0);
   }
   if(!confirm("確定儲存設定？")){feedback.textContent="已取消儲存";return}
