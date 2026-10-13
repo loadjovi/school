@@ -63,6 +63,7 @@ async function loadTemplates(){
 templateSelect.addEventListener("change",()=>{
  const selected=templates.find(t=>t.id===templateSelect.value);
  if(!selected){templateForm.reset();return}
+ form.hidden=false;
  for(const key of fields)form.elements[key].value=selected[key]||"";
  templateForm.elements.label.value=selected.label;
  templateForm.elements.active.value=String(selected.active);
@@ -88,4 +89,4 @@ function showBankEditor(clear){if(!activityEl.value){message.textContent="請先
 document.getElementById("manageDinnerBank").addEventListener("click",()=>{if(moduleEl.value!=="yearEndDinner")return;bankPanelExpanded=!bankPanelExpanded;panel.hidden=!bankPanelExpanded;if(!bankPanelExpanded)return;panel.scrollIntoView({behavior:"smooth",block:"start"});message.textContent=activityEl.value?"請點選「新增帳戶」或「修改目前帳戶」。":"請先儲存此期末聚餐活動（保持關閉），再新增收款帳戶。";});
 document.getElementById("bankAddNew").addEventListener("click",()=>showBankEditor(true));
 document.getElementById("bankEditCurrent").addEventListener("click",()=>showBankEditor(false));
-document.getElementById("bankTemplateToggle").addEventListener("click",()=>{templateForm.hidden=!templateForm.hidden;if(!templateForm.hidden)templateForm.scrollIntoView({behavior:"smooth",block:"center"});});
+document.getElementById("bankTemplateToggle").addEventListener("click",()=>{templateForm.hidden=!templateForm.hidden;if(!templateForm.hidden){form.hidden=false;templateForm.scrollIntoView({behavior:"smooth",block:"center"});}});
