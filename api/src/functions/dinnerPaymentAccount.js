@@ -23,11 +23,14 @@ app.http("dinnerPaymentAccount",{
    let activity;
    try{activity=await configs.getEntity(schoolId,"yearEndDinner:"+data.activityId)}catch(e){if(e.statusCode===404)return fail("Dinner activity must be saved first",404);throw e}
    if(!activity)return fail("Dinner activity not found",404);
+   const config=JSON.parse(activity.payload||"{}");
+   if(access.role==="parent"&&(request.method!=="GET"||config.enabled!==true||config.paymentOpen!==true||config.feeStatus!=="PUBLISHED"))return fail("Payment information not published",403);
    const db=await store(),rowKey="yearEndDinner:"+data.activityId;
    if(request.method==="GET"){
-    try{const row=await db.getEntity(schoolId,rowKey);return json({item:JSON.parse(row.payload||"{}"),updatedAt:row.updatedAt,updatedBy:row.updatedBy})}
+    try{const row=await db.getEntity(schoolId,rowKey);return json({item:JSON.parse(row.payload||"{}"),updatedAt:row.updatedAt,...(access.role==="admin"?{updatedBy:row.updatedBy}:{})})}
     catch(e){if(e.statusCode===404)return json({item:null});throw e}
    }
+   if(access.role!=="admin")return fail("Admin only",403);
    const {bankName,bankCode,accountHolder,accountNumber}=data;
    if(![bankName,accountHolder].every(v=>typeof v==="string"&&v.trim().length>0&&v.length<=100)||!/^[0-9]{3}$/.test(bankCode)||!/^[0-9]{6,30}$/.test(accountNumber))return fail("Invalid bank account details");
    const timestamp=new Date().toISOString();
