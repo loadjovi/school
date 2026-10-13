@@ -109,6 +109,7 @@ function syncUniformModuleVisibility(){
   const enabled=savedConfigs.some(item=>item.module===activeAdminTab&&item.id==="default"&&item.enabled===true);
   description.textContent=isUniform&&!enabled?"此團服模組目前未啟用；請先至「模組與活動設定」啟用。":adminTabDescriptions[activeAdminTab];
  }
+ if(activeAdminTab==="regularUniform"&&typeof window.syncTshirtViews==="function")window.syncTshirtViews();
 }
 document.querySelectorAll("[data-admin-tab]").forEach(button=>button.addEventListener("click",()=>{
  activeAdminTab=button.dataset.adminTab;
