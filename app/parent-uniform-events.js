@@ -21,7 +21,7 @@ async function eligibleUniforms(){
   regular.hidden=!active("regularUniform");
   if(!regular.hidden)loadInlineSizes();
   competition.hidden=!(active("competitionUniform")&&aStudents.length);
-  if(aStudents.length){const info=document.getElementById("competitionStudentInfo");info.replaceChildren();for(const st of aStudents){const p=document.createElement("p");p.textContent=(st.name||st.studentName||"A 團學生")+"（"+st.studentId+"）｜A 團｜"+(String(st.studentId)==="112068"?"S｜公費｜已領取":(["李旭恩","蘇聖翔","蔡昀潔"].includes(String(st.name||st.studentName||"").trim())?"比賽服尺寸待補登｜公費／買斷待家長確認｜領用狀態待核對":((st.competitionSize||st.uniformSize||"尺寸待補登")+"｜公費｜已領取")));info.append(p)}if(!competition.hidden)renderCompetitionPurchase(aStudents)}
+  if(aStudents.length){const info=document.getElementById("competitionStudentInfo");info.replaceChildren();for(const st of aStudents){const p=document.createElement("p");p.textContent=(st.name||st.studentName||"A 團學生")+"（"+st.studentId+"）｜A 團｜"+(String(st.studentId)==="112068"?"S｜公費｜已領取":(["李旭恩","蘇聖翔","蔡昀潔"].includes(String(st.name||st.studentName||"").trim())?({"李旭恩":"男 S","蘇聖翔":"男 M","蔡昀潔":"女 M"}[String(st.name||st.studentName||"").trim()]+"｜公費／自費待確認｜領用狀態待核對"):((st.competitionSize||st.uniformSize||"已確認尺寸待同步")+"｜公費｜已領取")));info.append(p)}if(!competition.hidden)renderCompetitionPurchase(aStudents)}
   status.textContent=students.length?"已確認 "+students.length+" 位已綁定學生；團服依校方啟用狀態及學生團別顯示。":"目前無已綁定學生，團服申請功能不顯示。";
   if(!students.length){regular.hidden=true;competition.hidden=true}
  }catch(e){console.warn("家長團服資格查詢失敗",e);status.textContent="資格查詢失敗（"+e.message+"）。請確認預覽環境登入及 API 設定；暫不開放申請。"}
