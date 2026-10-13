@@ -58,7 +58,36 @@ async function loadInlineSizes(){
    });
    label.append(sel);box.append(title,label,save,state);host.append(box);
   }
+  renderTshirtPurchase(data.items);
  }catch(e){host.textContent="無法讀取尺寸補登資料";status.textContent=e.message}
+}
+
+function renderTshirtPurchase(items){
+ const host=document.getElementById("inlineTshirtSizes");if(!host||!items.length)return;
+ const panel=document.createElement("section");panel.className="card";
+ const title=document.createElement("h3");title.textContent="🛍️ 自費加購團 T（第二件起）";
+ const hint=document.createElement("p");hint.className="hint";hint.textContent="每件 NT$400。此處僅送出加購需求，需經學校後台審核；尚未完成匯款與核帳前，請勿先匯款。團 T 與 A 團比賽服尺寸不共用。";
+ const form=document.createElement("form");
+ const studentLabel=document.createElement("label");studentLabel.textContent="申請學生";
+ const student=document.createElement("select");student.required=true;for(const item of items)student.add(new Option((item.studentName||item.studentId)+"（"+item.studentId+"）",item.studentId));studentLabel.append(student);
+ const sizeLabel=document.createElement("label");sizeLabel.textContent="加購團 T 尺寸";
+ const size=document.createElement("select");size.required=true;size.add(new Option("請選擇尺寸",""));for(const x of TSHIRT_SIZES)size.add(new Option(x,x));sizeLabel.append(size);
+ const countLabel=document.createElement("label");countLabel.textContent="加購件數";
+ const count=document.createElement("select");for(let i=1;i<=5;i++)count.add(new Option(i+" 件",String(i)));countLabel.append(count);
+ const total=document.createElement("p");const update=()=>total.textContent="預估金額：NT$ "+(Number(count.value)*400).toLocaleString("zh-TW");count.addEventListener("change",update);update();
+ const submit=document.createElement("button");submit.type="submit";submit.textContent="送出團 T 加購申請";
+ const message=document.createElement("p");message.className="hint";message.setAttribute("role","status");
+ form.append(studentLabel,sizeLabel,countLabel,total,submit,message);panel.append(title,hint,form);host.append(panel);
+ form.addEventListener("submit",async e=>{
+  e.preventDefault();if(!size.value)return;
+  if(!confirm("確認送出團 T 加購需求？送出後仍需學校審核，並非已付款或已領取。"))return;
+  submit.disabled=true;message.textContent="申請送出中…";
+  try{
+   const resp=await fetch("/api/uniform-events/requests",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...parentAuthHeaders()},body:JSON.stringify({kind:"regularUniform",studentId:student.value,size:size.value,quantity:Number(count.value),acquisition:"PURCHASE",note:"團 T 自費加購 "+count.value+" 件，每件 NT$400；待校方審核"})});
+   const data=await resp.json().catch(()=>({}));if(!resp.ok)throw Error(data.error||"HTTP "+resp.status);
+   message.textContent="團 T 加購申請已送出，等待學校後台審核。";submit.textContent="已送出";
+  }catch(error){message.textContent="送出失敗："+error.message;submit.disabled=false}
+ });
 }
 
 function renderCompetitionPurchase(students){
