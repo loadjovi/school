@@ -146,15 +146,55 @@ function renderActivityRegistrationStats(activity){
  "<p>已報名家庭："+rows.length+" 戶｜學生："+students+" 位｜陪同大人："+adults+" 位｜非團員兒童："+children+" 位｜總人數："+(students+adults+children)+" 位</p>"+
  "<p style='font-size:0.9em'>僅統計本活動已成功報名資料，不代表已完成繳費。</p></div>";
 }
+function activityRegistrationRows(activity){
+ return cachedFamilyRegistrations.filter(r=>r.kind===activity.module&&r.activityId===activity.id&&r.registrationStatus==="REGISTERED");
+}
+function activityCounts(rows){
+ const count=(fn)=>rows.reduce((n,r)=>n+fn(r),0);
+ const students=count(r=>Array.isArray(r.studentIds)?r.studentIds.length:0);
+ const adults=count(r=>Number(r.adults||0));
+ const children=count(r=>Number(r.extraChildren||0));
+ return {families:rows.length,students,adults,children,total:students+adults+children};
+}
+function activityReportRows(){
+ const activities=savedConfigs.filter(c=>activityTypes.has(c.module));
+ const found=new Set(activities.map(c=>c.module+":"+c.id));
+ for(const r of cachedFamilyRegistrations){
+  if(!activityTypes.has(r.kind)||!r.activityId||found.has(r.kind+":"+r.activityId))continue;
+  activities.push({module:r.kind,id:r.activityId,title:r.activityId});
+  found.add(r.kind+":"+r.activityId);
+ }
+ return activities.map(activity=>({activity,rows:activityRegistrationRows(activity),counts:activityCounts(activityRegistrationRows(activity))}));
+}
 function refreshFamilyStatistics(){
- const rows=cachedFamilyRegistrations.filter(r=>r.registrationStatus==="REGISTERED");
- const students=rows.reduce((n,r)=>n+(r.studentIds?.length||0),0),adults=rows.reduce((n,r)=>n+Number(r.adults||0),0),children=rows.reduce((n,r)=>n+Number(r.extraChildren||0),0);
- el("familySummary").textContent="所有活動合計（"+rows.length+" 筆報名，跨活動可能重複計入家庭）：學生 "+students+" 位｜大人 "+adults+" 位｜非團員兒童 "+children+" 位。請以上方各活動卡片的獨立統計為準。";
+ const reports=activityReportRows();
+ const target=el("familyRows"),summary=el("familySummary");
  const names={fieldTrip:"校外所有活動",yearEndDinner:"期末聚餐"};
- table("familyRows",rows.map(r=>({...r,activityName:savedConfigs.find(c=>c.module===r.kind&&c.id===r.activityId)?.title||r.activityId,category:names[r.kind]||r.kind})),[["category","活動類別"],["activityName","活動名稱"],["parentEmail","家長帳號"],["adults","大人"],["extraChildren","其他兒童"],["paymentStatus","繳費狀態"]]);
+ const totals=reports.reduce((a,r)=>{for(const k of ["families","students","adults","children","total"])a[k]+=r.counts[k];return a},{families:0,students:0,adults:0,children:0,total:0});
+ summary.textContent="共 "+reports.length+" 場活動；各活動分開計算。跨活動參加者可能重複，請勿將總計視為不重複人數。報名 "+totals.families+" 筆｜弦樂團學生 "+totals.students+" 位｜大人 "+totals.adults+" 位｜其他兒童 "+totals.children+" 位。";
+ target.innerHTML=reports.length?reports.map(({activity,rows,counts},index)=>
+  "<section style='border:1px solid #d9e0eb;border-radius:12px;padding:16px;margin:16px 0'>"+
+  "<h3>"+esc(activity.title||activity.id)+"</h3><p>"+esc(names[activity.module]||activity.module)+"｜報名家庭 "+counts.families+" 戶｜弦樂團學生 "+counts.students+" 位｜大人 "+counts.adults+" 位｜其他兒童 "+counts.children+" 位｜<strong>總計 "+counts.total+" 位</strong></p>"+
+  "<p><button type='button' data-export-activity-summary='"+index+"'>匯出本活動人數統計 CSV</button> <button type='button' data-export-activity-detail='"+index+"'>匯出本活動報名明細 CSV</button></p>"+
+  "<div style='overflow-x:auto'><table><thead><tr><th>家長帳號</th><th>弦樂團學生</th><th>大人</th><th>其他兒童</th><th>小計</th><th>繳費狀態</th></tr></thead><tbody>"+
+  (rows.length?rows.map(r=>"<tr><td>"+esc(r.parentEmail||"")+"</td><td>"+(Array.isArray(r.studentIds)?r.studentIds.length:0)+"</td><td>"+Number(r.adults||0)+"</td><td>"+Number(r.extraChildren||0)+"</td><td>"+((r.studentIds?.length||0)+Number(r.adults||0)+Number(r.extraChildren||0))+"</td><td>"+esc(r.paymentStatus||"未提供")+"</td></tr>").join(""):"<tr><td colspan='6'>尚無已報名資料</td></tr>")+
+  "</tbody></table></div></section>").join(""):"<p>目前沒有活動資料</p>";
  renderConfigSummary(savedConfigs);
  syncUniformModuleVisibility();
 }
+el("familyRows").addEventListener("click",event=>{
+ const btn=event.target.closest("button[data-export-activity-summary],button[data-export-activity-detail]");
+ if(!btn)return;
+ const index=Number(btn.dataset.exportActivitySummary??btn.dataset.exportActivityDetail);
+ const report=activityReportRows()[index];if(!report)return;
+ const {activity,rows,counts}=report;
+ const name=String(activity.title||activity.id).replace(/[\\/:*?"<>|]/g,"_").slice(0,60);
+ if(btn.hasAttribute("data-export-activity-summary")){
+  csv(name+"_人數統計.csv",[{activityName:activity.title||activity.id,category:activity.module,families:counts.families,students:counts.students,adults:counts.adults,children:counts.children,total:counts.total}],["activityName","category","families","students","adults","children","total"]);
+ }else{
+  csv(name+"_報名明細.csv",rows.map(r=>({activityName:activity.title||activity.id,parentEmail:r.parentEmail||"",studentIds:(r.studentIds||[]).join(";"),students:(r.studentIds||[]).length,adults:Number(r.adults||0),extraChildren:Number(r.extraChildren||0),total:(r.studentIds||[]).length+Number(r.adults||0)+Number(r.extraChildren||0),paymentStatus:r.paymentStatus||""})),["activityName","parentEmail","studentIds","students","adults","extraChildren","total","paymentStatus"]);
+ }
+});
 el("settings").addEventListener("click",e=>{
  const button=e.target.closest("button[data-edit-id]");if(!button)return;
  el("configModule").value=button.dataset.editModule;syncConfig();
