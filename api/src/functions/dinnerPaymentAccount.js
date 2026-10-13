@@ -15,7 +15,7 @@ app.http("dinnerPaymentAccount",{
  handler:async request=>{
   const ctx=await getTenantContext(request);if(ctx.error)return ctx.error;
   const {access,schoolId}=ctx;
-  if(access.role!=="admin")return fail("Admin only",403);
+  if(!["admin","parent"].includes(access.role))return fail("Forbidden",403);
   try{
    const data=request.method==="GET"?{activityId:new URL(request.url).searchParams.get("activityId")}:await request.json();
    if(!validId(data?.activityId))return fail("Invalid activity ID");
