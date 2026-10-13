@@ -14,7 +14,7 @@ const fields=["bankName","bankCode","accountHolder","accountNumber"];
 let current="";
 async function refresh(){
  const dinner=moduleEl.value==="yearEndDinner";
- panel.hidden=!dinner;
+ panel.hidden=!dinner;panel.style.display=dinner?"block":"none";
  if(!dinner)return;
  const id=activityEl.value;current=id;
  form.querySelector("button").disabled=!id;
@@ -84,7 +84,7 @@ loadTemplates();
 
 const bankEditor=document.getElementById("dinnerBankForm");
 function showBankEditor(clear){if(!activityEl.value){message.textContent="請先儲存並選擇既有期末聚餐活動。";return}bankEditor.hidden=false;if(clear)for(const f of fields)bankEditor.elements[f].value="";bankEditor.scrollIntoView({behavior:"smooth",block:"center"});}
-document.getElementById("manageDinnerBank").addEventListener("click",()=>{if(moduleEl.value!=="yearEndDinner")return;panel.scrollIntoView({behavior:"smooth",block:"start"});});
+document.getElementById("manageDinnerBank").addEventListener("click",()=>{if(moduleEl.value!=="yearEndDinner")return;panel.hidden=false;panel.style.display="block";panel.scrollIntoView({behavior:"smooth",block:"start"});message.textContent=activityEl.value?"請點選「新增帳戶」或「修改目前帳戶」。":"請先儲存此期末聚餐活動（保持關閉），再新增收款帳戶。";});
 document.getElementById("bankAddNew").addEventListener("click",()=>showBankEditor(true));
 document.getElementById("bankEditCurrent").addEventListener("click",()=>showBankEditor(false));
 document.getElementById("bankTemplateToggle").addEventListener("click",()=>{templateForm.hidden=!templateForm.hidden;if(!templateForm.hidden)templateForm.scrollIntoView({behavior:"smooth",block:"center"});});
