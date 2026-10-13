@@ -21,7 +21,7 @@ async function eligibleUniforms(){
   regular.hidden=!active("regularUniform");
   if(!regular.hidden)loadInlineSizes();
   competition.hidden=!(active("competitionUniform")&&aStudents.length);
-  if(aStudents.length){const info=document.getElementById("competitionStudentInfo");info.replaceChildren();for(const st of aStudents){const p=document.createElement("p");p.textContent=(st.name||st.studentName||"A 團學生")+"（"+st.studentId+"）｜A 團｜正式領用紀錄待核對";info.append(p)}if(!competition.hidden)renderCompetitionPurchase(aStudents)}
+  if(aStudents.length){const info=document.getElementById("competitionStudentInfo");info.replaceChildren();for(const st of aStudents){const p=document.createElement("p");p.textContent=(st.name||st.studentName||"A 團學生")+"（"+st.studentId+"）｜A 團｜尺寸待補登｜公費領用待核對";info.append(p)}if(!competition.hidden)renderCompetitionPurchase(aStudents)}
   status.textContent=students.length?"已確認 "+students.length+" 位已綁定學生；團服依校方啟用狀態及學生團別顯示。":"目前無已綁定學生，團服申請功能不顯示。";
   if(!students.length){regular.hidden=true;competition.hidden=true}
  }catch(e){console.warn("家長團服資格查詢失敗",e);status.textContent="資格查詢失敗（"+e.message+"）。請確認預覽環境登入及 API 設定；暫不開放申請。"}
@@ -36,10 +36,10 @@ async function loadInlineSizes(){
   const res=await fetch("/api/uniform-events/tshirt-historical-size",{credentials:"same-origin",cache:"no-store",headers:parentAuthHeaders()});
   const data=await res.json().catch(()=>({}));
   if(!res.ok)throw Error(data.error||"HTTP "+res.status);
-  if(!data.items?.length){host.textContent="目前沒有需要補登歷史尺寸的團 T 紀錄。";return}
+  if(!data.items?.length){host.textContent="目前尚無已領取團 T 的歷史補登資料；未領取學生需由校方確認領用狀態。";return}
   for(const item of data.items){
    const box=document.createElement("div");box.className="size-row";
-   const title=document.createElement("strong");title.textContent=(item.studentName||item.studentId)+"｜已領取 1 件";
+   const title=document.createElement("strong");title.textContent=(item.studentName||item.studentId)+"｜"+(item.received===false?"未領取":"已領取 1 件");
    const label=document.createElement("label");label.textContent="團 T 尺寸";
    const sel=document.createElement("select");sel.setAttribute("aria-label",(item.studentName||item.studentId)+"的團 T 尺寸");
    sel.add(new Option("請選擇尺寸",""));for(const size of TSHIRT_SIZES)sel.add(new Option(size,size));
@@ -63,8 +63,8 @@ async function loadInlineSizes(){
 
 function renderCompetitionPurchase(students){
  const host=document.getElementById("competitionPurchaseArea");host.replaceChildren();
- const heading=document.createElement("h3");heading.textContent="自費加購比賽服";host.append(heading);
- const note=document.createElement("p");note.className="hint";note.textContent="孩子成長需要更換尺寸時可提出加購需求。參考價格 NT$2,625（含稅），送出僅為待審申請，不代表付款或已扣庫存。";host.append(note);
+ const heading=document.createElement("h3");heading.textContent="自費買斷／加購比賽服";host.append(heading);
+ const note=document.createElement("p");note.className="hint";note.textContent="公費領用資料由校方核對；若改為自費買斷或因成長需要加購，價格 NT$2,625（含稅）。目前此表單僅建立待審申請，尚未串接收款帳戶與匯款後五碼核帳，請勿先行匯款。";host.append(note);
  const form=document.createElement("form");
  const studentLabel=document.createElement("label");studentLabel.textContent="學生";
  const studentSelect=document.createElement("select");studentSelect.required=true;for(const st of students)studentSelect.add(new Option((st.studentName||st.name||"學生")+"（"+st.studentId+"）",st.studentId));studentLabel.append(studentSelect);
