@@ -40,7 +40,12 @@ async function loadInlineSizes(){
   if(!data.items?.length){host.textContent="目前尚無已領取團 T 的歷史補登資料；未領取學生需由校方確認領用狀態。";return}
   const summary=document.createElement("div");summary.id="tshirtRegisteredSummary";host.parentElement.insertBefore(summary,host);
   for(const item of data.items){
-   const grade=item.receivedGrade||item.gradeAtReceipt||item.receiptGrade||item.receivedAtGrade||"";
+   const explicitGrade=item.receivedGrade||item.gradeAtReceipt||item.receiptGrade||item.receivedAtGrade||"";
+   const currentGrade=String(item.currentGrade||item.grade||item.gradeLevel||item.className||item.class||"");
+   const group=String(item.groupName||item.group||item.team||"").trim().toUpperCase().replace(/\s/g,"");
+   const currentGradeNumber=Number((currentGrade.match(/[1-6]/)||[])[0]);
+   const inferredGrade=item.received!==false&&["A","A團","B","B團"].includes(group)&&currentGradeNumber>1?String(currentGradeNumber-1):"";
+   const grade=explicitGrade||inferredGrade;
    const gradeLabel=grade?(String(grade).includes("年級")?String(grade):String(grade)+"年級")+"領取":"領取年級待確認";
    const line=document.createElement("p");line.textContent=(item.studentName||item.studentId)+"｜團 T："+(item.size||"待補登")+"｜"+(item.received===false?"未領取":"已領取 1 件")+"｜"+(item.received===false?"尚未領取":gradeLabel)+"｜"+(item.size?"尺寸已登錄":"尺寸待補登");summary.append(line);
    const box=document.createElement("div");box.className="size-row";
