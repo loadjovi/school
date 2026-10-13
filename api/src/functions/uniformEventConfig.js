@@ -60,6 +60,14 @@ app.http("uniformEventConfig",{
         const info=JSON.parse(bank.payload||"{}");
         if(!info.bankName||!info.accountHolder||!/^[0-9]{3}$/.test(info.bankCode||"")||!/^[0-9]{6,30}$/.test(info.accountNumber||""))return json({error:"收款帳戶資料不完整，無法啟用期末聚餐活動。"},400);
       }
+      if(data.module==="fieldTrip"&&data.collectionOpen===true){
+        if(data.enabled!==true)return json({error:"請先啟用活動，才能開放第二階段收款。"},400);
+        const accounts=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantEventPaymentAccounts");
+        let bank;
+        try{bank=await accounts.getEntity(schoolId,"fieldTrip:"+data.id)}catch(e){if(e.statusCode===404)return json({error:"請先儲存活動並綁定有效的校外活動收款帳戶。"},400);throw e}
+        const info=JSON.parse(bank.payload||"{}");
+        if(!info.bankName||!info.accountHolder||!/^[0-9]{3}$/.test(info.bankCode||"")||!/^[0-9]{6,30}$/.test(info.accountNumber||""))return json({error:"校外活動收款帳戶資料不完整。"},400);
+      }
       const record={
         partitionKey:schoolId,rowKey:rowKey(data.module,data.id),
         payload:JSON.stringify({...data,enabled:data.enabled===true}),
