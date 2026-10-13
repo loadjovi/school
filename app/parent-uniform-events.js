@@ -19,10 +19,44 @@ async function eligibleUniforms(){
   const isA=s=>["A","A團"].includes(String(s.groupName||s.group||"").trim().toUpperCase().replace(/\s/g,""));
   const aStudents=students.filter(isA);
   regular.hidden=!active("regularUniform");
+  if(!regular.hidden)loadInlineSizes();
   competition.hidden=!(active("competitionUniform")&&aStudents.length);
-  if(aStudents.length)competition.querySelector("p").textContent="僅限已綁定的 A 團學生："+aStudents.map(x=>x.name||x.studentName||x.studentId).join("、")+"。租借、買斷、尺寸與歸還功能尚待家長端正式串接。";
+  if(aStudents.length){const info=document.getElementById("competitionStudentInfo");info.replaceChildren();for(const st of aStudents){const p=document.createElement("p");p.textContent=(st.name||st.studentName||"A 團學生")+"（"+st.studentId+"）｜團別：A 團｜比賽服尺寸：待校方資料核對｜公費配發：待確認";info.append(p)}}
   status.textContent=students.length?"已確認 "+students.length+" 位已綁定學生；團服依校方啟用狀態及學生團別顯示。":"目前無已綁定學生，團服申請功能不顯示。";
   if(!students.length){regular.hidden=true;competition.hidden=true}
  }catch(e){console.warn("家長團服資格查詢失敗",e);status.textContent="資格查詢失敗（"+e.message+"）。請確認預覽環境登入及 API 設定；暫不開放申請。"}
 }
 eligibleUniforms();
+
+const TSHIRT_SIZES=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"];
+async function loadInlineSizes(){
+ const host=document.getElementById("inlineTshirtSizes"),status=document.getElementById("inlineTshirtStatus");
+ host.replaceChildren();status.textContent="";
+ try{
+  const res=await fetch("/api/uniform-events/tshirt-historical-size",{credentials:"same-origin",cache:"no-store",headers:parentAuthHeaders()});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok)throw Error(data.error||"HTTP "+res.status);
+  if(!data.items?.length){host.textContent="目前沒有需要補登歷史尺寸的團 T 紀錄。";return}
+  for(const item of data.items){
+   const box=document.createElement("div");box.className="size-row";
+   const title=document.createElement("strong");title.textContent=(item.studentName||item.studentId)+"｜已領取 1 件";
+   const label=document.createElement("label");label.textContent="團 T 尺寸";
+   const sel=document.createElement("select");sel.setAttribute("aria-label",(item.studentName||item.studentId)+"的團 T 尺寸");
+   sel.add(new Option("請選擇尺寸",""));for(const size of TSHIRT_SIZES)sel.add(new Option(size,size));
+   sel.value=item.size||"";
+   const save=document.createElement("button");save.type="button";save.textContent="儲存尺寸";
+   const state=document.createElement("span");state.className="hint";state.style.marginLeft="8px";state.textContent=item.size?"已登錄 "+item.size:"待補登";
+   save.addEventListener("click",async()=>{
+    if(!sel.value){state.textContent="請先選擇尺寸";return}
+    save.disabled=true;state.textContent="儲存中…";
+    try{
+     const resp=await fetch("/api/uniform-events/tshirt-historical-size",{method:"PATCH",credentials:"same-origin",headers:{"Content-Type":"application/json",...parentAuthHeaders()},body:JSON.stringify({studentId:item.studentId,size:sel.value,etag:item.etag})});
+     const result=await resp.json().catch(()=>({}));
+     if(!resp.ok)throw Error(result.error||"HTTP "+resp.status);
+     state.textContent="尺寸已儲存";await loadInlineSizes();
+    }catch(e){state.textContent="儲存失敗："+e.message}finally{save.disabled=false}
+   });
+   label.append(sel);box.append(title,label,save,state);host.append(box);
+  }
+ }catch(e){host.textContent="無法讀取尺寸補登資料";status.textContent=e.message}
+}
