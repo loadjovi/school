@@ -36,7 +36,7 @@ function paymentAccountHandler(module){return async request=>{
    await db.upsertEntity({partitionKey:schoolId,rowKey,payload:JSON.stringify({bankName:bankName.trim(),bankCode,accountHolder:accountHolder.trim(),accountNumber}),updatedAt:timestamp,updatedBy:String(access.email||"admin").slice(0,200)},"Replace");
    return json({saved:true,updatedAt:timestamp});
   }catch(e){console.error("eventPaymentAccount",e);return fail("Unable to process payment account",500)}
- }}
+ }
 }
 app.http("dinnerPaymentAccount",{methods:["GET","POST"],authLevel:"anonymous",route:"uniform-events/dinner-payment-account",handler:paymentAccountHandler("yearEndDinner")});
 app.http("fieldTripPaymentAccount",{methods:["GET","POST"],authLevel:"anonymous",route:"uniform-events/field-trip-payment-account",handler:paymentAccountHandler("fieldTrip")});
