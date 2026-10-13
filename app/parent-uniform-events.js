@@ -129,8 +129,8 @@ async function renderInlineActivities(){
     const studentWrap=element("fieldset");studentWrap.append(element("legend","參加學生"));
     for(const st of students){const label=element("label");const input=element("input");input.type="checkbox";input.value=st.studentId;label.append(input,document.createTextNode(" "+(st.name||st.studentName||st.studentId)));studentWrap.append(label)}
     const adults=element("select"),children=element("select");
-    for(let i=1;i<=20;i++)adults.add(new Option(i+" 位大人",i));
-    for(let i=0;i<=20;i++)children.add(new Option(i+" 位其他兒童",i));
+    for(let i=1;i<=5;i++)adults.add(new Option(i+" 位大人",i));
+    for(let i=0;i<=5;i++)children.add(new Option(i+" 位其他兒童",i));
     const adultLabel=element("label","陪同大人數量"),childLabel=element("label","其他兒童數量");adultLabel.append(adults);childLabel.append(children);
     const total=element("p","","amount-summary");
     const dinner=item.module==="yearEndDinner";
