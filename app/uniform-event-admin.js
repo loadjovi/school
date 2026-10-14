@@ -1,5 +1,5 @@
 const el=id=>document.getElementById(id);
-let adminAuthenticated=false;
+let adminAuthenticated=false,hasFinanceAccess=false;
 function setAuthGate(reason=""){
  adminAuthenticated=!reason;
  const gate=document.getElementById("authGate"),area=document.getElementById("protectedAdminArea");
@@ -24,7 +24,7 @@ async function api(path,options={}){
  finally{clearTimeout(timeout)}
  const data=await r.json().catch(()=>({}));
  if(r.status===401){setAuthGate("API 回傳 401 Unauthorized：登入憑證未通過後端驗證，所有管理操作已停用。");throw Error("401 Unauthorized：請重新登入")}
- if(r.status===403){setAuthGate("API 回傳 403 Forbidden：目前帳號沒有此校管理員權限。");throw Error("403 Forbidden：權限不足")}
+ if(r.status===403){if(/財務/.test(String(data.error||"")))throw Error(data.error);setAuthGate("API 回傳 403 Forbidden：目前帳號沒有此校管理員權限。");throw Error("403 Forbidden：權限不足")}
  if(!r.ok)throw Error(data.error||"HTTP "+r.status);
  return data;
 }
@@ -132,7 +132,7 @@ function syncUniformModuleVisibility(){
   el("uniformPriceForm").elements.kind.value=activeAdminTab;
   if(typeof showUniformPrice==="function")showUniformPrice();
  }
- finance.hidden=!isUniform;
+ finance.hidden=!isUniform||!hasFinanceAccess;
  for(const panel of document.querySelectorAll("[data-admin-view]")){
   const tab=panel.dataset.adminView;
   panel.hidden=tab!==activeAdminTab;
@@ -389,7 +389,10 @@ async function load(){
 async function start(){
  try{
   setAuthGate("正在驗證管理員身分…");const me=await api("me");if(me.role!=="admin"){setAuthGate("登入帳號不是此校管理員，已停用管理操作。");throw Error("僅限管理員")}setAuthGate("");
-  el("status").textContent="已驗證管理員："+(me.displayName||me.email||"");
+  const finance=me.capabilities?.financeVerifier===true;hasFinanceAccess=finance;
+  el("status").textContent="已驗證管理員："+(me.displayName||me.email||"")+(finance?"｜具財務核帳權限":"｜未指派財務權限");
+  document.querySelector('[data-admin-tab="accounts"]').hidden=!finance;
+  const financeSettings=el("uniformFinanceSettings");if(financeSettings)financeSettings.hidden=!finance;
   await load();
  }catch(e){setAuthGate("管理員驗證未完成："+(e.message||String(e))+"。請重新檢查登入。")}
 }
