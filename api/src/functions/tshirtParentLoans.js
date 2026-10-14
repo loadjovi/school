@@ -33,7 +33,7 @@ app.http("tshirtParentLoans",{methods:["GET","POST"],authLevel:"anonymous",route
    return json({items});
   }
   const data=await request.json(),email=clean(data.parentEmail,320).toLowerCase(),studentId=clean(data.studentId,40),action=clean(data.action,40);
-  if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||!/^\\d{6}$/.test(studentId)||!actions.has(action))return json({error:"Invalid parent, student or action"},400);
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!/^\d{6}$/.test(studentId)||!actions.has(action))return json({error:"Invalid parent, student or action"},400);
   if(!await linked(schoolId,email,studentId))return json({error:"Parent is not actively linked to this student"},403);
   let old;try{old=await client.getEntity(schoolId,email)}catch(e){if(e.statusCode!==404)throw e}
   const previous=old?{parentName:old.parentName,studentId:old.studentId,role:old.role,size:old.size,status:old.status,issuedAt:old.issuedAt,returnedAt:old.returnedAt}:null;
