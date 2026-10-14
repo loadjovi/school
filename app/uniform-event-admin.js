@@ -236,7 +236,8 @@ function table(id,rows,columns,actions=false){
   let controls="";
   if(actions){
    const next={PENDING:[["APPROVED","核准，等待採購"],["CANCELLED","取消申請"]],APPROVED:[["ORDERED","已統一採購"],["CANCELLED","取消申請"]],ORDERED:[["ARRIVED","已到貨"],["CANCELLED","取消申請"]],ARRIVED:[["READY_FOR_PICKUP","開放領取"],["CANCELLED","取消申請"]]}[r.status]||[];
-   controls="<td>"+(next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":"<span>"+esc(r.statusLabel||r.status)+"（目前無後續操作）</span>")+"</td>";
+   const adjust=r.kind==="團 T"&&["PENDING","APPROVED"].includes(r.status)?"<button type='button' data-adjust='"+i+"'>更正件數</button>":"";
+   controls="<td>"+(next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":"<span>"+esc(r.statusLabel||r.status)+"（目前無後續操作）</span>")+adjust+"</td>";
   }
   return "<tr>"+cells+controls+"</tr>";
  }).join("");
@@ -428,11 +429,25 @@ el("config").onsubmit=async e=>{
 document.getElementById("retryAdminAuth").addEventListener("click",start);
 start();
 el("requests").addEventListener("click",async e=>{
- const i=e.target.dataset.update;if(i===undefined)return;
+ const i=e.target.dataset.update??e.target.dataset.adjust;if(i===undefined)return;
+ const adjusting=e.target.dataset.adjust!==undefined;
+ if(adjusting){
+  const row=visibleModuleRequests[Number(i)];if(!row)return;
+  const raw=prompt("請輸入正確件數（1–20 件；全部不要請選取消申請）",String(row.quantity||1));if(raw===null)return;
+  const quantity=Number(raw);if(!Number.isSafeInteger(quantity)||quantity<1||quantity>20){el("status").textContent="請輸入 1–20 件；全部取消請選取消申請";return}
+  const reason=prompt("請填寫更正原因（會留下操作紀錄）","");if(reason===null)return;
+  if(!reason.trim()){el("status").textContent="更正原因不可空白";return}
+  if(!confirm("確定將申請件數由 "+row.quantity+" 件更正為 "+quantity+" 件？"))return;
+  try{const result=await api("uniform-events/requests",{method:"PATCH",body:JSON.stringify({id:row.id,etag:row.etag,action:"ADJUST",quantity,reason:reason.trim()})});await load();el("status").textContent="件數已更正"+(result.notificationStatus==="sent"?"，已寄送家長通知信":"；家長頁面已同步，通知信未確認送達")}
+  catch(err){el("status").textContent="更正失敗："+err.message}
+  return;
+ }
  const row=visibleModuleRequests[Number(i)],select=el("requests").querySelector("select[data-index='"+i+"']");
  const status=select?.value;if(!row||!status)return;
  if(!confirm("確定將這筆申請改為 "+status+"？"))return;
- try{const result=await api("uniform-events/requests",{method:"PATCH",body:JSON.stringify({id:row.id,etag:row.etag,status})});await load();el("status").textContent="申請狀態已更新"+(result.notificationStatus==="sent"?"，已寄送家長通知信":"；家長頁面已可查詢，但通知信未確認送達（"+(result.notificationStatus||"unknown")+"）")}
+ const reason=status==="CANCELLED"?prompt("請填寫取消原因（家長可在申請紀錄查看）",""):"";
+ if(status==="CANCELLED"&&(!reason||!reason.trim())){el("status").textContent="取消申請須填寫原因";return}
+ try{const result=await api("uniform-events/requests",{method:"PATCH",body:JSON.stringify({id:row.id,etag:row.etag,status,reason:reason?.trim()||""})});await load();el("status").textContent="申請狀態已更新"+(result.notificationStatus==="sent"?"，已寄送家長通知信":"；家長頁面已可查詢，但通知信未確認送達（"+(result.notificationStatus||"unknown")+"）")}
  catch(err){el("status").textContent="更新失敗："+err.message}
 });
 el("inventoryForm").onsubmit=async e=>{
