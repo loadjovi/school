@@ -411,10 +411,49 @@ async function start(){
   el("status").textContent="已驗證管理員："+(me.displayName||me.email||"")+(finance?"｜具財務核帳權限":"｜未指派財務權限");
   document.querySelector('[data-admin-tab="accounts"]').hidden=!finance;
   const financeSettings=el("uniformFinanceSettings");if(financeSettings)financeSettings.hidden=!finance;
+  el("inlineFinanceReview").hidden=!finance;
   await load();
+  if(finance&&el("inlineFinanceReview").open)await loadInlineFinance();
  }catch(e){setAuthGate("管理員驗證未完成："+(e.message||String(e))+"。請重新檢查登入。")}
 }
 el("reload").onclick=()=>load().catch(e=>el("status").textContent=e.message);
+function financeCard(item,type){
+ const card=document.createElement("div");card.className="inline-finance-item";
+ const report=item.transferReport||{},amount=Number(report.amount||item.amount||0);
+ const expected=type==="uniform"?item.amount:report.expectedAmount;
+ const title=document.createElement("strong");title.textContent=(type==="uniform"?(item.kind==="regularUniform"?"團 T":"A 團比賽服"):(item.kind==="yearEndDinner"?"期末聚餐":"交流／快閃活動"))+"｜"+(type==="uniform"?(uniformStudentNames.get(String(item.studentId))||item.studentId):item.parentEmail);
+ const info=document.createElement("p");info.textContent="應繳 NT$ "+Number(expected||0).toLocaleString("zh-TW")+"｜回報 NT$ "+amount.toLocaleString("zh-TW")+"｜家長回報日期 "+(report.transferDate||"未提供")+"｜匯出帳號末五碼 "+(report.lastFive||"未提供");
+ const form=document.createElement("form"),date=document.createElement("input"),note=document.createElement("textarea"),submit=document.createElement("button"),message=document.createElement("p");
+ date.type="date";date.required=true;note.required=true;note.maxLength=300;note.rows=2;submit.type="submit";submit.textContent="確認已入帳";message.setAttribute("role","status");
+ for(const [label,input] of [["銀行實際入帳日期",date],["核帳備註（記錄銀行查核依據）",note]]){const row=document.createElement("label");row.textContent=label;row.append(input);form.append(row)}
+ if(!Number.isSafeInteger(expected)||expected<=0||amount!==expected){submit.disabled=true;message.textContent="回報金額與應繳金額不同，請先查明差額。"}
+ form.append(submit,message);card.append(title,info,form);
+ form.addEventListener("submit",async event=>{
+  event.preventDefault();if(!note.value.trim()){message.textContent="請填寫核帳備註。";return}
+  if(!confirm("已比對銀行實際入帳日期、金額及帳號末五碼，確認此款項已入帳？"))return;
+  submit.disabled=true;message.textContent="核帳中…";
+  try{
+   if(type==="uniform")await api("uniform-events/uniform-transfer-report",{method:"PATCH",body:JSON.stringify({requestId:item.id,etag:item.etag,amount,bankPostedAt:date.value,note:note.value.trim()})});
+   else await api("uniform-events/family-registration",{method:"PATCH",body:JSON.stringify({kind:item.kind,activityId:item.activityId,registrationId:item.id,action:"VERIFY_PAYMENT",amount,bankPostedAt:date.value,note:note.value.trim()})});
+   message.textContent="已確認入帳";await load();await loadInlineFinance();
+  }catch(error){message.textContent="核帳失敗："+error.message;submit.disabled=false}
+ });
+ return card;
+}
+async function loadInlineFinance(){
+ if(!hasFinanceAccess||!adminAuthenticated)return;
+ el("inlineFinanceStatus").textContent="正在讀取待核帳資料…";
+ try{
+  const [uniform,family]=await Promise.all([api("uniform-events/requests"),api("uniform-events/family-registration")]);
+  const u=(uniform.items||[]).filter(x=>x.paymentStatus==="REPORTED_UNVERIFIED"),f=(family.items||[]).filter(x=>x.paymentStatus==="REPORTED_UNVERIFIED");
+  const empty=text=>{const p=document.createElement("p");p.textContent=text;return p};
+  el("inlineFinanceUniform").replaceChildren(...(u.length?u.map(x=>financeCard(x,"uniform")):[empty("目前沒有待核對的團服匯款。")]));
+  el("inlineFinanceFamily").replaceChildren(...(f.length?f.map(x=>financeCard(x,"family")):[empty("目前沒有待核對的活動匯款。")]));
+  el("inlineFinanceStatus").textContent="待核帳：團服 "+u.length+" 筆、活動 "+f.length+" 筆。";
+ }catch(error){el("inlineFinanceStatus").textContent="載入失敗："+error.message}
+}
+el("inlineFinanceReview").addEventListener("toggle",()=>{if(el("inlineFinanceReview").open)loadInlineFinance()});
+el("inlineFinanceReload").addEventListener("click",loadInlineFinance);
 let fieldTripBankTemplates=[];
 async function refreshFieldTripBanks(){
  const select=el("fieldTripBankTemplate"),message=el("fieldTripBankStatus");
