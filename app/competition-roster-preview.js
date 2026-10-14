@@ -1,3 +1,4 @@
+import {confirmedReceived,promotedClass} from "./competition-paper-receipts.js";
 // A 團比賽服：人工提供之參考名單。僅展示，不寫入 Azure Table Storage。
 const roster=[
 ["4A","林心澄","女","S","公費","小提琴"],
@@ -19,13 +20,6 @@ const roster=[
 
 // 2026-10-11 領用佐證：使用者提供之「新A團」12人名冊。
 // 紙本為上一學年度班級，今年均升一個年級。保留歷史班級，取得方式/尺寸不可由手寫註記推定。
-const confirmedReceived=new Map([
- ["李婇寧","5A"],["張介輔","5D"],["林心澄","3A"],["黃禹閎","5C"],
- ["游宜橙","4A"],["陳祉瑄","4B"],["賴昺旭","5B"],["陳奕亘","5C"],
- ["張安侖","5C"],["李宥蓁","5D"],["吳定廩","4A"],["楊力萓","4D"]
-]);
-
-const promotedClass=value=>{const m=/^([1-6])([A-Z])$/.exec(value||"");return m?String(Number(m[1])+1)+m[2]:"待核對"};
 const safe=x=>String(x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const count=(field,val)=>roster.filter(r=>r[field]===val).length;
 const grouped=new Map();
