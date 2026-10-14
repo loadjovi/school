@@ -72,7 +72,10 @@ app.http("uniformEventRequests",{
         const out=[];
         for await(const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
           const item=decode(e);
-          if(access.role==="admin"||ensureStudentAccess(access,item.studentId))out.push(item);
+          if(access.role==="admin"||ensureStudentAccess(access,item.studentId)){
+            if(access.role==="admin"&&access.capabilities?.financeVerifier!==true){const {transferReport,verificationNote,bankPostedAt,...safe}=item;out.push(safe)}
+            else out.push(item);
+          }
         }
         return json({items:out});
       }
@@ -131,6 +134,7 @@ app.http("uniformEventRequests",{
           next.unitPrice=unitPrice;next.amount=next.quantity*unitPrice;
         }
       }else if(data.action==="SET_AMOUNT"){
+        if(access.capabilities?.financeVerifier!==true)return err("僅財務人員可補正應繳金額",403);
         if(before.status!=="APPROVED"||!["regularUniform","competitionUniform"].includes(before.kind)||before.acquisition==="PUBLIC")return err("僅可補正已核准的自費團服金額",409);
         if(["REPORTED_UNVERIFIED","VERIFIED"].includes(before.paymentStatus))return err("已有匯款紀錄，不可變更金額",409);
         const account=await find(TableClient.fromConnectionString(connection(),"TenantUniformPaymentAccounts"),schoolId,"uniform:"+before.kind);
