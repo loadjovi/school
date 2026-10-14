@@ -90,6 +90,10 @@ function renderModuleRequests(){
  const details=[...sizes].sort((a,b)=>a[0].localeCompare(b[0],"zh-Hant")).map(([size,n])=>size+"："+n+" 件").join("、");
  const label=activeAdminTab==="regularUniform"?"團 T":"A 團比賽服";
  el("requestSummary").textContent=label+" 家長申請 "+rows.length+" 筆；待處理 "+(counts.PENDING||0)+" 筆；核准 "+(counts.APPROVED||0)+" 筆。待處理需求共 "+total+" 件；尺寸統計："+(details||"尚無需求")+"。公費申請由學校審核，買斷申請須核對匯款與發放；請確認重複申請後再統一採購。";
+ if(activeAdminTab==="competitionUniform"){
+  const actionable=rows.filter(x=>["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(x.status));
+  el("competitionProcurementSummary").textContent="申請共 "+rows.length+" 筆；尚在處理 "+actionable.length+" 筆，已採購 "+(counts.ORDERED||0)+" 筆，已到貨 "+(counts.ARRIVED||0)+" 筆。請依款式與尺寸核對採購需求；取消或已領取申請不列入待處理數。";
+ }
  table("requests",rows.map(x=>({...x,processing:pendingRequestIds.has(x.id),studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",acquisitionLabel:x.kind==="competitionUniform"?({PUBLIC:"公費｜待校方審核",PURCHASE:"自費買斷",RENTAL:"租借",PENDING:"取得方式待核對"})[x.acquisition]||"待核對":"自費加購",statusLabel:pendingRequestIds.has(x.id)?"更新處理中…":({PENDING:"待審核",APPROVED:"已核准｜待採購",ORDERED:"已採購｜待到貨",ARRIVED:"已到貨｜待安排領取",READY_FOR_PICKUP:"可以領取",FULFILLED:"已領取",CANCELLED:"已取消"})[x.status]||x.status,issueDetail:x.status==="FULFILLED"?`${x.receivedBy||"領取人待核對"}｜${x.issuedAt?new Date(x.issuedAt).toLocaleDateString("zh-TW"):"日期待核對"}`:"—"})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["acquisitionLabel","取得方式"],["size","尺寸"],["quantity","申請件數"],["statusLabel","狀態"],["issueDetail","實際領取"],["createdAt","建立時間"]],true);
 }
 
@@ -129,8 +133,8 @@ function syncUniformModuleVisibility(){
  placeSharedUniformPanels();
  const finance=el("uniformFinanceSettings"),isUniform=["regularUniform","competitionUniform"].includes(activeAdminTab);
  if(isUniform){
-  const anchor=activeAdminTab==="regularUniform"?el("tshirtShortcutPanel"):document.querySelector('section[data-admin-view="competitionUniform"]');
-  anchor.insertAdjacentElement("afterend",finance);
+  const procurement=el(activeAdminTab==="regularUniform"?"tshirtProcurementPanel":"competitionProcurementPanel");
+  procurement.append(finance);
   el("uniformFinanceKind").value=activeAdminTab;
   el("uniformPriceForm").elements.kind.value=activeAdminTab;
   if(typeof showUniformPrice==="function")showUniformPrice();
@@ -547,7 +551,11 @@ syncUniformModuleVisibility();
 function showUniformPrice(){
  const form=el("uniformPriceForm"),kind=form.elements.kind.value,price=uniformPrices[kind];
  el("uniformBasePriceLabel").firstChild.textContent=kind==="competitionUniform"?"比賽服未稅原價（NT$）":"團 T 每件含稅售價（NT$）";
+ el("uniformPriceDescription").textContent=kind==="competitionUniform"
+  ?"A 團比賽服目前含稅售價 NT$ "+Number(price?.unitPrice??2625).toLocaleString("zh-TW")+"／套；修改未稅原價後加計 5%。新價格僅適用後續核准申請。"
+  :"團 T 目前含稅售價 NT$ "+Number(price?.unitPrice??400).toLocaleString("zh-TW")+"／件；此售價已含 5% 稅額。新價格僅適用後續核准申請。";
  form.elements.basePrice.value=price?.basePrice??"";
+ el("uniformPriceMessage").textContent="目前"+(kind==="competitionUniform"?"A 團比賽服":"團 T")+"售價：NT$ "+Number(price?.unitPrice??(kind==="competitionUniform"?2625:400)).toLocaleString("zh-TW")+(kind==="competitionUniform"?"／套。":"／件。");
  updateUniformPricePreview();
 }
 function updateUniformPricePreview(){
@@ -561,7 +569,6 @@ async function loadUniformPrices(){
  const form=el("uniformPriceForm"),message=el("uniformPriceMessage");
  try{const data=await api("uniform-events/prices");uniformPrices=data.items||{};
   showUniformPrice();
-  message.textContent="目前含稅售價：團 T NT$ "+Number(uniformPrices.regularUniform?.unitPrice).toLocaleString("zh-TW")+"／件；A 團比賽服 NT$ "+Number(uniformPrices.competitionUniform?.unitPrice).toLocaleString("zh-TW")+"／套。";
  }catch(e){message.textContent="團服價格讀取失敗："+e.message}
 }
 
@@ -574,10 +581,6 @@ el("uniformPriceForm").addEventListener("submit",async e=>{
  catch(error){message.textContent="價格更新失敗："+error.message}
 });
 loadUniformPrices();
-el("configModule").addEventListener("change",()=>{
- if(!["regularUniform","competitionUniform"].includes(el("configModule").value))return;
- showUniformPrice();
-});
 el("requests").addEventListener("click",async e=>{
  const i=e.target.dataset.update??e.target.dataset.adjust??e.target.dataset.amount??e.target.dataset.issue;if(i===undefined)return;
  if(e.target.dataset.issue!==undefined){
