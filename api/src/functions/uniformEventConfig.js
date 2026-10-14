@@ -2,6 +2,7 @@ import { app } from "@azure/functions";
 import { TableClient } from "@azure/data-tables";
 import { randomUUID } from "node:crypto";
 import { getTenantContext, json } from "../lib/auth.js";
+import { syncFieldTripCalendar } from "./calendarEvents.js";
 
 // Phase 2: tenant-scoped administrative configuration. No automatic activation.
 const tableName=()=>process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig";
@@ -79,11 +80,12 @@ app.http("uniformEventConfig",{
       await audit.createTable().catch(e=>{if(e.statusCode!==409)throw e});
       await client.upsertEntity(record,"Replace");
       await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"config.save",subjectId:record.rowKey,actor:String(access.email||"admin").slice(0,200),at:record.updatedAt,details:JSON.stringify({before:before?JSON.parse(before.payload||"{}"):null,after:JSON.parse(record.payload)}).slice(0,20000)});
+      if(data.module==="fieldTrip")await syncFieldTripCalendar(schoolId,access,data);
       return json({item:publicValue(record)});
     }catch(error){
       if(error instanceof SyntaxError||String(error.message||"").startsWith("Invalid")||String(error.message||"").includes("requires"))return json({error:error.message},400);
       console.error("uniformEventConfig error",error);
-      return json({error:"Unable to process configuration"},500);
+      return json({error:"設定或行事曆同步失敗；請重新儲存並確認行事曆紀錄。"},500);
     }
   }
 });
