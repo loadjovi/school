@@ -29,10 +29,13 @@ async function log(schoolId,access,action,id,details){
  const a=await table("TenantUniformEventAudit");
  await a.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action,subjectId:id,actor:String(access.email||"unknown").slice(0,200),at:now(),details:JSON.stringify(details).slice(0,16000)});
 }
-function publicRegistration(row,role){
+function publicRegistration(row,access){
  const r=decode(row);
  // Financial verification data never appears in a publicly enumerable config endpoint.
- if(role==="admin")return r;
+ if(access.role==="admin"){
+  if(access.capabilities?.financeVerifier===true)return r;
+  const {transferReport,verificationNote,bankPostedAt,...safe}=r;return safe;
+ }
  const {etag,...safe}=r;return safe;
 }
 function feeOf(cfg,r){
@@ -54,7 +57,7 @@ app.http("familyEventRegistration",{
     const list=[];
     for await(const row of records.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
      const r=decode(row);
-     if(access.role==="admin"||r.parentEmail===access.email)list.push(publicRegistration(row,access.role));
+     if(access.role==="admin"||r.parentEmail===access.email)list.push(publicRegistration(row,access));
     }
     return json({items:list});
    }
@@ -77,6 +80,7 @@ app.http("familyEventRegistration",{
      if(!integer(cfg.firstAdultFee,0,1000000)||!integer(cfg.extraAdultFee,0,1000000)||!integer(cfg.extraChildFee,0,1000000))return fail("Dinner rates are not configured",409);
      if(cfg.feeStatus!=="PUBLISHED"||cfg.paymentOpen!==true)return fail("Dinner payment has not been opened",409);
      if(!/^[0-9]{5}$/.test(body.lastFive||""))return fail("Transfer last five digits required");
+     if(!/^\d{4}-\d{2}-\d{2}$/.test(body.transferDate||"")||!Number.isFinite(Date.parse(body.transferDate)))return fail("請填寫匯款日期",400);
      const accountTable=await table("TenantEventPaymentAccounts");
      const account=await get(accountTable,schoolId,"yearEndDinner:"+body.activityId);
      if(!account)return fail("Dinner payment account is not configured",409);
@@ -87,7 +91,7 @@ app.http("familyEventRegistration",{
     const timestamp=now();
     const initialRates=["studentFee","firstAdultFee","extraAdultFee","extraChildFee"].every(k=>integer(cfg[k],0,1000000));
     const estimate=initialRates?(body.kind==="yearEndDinner"?0:cfg.studentFee)*ids.length+cfg.firstAdultFee+(body.adults-1)*cfg.extraAdultFee+body.extraChildren*cfg.extraChildFee:null;
-    const payload={estimatedAmount:estimate,estimateNotice:body.kind==="yearEndDinner"?"依校方公告費率計算，款項待人工核帳":"初步報價，非實際應繳金額；待報名結束後另行通知匯款",kind:body.kind,activityId:body.activityId,studentIds:ids,studentId:ids[0],adults:body.adults,extraChildren:body.extraChildren,parentEmail:access.email,registrationStatus:"REGISTERED",paymentStatus:body.kind==="yearEndDinner"?"REPORTED_UNVERIFIED":"NOT_OPEN",...(body.kind==="yearEndDinner"?{transferReport:{amount:estimate,lastFive:body.lastFive,reportedAt:timestamp,expectedAmount:estimate}}:{}),createdAt:timestamp,updatedAt:timestamp};
+    const payload={estimatedAmount:estimate,estimateNotice:body.kind==="yearEndDinner"?"依校方公告費率計算，款項待人工核帳":"初步報價，非實際應繳金額；待報名結束後另行通知匯款",kind:body.kind,activityId:body.activityId,studentIds:ids,studentId:ids[0],adults:body.adults,extraChildren:body.extraChildren,parentEmail:access.email,registrationStatus:"REGISTERED",paymentStatus:body.kind==="yearEndDinner"?"REPORTED_UNVERIFIED":"NOT_OPEN",...(body.kind==="yearEndDinner"?{transferReport:{amount:estimate,lastFive:body.lastFive,transferDate:body.transferDate,reportedAt:timestamp,expectedAmount:estimate}}:{}),createdAt:timestamp,updatedAt:timestamp};
     try{await records.createEntity({partitionKey:schoolId,rowKey:id,payload:JSON.stringify(payload),updatedAt:timestamp})}
     catch(e){if(e.statusCode===409)return fail("This family has already registered",409);throw e}
     await log(schoolId,access,"family.registration",id,{studentIds:ids,adults:body.adults,extraChildren:body.extraChildren});
@@ -117,12 +121,14 @@ app.http("familyEventRegistration",{
     // A separately verified finance capability must be implemented before enabling.
     if(access.role!=="admin"||access.capabilities?.financeVerifier!==true)return fail("Finance verification permission not configured",403);
     if(old.paymentStatus!=="REPORTED_UNVERIFIED")return fail("Transfer not reported",409);
-    next.paymentStatus="VERIFIED";next.verifiedBy=access.email;next.verifiedAt=now();
+    if(!integer(old.transferReport?.expectedAmount,1,10000000)||old.transferReport.amount!==old.transferReport.expectedAmount)return fail("家長回報金額與應繳金額不同，請先處理差額",409);
+    if(!integer(body.amount,1,10000000)||body.amount!==old.transferReport?.amount||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(body.bankPostedAt||"")||!Number.isFinite(Date.parse(body.bankPostedAt))||typeof body.note!=="string"||!body.note.trim()||body.note.length>300)return fail("請核對實際入帳金額、日期並填寫備註",400);
+    next.paymentStatus="VERIFIED";next.verifiedBy=access.email;next.verifiedAt=now();next.bankPostedAt=body.bankPostedAt;next.verificationNote=body.note.trim();
    }else return fail("Invalid action");
    next.updatedAt=now();
+   await log(schoolId,access,"family."+body.action,actual,{from:old.paymentStatus,to:next.paymentStatus,amount:next.transferReport?.amount,bankPostedAt:next.bankPostedAt||"",note:next.verificationNote||""});
    try{await records.updateEntity({partitionKey:schoolId,rowKey:actual,payload:JSON.stringify(next),updatedAt:next.updatedAt},"Replace",{etag:previous.etag})}
    catch(e){if(e.statusCode===412)return fail("Record changed, refresh and retry",409);throw e}
-   await log(schoolId,access,"family."+body.action,actual,{from:old.paymentStatus,to:next.paymentStatus});
    return json({item:{...next,id:actual}});
   }catch(e){console.error("familyEventRegistration",e);return fail("Unable to process family registration",500)}
  }
