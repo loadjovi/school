@@ -1,5 +1,7 @@
 import {confirmedReceived} from "./competition-paper-receipts.js";
 import {buildUniformGrowth} from "./uniform-growth.js";
+import {roster as competitionRoster} from "./competition-roster-data.js";
+const competitionByName=new Map(competitionRoster.map(row=>[row[1],{style:row[2],size:row[3]}]));
 const buttons=[...document.querySelectorAll("[data-view]")];const panels=[...document.querySelectorAll("[data-panel]")];function select(name){for(const b of buttons){const active=b.dataset.view===name;b.setAttribute("aria-selected",String(active));b.tabIndex=active?0:-1}for(const p of panels)p.hidden=p.dataset.panel!==name;document.getElementById("uniformRequestProgress").hidden=!["uniform","history"].includes(name)}buttons.forEach((b,i)=>{b.addEventListener("click",()=>select(b.dataset.view));b.addEventListener("keydown",e=>{if(!["ArrowRight","ArrowLeft","Home","End"].includes(e.key))return;e.preventDefault();const index=e.key==="Home"?0:e.key==="End"?buttons.length-1:(i+(e.key==="ArrowRight"?1:-1)+buttons.length)%buttons.length;select(buttons[index].dataset.view);buttons[index].focus()})});select("uniform");function mix(a,b,t){const x=parseInt(a.slice(1),16),y=parseInt(b.slice(1),16);return "#"+[16,8,0].map(n=>Math.round(((x>>n)&255)*(1-t)+((y>>n)&255)*t).toString(16).padStart(2,"0")).join("")}function luminance(c){const n=parseInt(c.slice(1),16),v=[16,8,0].map(k=>((n>>k)&255)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return .2126*v[0]+.7152*v[1]+.0722*v[2]}async function theme(){try{const schoolId=sessionStorage.getItem("school_context_id")||"";const q=new URLSearchParams();if(schoolId)q.set("schoolId",schoolId);const r=await fetch("/api/branding?"+q,{credentials:"same-origin"});if(!r.ok)return;const data=await r.json();let c=String(data.primaryColor||"");if(!/^#[0-9a-f]{6}$/i.test(c))return;for(let i=0;i<16&&1.05/(luminance(c)+.05)<4.5;i++)c=mix(c,"#000000",.13);document.documentElement.style.setProperty("--main",c);document.documentElement.style.setProperty("--soft",mix(c,"#ffffff",.91));document.documentElement.style.setProperty("--ink",mix(c,"#000000",.55))}catch(e){console.warn("Branding fallback",e)}}theme();
 
 function parentAuthHeaders(){
@@ -26,7 +28,8 @@ function renderUniformGrowth(){
    kindSection.append(element("h4",label));
    const tshirt=growthTshirts.find(x=>String(x.studentId)===id);
    const paperClass=kind==="competitionUniform"?confirmedReceived.get(String(name).trim()):"";
-   const {entries,comparison}=buildUniformGrowth(student,kind,tshirt,growthRequests,paperClass);
+   const rosterUniform=kind==="competitionUniform"?competitionByName.get(String(name).trim()):null;
+   const {entries,comparison}=buildUniformGrowth(student,kind,tshirt,growthRequests,paperClass,rosterUniform);
    if(!entries.length){kindSection.append(element("p",kind==="regularUniform"&&!growthTshirtsLoaded?"歷史領用資料載入中…":"目前沒有可顯示的歷史尺寸或新購紀錄。","muted"))}
    for(const entry of entries){
     const step=element("div",undefined,"growth-step");
@@ -35,7 +38,6 @@ function renderUniformGrowth(){
     step.append(element("p",entry.detail,"growth-note"));kindSection.append(step);
    }
    if(comparison)kindSection.append(element("p",comparison,"growth-change"));
-   if(kind==="competitionUniform"&&paperClass)kindSection.append(element("p","紙本只確認領用班級；歷史尺寸、款式與正式發放仍待校方核對。","growth-note"));
    section.append(kindSection);
   }
   host.append(section);
@@ -63,7 +65,8 @@ async function eligibleUniforms(){
    for(const st of aStudents){
     const name=String(st.name||st.studentName||"A 團學生").trim(),paperClass=confirmedReceived.get(name);
     const grade=paperClass?paperClass.slice(0,1):"";
-    const size=String(st.studentId)==="112068"?"S":(["李旭恩","蘇聖翔","蔡昀潔"].includes(name)?{"李旭恩":"男 S","蘇聖翔":"男 M","蔡昀潔":"女 M"}[name]:(st.competitionSize||st.uniformSize||"尺寸待核對"));
+    const registered=competitionByName.get(name);
+    const size=registered?registered.style+"款 "+registered.size:(st.competitionSize||st.uniformSize||"名單尚無尺寸");
     const receipt=paperClass?"已領用 1 套（紙本確認）｜"+grade+" 年級領取（紙本 "+paperClass+"）":"領用待核對｜領取年級待確認";
     const p=document.createElement("p");p.textContent=name+"（"+st.studentId+"）｜A 團｜"+size+"｜"+receipt;info.append(p);
     if(["李旭恩","蘇聖翔","蔡昀潔"].includes(name)){
@@ -164,7 +167,7 @@ function renderCompetitionPurchase(students){
  const studentLabel=document.createElement("label");studentLabel.textContent="學生";
  const studentSelect=document.createElement("select");studentSelect.required=true;for(const st of students)studentSelect.add(new Option((st.studentName||st.name||"學生")+"（"+st.studentId+"）",st.studentId));studentLabel.append(studentSelect);
  const acquisitionLabel=document.createElement("label");acquisitionLabel.textContent="本次取得方式";
- const acquisition=document.createElement("select");acquisition.required=true;acquisition.add(new Option("請選擇取得方式",""),new Option("公費配發｜送學校審核","PUBLIC"),new Option("自費買斷｜顯示匯款帳戶","PURCHASE"));acquisitionLabel.append(acquisition);
+ const acquisition=document.createElement("select");acquisition.required=true;for(const option of [["請選擇取得方式",""],["公費配發｜送學校審核","PUBLIC"],["自費買斷｜顯示匯款帳戶","PURCHASE"]])acquisition.add(new Option(...option));acquisitionLabel.append(acquisition);
  const styleLabel=document.createElement("label");styleLabel.textContent="款式";
  const styleSelect=document.createElement("select");for(const style of ["女","男"])styleSelect.add(new Option(style+"款",style));styleLabel.append(styleSelect);
  const sizeLabel=document.createElement("label");sizeLabel.textContent="這次需要的尺寸";
