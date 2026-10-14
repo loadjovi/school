@@ -297,7 +297,7 @@ async function renderInlineActivities(){
     const aUpcoming=endOf(a)>=today,bUpcoming=endOf(b)>=today;
     if(aUpcoming!==bUpcoming)return aUpcoming?-1:1;
     const aDate=dateOf(a),bDate=dateOf(b);
-    return (aUpcoming?Math.max(aDate,today).localeCompare(Math.max(bDate,today)):bDate.localeCompare(aDate))||String(a.title||"").localeCompare(String(b.title||""),"zh-Hant");
+    return (aUpcoming?(aDate<today?today:aDate).localeCompare(bDate<today?today:bDate):bDate.localeCompare(aDate))||String(a.title||"").localeCompare(String(b.title||""),"zh-Hant");
    });
    if(!items.length){host.append(element("p",category==="performance"?"目前沒有此學生團別已啟用的演出或交流活動。":"目前沒有已開放的活動。","muted"));continue}
    for(const item of items){
