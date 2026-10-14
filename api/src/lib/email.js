@@ -20,7 +20,7 @@ export async function sendUniformRequestStatusEmail({recipients=[],studentName="
   if(!addresses.length)return {status:"no_recipients"};
   const c=config();if(!c.connectionString||!c.senderAddress)return {status:"not_configured"};
   const item=kind==="competitionUniform"?"A 團比賽服":"團 T";
-  const state={APPROVED:"已核准，等待統一採購",ORDERED:"已統一採購，等待到貨",ARRIVED:"已到貨，等待領取安排",READY_FOR_PICKUP:"可以領取，請依學校通知辦理",CANCELLED:"申請已取消",FULFILLED:"已完成領用"}[status];
+  const state={PENDING:"申請內容已更正，待學校審核",APPROVED:"已核准，等待統一採購",ORDERED:"已統一採購，等待到貨",ARRIVED:"已到貨，等待領取安排",READY_FOR_PICKUP:"可以領取，請依學校通知辦理",CANCELLED:"申請已取消",FULFILLED:"已完成領用"}[status];
   if(!state)return {status:"unsupported"};
   const subject=`【弦樂團】${clean(studentName,80)}的${item}申請進度更新：${state}`;
   const detail=`學生：${clean(studentName,80)}\n項目：${item}\n尺寸：${clean(size,20)}\n件數：${Number(quantity)||1}\n目前進度：${state}`;
