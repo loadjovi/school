@@ -30,6 +30,7 @@ function paymentAccountHandler(module){return async request=>{
     catch(e){if(e.statusCode===404)return json({item:null});throw e}
    }
    if(access.role!=="admin")return fail("Admin only",403);
+   if(access.capabilities?.financeVerifier!==true)return fail("僅已指派的財務人員可設定活動帳戶",403);
    const {bankName,bankCode,accountHolder,accountNumber}=data;
    if(![bankName,accountHolder].every(v=>typeof v==="string"&&v.trim().length>0&&v.length<=100)||!/^[0-9]{3}$/.test(bankCode)||!/^[0-9]{6,30}$/.test(accountNumber))return fail("Invalid bank account details");
    const timestamp=new Date().toISOString();
