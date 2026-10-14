@@ -111,14 +111,29 @@ app.http("uniformEventRequests",{
         }else return err("不支援的家長操作",400);
       }else if(data.action==="ADJUST"){
         if(!["PENDING","APPROVED"].includes(before.status)||before.kind!=="regularUniform")return err("僅可更正尚未採購的團 T 件數",409);
+        if(["REPORTED_UNVERIFIED","VERIFIED"].includes(before.paymentStatus))return err("已有匯款紀錄，請先由財務核對，不可直接更正件數",409);
         if(!Number.isSafeInteger(data.quantity)||data.quantity<1||data.quantity>20||!safe(data.reason,300)||!data.reason.trim())return err("請輸入 1–20 件及更正原因；全部取消請選取消申請",400);
         if(data.quantity===before.quantity)return err("件數未變更",400);
         next.quantity=data.quantity;next.adjustmentReason=data.reason.trim();next.note=`團 T 自費加購 ${next.quantity} 件；${before.status==="APPROVED"?"已核准待採購":"待校方審核"}`;action="request.admin_adjust";
         auditDetail={studentId:before.studentId,fromQuantity:before.quantity,toQuantity:next.quantity,reason:next.adjustmentReason};shouldNotify=true;
+        if(before.status==="APPROVED")next.amount=next.quantity*400;
+      }else if(data.action==="SET_AMOUNT"){
+        if(before.status!=="APPROVED"||!["regularUniform","competitionUniform"].includes(before.kind))return err("僅可補正已核准團服的應繳金額",409);
+        if(["REPORTED_UNVERIFIED","VERIFIED"].includes(before.paymentStatus))return err("已有匯款紀錄，不可變更金額",409);
+        const account=await find(TableClient.fromConnectionString(connection(),"TenantUniformPaymentAccounts"),schoolId,"uniform:"+before.kind);
+        if(!account)return err("請先設定此團服的收款帳戶",409);
+        next.amount=before.kind==="regularUniform"?before.quantity*400:2625;next.paymentStatus="AWAITING_TRANSFER";
+        action="request.amount_confirm";auditDetail={studentId:before.studentId,amount:next.amount};shouldNotify=true;
       }else{
         if(!states.has(data.status))return err("Invalid update");
         if(!allowedNext[before.status]?.has(data.status))return err("Invalid status transition; refresh and check the current stage",409);
         next.status=data.status;
+        if(data.status==="APPROVED"&&["regularUniform","competitionUniform"].includes(before.kind)){
+          const account=await find(TableClient.fromConnectionString(connection(),"TenantUniformPaymentAccounts"),schoolId,"uniform:"+before.kind);
+          if(!account)return err("請先設定此團服的收款帳戶，再核准申請",409);
+          next.amount=before.kind==="regularUniform"?before.quantity*400:2625;
+          next.paymentStatus="AWAITING_TRANSFER";
+        }
         if(next.status==="CANCELLED"){
           if(!safe(data.reason,300)||!String(data.reason||"").trim())return err("取消已核准申請請填寫原因",400);
           next.cancelReason=data.reason.trim();
