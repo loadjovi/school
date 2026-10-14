@@ -240,7 +240,8 @@ function table(id,rows,columns,actions=false){
    else{
    const next={PENDING:[["APPROVED","核准，等待採購"],["CANCELLED","取消申請"]],APPROVED:[["ORDERED","已統一採購"],["CANCELLED","取消申請"]],ORDERED:[["ARRIVED","已到貨"],["CANCELLED","取消申請"]],ARRIVED:[["READY_FOR_PICKUP","開放領取"],["CANCELLED","取消申請"]]}[r.status]||[];
    const adjust=r.kind==="團 T"&&["PENDING","APPROVED"].includes(r.status)?"<button type='button' data-adjust='"+i+"'>更正件數</button>":"";
-   controls="<td>"+(next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":"<span>"+esc(r.statusLabel||r.status)+"（目前無後續操作）</span>")+adjust+"</td>";
+   const amount=r.status==="APPROVED"&&!Number.isSafeInteger(r.amount)?"<button type='button' data-amount='"+i+"'>補正應繳金額</button>":"";
+   controls="<td>"+(next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":"<span>"+esc(r.statusLabel||r.status)+"（目前無後續操作）</span>")+adjust+amount+"</td>";
    }
   }
   return "<tr>"+cells+controls+"</tr>";
@@ -453,9 +454,26 @@ async function updateUniformRequest(row,body,{expectedStatus="",expectedQuantity
   finally{pendingRequestIds.delete(row.id);renderModuleRequests()}
  }
 }
+async function loadUniformBank(){
+ const form=el("uniformBankForm"),message=el("uniformBankMessage");
+ try{const data=await api("uniform-events/uniform-payment-account?kind="+encodeURIComponent(form.elements.kind.value));
+  for(const key of ["bankName","bankCode","accountHolder","accountNumber"])form.elements[key].value=data.item?.[key]||"";
+  message.textContent=data.item?"已設定此項收款帳戶；儲存變更後，請再次核對帳號。":"此項尚未設定收款帳戶，無法核准付費申請。";
+ }catch(e){message.textContent="無法讀取收款帳戶："+e.message}
+}
+el("uniformBankForm").elements.kind.addEventListener("change",loadUniformBank);
+el("uniformBankForm").addEventListener("submit",async e=>{
+ e.preventDefault();const form=e.currentTarget,message=el("uniformBankMessage");
+ if(!confirm("確認收款帳戶資料正確？核准後家長會看到此帳號。"))return;
+ const body=Object.fromEntries(new FormData(form));
+ try{await api("uniform-events/uniform-payment-account",{method:"POST",body:JSON.stringify(body)});message.textContent="已儲存收款帳戶。"}
+ catch(error){message.textContent="儲存失敗："+error.message}
+});
+loadUniformBank();
 el("requests").addEventListener("click",async e=>{
- const i=e.target.dataset.update??e.target.dataset.adjust;if(i===undefined)return;
+ const i=e.target.dataset.update??e.target.dataset.adjust??e.target.dataset.amount;if(i===undefined)return;
  const adjusting=e.target.dataset.adjust!==undefined;
+ if(e.target.dataset.amount!==undefined){const row=visibleModuleRequests[Number(i)];if(!row)return;const due=row.kind==="regularUniform"?row.quantity*400:2625;if(!confirm("確認補正此筆應繳金額 NT$ "+due+"？"))return;await updateUniformRequest(row,{action:"SET_AMOUNT"},{successText:"應繳金額已補正"});return;}
  if(adjusting){
   const row=visibleModuleRequests[Number(i)];if(!row)return;
   const raw=prompt("請輸入正確件數（1–20 件；全部不要請選取消申請）",String(row.quantity||1));if(raw===null)return;
