@@ -3,7 +3,7 @@ import {getAccess,json} from "../lib/auth.js";
 import {getTenantDirectory,listTenantAdmins,tenantIdValue,writeGlobalAudit} from "../lib/storage.js";
 import {financeAssignments,setFinanceAssignment} from "../lib/financeAccess.js";
 
-const emailValid=x=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x);
+const emailValid=x=>/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(x);
 app.http("financeAssignments",{methods:["GET","PATCH"],authLevel:"anonymous",route:"finance-assignments",handler:async request=>{
  const access=await getAccess(request);
  if(!access.authenticated)return json({error:"Unauthorized"},401);
