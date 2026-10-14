@@ -390,11 +390,13 @@ async function renderInlineActivities(){
     const calc=()=>{const n=studentWrap.querySelectorAll("input:checked").length,a=Number(adults.value),c=Number(children.value);const amount=rates?(dinner?0:Number(item.studentFee||0)*n)+item.firstAdultFee+(a-1)*item.extraAdultFee+c*item.extraChildFee:null;total.textContent="團員 "+n+" 位＋大人 "+a+" 位＋其他兒童 "+c+" 位｜"+(amount===null?"費率尚未公布":"合計 NT$ "+amount.toLocaleString("zh-TW"));return amount};
     for(const input of [adults,children,studentWrap])input.addEventListener("change",calc);
     form.append(studentWrap,adultLabel,childLabel,total);
-    let lastFive=null,accountReady=!dinner;
+    let lastFive=null,transferDate=null,accountReady=!dinner;
     if(dinner){
      const bank=element("div","正在讀取幹部收款帳戶…","payment-account");form.append(bank);
      lastFive=element("input");lastFive.inputMode="numeric";lastFive.maxLength=5;lastFive.pattern="[0-9]{5}";lastFive.required=true;lastFive.placeholder="匯款帳號後五碼";
      const label=element("label","匯款帳號後五碼");label.append(lastFive);form.append(label);
+     transferDate=element("input");transferDate.type="date";transferDate.required=true;
+     const dateLabel=element("label","匯款日期");dateLabel.append(transferDate);form.append(dateLabel);
      try{const info=await parentApi("uniform-events/dinner-payment-account?activityId="+encodeURIComponent(item.id));const b=info.item;if(!b)throw Error("尚未設定收款帳戶");bank.replaceChildren();bank.append(element("strong","幹部收款帳戶"));bank.append(element("p",b.bankName+"（"+b.bankCode+"）｜戶名："+b.accountHolder));bank.append(element("p","帳號："+b.accountNumber));accountReady=true}
      catch(e){bank.textContent="目前尚未開放匯款："+e.message}
     }
@@ -402,10 +404,10 @@ async function renderInlineActivities(){
     const message=element("p","","hint");message.setAttribute("role","status");form.append(submit,message);
     form.addEventListener("submit",async e=>{
      e.preventDefault();const ids=[...studentWrap.querySelectorAll("input:checked")].map(x=>x.value);if(!ids.length){message.textContent="請先選擇參加學生";return}
-     const amount=calc();if(dinner&&(amount===null||!/^[0-9]{5}$/.test(lastFive.value))){message.textContent="請確認費用與匯款帳號後五碼";return}
+     const amount=calc();if(dinner&&(amount===null||!/^[0-9]{5}$/.test(lastFive.value)||!transferDate.value)){message.textContent="請確認費用、匯款日期與帳號後五碼";return}
      if(!confirm("確認送出報名"+(dinner?"及匯款回報（待幹部核帳）":"")+"？"))return;
      submit.disabled=true;message.textContent="送出中…";
-     try{await parentApi("uniform-events/family-registration",{method:"POST",body:JSON.stringify({kind:item.module,activityId:item.id,studentIds:ids,adults:Number(adults.value),extraChildren:Number(children.value),...(dinner?{lastFive:lastFive.value}:{})})});message.textContent="已送出，"+(dinner?"匯款待幹部核帳。":"報名成功。");await renderInlineActivities()}
+     try{await parentApi("uniform-events/family-registration",{method:"POST",body:JSON.stringify({kind:item.module,activityId:item.id,studentIds:ids,adults:Number(adults.value),extraChildren:Number(children.value),...(dinner?{lastFive:lastFive.value,transferDate:transferDate.value}:{})})});message.textContent="已送出，"+(dinner?"匯款待幹部核帳。":"報名成功。");await renderInlineActivities()}
      catch(err){message.textContent="送出失敗："+err.message;submit.disabled=false}
     });action.append(form);card.append(action);host.append(card);calc();
    }
