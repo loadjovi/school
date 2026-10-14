@@ -59,7 +59,7 @@
       "/school-access.js?v=20261008-select-student",
       "/school-access-audit-admin.js?v=20260918-0005",
       "/school-admin-activity.js?v=20261008-activity2",
-      "/school-access-refresh-fix.js?v=20261002-school-admin-roles",
+      "/school-access-refresh-fix.js?v=20261015-finance-role",
       "/training-attendance.js?v=20261002-save-confirm"
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
@@ -78,7 +78,7 @@
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20261008-select-student",
-      "/school-access-refresh-fix.js?v=20261002-school-admin-roles"
+      "/school-access-refresh-fix.js?v=20261015-finance-role"
     ];
     if(role==="school")return ["/school-access.js?v=20261008-select-student"];
     if(role==="parent")return [
@@ -91,7 +91,7 @@
     if(role==="globalAdmin")return [
       "/school-access.js?v=20261008-select-student",
       "/school-access-audit-admin.js?v=20260918-0005",
-      "/school-access-refresh-fix.js?v=20261002-school-admin-roles"
+      "/school-access-refresh-fix.js?v=20261015-finance-role"
     ];
     return [];
   }
