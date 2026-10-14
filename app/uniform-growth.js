@@ -5,7 +5,7 @@ export function buildUniformGrowth(student,kind,tshirt,requests,paperClass){
  const id=String(student.studentId||student.id||"");
  const entries=[];
  if(kind==="regularUniform"&&tshirt?.historicalIssued===true){
-  const grade=tshirt.receivedGrade?`推估 ${tshirt.receivedGrade} 年級領用，待校方核對`:"領取年級待核對";
+  const grade=tshirt.receivedGrade?`${tshirt.receivedGrade} 年級領用`:"領取年級待核對";
   entries.push({type:"baseline",size:tshirt.size||"",title:"首次團 T 領用",detail:grade,received:true,confirmed:false});
  }
  if(kind==="competitionUniform"&&paperClass){
@@ -16,7 +16,7 @@ export function buildUniformGrowth(student,kind,tshirt,requests,paperClass){
  for(const r of relevant){
   const status=requestLabels[r.status]||"進度待確認";
   const purchase=r.acquisition==="PURCHASE"||/新購|加購|買斷|購買/.test(String(r.note||""));
-  const title=r.acquisition==="RENTAL"?"租借申請":purchase?"新購／加購":"團服申請";
+  const title=r.acquisition==="PUBLIC"?"公費配發申請":r.acquisition==="RENTAL"?"租借申請":purchase?"新購／加購":"團服申請";
   entries.push({type:"purchase",size:r.size||"",style:r.style||"",title,detail:status,date:r.createdAt||"",received:r.status==="FULFILLED",confirmed:r.status==="FULFILLED",status:r.status});
  }
  const sized=entries.filter(e=>e.size);
