@@ -41,6 +41,32 @@ const adminTabDescriptions={
  requests:"團服申請清單及 CSV 匯出／匯入預覽。",
  inventory:"正式庫存、尺寸盤點及數量調整。"
 };
+function renderUniformRequestAlerts(){
+ const host=el("uniformRequestAlerts");
+ if(!host)return;
+ const countFor=kind=>cachedRequests.filter(x=>{
+  const k=String(x.kind||x.type||"");
+  return (kind==="regularUniform"?/regular|tshirt|t-shirt/i.test(k):/competition/i.test(k))&&String(x.status||"").toUpperCase()==="PENDING";
+ }).length;
+ const regular=countFor("regularUniform"),competition=countFor("competitionUniform");
+ const tabs=[["regularUniform","團 T",regular],["competitionUniform","A 團比賽服",competition]];
+ for(const [tab,label,n] of tabs){
+  const button=document.querySelector('[data-admin-tab="'+tab+'"]');
+  if(button)button.textContent=label+"管理"+(n?"（待審 "+n+"）":"");
+ }
+ host.replaceChildren();
+ const total=regular+competition;
+ if(!total){host.hidden=true;return}
+ host.hidden=false;
+ const title=document.createElement("strong");title.textContent="待處理團服申請："+total+" 筆";
+ host.append(title);
+ for(const [tab,label,n] of tabs){
+  if(!n)continue;
+  const btn=document.createElement("button");btn.type="button";btn.textContent="查看 "+label+" 待審 "+n+" 筆";btn.style.marginLeft="10px";
+  btn.addEventListener("click",()=>{activeAdminTab=tab;syncUniformModuleVisibility();el("uniformRequestsPanel")?.scrollIntoView({behavior:"smooth",block:"start"})});
+  host.append(btn);
+ }
+}
 function renderModuleRequests(){
  const rows=cachedRequests.filter(x=>{
   const kind=String(x.kind||x.type||"");
@@ -275,6 +301,7 @@ async function load(){
   {path:"uniform-events/config",status:"status",render:data=>{savedConfigs=data.items||[];syncConfig();refreshFamilyStatistics()}},
   {path:"uniform-events/requests",status:"requestsStatus",render:data=>{
     cachedRequests=data.items||[];
+    renderUniformRequestAlerts();
     if(["regularUniform","competitionUniform"].includes(activeAdminTab))renderModuleRequests();
   }},
   {path:"uniform-events/inventory",status:"stockStatus",render:data=>{
