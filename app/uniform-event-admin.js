@@ -429,7 +429,7 @@ el("config").onsubmit=async e=>{
   if(activity){el("existingActivity").value=id;syncConfig();el("existingActivity").dispatchEvent(new Event("change"))}
   const persisted=savedConfigs.find(x=>x.module===module&&x.id===id);
   if(!persisted)throw Error("API 已回覆，但重新查詢未找到活動，請勿視為儲存成功");
-  feedback.textContent="設定已儲存並確認成功："+(persisted.title||module)+"。此設定僅供後台管理使用，是否開放家長報名依活動啟用狀態與報名期間判定。";
+  feedback.textContent="設定已儲存並確認成功："+(persisted.title||module)+(module==="fieldTrip"?"；已同步至行事曆／特殊活動（"+(persisted.enabled?"顯示中":"已取消")+"）。":"。")+"是否開放家長報名依活動啟用狀態與報名期間判定。";
   el("status").textContent=feedback.textContent;
  }catch(err){const bankMissing=String(err.message).includes("收款帳戶");feedback.textContent="儲存失敗："+err.message+(bankMissing?"\n處理方式：先確認上方選取的活動名稱與下方帳戶綁定的活動一致；若尚未建立活動，請先關閉並儲存，再套用帳戶後啟用。":"");feedback.style.whiteSpace="pre-line";el("status").textContent=feedback.textContent}
  finally{button.disabled=false}
