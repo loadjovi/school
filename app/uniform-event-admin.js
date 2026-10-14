@@ -285,6 +285,10 @@ function syncConfig(){
  const form=el("config"),module=el("configModule").value,activity=activityTypes.has(module);
  form.querySelectorAll("[data-activity-field]").forEach(x=>x.hidden=!activity);
  const stagePanel=el("fieldTripCollectionPanel");if(stagePanel)stagePanel.hidden=module!=="fieldTrip";
+ const finance=el("uniformFinanceSettings");if(finance)finance.hidden=!["regularUniform","competitionUniform"].includes(module);
+ if(!finance.hidden){el("uniformBankForm").elements.kind.value=module;el("uniformPriceForm").elements.kind.value=module;}
+ el("uniformBankForm").elements.kind.disabled=true;el("uniformPriceForm").elements.kind.disabled=true;
+
  updateActivityConfigClarity();
  el("existingActivityWrap").hidden=!activity;el("activityIdHint").hidden=!activity;
  el("configModeHint").textContent=activity?"活動可新增多筆，請選擇建立或編輯既有活動。":"團服模組僅有一組設定；只能啟用或關閉，不能新增活動。";
@@ -503,6 +507,11 @@ el("uniformPriceForm").addEventListener("submit",async e=>{
  catch(error){message.textContent="價格更新失敗："+error.message}
 });
 loadUniformPrices();
+el("configModule").addEventListener("change",()=>{
+ if(!["regularUniform","competitionUniform"].includes(el("configModule").value))return;
+ loadUniformBank();
+ const form=el("uniformPriceForm");form.elements.unitPrice.value=uniformPrices[form.elements.kind.value]?.unitPrice??"";
+});
 el("requests").addEventListener("click",async e=>{
  const i=e.target.dataset.update??e.target.dataset.adjust??e.target.dataset.amount;if(i===undefined)return;
  const adjusting=e.target.dataset.adjust!==undefined;
