@@ -15,21 +15,11 @@ async function table(name){
 const fail=(message,status=400)=>json({error:message},status);
 async function get(t,schoolId,id){try{return await t.getEntity(schoolId,id)}catch(e){if(e.statusCode===404)return null;throw e}}
 const parse=r=>({...JSON.parse(r.payload||"{}"),studentId:r.rowKey,etag:r.etag});
-function studentGrade(student){
- const values=[student.grade,student.gradeName,student.className,student.class,student.classroom,student.gradeClass].filter(v=>v!==undefined&&v!==null).map(String);
- for(const value of values){
-  const match=value.match(/(?:^|[^0-9])([1-6])(?:年級|年|[A-Za-z班]|$)/);
-  if(match)return Number(match[1]);
-  const chinese=value.match(/([一二三四五六])年級/);
-  if(chinese)return "一二三四五六".indexOf(chinese[1])+1;
- }
- return null;
-}
-function historicalStudentInfo(student){
- const grade=studentGrade(student);
- const group=String(student.groupName||student.group||"").trim().toUpperCase().replace(/\\s/g,"");
- const unissued=group==="C"||group==="C團"||group==="儲備團"||String(student.studentName||"").replace(/\\s/g,"")==="李沛臻";
- return {currentGrade:grade,groupName:student.groupName||student.group||"",receivedGrade:grade===null?null:unissued?grade:grade>1?grade-1:null};
+// The family confirmed this receipt grade on 2026-10-14; other grades require explicit records.
+const confirmedReceiptGrade={"sacred-heart":{"112068":"3"}};
+function historicalStudentInfo(student,schoolId,studentId,existing){
+ const saved=existing?.receivedGrade;
+ return {groupName:student.groupName||student.group||"",receivedGrade:saved||confirmedReceiptGrade[schoolId]?.[studentId]||null};
 }
 const eligible=student=>["A","B"].includes(String(student?.groupName||"").trim())&&String(student?.studentName||"").replace(/\\s+/g,"")!=="李沛臻";
 async function audit(schoolId,actor,action,studentId,details){
@@ -58,7 +48,8 @@ app.http("tshirtHistoricalSize",{
       const student=await getStudentMaster(id,schoolId);
       if(!student||!eligible(student))continue;
       const existing=await get(t,schoolId,id);
-      items.push(existing?{...parse(existing),studentName:student.studentName,...historicalStudentInfo(student)}:{studentId:id,studentName:student.studentName,...historicalStudentInfo(student),historicalIssued:true,issuedQuantity:1,size:null,sizeStatus:"PENDING_PARENT",autoBackfill:true});
+      const record=existing?parse(existing):null;
+      items.push(record?{...record,studentName:student.studentName,...historicalStudentInfo(student,schoolId,id,record)}:{studentId:id,studentName:student.studentName,...historicalStudentInfo(student,schoolId,id),historicalIssued:true,issuedQuantity:1,size:null,sizeStatus:"PENDING_PARENT",autoBackfill:true});
      }
     }else{
      for await(const row of t.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}}))items.push(parse(row));
