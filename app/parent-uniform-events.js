@@ -21,13 +21,15 @@ async function eligibleUniforms(){
   regular.hidden=!active("regularUniform");
   if(!regular.hidden)loadInlineSizes();
   competition.hidden=!(active("competitionUniform")&&aStudents.length);
-  if(aStudents.length){const info=document.getElementById("competitionStudentInfo");info.replaceChildren();for(const st of aStudents){const p=document.createElement("p");p.textContent=(st.name||st.studentName||"A 團學生")+"（"+st.studentId+"）｜A 團｜"+(String(st.studentId)==="112068"?"S｜公費｜已領取":(["李旭恩","蘇聖翔","蔡昀潔"].includes(String(st.name||st.studentName||"").trim())?({"李旭恩":"男 S","蘇聖翔":"男 M","蔡昀潔":"女 M"}[String(st.name||st.studentName||"").trim()]+"｜公費／自費待確認｜領用狀態待核對"):((st.competitionSize||st.uniformSize||"已確認尺寸待同步")+"｜公費｜已領取")));const receivedGrade=st.competitionReceivedGrade||st.competitionGradeAtReceipt||st.competitionReceiptGrade||"";const receiptLabel=receivedGrade?(String(receivedGrade).includes("年級")?String(receivedGrade):String(receivedGrade)+"年級")+(currentGradeException?"（目前）":"領取"):"領取年級待確認";p.textContent=p.textContent.replace("｜已領取","｜已領取 1 套｜"+receiptLabel+"｜資料已確認").replace("｜領用狀態待核對","｜領用狀態待核對｜"+receiptLabel);info.append(p);if(["李旭恩","蘇聖翔","蔡昀潔"].includes(String(st.name||st.studentName||"").trim())){const label=document.createElement("label");label.textContent="請確認比賽服費用來源：";const select=document.createElement("select");select.append(new Option("請選擇公費或自費",""),new Option("公費","PUBLIC"),new Option("自費買斷","SELF"));label.append(select);const detail=document.createElement("p");detail.className="hint";detail.setAttribute("role","status");select.addEventListener("change",()=>{p.textContent=(st.name||st.studentName)+"（"+st.studentId+"）｜A 團｜"+({"李旭恩":"男 S","蘇聖翔":"男 M","蔡昀潔":"女 M"}[String(st.name||st.studentName).trim()])+"｜"+(select.value==="PUBLIC"?"公費（待校方核對）":select.value==="SELF"?"自費買斷（待校方核對）":"公費／自費待確認")+"｜領用狀態待核對｜"+receiptLabel;detail.textContent=select.value==="SELF"?"自費買斷 NT$2,625（含稅）。目前尚未完成收款帳戶與匯款後五碼串接，請勿先匯款。":select.value==="PUBLIC"?"已選擇公費；正式領用紀錄仍須由學校確認。":""});info.append(label,detail)}}if(!competition.hidden)renderCompetitionPurchase(aStudents)}
+  if(aStudents.length){const info=document.getElementById("competitionStudentInfo");info.replaceChildren();for(const st of aStudents){const p=document.createElement("p");p.textContent=(st.name||st.studentName||"A 團學生")+"（"+st.studentId+"）｜A 團｜"+(String(st.studentId)==="112068"?"S｜公費｜已領取":(["李旭恩","蘇聖翔","蔡昀潔"].includes(String(st.name||st.studentName||"").trim())?({"李旭恩":"男 S","蘇聖翔":"男 M","蔡昀潔":"女 M"}[String(st.name||st.studentName||"").trim()]+"｜公費／自費待確認｜領用狀態待核對"):((st.competitionSize||st.uniformSize||"已確認尺寸待同步")+"｜公費｜已領取")));const receivedGrade=st.competitionReceivedGrade||st.competitionGradeAtReceipt||st.competitionReceiptGrade||"";const receiptLabel=receivedGrade?(String(receivedGrade).includes("年級")?String(receivedGrade):String(receivedGrade)+"年級")+(currentGradeException?"（目前）":"領取"):"領取年級待確認";p.textContent=p.textContent.replace("｜已領取","｜已領取 1 套｜"+receiptLabel+"｜資料已確認").replace("｜領用狀態待核對","｜領用狀態待核對｜"+receiptLabel);info.append(p);if(["李旭恩","蘇聖翔","蔡昀潔"].includes(String(st.name||st.studentName||"").trim())){const label=document.createElement("label");label.textContent="請確認比賽服費用來源：";const select=document.createElement("select");select.append(new Option("請選擇公費或自費",""),new Option("公費","PUBLIC"),new Option("自費買斷","SELF"));label.append(select);const detail=document.createElement("p");detail.className="hint";detail.setAttribute("role","status");select.addEventListener("change",()=>{p.textContent=(st.name||st.studentName)+"（"+st.studentId+"）｜A 團｜"+({"李旭恩":"男 S","蘇聖翔":"男 M","蔡昀潔":"女 M"}[String(st.name||st.studentName).trim()])+"｜"+(select.value==="PUBLIC"?"公費（待校方核對）":select.value==="SELF"?"自費買斷（待校方核對）":"公費／自費待確認")+"｜領用狀態待核對｜"+receiptLabel;detail.textContent=select.value==="SELF"?"自費買斷價格請參考下方申請區；學校核准前請勿匯款。":select.value==="PUBLIC"?"已選擇公費；正式領用紀錄仍須由學校確認。":""});info.append(label,detail)}}if(!competition.hidden)renderCompetitionPurchase(aStudents)}
   status.textContent=students.length?"已確認 "+students.length+" 位已綁定學生；團服依校方啟用狀態及學生團別顯示。":"目前無已綁定學生，團服申請功能不顯示。";
   if(!students.length){regular.hidden=true;competition.hidden=true}
  }catch(e){console.warn("家長團服資格查詢失敗",e);status.textContent="資格查詢失敗（"+e.message+"）。請確認預覽環境登入及 API 設定；暫不開放申請。"}
 }
 eligibleUniforms();
 
+let currentUniformPrices=null;
+const uniformPricePromise=parentApi("uniform-events/prices").then(data=>{currentUniformPrices=data.items||{};return currentUniformPrices});
 const TSHIRT_SIZES=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"];
 async function loadInlineSizes(){
  const host=document.getElementById("inlineTshirtSizes"),status=document.getElementById("inlineTshirtStatus");
@@ -84,7 +86,7 @@ function renderTshirtPurchase(items){
  const host=document.getElementById("inlineTshirtSizes");if(!host||!items.length)return;
  const panel=document.createElement("section");panel.className="card";
  const title=document.createElement("h3");title.textContent="🛍️ 自費加購團 T（第二件起）";
- const hint=document.createElement("p");hint.className="hint";hint.textContent="每件 NT$400。此處僅送出加購需求，需經學校後台審核；尚未完成匯款與核帳前，請勿先匯款。團 T 與 A 團比賽服尺寸不共用。";
+ const hint=document.createElement("p");hint.className="hint";hint.textContent="正在讀取團 T 單價；需經學校後台審核，核准前請勿匯款。團 T 與 A 團比賽服尺寸不共用。";
  const form=document.createElement("form");
  const studentLabel=document.createElement("label");studentLabel.textContent="申請學生";
  const student=document.createElement("select");student.required=true;for(const item of items)student.add(new Option((item.studentName||item.studentId)+"（"+item.studentId+"）",item.studentId));studentLabel.append(student);
@@ -92,16 +94,16 @@ function renderTshirtPurchase(items){
  const size=document.createElement("select");size.required=true;size.add(new Option("請選擇尺寸",""));for(const x of TSHIRT_SIZES)size.add(new Option(x,x));sizeLabel.append(size);
  const countLabel=document.createElement("label");countLabel.textContent="加購件數";
  const count=document.createElement("select");for(let i=1;i<=5;i++)count.add(new Option(i+" 件",String(i)));countLabel.append(count);
- const total=document.createElement("p");const update=()=>total.textContent="預估金額：NT$ "+(Number(count.value)*400).toLocaleString("zh-TW");count.addEventListener("change",update);update();
+ const total=document.createElement("p");const update=()=>{const price=currentUniformPrices?.regularUniform?.unitPrice;total.textContent=price?"目前預估金額：NT$ "+(Number(count.value)*price).toLocaleString("zh-TW")+"（核准時以當時價格為準）":"單價讀取中…"};count.addEventListener("change",update);update();
  const submit=document.createElement("button");submit.type="submit";submit.textContent="送出團 T 加購申請";
  const message=document.createElement("p");message.className="hint";message.setAttribute("role","status");
- form.append(studentLabel,sizeLabel,countLabel,total,submit,message);panel.append(title,hint,form);host.append(panel);
+ form.append(studentLabel,sizeLabel,countLabel,total,submit,message);panel.append(title,hint,form);host.append(panel);submit.disabled=true;uniformPricePromise.then(prices=>{hint.textContent="目前每件 NT$"+Number(prices.regularUniform.unitPrice).toLocaleString("zh-TW")+"。申請仍需學校審核；核准前請勿匯款。團 T 與 A 團比賽服尺寸不共用。";update();submit.disabled=false}).catch(()=>{hint.textContent="暫時無法讀取團 T 單價，請稍後重新整理。";total.textContent="價格未確認，暫停申請。"});
  form.addEventListener("submit",async e=>{
   e.preventDefault();if(!size.value)return;
   if(!confirm("確認送出團 T 加購需求？送出後仍需學校審核，並非已付款或已領取。"))return;
   submit.disabled=true;message.textContent="申請送出中…";
   try{
-   const resp=await fetch("/api/uniform-events/requests",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...parentAuthHeaders()},body:JSON.stringify({kind:"regularUniform",studentId:student.value,size:size.value,quantity:Number(count.value),acquisition:"PURCHASE",note:"團 T 自費加購 "+count.value+" 件，每件 NT$400；待校方審核"})});
+   const resp=await fetch("/api/uniform-events/requests",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...parentAuthHeaders()},body:JSON.stringify({kind:"regularUniform",studentId:student.value,size:size.value,quantity:Number(count.value),acquisition:"PURCHASE",note:"團 T 自費加購 "+count.value+" 件；價格以校方核准當時為準"})});
    const data=await resp.json().catch(()=>({}));if(!resp.ok)throw Error(data.error||"HTTP "+resp.status);
    message.textContent="團 T 加購申請已送出，等待學校審核。可在上方「我的團服申請進度」持續查詢。";submit.textContent="已送出";await loadUniformRequestProgress();
   }catch(error){message.textContent="送出失敗："+error.message;submit.disabled=false}
@@ -111,7 +113,7 @@ function renderTshirtPurchase(items){
 function renderCompetitionPurchase(students){
  const host=document.getElementById("competitionPurchaseArea");host.replaceChildren();
  const heading=document.createElement("h3");heading.textContent="自費買斷／加購比賽服";host.append(heading);
- const note=document.createElement("p");note.className="hint";note.textContent="公費領用資料由校方核對；若改為自費買斷或因成長需要加購，價格 NT$2,625（含稅）。申請送出後待學校審核；核准後請至「我的團服申請進度」確認金額與收款帳戶，核准前請勿匯款。";host.append(note);
+ const note=document.createElement("p");note.className="hint";note.textContent="正在讀取 A 團比賽服單價；申請送出後須由學校審核，核准前請勿匯款。";host.append(note);
  const form=document.createElement("form");
  const studentLabel=document.createElement("label");studentLabel.textContent="學生";
  const studentSelect=document.createElement("select");studentSelect.required=true;for(const st of students)studentSelect.add(new Option((st.studentName||st.name||"學生")+"（"+st.studentId+"）",st.studentId));studentLabel.append(studentSelect);
@@ -122,7 +124,7 @@ function renderCompetitionPurchase(students){
  const sync=()=>{const sizes=styleSelect.value==="女"?["XS","S","M","L"]:["S","M","L","2L"];sizeSelect.replaceChildren(new Option("請選擇尺寸",""),...sizes.map(x=>new Option(x,x)))};styleSelect.addEventListener("change",sync);sync();
  const button=document.createElement("button");button.type="submit";button.textContent="送出自費加購申請";
  const message=document.createElement("p");message.className="hint";message.setAttribute("role","status");
- form.append(studentLabel,styleLabel,sizeLabel,button,message);host.append(form);
+ form.append(studentLabel,styleLabel,sizeLabel,button,message);host.append(form);button.disabled=true;uniformPricePromise.then(prices=>{note.textContent="目前自費買斷／加購單價 NT$"+Number(prices.competitionUniform.unitPrice).toLocaleString("zh-TW")+"。公費領用由校方核對；核准後請至申請進度確認實際金額與帳戶，核准前請勿匯款。";button.disabled=false}).catch(()=>{note.textContent="暫時無法讀取比賽服價格，請稍後重新整理。"});
  form.addEventListener("submit",async e=>{
   e.preventDefault();if(!sizeSelect.value)return;
   if(!confirm("確認提出自費加購需求？此為待審申請，尚未付款或領用。"))return;
