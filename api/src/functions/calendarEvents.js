@@ -22,6 +22,7 @@ const eventView=(e,internal=false)=>({
   eventType:String(e.eventType||"general"),
   title:String(e.title||"活動"),
   eventDate:String(e.eventDate||""),
+  endDate:String(e.endDate||""),
   startTime:String(e.startTime||""),
   endTime:String(e.endTime||""),
   timeLabel:String(e.timeLabel||""),
@@ -32,6 +33,8 @@ const eventView=(e,internal=false)=>({
   requiresAttendance:needsTrainingAttendance(e),
   visibleToParents:e.visibleToParents!==false,
   status:String(e.status||"active"),
+  sourceModule:String(e.sourceModule||""),
+  sourceActivityId:String(e.sourceActivityId||""),
   updatedAt:String(e.updatedAt||""),
   ...(internal?{teacherEmail:String(e.teacherEmail||""),teachingTeacherEmail:String(e.teachingTeacherEmail||""),teachingTeacherName:String(e.teachingTeacherName||""),teachingMinutes:Number(e.teachingMinutes||0),teachingConfirmedAt:String(e.teachingConfirmedAt||""),teachingConfirmedBy:String(e.teachingConfirmedBy||"")}:{}),
 });
@@ -39,16 +42,36 @@ const eventView=(e,internal=false)=>({
 export async function listCalendarEvents(schoolId,startDate="",endDate="",groupName="",includeInactive=false){
   await ensureTenantTables();
   const sid=tenantSchoolPartition(schoolId),parts=[`PartitionKey eq '${safe(sid)}'`];
-  if(startDate)parts.push(`eventDate ge '${safe(startDate)}'`);
+  // A multi-day activity can start before the requested window and still be in progress.
   if(endDate)parts.push(`eventDate le '${safe(endDate)}'`);
   const group=normGroup(groupName),items=[];
   for await(const e of table("tenantCalendarEvent").listEntities({queryOptions:{filter:parts.join(" and ")}})){
+    if(startDate&&String(e.endDate||e.eventDate||"")<startDate)continue;
     if(!includeInactive&&String(e.status||"active")!=="active")continue;
     const target=String(e.targetGroups||"").split(",").map(normGroup).filter(Boolean);
     if(group&&target.length&&!target.includes("ALL")&&!target.includes(group))continue;
     items.push(eventView(e,includeInactive));
   }
   return items.sort((a,b)=>a.eventDate.localeCompare(b.eventDate)||a.startTime.localeCompare(b.startTime)||a.title.localeCompare(b.title,"zh-Hant"));
+}
+
+const tripCalendarId=id=>`evt_fieldTrip_${id}`;
+const taipeiPart=(date,part)=>new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(date).find(x=>x.type===part)?.value||"";
+const tripDate=d=>`${taipeiPart(d,"year")}-${taipeiPart(d,"month")}-${taipeiPart(d,"day")}`;
+const tripTime=d=>`${taipeiPart(d,"hour")}:${taipeiPart(d,"minute")}`;
+
+export async function syncFieldTripCalendar(schoolId,access,data){
+  await ensureTenantTables();
+  const sid=tenantSchoolPartition(schoolId),client=table("tenantCalendarEvent"),eventId=tripCalendarId(data.id),now=new Date().toISOString();
+  const start=new Date(data.startAt),end=new Date(data.endAt||data.startAt);
+  let old=null;try{old=await client.getEntity(sid,eventId)}catch(e){if(e.statusCode!==404)throw e}
+  const entity={partitionKey:sid,rowKey:eventId,schoolId:sid,eventType:"field_trip",sourceModule:"fieldTrip",sourceActivityId:data.id,
+    title:String(data.title).slice(0,120),eventDate:tripDate(start),endDate:tripDate(end),startTime:tripTime(start),endTime:data.endAt?tripTime(end):"",
+    timeLabel:"",targetGroups:"ALL",teacherName:"",teacherEmail:"",location:String(data.location).slice(0,300),note:"",requiresAttendance:false,
+    visibleToParents:true,status:data.enabled===true?"active":"cancelled",updatedAt:now,updatedBy:String(access.email||"admin")};
+  await client.upsertEntity(entity,"Replace");
+  await auditSaved(schoolId,access.email,old?"calendar_event_update":"calendar_event_create",{eventId,title:entity.title,eventDate:entity.eventDate,sourceModule:"fieldTrip",sourceActivityId:data.id,before:old?eventView(old,true):null,after:eventView(entity,true)});
+  return eventView(entity,true);
 }
 
 export async function calendarEventsForStudent(schoolId,startDate,endDate,student){
@@ -96,6 +119,7 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
       const deterministic=body.action==="preset_a_competition_2026"
         ?("evt_"+Buffer.from([x.eventType,x.title,eventDate,startTime,endTime,x.targetGroups].join("|"),"utf8").toString("base64url").slice(0,220))
         :String(x.eventId||rowKey("evt"));
+      if(deterministic.startsWith("evt_fieldTrip_"))return json({error:"校外活動行事曆請於活動設定中維護"},409);
       const teacherEmail=String(x.teacherEmail||"").trim().toLowerCase();
       if(x.requiresAttendance===true&&String(x.eventType||"general")!=="competition_training")return json({error:"目前僅比賽加練支援獨立點名"},400);
       if(teacherEmail){const t=await teacherForDate(teacherEmail,schoolId,eventDate);if(!t||t.temporary&&t.courseType!=="practice")return json({error:"點名老師需在活動日期具備本校加練權限"},400)}
@@ -117,6 +141,7 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
   const eventId=String(body.eventId||"");
   if(!eventId)return json({error:"缺少活動 ID"},400);
   let old;try{old=await client.getEntity(sid,eventId)}catch(e){if(e.statusCode===404)return json({error:"找不到活動"},404);throw e}
+  if(old.sourceModule==="fieldTrip")return json({error:"此行事曆由校外活動設定同步，請至活動設定修改或關閉"},409);
   if(["confirmTeaching","revokeTeaching"].includes(String(body.action||""))){
     if(String(old.eventType||"")!=="competition_training")return json({error:"只有加練活動可認列老師工時"},400);
     if(body.action==="confirmTeaching"){
