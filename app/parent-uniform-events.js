@@ -239,6 +239,7 @@ async function loadUniformRequestProgress(){
    const badge=element("span",stage.title,"status-pill");card.append(badge);
    card.append(element("p",item.kind==="competitionUniform"&&item.acquisition==="PUBLIC"?(item.status==="PENDING"?"公費配發｜等待學校審核資格與尺寸；無須匯款。":"公費配發｜不需匯款；請依學校通知辦理領用。"):item.kind==="competitionUniform"&&item.acquisition==="PURCHASE"?"自費買斷｜"+stage.next:stage.next,"hint"));
    card.append(element("p",`尺寸：${item.size||"待確認"}${item.style?`｜${item.style}款`:""}｜件數：${item.quantity||1}｜申請時間：${formatDate(item.createdAt)||"—"}｜更新時間：${formatDate(item.updatedAt)||"—"}`,"muted"));
+   if(item.status==="FULFILLED")card.append(element("p",`實際領取：${formatDate(item.issuedAt)||"日期待確認"}｜領取人：${item.receivedBy||"待核對"}｜件數：${item.issuedQuantity||item.quantity||1}`,"hint"));
    if(["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(item.status)&&item.acquisition!=="PUBLIC"){
     const payment=element("div","正在讀取匯款資訊…","payment-account");card.append(payment);
     if(Number.isSafeInteger(item.amount)&&item.amount>0){
