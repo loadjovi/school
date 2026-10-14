@@ -34,13 +34,13 @@ const pendingRequestIds=new Set();
 let uniformStudentNames=new Map();
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let savedConfigs=[];
-let activeAdminTab="settings";
+let activeAdminTab="regularUniform";
 const adminTabDescriptions={
- settings:"設定活動啟用狀態與團服價格；團 T、A 團比賽服固定開放。",
- accounts:"新增／修改幹部帳戶範本，並設定團服匯款帳戶。",
- regularUniform:"團 T：首次免費資格及歷史配發核對。",
- competitionUniform:"A 團比賽服：學生尺寸、公發與歸還核對。",
- events:"校外活動與期末聚餐的家庭報名統計。",
+ settings:"建立或修改活動，設定對象團別與家長端顯示狀態。",
+ accounts:"新增或修改收款帳戶，再選擇團 T 或 A 團比賽服套用。",
+ regularUniform:"查看團 T 申請、學生領用、採購及庫存。固定開放家長申請。",
+ competitionUniform:"查看 A 團比賽服申請、尺寸及領用紀錄。固定開放家長申請。",
+ events:"查看交流／快閃活動及期末聚餐的報名與人數。",
  requests:"團服申請清單及 CSV 匯出／匯入預覽。",
  inventory:"正式庫存、尺寸盤點及數量調整。"
 };
@@ -124,6 +124,15 @@ function placeSharedUniformPanels(){
 }
 function syncUniformModuleVisibility(){
  placeSharedUniformPanels();
+ const finance=el("uniformFinanceSettings"),isUniform=["regularUniform","competitionUniform"].includes(activeAdminTab);
+ if(isUniform){
+  const anchor=activeAdminTab==="regularUniform"?el("tshirtShortcutPanel"):document.querySelector('section[data-admin-view="competitionUniform"]');
+  anchor.insertAdjacentElement("afterend",finance);
+  el("uniformFinanceKind").value=activeAdminTab;
+  el("uniformPriceForm").elements.kind.value=activeAdminTab;
+  if(typeof showUniformPrice==="function")showUniformPrice();
+ }
+ finance.hidden=!isUniform;
  for(const panel of document.querySelectorAll("[data-admin-view]")){
   const tab=panel.dataset.adminView;
   panel.hidden=tab!==activeAdminTab;
@@ -141,10 +150,10 @@ document.querySelectorAll("[data-admin-tab]").forEach(button=>button.addEventLis
  activeAdminTab=button.dataset.adminTab;
  syncUniformModuleVisibility();
 }));
-syncUniformModuleVisibility();
 function renderConfigSummary(items){
  const target=el("settings");
- if(!items.length){target.textContent="目前尚無已儲存的活動或團服設定。";return}
+ items=items.filter(x=>configActivityTypes.has(x.module));
+ if(!items.length){target.textContent="目前尚無已儲存的活動。請在上方選擇活動類型並建立。";return}
  const fmtDate=v=>{if(!v)return "未設定";const d=new Date(v);return Number.isNaN(d.getTime())?"日期格式有誤":new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(d)};
  const money=v=>"NT$ "+Number(v||0).toLocaleString("zh-TW");
  const names={yearEndDinner:"期末聚餐",fieldTrip:"交流／快閃活動",calendarActivity:"演出／競賽活動",regularUniform:"團T（T-shirt）",competitionUniform:"A團比賽服"};
@@ -152,7 +161,7 @@ function renderConfigSummary(items){
   const activity=configActivityTypes.has(x.module),calendarOnly=x.module==="calendarActivity";
   const dateText=calendarOnly?(x.eventDate||"未設定")+((x.endDate&&x.endDate!==x.eventDate)?" ～ "+x.endDate:""):fmtDate(x.startAt)+" ～ "+fmtDate(x.endAt||x.startAt);
   return "<article style='border:1px solid "+(x.enabled?"#8dbda2":"#d9e3dd")+";border-radius:10px;padding:14px;margin:12px 0;"+(x.enabled?"":"background:#f5f6f5;")+"'>"+
-   "<strong>"+esc(x.title||names[x.module]||x.module)+"</strong>　<span style='font-weight:700;color:"+(x.enabled?"#176543":"#66736d")+"'>"+(x.enabled?"● 已啟用":"○ 未啟用｜家長行事曆不顯示")+"</span>"+
+   "<strong>"+esc(x.title||names[x.module]||x.module)+"</strong>　<span style='font-weight:700;color:"+(x.enabled?"#176543":"#66736d")+"'>"+(x.enabled?"● 家長端顯示中":"○ 暫不顯示")+"</span>"+
    (activity?"<p>類別："+esc(names[x.module])+"｜地點："+esc(x.location||"未設定")+"</p>"+
    "<p>活動期間："+esc(dateText)+"｜對象："+esc(x.targetGroups||"ALL")+"</p>"+
    (calendarOnly?"<p>免報名、免收費｜"+esc(x.timeLabel||"時間另行通知")+"</p>"+(x.note?"<p>注意事項："+esc(x.note)+"</p>":""):
@@ -162,9 +171,9 @@ function renderConfigSummary(items){
    "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>"+(activity?"編輯此活動":"檢視團服設定")+"</button></article>";
  };
  const enabled=items.filter(x=>x.enabled===true),disabled=items.filter(x=>x.enabled!==true);
- target.innerHTML="<h3>活動與團服設定（"+items.length+" 筆）</h3><p>已啟用與未啟用分區顯示；已啟用設定仍須確認報名期間及收款公告。</p>"+
- "<section aria-label='已啟用設定'><h4 style='color:#176543'>已啟用（"+enabled.length+"）</h4>"+(enabled.length?enabled.map(renderCard).join(""):"<p>目前沒有已啟用設定</p>")+"</section>"+
- "<details style='margin-top:20px;border-top:2px solid #d9e3dd;padding-top:12px'><summary style='cursor:pointer;font-weight:700'>未啟用（"+disabled.length+"）｜點選展開</summary>"+(disabled.length?disabled.map(renderCard).join(""):"<p>目前沒有未啟用設定</p>")+"</details>";
+ target.innerHTML="<h3>已建立活動（"+items.length+" 筆）</h3><p>已顯示與暫不顯示的活動分開列出；修改活動時請確認對象團別與日期。</p>"+
+ "<section aria-label='已顯示活動'><h4 style='color:#176543'>家長端顯示中（"+enabled.length+"）</h4>"+(enabled.length?enabled.map(renderCard).join(""):"<p>目前沒有已啟用設定</p>")+"</section>"+
+ "<details style='margin-top:20px;border-top:2px solid #d9e3dd;padding-top:12px'><summary style='cursor:pointer;font-weight:700'>暫不顯示（"+disabled.length+"）｜點選展開</summary>"+(disabled.length?disabled.map(renderCard).join(""):"<p>目前沒有未啟用設定</p>")+"</details>";
 }
 function renderActivityRegistrationStats(activity){
  const rows=cachedFamilyRegistrations.filter(r=>r.kind===activity.module&&r.activityId===activity.id&&r.registrationStatus==="REGISTERED");
@@ -281,7 +290,14 @@ function updateActivityConfigClarity(){
  const amount=student+first+child;
  preview.textContent="試算範例：1 位團員＋1 位大人＋1 位其他兒童＝NT$ "+amount.toLocaleString("zh-TW")+"（團員 "+student+"＋首位大人 "+first+"＋其他兒童 "+child+"）。第 2 位起每位大人加 NT$ "+extra.toLocaleString("zh-TW")+"。";
 }
-el("config").addEventListener("input",e=>{if(e.target.matches('input[name$="Fee"]'))updateActivityConfigClarity()});
+el("config").addEventListener("input",e=>{if(e.target.matches('input[name$="Fee"]'))updateActivityConfigClarity();updateActivityAudiencePreview()});
+el("config").addEventListener("change",updateActivityAudiencePreview);
+function updateActivityAudiencePreview(){
+ const form=el("config"),module=el("configModule").value,groups=form.elements[module==="calendarActivity"?"calendarTargetGroups":"targetGroups"].value;
+ const groupText={ALL:"A、B、儲備團",A:"A 團",B:"B 團",C:"儲備團","A,B":"A、B 團","A,C":"A、儲備團","B,C":"B、儲備團"}[module==="yearEndDinner"?"ALL":groups]||"所選團別";
+ const visible=form.elements.enabled.value==="true";
+ el("activityAudiencePreview").textContent="家長端："+(visible?groupText+"會看到此活動":"暫不顯示給家長")+"；"+(module==="calendarActivity"?"只顯示公告與行事曆，無須報名、繳費。":module==="yearEndDinner"?"家長需報名；收款需另設定帳戶。":"家長需報名；收款開放時間另行設定。")+" 儲存後請在下方核對活動。";
+}
 function syncConfig(){
  const form=el("config"),module=el("configModule").value,activity=configActivityTypes.has(module),calendarOnly=module==="calendarActivity";
  form.querySelectorAll("[data-activity-field]").forEach(x=>x.hidden=!activityTypes.has(module));
@@ -289,14 +305,13 @@ function syncConfig(){
  el("activityFeePreview").hidden=calendarOnly;
  form.elements.targetGroups.closest("label").hidden=module!=="fieldTrip";
  const stagePanel=el("fieldTripCollectionPanel");if(stagePanel)stagePanel.hidden=module!=="fieldTrip";
- const finance=el("uniformFinanceSettings");if(finance)finance.hidden=!["regularUniform","competitionUniform"].includes(module);
- if(!finance.hidden){el("uniformFinanceKind").value=module;el("uniformPriceForm").elements.kind.value=module;}
  const fixedUniform=["regularUniform","competitionUniform"].includes(module);
  el("configEnabledWrap").hidden=fixedUniform;form.elements.enabled.disabled=fixedUniform;form.elements.enabled.value=fixedUniform?"true":form.elements.enabled.value;
 
  updateActivityConfigClarity();
  el("existingActivityWrap").hidden=!activity;el("activityIdHint").hidden=!activity;
- el("configModeHint").textContent=calendarOnly?"此類公告只會同步行事曆，不會開放家長報名或顯示匯款資訊。":activity?"活動可新增多筆，請選擇建立或編輯既有活動。":"團 T、A 團比賽服固定啟用；此處設定價格，匯款帳戶請至「匯款帳戶」。";
+ el("configModeHint").textContent=calendarOnly?"只公告，不需家長報名或繳費；儲存後會同步至對象團別的行事曆。":module==="yearEndDinner"?"期末聚餐需報名及繳費；先建立活動，再設定收款帳戶。":"交流／快閃活動需要家長報名；可先建立活動，再決定何時開放收款。";
+ updateActivityAudiencePreview();
  const select=el("existingActivity"),old=select.value;
  select.innerHTML="<option value=''>建立新活動</option>"+savedConfigs.filter(x=>x.module===module).map(x=>"<option value='"+esc(x.id)+"'>"+esc(x.title||x.id)+"</option>").join("");
  if([...select.options].some(x=>x.value===old))select.value=old;
@@ -311,7 +326,7 @@ function populateActivity(){
  form.elements.id.value=item.id;form.elements.enabled.value=String(item.enabled===true);
  if(item.module==="calendarActivity"){
   for(const [name,value] of Object.entries({eventType:item.eventType||"performance",calendarTitle:item.title||"",calendarLocation:item.location||"",calendarTargetGroups:item.targetGroups||"ALL",eventDate:item.eventDate||"",endDate:item.endDate||"",timeLabel:item.timeLabel||"",startTime:item.startTime||"",endTime:item.endTime||"",note:item.note||""}))form.elements[name].value=value;
-  return;
+  updateActivityAudiencePreview();return;
  }
  form.elements.targetGroups.value=item.targetGroups||"ALL";
  form.elements.paymentMode.value=item.module==="yearEndDinner"?"PAY_NOW":"PAY_LATER";
@@ -320,9 +335,10 @@ function populateActivity(){
  for(const k of ["title","location","studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=item[k]??(k.endsWith("Fee")?0:"");
  for(const k of ["openAt","closeAt","startAt","endAt"])form.elements[k].value=item[k]?localDateTimeValue(item[k]):"";
  updateActivityConfigClarity();
+ updateActivityAudiencePreview();
 }
 el("configModule").addEventListener("change",()=>{el("existingActivity").value="";syncConfig()});
-el("existingActivity").addEventListener("change",()=>{syncConfig();if(el("configModule").value==="fieldTrip")refreshFieldTripBanks();if(!el("existingActivity").value){const form=el("config");for(const k of ["title","location","openAt","closeAt","startAt","endAt","calendarTitle","calendarLocation","eventDate","endDate","timeLabel","startTime","endTime","note"])form.elements[k].value="";form.elements.targetGroups.value="ALL";form.elements.calendarTargetGroups.value="ALL";for(const k of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=0;}});
+el("existingActivity").addEventListener("change",()=>{syncConfig();if(el("configModule").value==="fieldTrip")refreshFieldTripBanks();if(!el("existingActivity").value){const form=el("config");for(const k of ["title","location","openAt","closeAt","startAt","endAt","calendarTitle","calendarLocation","eventDate","endDate","timeLabel","startTime","endTime","note"])form.elements[k].value="";form.elements.targetGroups.value="ALL";form.elements.calendarTargetGroups.value="ALL";for(const k of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=0;updateActivityAudiencePreview();}});
 const calendarExamples={
  competition:{eventType:"competition",calendarTitle:"A 團全國賽｜賽事期間（實際賽程待公告）",calendarTargetGroups:"A",eventDate:"2026-11-30",endDate:"2026-12-04",calendarLocation:"基隆市表演藝術中心、成功國小、深澳國小、中山高中（實際場地待公告）",timeLabel:"A 團實際比賽時間待主辦單位通知",note:"目前公告的是整體賽事期間與候選場地；A 團實際比賽日期、時間及場地，待報名完成後由主辦單位通知。"},
  christmas:{eventType:"performance",calendarTitle:"聖心弦樂團耶誕演出",calendarTargetGroups:"ALL",eventDate:"2026-12-18",endDate:"",calendarLocation:"聖心校園（A、B 團：四樓 A 團練教室；儲備團：四樓 B 團練教室）",timeLabel:"08:30 集合；演出時間以學校通知為準",note:"請帶自己的大、中、小提琴。服裝為團 T、制服黑長褲、黑皮鞋；早上穿團 T 到校，怕冷可加黑色內搭。頭髮梳理整齊，長髮請綁馬尾。08:30 準時集合，老師及志工家長會引導。此為校內慶祝活動，僅在校師生參加；活動花絮將由志工家長於群組分享。"}
@@ -331,7 +347,7 @@ for(const [key,id] of [["competition","calendarExampleCompetition"],["christmas"
  if(el("existingActivity").value&&!confirm("帶入範例會覆蓋目前活動欄位，確定繼續？"))return;
  if(el("existingActivity").value){el("existingActivity").value="";el("existingActivity").dispatchEvent(new Event("change"))}
  for(const [field,value] of Object.entries(calendarExamples[key]))el("config").elements[field].value=value;
- el("configSaveFeedback").textContent="已帶入範例，請核對日期、團別、地點與注意事項後再儲存。";
+ updateActivityAudiencePreview();el("configSaveFeedback").textContent="已帶入範例，請核對日期、團別、地點與注意事項後再儲存。";
 });
 syncConfig();
 async function load(){
@@ -520,6 +536,7 @@ el("uniformBankForm").addEventListener("submit",async e=>{
 loadUniformBankTemplates();
 window.addEventListener("uniformBankTemplatesLoaded",loadUniformBankTemplates);
 let uniformPrices={};
+syncUniformModuleVisibility();
 function showUniformPrice(){
  const form=el("uniformPriceForm"),kind=form.elements.kind.value,price=uniformPrices[kind];
  el("uniformBasePriceLabel").firstChild.textContent=kind==="competitionUniform"?"比賽服未稅原價（NT$）":"團 T 每件含稅售價（NT$）";
