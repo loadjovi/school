@@ -2,7 +2,7 @@ import { app } from "@azure/functions";
 import { TableClient } from "@azure/data-tables";
 import { randomUUID } from "node:crypto";
 import { getTenantContext, json } from "../lib/auth.js";
-import { syncFieldTripCalendar } from "./calendarEvents.js";
+import { syncActivityCalendar } from "./calendarEvents.js";
 
 // Phase 2: tenant-scoped administrative configuration. No automatic activation.
 const tableName=()=>process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig";
@@ -12,7 +12,7 @@ async function table(){
   if(!cached){cached=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,tableName());await cached.createTable().catch(e=>{if(e.statusCode!==409)throw e})}
   return cached;
 }
-const modules=new Set(["competitionUniform","regularUniform","fieldTrip","yearEndDinner"]);
+const modules=new Set(["competitionUniform","regularUniform","fieldTrip","yearEndDinner","calendarActivity"]);
 const rowKey=(type,id)=>type+":"+id;
 const safeId=(s)=>typeof s==="string"&&/^[a-zA-Z0-9_-]{1,80}$/.test(s);
 const cleanText=(s,max=500)=>typeof s==="string"&&s.trim().length>0&&s.length<=max;
@@ -24,6 +24,15 @@ function validate(data){
     if(data.module==="yearEndDinner"&&data.paymentMode&&data.paymentMode!=="PAY_NOW")throw new Error("Year-end dinner requires pay-after-registration mode");
     for(const f of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"]){const n=data[f]??0;if(!Number.isSafeInteger(n)||n<0)throw new Error("Invalid fee: "+f)}
   }
+  if(data.module==="calendarActivity"){
+    if(!cleanText(data.title,120)||!cleanText(data.location,300)||!/^\d{4}-\d{2}-\d{2}$/.test(data.eventDate||"")||!Number.isFinite(Date.parse(data.eventDate)))throw new Error("活動需填名稱、地點及有效日期");
+    if(data.endDate&&(!/^\d{4}-\d{2}-\d{2}$/.test(data.endDate)||!Number.isFinite(Date.parse(data.endDate))||data.endDate<data.eventDate))throw new Error("活動結束日期不得早於開始日期");
+    if(!["competition","performance","general"].includes(data.eventType))throw new Error("請選擇活動類型");
+    if(data.startTime&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(data.startTime)||data.endTime&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(data.endTime))throw new Error("時間格式須為 HH:mm");
+    if(!cleanText(data.note||"詳情待公告",1000)||String(data.timeLabel||"").length>80)throw new Error("備註或時間說明過長");
+    if(data.openAt||data.closeAt||data.collectionOpen||["studentFee","firstAdultFee","extraAdultFee","extraChildFee"].some(f=>Number(data[f]||0)!==0))throw new Error("演出／競賽公告不接受報名或收費");
+  }
+  if(["fieldTrip","calendarActivity"].includes(data.module)&&(!data.targetGroups||!/^ALL$|^(?:A|B|C)(?:,(?:A|B|C))*$/.test(data.targetGroups)||new Set(data.targetGroups.split(",")).size!==data.targetGroups.split(",").length))throw new Error("請選擇有效的活動對象團別");
   if(data.endAt){if(!Number.isFinite(Date.parse(data.endAt)))throw new Error("Invalid endAt");if(Date.parse(data.endAt)<Date.parse(data.startAt))throw new Error("Activity end must not precede start");}
   if(data.openAt&&!Number.isFinite(Date.parse(data.openAt)))throw new Error("Invalid openAt");
   if(data.closeAt&&!Number.isFinite(Date.parse(data.closeAt)))throw new Error("Invalid closeAt");
@@ -80,7 +89,7 @@ app.http("uniformEventConfig",{
       await audit.createTable().catch(e=>{if(e.statusCode!==409)throw e});
       await client.upsertEntity(record,"Replace");
       await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"config.save",subjectId:record.rowKey,actor:String(access.email||"admin").slice(0,200),at:record.updatedAt,details:JSON.stringify({before:before?JSON.parse(before.payload||"{}"):null,after:JSON.parse(record.payload)}).slice(0,20000)});
-      if(data.module==="fieldTrip")await syncFieldTripCalendar(schoolId,access,data);
+      if(["fieldTrip","calendarActivity"].includes(data.module))await syncActivityCalendar(schoolId,access,data);
       return json({item:publicValue(record)});
     }catch(error){
       if(error instanceof SyntaxError||String(error.message||"").startsWith("Invalid")||String(error.message||"").includes("requires"))return json({error:error.message},400);
