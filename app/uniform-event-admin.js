@@ -149,16 +149,18 @@ function renderConfigSummary(items){
  if(!items.length){target.textContent="目前尚無已儲存的活動或團服設定。";return}
  const fmtDate=v=>{if(!v)return "未設定";const d=new Date(v);return Number.isNaN(d.getTime())?"日期格式有誤":new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(d)};
  const money=v=>"NT$ "+Number(v||0).toLocaleString("zh-TW");
- const names={yearEndDinner:"期末聚餐",fieldTrip:"校外所有活動",regularUniform:"團T（T-shirt）",competitionUniform:"A團比賽服"};
+ const names={yearEndDinner:"期末聚餐",fieldTrip:"交流／快閃活動",calendarActivity:"演出／競賽活動",regularUniform:"團T（T-shirt）",competitionUniform:"A團比賽服"};
  const renderCard=x=>{
-  const activity=activityTypes.has(x.module);
+  const activity=configActivityTypes.has(x.module),calendarOnly=x.module==="calendarActivity";
+  const dateText=calendarOnly?(x.eventDate||"未設定")+((x.endDate&&x.endDate!==x.eventDate)?" ～ "+x.endDate:""):fmtDate(x.startAt)+" ～ "+fmtDate(x.endAt||x.startAt);
   return "<article style='border:1px solid "+(x.enabled?"#8dbda2":"#d9e3dd")+";border-radius:10px;padding:14px;margin:12px 0;"+(x.enabled?"":"background:#f5f6f5;")+"'>"+
-   "<strong>"+esc(x.title||names[x.module]||x.module)+"</strong>　<span style='font-weight:700;color:"+(x.enabled?"#176543":"#66736d")+"'>"+(x.enabled?"● 已啟用":"○ 未啟用｜家長不可報名")+"</span>"+
+   "<strong>"+esc(x.title||names[x.module]||x.module)+"</strong>　<span style='font-weight:700;color:"+(x.enabled?"#176543":"#66736d")+"'>"+(x.enabled?"● 已啟用":"○ 未啟用｜家長行事曆不顯示")+"</span>"+
    (activity?"<p>類別："+esc(names[x.module])+"｜地點："+esc(x.location||"未設定")+"</p>"+
-   "<p>活動期間："+esc(fmtDate(x.startAt))+" ～ "+esc(fmtDate(x.endAt||x.startAt))+"</p>"+
+   "<p>活動期間："+esc(dateText)+"｜對象："+esc(x.targetGroups||"ALL")+"</p>"+
+   (calendarOnly?"<p>免報名、免收費｜"+esc(x.timeLabel||"時間另行通知")+"</p>"+(x.note?"<p>注意事項："+esc(x.note)+"</p>":""):
    "<p>報名期間："+esc(fmtDate(x.openAt))+" ～ "+esc(fmtDate(x.closeAt))+"</p>"+
-   "<p>學生："+money(x.studentFee)+"｜首位大人："+money(x.firstAdultFee)+"｜額外大人："+money(x.extraAdultFee)+"｜額外兒童："+money(x.extraChildFee)+"</p>":"<p>團服模組設定，非活動報名。</p>")+
-   (activity?renderActivityRegistrationStats(x):"")+"<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>"+
+   "<p>學生："+money(x.studentFee)+"｜首位大人："+money(x.firstAdultFee)+"｜額外大人："+money(x.extraAdultFee)+"｜額外兒童："+money(x.extraChildFee)+"</p>"):"<p>團服模組設定，非活動報名。</p>")+
+   (activityTypes.has(x.module)?renderActivityRegistrationStats(x):"")+(calendarOnly?"<p style='color:#98620b'>啟用後將依團別顯示在家長行事曆；仍請在群組公告重要異動。</p>":"<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>")+
    "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>"+(activity?"編輯此活動":"設定啟用狀態")+"</button></article>";
  };
  const enabled=items.filter(x=>x.enabled===true),disabled=items.filter(x=>x.enabled!==true);
@@ -197,7 +199,7 @@ function activityReportRows(){
 function refreshFamilyStatistics(){
  const reports=activityReportRows();
  const target=el("familyRows"),summary=el("familySummary");
- const names={fieldTrip:"校外所有活動",yearEndDinner:"期末聚餐"};
+ const names={fieldTrip:"交流／快閃活動",yearEndDinner:"期末聚餐"};
  const totals=reports.reduce((a,r)=>{for(const k of ["families","students","adults","children","total"])a[k]+=r.counts[k];return a},{families:0,students:0,adults:0,children:0,total:0});
  summary.textContent="共 "+reports.length+" 場活動；各活動分開計算。跨活動參加者可能重複，請勿將總計視為不重複人數。報名 "+totals.families+" 筆｜弦樂團學生 "+totals.students+" 位｜大人 "+totals.adults+" 位｜其他兒童 "+totals.children+" 位。";
  target.innerHTML=reports.length?reports.map(({activity,rows,counts},index)=>
@@ -226,7 +228,7 @@ el("familyRows").addEventListener("click",event=>{
 el("settings").addEventListener("click",e=>{
  const button=e.target.closest("button[data-edit-id]");if(!button)return;
  el("configModule").value=button.dataset.editModule;syncConfig();
- if(activityTypes.has(button.dataset.editModule)){el("existingActivity").value=button.dataset.editId;populateActivity()}
+ if(configActivityTypes.has(button.dataset.editModule)){el("existingActivity").value=button.dataset.editId;populateActivity()}
  else{const item=savedConfigs.find(x=>x.module===button.dataset.editModule&&x.id===button.dataset.editId);if(item)el("config").elements.enabled.value=String(item.enabled===true)}
  el("config").scrollIntoView({behavior:"smooth",block:"start"});
 });
@@ -268,6 +270,7 @@ el("inventoryType").addEventListener("change",syncSizes);
 el("inventoryStyle").addEventListener("change",syncSizes);
 syncSizes();
 const activityTypes=new Set(["fieldTrip","yearEndDinner"]);
+const configActivityTypes=new Set([...activityTypes,"calendarActivity"]);
 const createActivityId=()=> "event_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,8);
 function updateActivityConfigClarity(){
  const form=el("config"),dinner=el("configModule").value==="yearEndDinner";
@@ -282,15 +285,18 @@ function updateActivityConfigClarity(){
 }
 el("config").addEventListener("input",e=>{if(e.target.matches('input[name$="Fee"]'))updateActivityConfigClarity()});
 function syncConfig(){
- const form=el("config"),module=el("configModule").value,activity=activityTypes.has(module);
- form.querySelectorAll("[data-activity-field]").forEach(x=>x.hidden=!activity);
+ const form=el("config"),module=el("configModule").value,activity=configActivityTypes.has(module),calendarOnly=module==="calendarActivity";
+ form.querySelectorAll("[data-activity-field]").forEach(x=>x.hidden=!activityTypes.has(module));
+ el("calendarActivityFields").hidden=!calendarOnly;
+ el("activityFeePreview").hidden=calendarOnly;
+ form.elements.targetGroups.closest("label").hidden=module!=="fieldTrip";
  const stagePanel=el("fieldTripCollectionPanel");if(stagePanel)stagePanel.hidden=module!=="fieldTrip";
  const finance=el("uniformFinanceSettings");if(finance)finance.hidden=!["regularUniform","competitionUniform"].includes(module);
  if(!finance.hidden){el("uniformFinanceKind").value=module;el("uniformBankForm").elements.kind.value=module;el("uniformPriceForm").elements.kind.value=module;}
 
  updateActivityConfigClarity();
  el("existingActivityWrap").hidden=!activity;el("activityIdHint").hidden=!activity;
- el("configModeHint").textContent=activity?"活動可新增多筆，請選擇建立或編輯既有活動。":"團服模組僅有一組設定；可啟用或關閉，並在下方設定價格及收款帳戶。";
+ el("configModeHint").textContent=calendarOnly?"此類公告只會同步行事曆，不會開放家長報名或顯示匯款資訊。":activity?"活動可新增多筆，請選擇建立或編輯既有活動。":"團服模組僅有一組設定；可啟用或關閉，並在下方設定價格及收款帳戶。";
  const select=el("existingActivity"),old=select.value;
  select.innerHTML="<option value=''>建立新活動</option>"+savedConfigs.filter(x=>x.module===module).map(x=>"<option value='"+esc(x.id)+"'>"+esc(x.title||x.id)+"</option>").join("");
  if([...select.options].some(x=>x.value===old))select.value=old;
@@ -303,6 +309,11 @@ function populateActivity(){
  const form=el("config"),item=savedConfigs.find(x=>x.module===el("configModule").value&&x.id===el("existingActivity").value);
  if(!item)return;
  form.elements.id.value=item.id;form.elements.enabled.value=String(item.enabled===true);
+ if(item.module==="calendarActivity"){
+  for(const [name,value] of Object.entries({eventType:item.eventType||"performance",calendarTitle:item.title||"",calendarLocation:item.location||"",calendarTargetGroups:item.targetGroups||"ALL",eventDate:item.eventDate||"",endDate:item.endDate||"",timeLabel:item.timeLabel||"",startTime:item.startTime||"",endTime:item.endTime||"",note:item.note||""}))form.elements[name].value=value;
+  return;
+ }
+ form.elements.targetGroups.value=item.targetGroups||"ALL";
  form.elements.paymentMode.value=item.module==="yearEndDinner"?"PAY_NOW":"PAY_LATER";
  if(form.elements.collectionOpen)form.elements.collectionOpen.value=String(item.collectionOpen===true);
  form.elements.feeStatus.value=item.feeStatus||"DRAFT";form.elements.paymentOpen.value=String(item.paymentOpen===true);
@@ -311,7 +322,17 @@ function populateActivity(){
  updateActivityConfigClarity();
 }
 el("configModule").addEventListener("change",()=>{el("existingActivity").value="";syncConfig()});
-el("existingActivity").addEventListener("change",()=>{syncConfig();if(el("configModule").value==="fieldTrip")refreshFieldTripBanks();if(!el("existingActivity").value){const form=el("config");for(const k of ["title","location","openAt","closeAt","startAt","endAt"])form.elements[k].value="";for(const k of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=0;}});
+el("existingActivity").addEventListener("change",()=>{syncConfig();if(el("configModule").value==="fieldTrip")refreshFieldTripBanks();if(!el("existingActivity").value){const form=el("config");for(const k of ["title","location","openAt","closeAt","startAt","endAt","calendarTitle","calendarLocation","eventDate","endDate","timeLabel","startTime","endTime","note"])form.elements[k].value="";form.elements.targetGroups.value="ALL";form.elements.calendarTargetGroups.value="ALL";for(const k of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=0;}});
+const calendarExamples={
+ competition:{eventType:"competition",calendarTitle:"A 團全國賽｜賽事期間（實際賽程待公告）",calendarTargetGroups:"A",eventDate:"2026-11-30",endDate:"2026-12-04",calendarLocation:"基隆市表演藝術中心、成功國小、深澳國小、中山高中（實際場地待公告）",timeLabel:"A 團實際比賽時間待主辦單位通知",note:"目前公告的是整體賽事期間與候選場地；A 團實際比賽日期、時間及場地，待報名完成後由主辦單位通知。"},
+ christmas:{eventType:"performance",calendarTitle:"聖心弦樂團耶誕演出",calendarTargetGroups:"ALL",eventDate:"2026-12-18",endDate:"",calendarLocation:"聖心校園（A、B 團：四樓 A 團練教室；儲備團：四樓 B 團練教室）",timeLabel:"08:30 集合；演出時間以學校通知為準",note:"請帶自己的大、中、小提琴。服裝為團 T、制服黑長褲、黑皮鞋；早上穿團 T 到校，怕冷可加黑色內搭。頭髮梳理整齊，長髮請綁馬尾。08:30 準時集合，老師及志工家長會引導。此為校內慶祝活動，僅在校師生參加；活動花絮將由志工家長於群組分享。"}
+};
+for(const [key,id] of [["competition","calendarExampleCompetition"],["christmas","calendarExampleChristmas"]])el(id).addEventListener("click",()=>{
+ if(el("existingActivity").value&&!confirm("帶入範例會覆蓋目前活動欄位，確定繼續？"))return;
+ if(el("existingActivity").value){el("existingActivity").value="";el("existingActivity").dispatchEvent(new Event("change"))}
+ for(const [field,value] of Object.entries(calendarExamples[key]))el("config").elements[field].value=value;
+ el("configSaveFeedback").textContent="已帶入範例，請核對日期、團別、地點與注意事項後再儲存。";
+});
 syncConfig();
 async function load(){
  try{
@@ -399,12 +420,21 @@ el("config").onsubmit=async e=>{
  const feedback=el("configSaveFeedback"),button=el("saveConfigButton");
  feedback.textContent="正在儲存活動設定…";button.disabled=true;
  try{
-  const f=new FormData(e.target),module=f.get("module"),activity=activityTypes.has(module);
+  const f=new FormData(e.target),module=f.get("module"),activity=configActivityTypes.has(module);
   const id=activity?(el("existingActivity").value||createActivityId()):"default";
   const item={module,id,enabled:f.get("enabled")==="true"};
-  for(const key of ["openAt","closeAt"])if(f.get(key))item[key]=new Date(f.get(key)).toISOString();
-  if(activity){
+  if(module==="calendarActivity"){
+   item.title=String(f.get("calendarTitle")||"").trim();item.location=String(f.get("calendarLocation")||"").trim();
+   item.eventType=String(f.get("eventType")||"performance");item.targetGroups=String(f.get("calendarTargetGroups")||"ALL");
+   item.eventDate=String(f.get("eventDate")||"");item.endDate=String(f.get("endDate")||"");
+   item.startTime=String(f.get("startTime")||"");item.endTime=String(f.get("endTime")||"");
+   item.timeLabel=String(f.get("timeLabel")||"").trim();item.note=String(f.get("note")||"").trim();
+   if(!item.title||!item.location||!item.eventDate)throw Error("請填活動名稱、地點與日期");
+   if(item.endDate&&item.endDate<item.eventDate)throw Error("結束日期不可早於開始日期");
+  }else if(activity){
+   for(const key of ["openAt","closeAt"])if(f.get(key))item[key]=new Date(f.get(key)).toISOString();
    item.title=String(f.get("title")||"");item.location=String(f.get("location")||"");
+   if(module==="fieldTrip")item.targetGroups=String(f.get("targetGroups")||"ALL");
    if(f.get("startAt"))item.startAt=new Date(f.get("startAt")).toISOString();
    if(f.get("endAt"))item.endAt=new Date(f.get("endAt")).toISOString();
    if(item.endAt&&item.startAt&&Date.parse(item.endAt)<Date.parse(item.startAt))throw Error("活動結束時間不可早於開始時間");
@@ -429,7 +459,7 @@ el("config").onsubmit=async e=>{
   if(activity){el("existingActivity").value=id;syncConfig();el("existingActivity").dispatchEvent(new Event("change"))}
   const persisted=savedConfigs.find(x=>x.module===module&&x.id===id);
   if(!persisted)throw Error("API 已回覆，但重新查詢未找到活動，請勿視為儲存成功");
-  feedback.textContent="設定已儲存並確認成功："+(persisted.title||module)+(module==="fieldTrip"?"；已同步至行事曆／特殊活動（"+(persisted.enabled?"顯示中":"已取消")+"）。":"。")+"是否開放家長報名依活動啟用狀態與報名期間判定。";
+  feedback.textContent="設定已儲存並確認成功："+(persisted.title||module)+(["fieldTrip","calendarActivity"].includes(module)?"；已依對象團別同步至行事曆／特殊活動（"+(persisted.enabled?"顯示中":"已取消")+"）。":"。")+(module==="calendarActivity"?"此公告免報名、免收費。":"是否開放家長報名依活動啟用狀態與報名期間判定。");
   el("status").textContent=feedback.textContent;
  }catch(err){const bankMissing=String(err.message).includes("收款帳戶");feedback.textContent="儲存失敗："+err.message+(bankMissing?"\n處理方式：先確認上方選取的活動名稱與下方帳戶綁定的活動一致；若尚未建立活動，請先關閉並儲存，再套用帳戶後啟用。":"");feedback.style.whiteSpace="pre-line";el("status").textContent=feedback.textContent}
  finally{button.disabled=false}
