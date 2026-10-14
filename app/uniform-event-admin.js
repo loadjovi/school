@@ -287,7 +287,6 @@ function syncConfig(){
  const stagePanel=el("fieldTripCollectionPanel");if(stagePanel)stagePanel.hidden=module!=="fieldTrip";
  const finance=el("uniformFinanceSettings");if(finance)finance.hidden=!["regularUniform","competitionUniform"].includes(module);
  if(!finance.hidden){el("uniformBankForm").elements.kind.value=module;el("uniformPriceForm").elements.kind.value=module;}
- el("uniformBankForm").elements.kind.disabled=true;el("uniformPriceForm").elements.kind.disabled=true;
 
  updateActivityConfigClarity();
  el("existingActivityWrap").hidden=!activity;el("activityIdHint").hidden=!activity;
@@ -476,7 +475,12 @@ async function loadUniformBank(){
   message.textContent=bank?.templateId?"已沿用幹部帳戶範本。":bank?"此項使用舊版帳戶設定；請選擇幹部帳戶範本後重新綁定。":"請選擇既有帳戶並綁定，才能核准付費申請。";
  }catch(e){message.textContent="無法讀取收款帳戶："+e.message}
 }
-el("uniformBankForm").elements.kind.addEventListener("change",loadUniformBank);
+function selectUniformFinanceKind(event){
+ const kind=event.currentTarget.value;
+ el("configModule").value=kind;
+ el("configModule").dispatchEvent(new Event("change"));
+}
+el("uniformBankForm").elements.kind.addEventListener("change",selectUniformFinanceKind);
 el("uniformBankForm").elements.templateId.addEventListener("change",e=>{
  const selected=uniformBankTemplates.find(t=>t.id===e.target.value);
  if(selected)el("uniformBankPreview").textContent="將綁定："+selected.bankName+"（"+selected.bankCode+"）｜戶名："+selected.accountHolder+"｜帳號末四碼："+selected.accountNumber.slice(-4);
@@ -498,7 +502,7 @@ async function loadUniformPrices(){
   message.textContent="目前單價：團 T NT$ "+Number(uniformPrices.regularUniform?.unitPrice).toLocaleString("zh-TW")+"／件；A 團比賽服 NT$ "+Number(uniformPrices.competitionUniform?.unitPrice).toLocaleString("zh-TW")+"／套。";
  }catch(e){message.textContent="團服價格讀取失敗："+e.message}
 }
-el("uniformPriceForm").elements.kind.addEventListener("change",e=>{e.currentTarget.form.elements.unitPrice.value=uniformPrices[e.currentTarget.value]?.unitPrice??""});
+el("uniformPriceForm").elements.kind.addEventListener("change",selectUniformFinanceKind);
 el("uniformPriceForm").addEventListener("submit",async e=>{
  e.preventDefault();const form=e.currentTarget,message=el("uniformPriceMessage"),kind=form.elements.kind.value,unitPrice=Number(form.elements.unitPrice.value),reason=form.elements.reason.value.trim();
  if(!Number.isSafeInteger(unitPrice)||unitPrice<1||unitPrice>100000||!reason){message.textContent="請填寫有效金額及調整原因";return}
