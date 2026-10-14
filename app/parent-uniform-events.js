@@ -103,7 +103,7 @@ function renderTshirtPurchase(items){
   try{
    const resp=await fetch("/api/uniform-events/requests",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...parentAuthHeaders()},body:JSON.stringify({kind:"regularUniform",studentId:student.value,size:size.value,quantity:Number(count.value),acquisition:"PURCHASE",note:"團 T 自費加購 "+count.value+" 件，每件 NT$400；待校方審核"})});
    const data=await resp.json().catch(()=>({}));if(!resp.ok)throw Error(data.error||"HTTP "+resp.status);
-   message.textContent="團 T 加購申請已送出，等待學校審核。核准後將由幹部統一採購；到貨、可領取及領取完成須待學校另行公告。核准不代表已付款、已到貨或已領取。";submit.textContent="已送出";
+   message.textContent="團 T 加購申請已送出，等待學校審核。可在上方「我的團服申請進度」持續查詢。";submit.textContent="已送出";await loadUniformRequestProgress();
   }catch(error){message.textContent="送出失敗："+error.message;submit.disabled=false}
  });
 }
@@ -131,7 +131,7 @@ function renderCompetitionPurchase(students){
    const response=await fetch("/api/uniform-events/requests",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...parentAuthHeaders()},body:JSON.stringify({kind:"competitionUniform",studentId:studentSelect.value,style:styleSelect.value,size:sizeSelect.value,acquisition:"PURCHASE",note:"家長因成長需求提出自費加購，待校方確認金額與採購"})});
    const data=await response.json().catch(()=>({}));
    if(!response.ok)throw Error(data.error||"HTTP "+response.status);
-   message.textContent="申請已送出，狀態：待學校審核。尚未付款或發放。";button.textContent="已送出";
+   message.textContent="申請已送出，狀態：待學校審核。可在上方「我的團服申請進度」持續查詢。";button.textContent="已送出";await loadUniformRequestProgress();
   }catch(error){message.textContent="申請未完成："+error.message;button.disabled=false}
  });
 }
@@ -143,6 +143,49 @@ async function parentApi(path,options={}){
  const response=await fetch("/api/"+path,{...options,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...parentAuthHeaders(),...(options.headers||{})}});
  const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"HTTP "+response.status);return data;
 }
+const uniformRequestStage={
+ PENDING:{title:"待學校審核",next:"學校尚未核准，請等待審核結果。"},
+ APPROVED:{title:"已核准，等待統一採購",next:"學校已核准申請。核准不代表已付款、已採購、到貨或可以領取；請留意後續通知。"},
+ ORDERED:{title:"已統一採購，等待到貨",next:"學校已將此申請列入採購，尚未到貨。"},
+ ARRIVED:{title:"已到貨，等待領取安排",next:"物品已到貨，學校尚未開放領取。"},
+ READY_FOR_PICKUP:{title:"可以領取",next:"請依學校公布的時間與方式辦理領取。"},
+ CANCELLED:{title:"申請已取消",next:"此申請已取消。如有疑問，請洽學校確認。"},
+ FULFILLED:{title:"已完成領用",next:"此申請的領用流程已完成。"}
+};
+async function loadUniformRequestProgress(){
+ const summary=document.getElementById("uniformRequestSummary"),history=document.getElementById("uniformRequestHistory");
+ if(!summary||!history)return;
+ summary.replaceChildren(element("p","正在更新申請進度…","muted"));
+ try{
+  const [result,me]=await Promise.all([parentApi("uniform-events/requests"),parentApi("me")]);
+  if(me.role!=="parent")throw Error("請切換至家長身分後重新載入");
+  const names=new Map((me.students||[]).map(x=>[String(x.studentId),x.name||x.studentName||x.studentId]));
+  const requests=(result.items||[]).filter(x=>["regularUniform","competitionUniform"].includes(x.kind)).sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||"")));
+  summary.replaceChildren();history.replaceChildren();
+  if(!requests.length){summary.append(element("p","目前沒有團服申請。送出後可在此查看學校審核與後續進度。","muted"));history.append(element("p","目前沒有團服申請紀錄。","muted"));return}
+  const approved=requests.filter(x=>x.status==="APPROVED").length;
+  summary.append(element("p",`共 ${requests.length} 筆團服申請${approved?`，其中 ${approved} 筆已核准，等待統一採購`:""}。`));
+  for(const item of requests){
+   const stage=uniformRequestStage[item.status]||{title:"狀態待確認",next:"請洽學校確認目前進度。"};
+   const title=(item.kind==="regularUniform"?"團 T":"A 團比賽服")+"｜"+(names.get(String(item.studentId))||"學生 "+item.studentId);
+   const card=element("div",undefined,"card");card.style.margin="10px 0";
+   card.append(element("strong",title));
+   card.append(element("p","申請狀態："+stage.title));
+   card.append(element("p",stage.next,"hint"));
+   card.append(element("p",`尺寸：${item.size||"待確認"}${item.style?`｜${item.style}款`:""}｜件數：${item.quantity||1}｜申請時間：${formatDate(item.createdAt)||"—"}｜更新時間：${formatDate(item.updatedAt)||"—"}`,"muted"));
+   history.append(card);
+  }
+  const latest=requests[0],stage=uniformRequestStage[latest.status]||{title:"狀態待確認",next:"請洽學校確認。"};
+  const latestCard=element("div",undefined,"card");latestCard.style.margin="10px 0";
+  latestCard.append(element("strong",(latest.kind==="regularUniform"?"團 T":"A 團比賽服")+"｜"+(names.get(String(latest.studentId))||"學生 "+latest.studentId)));
+  latestCard.append(element("p","目前狀態："+stage.title));latestCard.append(element("p",stage.next,"hint"));
+  latestCard.append(element("p","更新時間："+(formatDate(latest.updatedAt)||"—"),"muted"));summary.append(latestCard);
+  if(requests.length>1){const button=element("button",`查看全部 ${requests.length} 筆申請紀錄`);button.type="button";button.style.cssText="padding:9px;border:1px solid var(--main);border-radius:8px;background:white;color:var(--main)";button.addEventListener("click",()=>{select("history");history.scrollIntoView({behavior:"smooth",block:"start"})});summary.append(button)}
+ }catch(e){summary.replaceChildren(element("p","申請進度讀取失敗："+e.message,"hint"));history.replaceChildren(element("p","團服申請紀錄讀取失敗："+e.message,"hint"))}
+}
+document.getElementById("refreshUniformRequests")?.addEventListener("click",loadUniformRequestProgress);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)loadUniformRequestProgress()});
+loadUniformRequestProgress();
 function appendActivityFeeBreakdown(card,config,registration){
  if(!config||!["fieldTrip","yearEndDinner"].includes(config.module))return;
  const currency=n=>"NT$ "+Number(n).toLocaleString("zh-TW");
