@@ -53,7 +53,7 @@ function validateRequest(data,student){
   if(data.kind==="competitionUniform"){
     if(String(student.groupName)!=="A")throw new Error("Only A group");
     const allowed=data.style==="女"?["XS","S","M","L"]:data.style==="男"?["S","M","L","2L"]:[];
-    if(!allowed.includes(data.size)||!["RENTAL","PURCHASE","PENDING"].includes(data.acquisition))throw new Error("Invalid competition selection");
+    if(!allowed.includes(data.size)||!["PUBLIC","RENTAL","PURCHASE","PENDING"].includes(data.acquisition))throw new Error("Invalid competition selection");
     return {style:data.style,size:data.size,acquisition:data.acquisition,amount:null};
   }
   if(!validId(data.activityId))throw new Error("Activity ID required");
@@ -84,8 +84,16 @@ app.http("uniformEventRequests",{
         const fields=validateRequest(data,student);
         const id=randomUUID(),createdAt=new Date().toISOString();
         const payload={kind:data.kind,studentId:data.studentId,...fields,status:"PENDING",note:data.note||"",createdAt,updatedAt:createdAt};
+        if(data.kind==="competitionUniform"&&fields.acquisition==="PURCHASE"){
+          const account=await find(TableClient.fromConnectionString(connection(),"TenantUniformPaymentAccounts"),schoolId,"uniform:competitionUniform");
+          if(!account)return err("學校尚未設定 A 團比賽服的收款帳戶，請稍後再送出買斷申請",409);
+          const price=await getUniformPrice(schoolId,"competitionUniform");
+          if(!Number.isSafeInteger(price.unitPrice)||price.unitPrice<=0)return err("A 團比賽服價格尚未設定，請聯繫學校",409);
+          Object.assign(payload,{status:"APPROVED",unitPrice:price.unitPrice,amount:price.unitPrice,paymentStatus:"AWAITING_TRANSFER"});
+        }
+        if(data.kind==="competitionUniform"&&fields.acquisition==="PUBLIC")payload.amount=0;
         // Audit before accepting mutation. If audit fails, request is not accepted.
-        await audit(schoolId,access,"request.create",id,{kind:data.kind,studentId:data.studentId});
+        await audit(schoolId,access,"request.create",id,{kind:data.kind,studentId:data.studentId,acquisition:fields.acquisition||"",status:payload.status});
         await client.createEntity({partitionKey:schoolId,rowKey:id,payload:encode(payload),updatedAt:createdAt});
         return json({item:{...payload,id}},201);
       }
@@ -123,7 +131,7 @@ app.http("uniformEventRequests",{
           next.unitPrice=unitPrice;next.amount=next.quantity*unitPrice;
         }
       }else if(data.action==="SET_AMOUNT"){
-        if(before.status!=="APPROVED"||!["regularUniform","competitionUniform"].includes(before.kind))return err("僅可補正已核准團服的應繳金額",409);
+        if(before.status!=="APPROVED"||!["regularUniform","competitionUniform"].includes(before.kind)||before.acquisition==="PUBLIC")return err("僅可補正已核准的自費團服金額",409);
         if(["REPORTED_UNVERIFIED","VERIFIED"].includes(before.paymentStatus))return err("已有匯款紀錄，不可變更金額",409);
         const account=await find(TableClient.fromConnectionString(connection(),"TenantUniformPaymentAccounts"),schoolId,"uniform:"+before.kind);
         if(!account)return err("請先設定此團服的收款帳戶",409);
@@ -135,11 +143,15 @@ app.http("uniformEventRequests",{
         if(!allowedNext[before.status]?.has(data.status))return err("Invalid status transition; refresh and check the current stage",409);
         next.status=data.status;
         if(data.status==="APPROVED"&&["regularUniform","competitionUniform"].includes(before.kind)){
-          const account=await find(TableClient.fromConnectionString(connection(),"TenantUniformPaymentAccounts"),schoolId,"uniform:"+before.kind);
-          if(!account)return err("請先設定此團服的收款帳戶，再核准申請",409);
-          next.unitPrice=(await getUniformPrice(schoolId,before.kind)).unitPrice;
-          next.amount=next.unitPrice*(before.kind==="regularUniform"?before.quantity:1);
-          next.paymentStatus="AWAITING_TRANSFER";
+          if(before.kind==="competitionUniform"&&before.acquisition==="PUBLIC"){
+            next.amount=0;next.paymentStatus="NOT_REQUIRED";
+          }else{
+            const account=await find(TableClient.fromConnectionString(connection(),"TenantUniformPaymentAccounts"),schoolId,"uniform:"+before.kind);
+            if(!account)return err("請先設定此團服的收款帳戶，再核准申請",409);
+            next.unitPrice=(await getUniformPrice(schoolId,before.kind)).unitPrice;
+            next.amount=next.unitPrice*(before.kind==="regularUniform"?before.quantity:1);
+            next.paymentStatus="AWAITING_TRANSFER";
+          }
         }
         if(next.status==="CANCELLED"){
           if(!safe(data.reason,300)||!String(data.reason||"").trim())return err("取消已核准申請請填寫原因",400);
