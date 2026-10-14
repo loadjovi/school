@@ -14,6 +14,7 @@ app.http("uniformPrices",{methods:["GET","POST"],authLevel:"anonymous",route:"un
    return json({items});
   }
   if(access.role!=="admin")return json({error:"Admin only"},403);
+  if(access.capabilities?.financeVerifier!==true)return json({error:"僅被指派的財務管理員可修改團服價格"},403);
   const data=await request.json();
   if(!validUniformKind(data.kind)||!Number.isSafeInteger(data.basePrice)||data.basePrice<1||data.basePrice>100000||typeof data.reason!=="string"||!data.reason.trim()||data.reason.length>300)return json({error:"請輸入有效原價（1–100,000 元）及調整原因"},400);
   const table=await uniformPricingTable(),current=await getUniformPrice(schoolId,data.kind);
