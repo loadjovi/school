@@ -248,7 +248,28 @@ async function loadUniformRequestProgress(){
       const b=data.item;payment.replaceChildren(element("strong","應繳金額：NT$ "+item.amount.toLocaleString("zh-TW")),element("p","銀行："+b.bankName+"（"+b.bankCode+"）｜戶名："+b.accountHolder),element("p","匯款帳號："+b.accountNumber));
       const state={AWAITING_TRANSFER:"待匯款",REPORTED_UNVERIFIED:"已回報匯款，待核帳",VERIFIED:"已確認入帳"}[item.paymentStatus]||"待匯款";
       payment.append(element("p","付款狀態："+state));
-      if(!["REPORTED_UNVERIFIED","VERIFIED"].includes(item.paymentStatus)){const link=element("a","完成匯款後回報末五碼");link.href="/uniform-transfer.html?kind="+encodeURIComponent(item.kind)+"&requestId="+encodeURIComponent(item.id);payment.append(link)}
+      if(!["REPORTED_UNVERIFIED","VERIFIED"].includes(item.paymentStatus)){
+       const form=element("form",undefined,"uniform-transfer-form");
+       form.append(element("p","完成匯款後，請在這裡回報匯款日期與帳號末五碼。"));
+       const date=element("input"),lastFive=element("input");
+       date.type="date";date.required=true;
+       lastFive.type="text";lastFive.inputMode="numeric";lastFive.pattern="[0-9]{5}";lastFive.maxLength=5;lastFive.required=true;lastFive.placeholder="例如：12345";
+       for(const [label,input] of [["匯款日期",date],["匯款帳號末五碼",lastFive]]){const row=element("label",label);row.append(input);form.append(row)}
+       const submit=element("button","回報匯款，等待學校核帳");submit.type="submit";
+       const message=element("p","","hint");message.setAttribute("role","status");
+       form.append(submit,message);payment.append(form);
+       form.addEventListener("submit",async event=>{
+        event.preventDefault();
+        if(!/^[0-9]{5}$/.test(lastFive.value.trim())||!date.value){message.textContent="請填寫匯款日期與正確的帳號末五碼。";return}
+        if(!confirm("確認已完成匯款，並回報帳號末五碼？送出後仍需等待學校核帳。"))return;
+        submit.disabled=true;message.textContent="正在回報…";
+        try{
+         await parentApi("uniform-events/uniform-transfer-report",{method:"POST",body:JSON.stringify({requestId:item.id,amount:item.amount,etag:item.etag,lastFive:lastFive.value.trim(),transferDate:date.value})});
+         payment.replaceChildren(element("strong","應繳金額：NT$ "+item.amount.toLocaleString("zh-TW")),element("p","已回報匯款，等待學校核帳。","hint"));
+         await loadUniformRequestProgress();
+        }catch(error){message.textContent="回報失敗："+error.message+"。請重新整理後再試。";submit.disabled=false}
+       });
+      }
      }).catch(()=>{payment.textContent="暫時無法讀取匯款資訊，請更新進度後重試。"});
     }else payment.textContent="已核准，應繳金額尚待學校補正，請勿先匯款。";
    }
