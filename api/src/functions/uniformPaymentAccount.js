@@ -27,7 +27,7 @@ app.http("uniformPaymentAccount",{methods:["GET","POST"],authLevel:"anonymous",r
   const requests=await db("TenantUniformEventRequest");
   const row=await find(requests,schoolId,input.requestId);if(!row)return fail("Order not found",404);
   const order=JSON.parse(row.payload||"{}");
-  if(order.kind!==input.kind||!ensureStudentAccess(access,order.studentId)||order.status!=="APPROVED"||!Number.isSafeInteger(order.amount)||order.amount<=0)return fail("Payment not available",403);
+  if(order.kind!==input.kind||!ensureStudentAccess(access,order.studentId)||!["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(order.status)||!Number.isSafeInteger(order.amount)||order.amount<=0)return fail("Payment not available",403);
   return json({item:bank,amount:order.amount,paymentStatus:order.paymentStatus||"AWAITING_TRANSFER"});
  }catch(e){console.error("uniformPaymentAccount",e);return fail("Payment account unavailable",500)}
 }});
