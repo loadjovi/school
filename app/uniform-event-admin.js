@@ -267,7 +267,7 @@ function populateActivity(){
  updateActivityConfigClarity();
 }
 el("configModule").addEventListener("change",()=>{el("existingActivity").value="";syncConfig()});
-el("existingActivity").addEventListener("change",()=>{syncConfig();if(!el("existingActivity").value){const form=el("config");for(const k of ["title","location","openAt","closeAt","startAt","endAt"])form.elements[k].value="";for(const k of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=0;}});
+el("existingActivity").addEventListener("change",()=>{syncConfig();if(el("configModule").value==="fieldTrip")refreshFieldTripBanks();if(!el("existingActivity").value){const form=el("config");for(const k of ["title","location","openAt","closeAt","startAt","endAt"])form.elements[k].value="";for(const k of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=0;}});
 syncConfig();
 async function load(){
  const sections=[
@@ -308,19 +308,32 @@ let fieldTripBankTemplates=[];
 async function refreshFieldTripBanks(){
  const select=el("fieldTripBankTemplate"),message=el("fieldTripBankStatus");
  if(!select)return;
+ const activityId=el("existingActivity").value;
  try{
-  const result=await api("uniform-events/payment-account-templates");
-  fieldTripBankTemplates=(result.items||[]).filter(x=>x.active===true);
+  const [templates,linked]=await Promise.all([
+   api("uniform-events/payment-account-templates"),
+   activityId?api("uniform-events/field-trip-payment-account?activityId="+encodeURIComponent(activityId)).catch(()=>({item:null})):Promise.resolve({item:null})
+  ]);
+  fieldTripBankTemplates=(templates.items||[]).filter(x=>x.active===true);
   select.replaceChildren(new Option("請選擇已儲存帳戶",""));
-  for(const b of fieldTripBankTemplates)select.add(new Option(b.label+"｜"+b.bankName+"（"+b.bankCode+"）末四碼 "+String(b.accountNumber).slice(-4),b.id));
-  message.textContent=fieldTripBankTemplates.length?"請選擇要綁定的帳戶。":"尚無可用帳戶，請先至期末聚餐帳戶管理新增帳戶範本。";
+  for(const b of fieldTripBankTemplates)select.add(new Option((b.label||"收款帳戶")+"｜"+b.bankName+"（"+b.bankCode+"）末四碼 "+String(b.accountNumber||"").slice(-4),b.id));
+  const current=linked.item;
+  if(current){
+   const matched=fieldTripBankTemplates.find(b=>String(b.accountNumber)===String(current.accountNumber)&&String(b.bankCode)===String(current.bankCode));
+   if(matched)select.value=matched.id;
+   else{
+    const option=new Option("目前已綁定｜"+current.bankName+"（"+current.bankCode+"）末四碼 "+String(current.accountNumber||"").slice(-4),"__linked__");
+    select.add(option);select.value="__linked__";
+   }
+   message.textContent="此活動已綁定收款帳戶；如需更換，請另選帳戶後按「綁定收款帳戶」。";
+  }else message.textContent=fieldTripBankTemplates.length?"請選擇要綁定的帳戶。":"尚無可用帳戶，請先新增帳戶範本。";
  }catch(e){message.textContent="讀取帳戶失敗："+e.message}
 }
 el("bindFieldTripBank").addEventListener("click",async()=>{
  const message=el("fieldTripBankStatus"),activityId=el("existingActivity").value;
  const bank=fieldTripBankTemplates.find(x=>x.id===el("fieldTripBankTemplate").value);
  if(el("configModule").value!=="fieldTrip"||!activityId){message.textContent="請先儲存並選擇既有校外活動。";return}
- if(!bank){message.textContent="請先選擇收款帳戶。";return}
+ if(el("fieldTripBankTemplate").value==="__linked__"){message.textContent="目前帳戶已綁定，無須重複綁定。";return}\n if(!bank){message.textContent="請先選擇收款帳戶。";return}
  if(!confirm("確定將此收款帳戶綁定目前活動？"))return;
  try{await api("uniform-events/field-trip-payment-account",{method:"POST",body:JSON.stringify({activityId,bankName:bank.bankName,bankCode:bank.bankCode,accountHolder:bank.accountHolder,accountNumber:bank.accountNumber})});message.textContent="已綁定本活動收款帳戶；可再選擇開放第二階段收款並儲存設定。"}
  catch(e){message.textContent="綁定失敗："+e.message}
