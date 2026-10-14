@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { getTenantContext, ensureStudentAccess, getStudentAliasInfo, json } from "../lib/auth.js";
 import { getStudentMaster, listUserStudentMappings } from "../lib/storage.js";
 import { sendUniformRequestStatusEmail } from "../lib/email.js";
+import { getUniformPrice } from "../lib/uniformPricing.js";
 
 const kinds=new Set(["regularUniform","competitionUniform","fieldTrip","yearEndDinner"]);
 const states=new Set(["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP","CANCELLED","FULFILLED"]);
@@ -116,13 +117,18 @@ app.http("uniformEventRequests",{
         if(data.quantity===before.quantity)return err("件數未變更",400);
         next.quantity=data.quantity;next.adjustmentReason=data.reason.trim();next.note=`團 T 自費加購 ${next.quantity} 件；${before.status==="APPROVED"?"已核准待採購":"待校方審核"}`;action="request.admin_adjust";
         auditDetail={studentId:before.studentId,fromQuantity:before.quantity,toQuantity:next.quantity,reason:next.adjustmentReason};shouldNotify=true;
-        if(before.status==="APPROVED")next.amount=next.quantity*400;
+        if(before.status==="APPROVED"){
+          const unitPrice=Number.isSafeInteger(before.unitPrice)&&before.unitPrice>0?before.unitPrice:(Number.isSafeInteger(before.amount)&&before.amount>0?before.amount/before.quantity:(await getUniformPrice(schoolId,before.kind)).unitPrice);
+          if(!Number.isSafeInteger(unitPrice))return err("原核准單價不明，請先核對付款資料",409);
+          next.unitPrice=unitPrice;next.amount=next.quantity*unitPrice;
+        }
       }else if(data.action==="SET_AMOUNT"){
         if(before.status!=="APPROVED"||!["regularUniform","competitionUniform"].includes(before.kind))return err("僅可補正已核准團服的應繳金額",409);
         if(["REPORTED_UNVERIFIED","VERIFIED"].includes(before.paymentStatus))return err("已有匯款紀錄，不可變更金額",409);
         const account=await find(TableClient.fromConnectionString(connection(),"TenantUniformPaymentAccounts"),schoolId,"uniform:"+before.kind);
         if(!account)return err("請先設定此團服的收款帳戶",409);
-        next.amount=before.kind==="regularUniform"?before.quantity*400:2625;next.paymentStatus="AWAITING_TRANSFER";
+        next.unitPrice=(await getUniformPrice(schoolId,before.kind)).unitPrice;
+        next.amount=next.unitPrice*(before.kind==="regularUniform"?before.quantity:1);next.paymentStatus="AWAITING_TRANSFER";
         action="request.amount_confirm";auditDetail={studentId:before.studentId,amount:next.amount};shouldNotify=true;
       }else{
         if(!states.has(data.status))return err("Invalid update");
@@ -131,7 +137,8 @@ app.http("uniformEventRequests",{
         if(data.status==="APPROVED"&&["regularUniform","competitionUniform"].includes(before.kind)){
           const account=await find(TableClient.fromConnectionString(connection(),"TenantUniformPaymentAccounts"),schoolId,"uniform:"+before.kind);
           if(!account)return err("請先設定此團服的收款帳戶，再核准申請",409);
-          next.amount=before.kind==="regularUniform"?before.quantity*400:2625;
+          next.unitPrice=(await getUniformPrice(schoolId,before.kind)).unitPrice;
+          next.amount=next.unitPrice*(before.kind==="regularUniform"?before.quantity:1);
           next.paymentStatus="AWAITING_TRANSFER";
         }
         if(next.status==="CANCELLED"){
