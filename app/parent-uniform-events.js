@@ -1,3 +1,4 @@
+import {confirmedReceived} from "./competition-paper-receipts.js";
 const buttons=[...document.querySelectorAll("[data-view]")];const panels=[...document.querySelectorAll("[data-panel]")];function select(name){for(const b of buttons){const active=b.dataset.view===name;b.setAttribute("aria-selected",String(active));b.tabIndex=active?0:-1}for(const p of panels)p.hidden=p.dataset.panel!==name;document.getElementById("uniformRequestProgress").hidden=!["uniform","history"].includes(name)}buttons.forEach((b,i)=>{b.addEventListener("click",()=>select(b.dataset.view));b.addEventListener("keydown",e=>{if(!["ArrowRight","ArrowLeft","Home","End"].includes(e.key))return;e.preventDefault();const index=e.key==="Home"?0:e.key==="End"?buttons.length-1:(i+(e.key==="ArrowRight"?1:-1)+buttons.length)%buttons.length;select(buttons[index].dataset.view);buttons[index].focus()})});select("uniform");function mix(a,b,t){const x=parseInt(a.slice(1),16),y=parseInt(b.slice(1),16);return "#"+[16,8,0].map(n=>Math.round(((x>>n)&255)*(1-t)+((y>>n)&255)*t).toString(16).padStart(2,"0")).join("")}function luminance(c){const n=parseInt(c.slice(1),16),v=[16,8,0].map(k=>((n>>k)&255)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return .2126*v[0]+.7152*v[1]+.0722*v[2]}async function theme(){try{const schoolId=sessionStorage.getItem("school_context_id")||"";const q=new URLSearchParams();if(schoolId)q.set("schoolId",schoolId);const r=await fetch("/api/branding?"+q,{credentials:"same-origin"});if(!r.ok)return;const data=await r.json();let c=String(data.primaryColor||"");if(!/^#[0-9a-f]{6}$/i.test(c))return;for(let i=0;i<16&&1.05/(luminance(c)+.05)<4.5;i++)c=mix(c,"#000000",.13);document.documentElement.style.setProperty("--main",c);document.documentElement.style.setProperty("--soft",mix(c,"#ffffff",.91));document.documentElement.style.setProperty("--ink",mix(c,"#000000",.55))}catch(e){console.warn("Branding fallback",e)}}theme();
 
 function parentAuthHeaders(){
@@ -21,7 +22,20 @@ async function eligibleUniforms(){
   regular.hidden=!active("regularUniform");
   if(!regular.hidden)loadInlineSizes();
   competition.hidden=!(active("competitionUniform")&&aStudents.length);
-  if(aStudents.length){const info=document.getElementById("competitionStudentInfo");info.replaceChildren();for(const st of aStudents){const p=document.createElement("p");p.textContent=(st.name||st.studentName||"A 團學生")+"（"+st.studentId+"）｜A 團｜"+(String(st.studentId)==="112068"?"S｜公費｜已領取":(["李旭恩","蘇聖翔","蔡昀潔"].includes(String(st.name||st.studentName||"").trim())?({"李旭恩":"男 S","蘇聖翔":"男 M","蔡昀潔":"女 M"}[String(st.name||st.studentName||"").trim()]+"｜公費／自費待確認｜領用狀態待核對"):((st.competitionSize||st.uniformSize||"已確認尺寸待同步")+"｜公費｜已領取")));const receivedGrade=st.competitionReceivedGrade||st.competitionGradeAtReceipt||st.competitionReceiptGrade||"";const receiptLabel=receivedGrade?(String(receivedGrade).includes("年級")?String(receivedGrade):String(receivedGrade)+"年級")+(currentGradeException?"（目前）":"領取"):"領取年級待確認";p.textContent=p.textContent.replace("｜已領取","｜已領取 1 套｜"+receiptLabel+"｜資料已確認").replace("｜領用狀態待核對","｜領用狀態待核對｜"+receiptLabel);info.append(p);if(["李旭恩","蘇聖翔","蔡昀潔"].includes(String(st.name||st.studentName||"").trim())){const label=document.createElement("label");label.textContent="請確認比賽服費用來源：";const select=document.createElement("select");select.append(new Option("請選擇公費或自費",""),new Option("公費","PUBLIC"),new Option("自費買斷","SELF"));label.append(select);const detail=document.createElement("p");detail.className="hint";detail.setAttribute("role","status");select.addEventListener("change",()=>{p.textContent=(st.name||st.studentName)+"（"+st.studentId+"）｜A 團｜"+({"李旭恩":"男 S","蘇聖翔":"男 M","蔡昀潔":"女 M"}[String(st.name||st.studentName).trim()])+"｜"+(select.value==="PUBLIC"?"公費（待校方核對）":select.value==="SELF"?"自費買斷（待校方核對）":"公費／自費待確認")+"｜領用狀態待核對｜"+receiptLabel;detail.textContent=select.value==="SELF"?"自費買斷價格請參考下方申請區；學校核准前請勿匯款。":select.value==="PUBLIC"?"已選擇公費；正式領用紀錄仍須由學校確認。":""});info.append(label,detail)}}if(!competition.hidden)renderCompetitionPurchase(aStudents)}
+  if(aStudents.length){
+   const info=document.getElementById("competitionStudentInfo");info.replaceChildren();
+   for(const st of aStudents){
+    const name=String(st.name||st.studentName||"A 團學生").trim(),paperClass=confirmedReceived.get(name);
+    const grade=paperClass?paperClass.slice(0,1):"";
+    const size=String(st.studentId)==="112068"?"S":(["李旭恩","蘇聖翔","蔡昀潔"].includes(name)?{"李旭恩":"男 S","蘇聖翔":"男 M","蔡昀潔":"女 M"}[name]:(st.competitionSize||st.uniformSize||"尺寸待核對"));
+    const receipt=paperClass?"已領用 1 套（紙本確認）｜"+grade+" 年級領取（紙本 "+paperClass+"）":"領用待核對｜領取年級待確認";
+    const p=document.createElement("p");p.textContent=name+"（"+st.studentId+"）｜A 團｜"+size+"｜"+receipt;info.append(p);
+    if(["李旭恩","蘇聖翔","蔡昀潔"].includes(name)){
+     const detail=document.createElement("p");detail.className="hint";detail.textContent="這位學生尚無本張紙本領用佐證；取得方式與領用狀態請由學校確認。";info.append(detail);
+    }
+   }
+   if(!competition.hidden)renderCompetitionPurchase(aStudents);
+  }
   status.textContent=students.length?"已找到 "+students.length+" 位孩子的資料。請先核對尺寸與領用紀錄，再提出申請。":"目前沒有已綁定的孩子，請先完成家長與學生綁定。";
   if(!students.length){regular.hidden=true;competition.hidden=true}
  }catch(e){console.warn("家長團服資格查詢失敗",e);status.textContent="資格查詢失敗（"+e.message+"）。請確認預覽環境登入及 API 設定；暫不開放申請。"}
