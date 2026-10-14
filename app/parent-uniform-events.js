@@ -111,7 +111,7 @@ function renderTshirtPurchase(items){
 function renderCompetitionPurchase(students){
  const host=document.getElementById("competitionPurchaseArea");host.replaceChildren();
  const heading=document.createElement("h3");heading.textContent="自費買斷／加購比賽服";host.append(heading);
- const note=document.createElement("p");note.className="hint";note.textContent="公費領用資料由校方核對；若改為自費買斷或因成長需要加購，價格 NT$2,625（含稅）。目前此表單僅建立待審申請，尚未串接收款帳戶與匯款後五碼核帳，請勿先行匯款。";host.append(note);
+ const note=document.createElement("p");note.className="hint";note.textContent="公費領用資料由校方核對；若改為自費買斷或因成長需要加購，價格 NT$2,625（含稅）。申請送出後待學校審核；核准後請至「我的團服申請進度」確認金額與收款帳戶，核准前請勿匯款。";host.append(note);
  const form=document.createElement("form");
  const studentLabel=document.createElement("label");studentLabel.textContent="學生";
  const studentSelect=document.createElement("select");studentSelect.required=true;for(const st of students)studentSelect.add(new Option((st.studentName||st.name||"學生")+"（"+st.studentId+"）",st.studentId));studentLabel.append(studentSelect);
@@ -173,6 +173,18 @@ async function loadUniformRequestProgress(){
    card.append(element("p","申請狀態："+stage.title));
    card.append(element("p",stage.next,"hint"));
    card.append(element("p",`尺寸：${item.size||"待確認"}${item.style?`｜${item.style}款`:""}｜件數：${item.quantity||1}｜申請時間：${formatDate(item.createdAt)||"—"}｜更新時間：${formatDate(item.updatedAt)||"—"}`,"muted"));
+   if(["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(item.status)){
+    const payment=element("div","正在讀取匯款資訊…","payment-account");card.append(payment);
+    if(Number.isSafeInteger(item.amount)&&item.amount>0){
+     parentApi("uniform-events/uniform-payment-account?kind="+encodeURIComponent(item.kind)+"&requestId="+encodeURIComponent(item.id)).then(data=>{
+      if(!data.item){payment.textContent="學校尚未設定收款帳戶，請洽學校。";return}
+      const b=data.item;payment.replaceChildren(element("strong","應繳金額：NT$ "+item.amount.toLocaleString("zh-TW")),element("p","銀行："+b.bankName+"（"+b.bankCode+"）｜戶名："+b.accountHolder),element("p","匯款帳號："+b.accountNumber));
+      const state={AWAITING_TRANSFER:"待匯款",REPORTED_UNVERIFIED:"已回報匯款，待核帳",VERIFIED:"已確認入帳"}[item.paymentStatus]||"待匯款";
+      payment.append(element("p","付款狀態："+state));
+      if(!["REPORTED_UNVERIFIED","VERIFIED"].includes(item.paymentStatus)){const link=element("a","完成匯款後回報末五碼");link.href="/uniform-transfer.html?kind="+encodeURIComponent(item.kind)+"&requestId="+encodeURIComponent(item.id);payment.append(link)}
+     }).catch(()=>{payment.textContent="暫時無法讀取匯款資訊，請更新進度後重試。"});
+    }else payment.textContent="已核准，應繳金額尚待學校補正，請勿先匯款。";
+   }
    if(item.cancelReason)card.append(element("p","取消原因："+item.cancelReason,"hint"));
    if(item.adjustmentReason)card.append(element("p","最近件數更正原因："+item.adjustmentReason,"hint"));
    if(item.status==="PENDING"){
