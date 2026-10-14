@@ -102,7 +102,7 @@ function renderModuleRequests(){
   const actionable=rows.filter(x=>["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(x.status));
   el("competitionProcurementSummary").textContent="申請共 "+rows.length+" 筆；尚在處理 "+actionable.length+" 筆，已採購 "+(counts.ORDERED||0)+" 筆，已到貨 "+(counts.ARRIVED||0)+" 筆。請依款式與尺寸核對採購需求；取消或已領取申請不列入待處理數。";
  }
- table("requests",rows.map(x=>({...x,processing:pendingRequestIds.has(x.id),studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",acquisitionLabel:x.kind==="competitionUniform"?({PUBLIC:"公費｜待校方審核",PURCHASE:"自費買斷",RENTAL:"租借",PENDING:"取得方式待核對"})[x.acquisition]||"待核對":"自費加購",statusLabel:pendingRequestIds.has(x.id)?"更新處理中…":({PENDING:"待審核",APPROVED:"已核准｜待採購",ORDERED:"已採購｜待到貨",ARRIVED:"已到貨｜待安排領取",READY_FOR_PICKUP:"可以領取",FULFILLED:"已領取",CANCELLED:"已取消"})[x.status]||x.status,issueDetail:x.status==="FULFILLED"?`${x.receivedBy||"領取人待核對"}｜${x.issuedAt?new Date(x.issuedAt).toLocaleDateString("zh-TW"):"日期待核對"}`:"—"})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["acquisitionLabel","取得方式"],["size","尺寸"],["quantity","申請件數"],["statusLabel","狀態"],["issueDetail","實際領取"],["createdAt","建立時間"]],true);
+ table("requests",rows.map(x=>({...x,processing:pendingRequestIds.has(x.id),studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",acquisitionLabel:x.kind==="competitionUniform"?({PUBLIC:"公費配發",PURCHASE:"自費買斷",RENTAL:"租借",PENDING:"取得方式待核對"})[x.acquisition]||"待核對":"自費加購",statusLabel:pendingRequestIds.has(x.id)?"更新處理中…":x.status==="READY_FOR_PICKUP"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"待財務核帳｜暫不可領取":({PENDING:"待審核",APPROVED:"已核准｜待採購",ORDERED:"已採購｜待到貨",ARRIVED:"已到貨｜待安排領取",READY_FOR_PICKUP:"可以領取",FULFILLED:"已領取",CANCELLED:"已取消"})[x.status]||x.status,issueDetail:x.status==="FULFILLED"?`${x.receivedBy||"領取人待核對"}｜${x.issuedAt?new Date(x.issuedAt).toLocaleDateString("zh-TW"):"日期待核對"}`:"—"})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["acquisitionLabel","取得方式"],["size","尺寸"],["quantity","申請件數"],["statusLabel","狀態"],["issueDetail","實際領取"],["createdAt","建立時間"]],true);
 }
 
 function renderModuleStock(){
@@ -257,16 +257,18 @@ el("settings").addEventListener("click",e=>{
 function table(id,rows,columns,actions=false){
  const header=columns.map(([key,label])=>"<th>"+esc(label)+"</th>").join("");
  const body=rows.map((r,i)=>{
-  const cells=columns.map(([key])=>"<td>"+esc(r[key])+"</td>").join("");
+  const cells=columns.map(([key,label])=>"<td data-label='"+esc(label)+"'>"+esc(r[key])+"</td>").join("");
   let controls="";
   if(actions){
-   if(r.processing){controls="<td><span role='status'>更新處理中…</span></td>"}
+   if(r.processing){controls="<td data-label='狀態管理'><span role='status'>更新處理中…</span></td>"}
    else{
-   const next={PENDING:[["APPROVED","核准，等待採購"],["CANCELLED","取消申請"]],APPROVED:[["ORDERED","已統一採購"],["CANCELLED","取消申請"]],ORDERED:[["ARRIVED","已到貨"],["CANCELLED","取消申請"]],ARRIVED:[["READY_FOR_PICKUP","開放領取"],["CANCELLED","取消申請"]]}[r.status]||[];
+   const payable=r.acquisition!=="PUBLIC";
+   const mayCollect=!payable||r.paymentStatus==="VERIFIED";
+   const next={PENDING:[["APPROVED","核准，等待採購"],["CANCELLED","取消申請"]],APPROVED:[["ORDERED","已統一採購"],["CANCELLED","取消申請"]],ORDERED:[["ARRIVED","已到貨"],["CANCELLED","取消申請"]],ARRIVED:[...(mayCollect?[["READY_FOR_PICKUP","開放領取"]]:[]),["CANCELLED","取消申請"]]}[r.status]||[];
    const adjust=r.kind==="團 T"&&["PENDING","APPROVED"].includes(r.status)?"<button type='button' data-adjust='"+i+"'>更正件數</button>":"";
    const amount=r.status==="APPROVED"&&r.acquisition!=="PUBLIC"&&!Number.isSafeInteger(r.amount)?"<button type='button' data-amount='"+i+"'>補正應繳金額</button>":"";
-   const issue=r.status==="READY_FOR_PICKUP"?"<button type='button' data-issue='"+i+"'>確認實際發放</button>":"";
-   controls="<td>"+(next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":issue||"<span>"+esc(r.statusLabel||r.status)+"</span>")+adjust+amount+"</td>";
+   const issue=r.status==="READY_FOR_PICKUP"&&mayCollect?"<button type='button' data-issue='"+i+"'>確認實際發放</button>":"";
+   controls="<td data-label='狀態管理'>"+(next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":issue||"<span>"+esc(r.statusLabel||r.status)+"</span>")+adjust+amount+"</td>";
    }
   }
   return "<tr>"+cells+controls+"</tr>";
