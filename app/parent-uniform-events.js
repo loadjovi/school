@@ -143,6 +143,23 @@ async function parentApi(path,options={}){
  const response=await fetch("/api/"+path,{...options,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...parentAuthHeaders(),...(options.headers||{})}});
  const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"HTTP "+response.status);return data;
 }
+function appendActivityFeeBreakdown(card,config,registration){
+ if(!config||!["fieldTrip","yearEndDinner"].includes(config.module))return;
+ const currency=n=>"NT$ "+Number(n).toLocaleString("zh-TW");
+ const rateKeys=["firstAdultFee","extraAdultFee","extraChildFee"];
+ if(!rateKeys.every(k=>Number.isFinite(Number(config[k]))&&Number(config[k])>=0))return;
+ const dinner=config.module==="yearEndDinner";
+ const students=(registration.studentIds||[]).length,adults=Math.max(0,Number(registration.adults)||0),children=Math.max(0,Number(registration.extraChildren)||0);
+ const studentRate=dinner?0:Number(config.studentFee||0),firstRate=Number(config.firstAdultFee),extraRate=Number(config.extraAdultFee),childRate=Number(config.extraChildFee);
+ const lines=[["弦樂團學生",students,studentRate],["首位陪同大人",Math.min(adults,1),firstRate],["第二位起陪同大人",Math.max(adults-1,0),extraRate],["其他兒童",children,childRate]];
+ const wrap=element("div",undefined,"activity-fee-breakdown");wrap.style.margin="12px 0";wrap.style.padding="12px";wrap.style.border="1px solid #dbe1eb";wrap.style.borderRadius="8px";
+ wrap.append(element("strong","本次報名費用明細（依學校活動設定）"));
+ let total=0;
+ for(const [label,count,rate] of lines){total+=count*rate;wrap.append(element("p",label+"："+count+" 位 × "+currency(rate)+"／位 = "+currency(count*rate)))}
+ wrap.append(element("strong","應繳合計："+currency(total)));
+ if(registration.estimatedAmount!=null&&Number(registration.estimatedAmount)!==total)wrap.append(element("p","注意：報名時登記金額為 "+currency(registration.estimatedAmount)+"，與目前費率試算不同，請先向學校確認。","hint"));
+ card.append(wrap);
+}
 async function appendFieldTripPayment(card,item,match){
  if(item.kind!=="fieldTrip"||match?.collectionOpen!==true||item.paymentStatus==="VERIFIED")return;
     const box=element("div",undefined,"payment-account");box.append(element("p","第二階段收款已開放。請先核對收款帳戶與應繳金額，完成匯款後填寫匯款日期、實際匯款金額及匯款帳號末五碼。"));
@@ -173,6 +190,7 @@ async function renderInlineActivities(){
    const states={NOT_OPEN:"尚未開放付款",REPORTED_UNVERIFIED:"已回報匯款，待幹部核帳",VERIFIED:"已確認入帳"};
    card.append(element("p","報名："+(item.registrationStatus==="REGISTERED"?"已送出":item.registrationStatus)+"｜付款："+(states[item.paymentStatus]||item.paymentStatus)));
    if(item.estimatedAmount!=null)card.append(element("p","登記金額 NT$ "+Number(item.estimatedAmount).toLocaleString("zh-TW")));
+   appendActivityFeeBreakdown(card,match,item);
    await appendFieldTripPayment(card,item,match);
    history.append(card);
   }
@@ -185,7 +203,7 @@ async function renderInlineActivities(){
     const card=element("div",undefined,"card");card.append(element("h3",item.title||"活動"));
     card.append(element("p",[formatDate(item.startAt),item.location].filter(Boolean).join("｜"),"muted"));
     const already=(registration.items||[]).find(x=>x.kind===item.module&&x.activityId===item.id);
-    if(already){card.append(element("p","此活動已送出報名。"));await appendFieldTripPayment(card,already,item);host.append(card);continue}
+    if(already){card.append(element("p","此活動已送出報名。"));appendActivityFeeBreakdown(card,item,already);await appendFieldTripPayment(card,already,item);host.append(card);continue}
     if(!["yearEndDinner","fieldTrip"].includes(item.module)){card.append(element("p","活動資訊依校方公告。","hint"));host.append(card);continue}
     const form=element("form");form.className="inline-activity-form";
     const studentWrap=element("fieldset");studentWrap.append(element("legend","參加學生"));
