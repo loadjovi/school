@@ -16,7 +16,7 @@ app.http("uniformTransferReport",{methods:["POST"],authLevel:"anonymous",route:"
   if(!row)return fail("Order not found",404);
   const old=JSON.parse(row.payload||"{}");
   if(!["regularUniform","competitionUniform"].includes(old.kind)||!ensureStudentAccess(access,old.studentId))return fail("Forbidden",403);
-  if(old.status!=="APPROVED"||!Number.isSafeInteger(old.amount)||old.amount<=0)return fail("Order not payable",409);
+  if(!["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(old.status)||!Number.isSafeInteger(old.amount)||old.amount<=0)return fail("Order not payable",409);
   if(old.paymentStatus==="VERIFIED")return fail("Already verified",409);
   if(old.paymentStatus==="REPORTED_UNVERIFIED")return fail("Transfer already reported",409);
   if(b.amount!==old.amount||b.etag!==row.etag)return fail("Amount or version mismatch",409);
