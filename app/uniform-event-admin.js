@@ -286,7 +286,7 @@ function syncConfig(){
  form.querySelectorAll("[data-activity-field]").forEach(x=>x.hidden=!activity);
  const stagePanel=el("fieldTripCollectionPanel");if(stagePanel)stagePanel.hidden=module!=="fieldTrip";
  const finance=el("uniformFinanceSettings");if(finance)finance.hidden=!["regularUniform","competitionUniform"].includes(module);
- if(!finance.hidden){el("uniformBankForm").elements.kind.value=module;el("uniformPriceForm").elements.kind.value=module;}
+ if(!finance.hidden){el("uniformFinanceKind").value=module;el("uniformBankForm").elements.kind.value=module;el("uniformPriceForm").elements.kind.value=module;}
 
  updateActivityConfigClarity();
  el("existingActivityWrap").hidden=!activity;el("activityIdHint").hidden=!activity;
@@ -480,7 +480,7 @@ function selectUniformFinanceKind(event){
  el("configModule").value=kind;
  el("configModule").dispatchEvent(new Event("change"));
 }
-el("uniformBankForm").elements.kind.addEventListener("change",selectUniformFinanceKind);
+el("uniformFinanceKind").addEventListener("change",selectUniformFinanceKind);
 el("uniformBankForm").elements.templateId.addEventListener("change",e=>{
  const selected=uniformBankTemplates.find(t=>t.id===e.target.value);
  if(selected)el("uniformBankPreview").textContent="將綁定："+selected.bankName+"（"+selected.bankCode+"）｜戶名："+selected.accountHolder+"｜帳號末四碼："+selected.accountNumber.slice(-4);
@@ -502,7 +502,7 @@ async function loadUniformPrices(){
   message.textContent="目前單價：團 T NT$ "+Number(uniformPrices.regularUniform?.unitPrice).toLocaleString("zh-TW")+"／件；A 團比賽服 NT$ "+Number(uniformPrices.competitionUniform?.unitPrice).toLocaleString("zh-TW")+"／套。";
  }catch(e){message.textContent="團服價格讀取失敗："+e.message}
 }
-el("uniformPriceForm").elements.kind.addEventListener("change",selectUniformFinanceKind);
+
 el("uniformPriceForm").addEventListener("submit",async e=>{
  e.preventDefault();const form=e.currentTarget,message=el("uniformPriceMessage"),kind=form.elements.kind.value,unitPrice=Number(form.elements.unitPrice.value),reason=form.elements.reason.value.trim();
  if(!Number.isSafeInteger(unitPrice)||unitPrice<1||unitPrice>100000||!reason){message.textContent="請填寫有效金額及調整原因";return}
