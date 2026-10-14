@@ -283,14 +283,24 @@ async function renderInlineActivities(){
    await appendFieldTripPayment(card,item,match);
    history.append(card);
   }
-  const categories={events:["yearEndDinner"],performance:["fieldTrip","performance","flashMob","schoolExchange","jointConcert"]};
+  const categories={events:["yearEndDinner"],performance:["fieldTrip","calendarActivity","performance","flashMob","schoolExchange","jointConcert"]};
+  const normalizeGroup=value=>{const group=String(value||"").trim().replace(/團$/,"").toUpperCase();return group==="儲備"||group==="預備"?"C":group};
+  const studentGroups=new Set(students.map(st=>normalizeGroup(st.groupName||st.group)).filter(Boolean));
+  const forFamily=item=>{const groups=String(item.targetGroups||"ALL").split(",").map(normalizeGroup);return groups.includes("ALL")||groups.some(group=>studentGroups.has(group))};
   for(const [category,host] of Object.entries(hosts)){
    if(category==="history")continue;host.replaceChildren();
-   const items=cfg.filter(x=>categories[category].includes(x.module));
-   if(!items.length){host.append(element("p","目前沒有已開放的活動。","muted"));continue}
+   const items=cfg.filter(x=>categories[category].includes(x.module)&&forFamily(x));
+   if(!items.length){host.append(element("p",category==="performance"?"目前沒有此學生團別已啟用的演出或交流活動。":"目前沒有已開放的活動。","muted"));continue}
    for(const item of items){
     const card=element("div",undefined,"card");card.append(element("h3",item.title||"活動"));
-    card.append(element("p",[formatDate(item.startAt),item.location].filter(Boolean).join("｜"),"muted"));
+    const start=item.module==="calendarActivity"?item.eventDate:formatDate(item.startAt);
+    const range=item.module==="calendarActivity"&&item.endDate&&item.endDate!==item.eventDate?start+"～"+item.endDate:start;
+    card.append(element("p",[range,item.timeLabel,item.location].filter(Boolean).join("｜"),"muted"));
+    if(item.module==="calendarActivity"){
+     card.append(element("p","演出／競賽公告｜不需家長報名、無須繳費。","hint"));
+     if(item.note){const note=element("p",item.note);note.style.whiteSpace="pre-wrap";card.append(note)}
+     host.append(card);continue;
+    }
     const already=(registration.items||[]).find(x=>x.kind===item.module&&x.activityId===item.id);
     if(already){card.append(element("p","此活動已送出報名。"));appendActivityFeeBreakdown(card,item,already);await appendFieldTripPayment(card,already,item);host.append(card);continue}
     if(!["yearEndDinner","fieldTrip"].includes(item.module)){card.append(element("p","活動資訊依校方公告。","hint"));host.append(card);continue}
