@@ -97,7 +97,7 @@ function renderTshirtPurchase(items){
  const total=document.createElement("p");const update=()=>{const price=currentUniformPrices?.regularUniform?.unitPrice;total.textContent=price?"目前預估金額：NT$ "+(Number(count.value)*price).toLocaleString("zh-TW")+"（核准時以當時價格為準）":"單價讀取中…"};count.addEventListener("change",update);update();
  const submit=document.createElement("button");submit.type="submit";submit.textContent="送出團 T 加購申請";
  const message=document.createElement("p");message.className="hint";message.setAttribute("role","status");
- form.append(studentLabel,sizeLabel,countLabel,total,submit,message);panel.append(title,hint,form);host.append(panel);submit.disabled=true;uniformPricePromise.then(prices=>{hint.textContent="目前每件 NT$"+Number(prices.regularUniform.unitPrice).toLocaleString("zh-TW")+"，目前不另計 5% 稅額。申請仍需學校審核；核准前請勿匯款。團 T 與 A 團比賽服尺寸不共用。";update();submit.disabled=false}).catch(()=>{hint.textContent="暫時無法讀取團 T 單價，請稍後重新整理。";total.textContent="價格未確認，暫停申請。"});
+ form.append(studentLabel,sizeLabel,countLabel,total,submit,message);panel.append(title,hint,form);host.append(panel);submit.disabled=true;uniformPricePromise.then(prices=>{hint.textContent="目前每件 NT$"+Number(prices.regularUniform.unitPrice).toLocaleString("zh-TW")+"，已含 5% 稅額，不再額外加計。申請仍需學校審核；核准前請勿匯款。團 T 與 A 團比賽服尺寸不共用。";update();submit.disabled=false}).catch(()=>{hint.textContent="暫時無法讀取團 T 單價，請稍後重新整理。";total.textContent="價格未確認，暫停申請。"});
  form.addEventListener("submit",async e=>{
   e.preventDefault();if(!size.value)return;
   if(!confirm("確認送出團 T 加購需求？送出後仍需學校審核，並非已付款或已領取。"))return;
