@@ -31,7 +31,7 @@ function drawParents(){
  if([...parent.options].some(o=>o.value===before))parent.value=before;
  const record=records.find(x=>x.parentEmail===parent.value);
  if(record)$("tshirtParentFeedback").textContent="此家長現有紀錄："+({ISSUED_LIFETIME:"幹部終身已領取，不可重複",BORROWED:"志工借用中",WASHING:"志工送洗中",RETURNED:"志工已歸還，可再次借用"})[record.status];
- else $("tshirtParentFeedback").textContent=studentId?(found.size?"請選擇家長 Gmail。":"此學生尚無已核准的家長 Gmail 綁定。"):"請先選擇學生。";
+ else $("tshirtParentFeedback").textContent=studentId?(parent.value?"請確認家長本人尺寸與操作後儲存。":found.size?"請選擇家長 Gmail。":"此學生尚無已核准的家長 Gmail 綁定。"):"請先選擇學生。";
 }
 
 async function reload(){
