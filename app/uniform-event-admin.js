@@ -17,7 +17,7 @@ function adminAuthHeaders(){
 window.uniformEventAuthHeaders=adminAuthHeaders;
 async function api(path,options={}){
  const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),12000);
+ const timeout=setTimeout(()=>controller.abort(),path==="uniform-events/requests"&&options.method==="PATCH"?45000:12000);
  let r;
  try{r=await fetch("/api/"+path,{...options,signal:controller.signal,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...adminAuthHeaders(),...(options.headers||{})}})}
  catch(e){if(e.name==="AbortError")throw Error("API 連線逾時（12 秒），請檢查預覽環境 API 或重新驗證登入");throw e}
@@ -30,6 +30,7 @@ async function api(path,options={}){
 }
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[];
 let visibleModuleRequests=[];
+const pendingRequestIds=new Set();
 let uniformStudentNames=new Map();
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let savedConfigs=[];
@@ -87,7 +88,7 @@ function renderModuleRequests(){
  const details=[...sizes].sort((a,b)=>a[0].localeCompare(b[0],"zh-Hant")).map(([size,n])=>size+"："+n+" 件").join("、");
  const label=activeAdminTab==="regularUniform"?"團 T":"A 團比賽服";
  el("requestSummary").textContent=label+" 家長申請 "+rows.length+" 筆；待處理 "+(counts.PENDING||0)+" 筆；核准 "+(counts.APPROVED||0)+" 筆。待處理需求共 "+total+" 件；尺寸統計："+(details||"尚無需求")+"。此為待處理需求，非已確認採購單；請核對免費資格及重複申請後再統一採購。";
- table("requests",rows.map(x=>({...x,studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",statusLabel:({PENDING:"待審核",APPROVED:"已核准｜待採購",ORDERED:"已採購｜待到貨",ARRIVED:"已到貨｜待安排領取",READY_FOR_PICKUP:"可以領取",CANCELLED:"已取消"})[x.status]||x.status})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["size","尺寸"],["quantity","申請件數"],["statusLabel","狀態"],["createdAt","建立時間"]],true);
+ table("requests",rows.map(x=>({...x,processing:pendingRequestIds.has(x.id),studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",statusLabel:pendingRequestIds.has(x.id)?"更新處理中…":({PENDING:"待審核",APPROVED:"已核准｜待採購",ORDERED:"已採購｜待到貨",ARRIVED:"已到貨｜待安排領取",READY_FOR_PICKUP:"可以領取",CANCELLED:"已取消"})[x.status]||x.status})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["size","尺寸"],["quantity","申請件數"],["statusLabel","狀態"],["createdAt","建立時間"]],true);
 }
 
 function renderModuleStock(){
@@ -235,9 +236,12 @@ function table(id,rows,columns,actions=false){
   const cells=columns.map(([key])=>"<td>"+esc(r[key])+"</td>").join("");
   let controls="";
   if(actions){
+   if(r.processing){controls="<td><span role='status'>更新處理中…</span></td>"}
+   else{
    const next={PENDING:[["APPROVED","核准，等待採購"],["CANCELLED","取消申請"]],APPROVED:[["ORDERED","已統一採購"],["CANCELLED","取消申請"]],ORDERED:[["ARRIVED","已到貨"],["CANCELLED","取消申請"]],ARRIVED:[["READY_FOR_PICKUP","開放領取"],["CANCELLED","取消申請"]]}[r.status]||[];
    const adjust=r.kind==="團 T"&&["PENDING","APPROVED"].includes(r.status)?"<button type='button' data-adjust='"+i+"'>更正件數</button>":"";
    controls="<td>"+(next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":"<span>"+esc(r.statusLabel||r.status)+"（目前無後續操作）</span>")+adjust+"</td>";
+   }
   }
   return "<tr>"+cells+controls+"</tr>";
  }).join("");
@@ -428,6 +432,27 @@ el("config").onsubmit=async e=>{
 };
 document.getElementById("retryAdminAuth").addEventListener("click",start);
 start();
+async function updateUniformRequest(row,body,{expectedStatus="",expectedQuantity=null,successText="申請已更新"}={}){
+ if(pendingRequestIds.has(row.id))return;
+ pendingRequestIds.add(row.id);renderModuleRequests();
+ el("status").textContent="正在儲存申請異動並通知家長…";
+ try{
+  const result=await api("uniform-events/requests",{method:"PATCH",body:JSON.stringify({id:row.id,etag:row.etag,...body})});
+  const index=cachedRequests.findIndex(x=>x.id===row.id);
+  if(index>=0)cachedRequests[index]={...cachedRequests[index],...result.item};
+  pendingRequestIds.delete(row.id);renderModuleRequests();
+  el("status").textContent=successText+(result.notificationStatus==="sent"?"，已寄送家長通知信":"；家長頁面已同步，通知信未確認送達");
+  await load();
+ }catch(error){
+  try{
+   const data=await api("uniform-events/requests"),updated=(data.items||[]).find(x=>x.id===row.id);
+   cachedRequests=data.items||[];
+   const saved=updated&&(expectedStatus?updated.status===expectedStatus:expectedQuantity!==null&&updated.quantity===expectedQuantity);
+   el("status").textContent=saved?successText+"；已向後端確認，通知信狀態待查": "更新未完成："+error.message;
+  }catch(refreshError){el("status").textContent="無法確認異動結果："+error.message+"；請按下方「重新整理」核對。"}
+  finally{pendingRequestIds.delete(row.id);renderModuleRequests()}
+ }
+}
 el("requests").addEventListener("click",async e=>{
  const i=e.target.dataset.update??e.target.dataset.adjust;if(i===undefined)return;
  const adjusting=e.target.dataset.adjust!==undefined;
@@ -438,8 +463,7 @@ el("requests").addEventListener("click",async e=>{
   const reason=prompt("請填寫更正原因（會留下操作紀錄）","");if(reason===null)return;
   if(!reason.trim()){el("status").textContent="更正原因不可空白";return}
   if(!confirm("確定將申請件數由 "+row.quantity+" 件更正為 "+quantity+" 件？"))return;
-  try{const result=await api("uniform-events/requests",{method:"PATCH",body:JSON.stringify({id:row.id,etag:row.etag,action:"ADJUST",quantity,reason:reason.trim()})});await load();el("status").textContent="件數已更正"+(result.notificationStatus==="sent"?"，已寄送家長通知信":"；家長頁面已同步，通知信未確認送達")}
-  catch(err){el("status").textContent="更正失敗："+err.message}
+  await updateUniformRequest(row,{action:"ADJUST",quantity,reason:reason.trim()},{expectedQuantity:quantity,successText:"件數已更正"});
   return;
  }
  const row=visibleModuleRequests[Number(i)],select=el("requests").querySelector("select[data-index='"+i+"']");
@@ -447,8 +471,7 @@ el("requests").addEventListener("click",async e=>{
  if(!confirm("確定將這筆申請改為 "+status+"？"))return;
  const reason=status==="CANCELLED"?prompt("請填寫取消原因（家長可在申請紀錄查看）",""):"";
  if(status==="CANCELLED"&&(!reason||!reason.trim())){el("status").textContent="取消申請須填寫原因";return}
- try{const result=await api("uniform-events/requests",{method:"PATCH",body:JSON.stringify({id:row.id,etag:row.etag,status,reason:reason?.trim()||""})});await load();el("status").textContent="申請狀態已更新"+(result.notificationStatus==="sent"?"，已寄送家長通知信":"；家長頁面已可查詢，但通知信未確認送達（"+(result.notificationStatus||"unknown")+"）")}
- catch(err){el("status").textContent="更新失敗："+err.message}
+ await updateUniformRequest(row,{status,reason:reason?.trim()||""},{expectedStatus:status,successText:"申請狀態已更新"});
 });
 el("inventoryForm").onsubmit=async e=>{
  e.preventDefault();const f=new FormData(e.target),type=String(f.get("type")),style=String(f.get("style"));
