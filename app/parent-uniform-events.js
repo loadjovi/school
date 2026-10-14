@@ -1,4 +1,4 @@
-const buttons=[...document.querySelectorAll("[data-view]")];const panels=[...document.querySelectorAll("[data-panel]")];function select(name){for(const b of buttons)b.setAttribute("aria-selected",String(b.dataset.view===name));for(const p of panels)p.hidden=p.dataset.panel!==name}buttons.forEach(b=>b.addEventListener("click",()=>select(b.dataset.view)));function mix(a,b,t){const x=parseInt(a.slice(1),16),y=parseInt(b.slice(1),16);return "#"+[16,8,0].map(n=>Math.round(((x>>n)&255)*(1-t)+((y>>n)&255)*t).toString(16).padStart(2,"0")).join("")}function luminance(c){const n=parseInt(c.slice(1),16),v=[16,8,0].map(k=>((n>>k)&255)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return .2126*v[0]+.7152*v[1]+.0722*v[2]}async function theme(){try{const schoolId=sessionStorage.getItem("school_context_id")||"";const q=new URLSearchParams();if(schoolId)q.set("schoolId",schoolId);const r=await fetch("/api/branding?"+q,{credentials:"same-origin"});if(!r.ok)return;const data=await r.json();let c=String(data.primaryColor||"");if(!/^#[0-9a-f]{6}$/i.test(c))return;for(let i=0;i<16&&1.05/(luminance(c)+.05)<4.5;i++)c=mix(c,"#000000",.13);document.documentElement.style.setProperty("--main",c);document.documentElement.style.setProperty("--soft",mix(c,"#ffffff",.91));document.documentElement.style.setProperty("--ink",mix(c,"#000000",.55))}catch(e){console.warn("Branding fallback",e)}}theme();
+const buttons=[...document.querySelectorAll("[data-view]")];const panels=[...document.querySelectorAll("[data-panel]")];function select(name){for(const b of buttons)b.setAttribute("aria-selected",String(b.dataset.view===name));for(const p of panels)p.hidden=p.dataset.panel!==name;document.getElementById("uniformRequestProgress").hidden=!["uniform","history"].includes(name)}buttons.forEach(b=>b.addEventListener("click",()=>select(b.dataset.view)));function mix(a,b,t){const x=parseInt(a.slice(1),16),y=parseInt(b.slice(1),16);return "#"+[16,8,0].map(n=>Math.round(((x>>n)&255)*(1-t)+((y>>n)&255)*t).toString(16).padStart(2,"0")).join("")}function luminance(c){const n=parseInt(c.slice(1),16),v=[16,8,0].map(k=>((n>>k)&255)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return .2126*v[0]+.7152*v[1]+.0722*v[2]}async function theme(){try{const schoolId=sessionStorage.getItem("school_context_id")||"";const q=new URLSearchParams();if(schoolId)q.set("schoolId",schoolId);const r=await fetch("/api/branding?"+q,{credentials:"same-origin"});if(!r.ok)return;const data=await r.json();let c=String(data.primaryColor||"");if(!/^#[0-9a-f]{6}$/i.test(c))return;for(let i=0;i<16&&1.05/(luminance(c)+.05)<4.5;i++)c=mix(c,"#000000",.13);document.documentElement.style.setProperty("--main",c);document.documentElement.style.setProperty("--soft",mix(c,"#ffffff",.91));document.documentElement.style.setProperty("--ink",mix(c,"#000000",.55))}catch(e){console.warn("Branding fallback",e)}}theme();
 
 function parentAuthHeaders(){
  const token=sessionStorage.getItem("google_id_token")||"";
@@ -289,7 +289,16 @@ async function renderInlineActivities(){
   const forFamily=item=>{const groups=String(item.targetGroups||"ALL").split(",").map(normalizeGroup);return groups.includes("ALL")||groups.some(group=>studentGroups.has(group))};
   for(const [category,host] of Object.entries(hosts)){
    if(category==="history")continue;host.replaceChildren();
-   const items=cfg.filter(x=>categories[category].includes(x.module)&&forFamily(x));
+   const taipeiDay=value=>{if(!value)return "";const d=new Date(value);return Number.isNaN(d.getTime())?"":d.toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"})};
+   const dateOf=item=>item.module==="calendarActivity"?item.eventDate:taipeiDay(item.startAt);
+   const endOf=item=>item.module==="calendarActivity"?(item.endDate||item.eventDate):taipeiDay(item.endAt||item.startAt);
+   const today=new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"});
+   const items=cfg.filter(x=>categories[category].includes(x.module)&&forFamily(x)).sort((a,b)=>{
+    const aUpcoming=endOf(a)>=today,bUpcoming=endOf(b)>=today;
+    if(aUpcoming!==bUpcoming)return aUpcoming?-1:1;
+    const aDate=dateOf(a),bDate=dateOf(b);
+    return (aUpcoming?Math.max(aDate,today).localeCompare(Math.max(bDate,today)):bDate.localeCompare(aDate))||String(a.title||"").localeCompare(String(b.title||""),"zh-Hant");
+   });
    if(!items.length){host.append(element("p",category==="performance"?"目前沒有此學生團別已啟用的演出或交流活動。":"目前沒有已開放的活動。","muted"));continue}
    for(const item of items){
     const card=element("div",undefined,"card");card.append(element("h3",item.title||"活動"));
