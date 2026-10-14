@@ -33,9 +33,9 @@ async function configuredAndOpen(schoolId,data){
   const id=["fieldTrip","yearEndDinner"].includes(data.kind)?data.activityId:"default";
   if(!validId(id))return false;
   const row=await find(client,schoolId,data.kind+":"+id);
-  if(!row)return false;
+  if(!row)return ["regularUniform","competitionUniform"].includes(data.kind);
   const cfg=JSON.parse(row.payload||"{}"),now=Date.now();
-  return cfg.enabled===true&&(!cfg.openAt||Date.parse(cfg.openAt)<=now)&&(!cfg.closeAt||Date.parse(cfg.closeAt)>=now);
+  return (["regularUniform","competitionUniform"].includes(data.kind)||cfg.enabled===true)&&(!cfg.openAt||Date.parse(cfg.openAt)<=now)&&(!cfg.closeAt||Date.parse(cfg.closeAt)>=now);
 }
 async function studentGuard(access,schoolId,studentId){
   if(!validId(studentId)||!ensureStudentAccess(access,studentId))return false;
