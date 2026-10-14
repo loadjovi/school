@@ -486,10 +486,27 @@ el("uniformBankForm").addEventListener("submit",async e=>{
 });
 loadUniformBankTemplates();
 window.addEventListener("uniformBankTemplatesLoaded",loadUniformBankTemplates);
+let uniformPrices={};
+async function loadUniformPrices(){
+ const form=el("uniformPriceForm"),message=el("uniformPriceMessage");
+ try{const data=await api("uniform-events/prices");uniformPrices=data.items||{};
+  form.elements.unitPrice.value=uniformPrices[form.elements.kind.value]?.unitPrice??"";
+  message.textContent="目前單價：團 T NT$ "+Number(uniformPrices.regularUniform?.unitPrice).toLocaleString("zh-TW")+"／件；A 團比賽服 NT$ "+Number(uniformPrices.competitionUniform?.unitPrice).toLocaleString("zh-TW")+"／套。";
+ }catch(e){message.textContent="團服價格讀取失敗："+e.message}
+}
+el("uniformPriceForm").elements.kind.addEventListener("change",e=>{e.currentTarget.form.elements.unitPrice.value=uniformPrices[e.currentTarget.value]?.unitPrice??""});
+el("uniformPriceForm").addEventListener("submit",async e=>{
+ e.preventDefault();const form=e.currentTarget,message=el("uniformPriceMessage"),kind=form.elements.kind.value,unitPrice=Number(form.elements.unitPrice.value),reason=form.elements.reason.value.trim();
+ if(!Number.isSafeInteger(unitPrice)||unitPrice<1||unitPrice>100000||!reason){message.textContent="請填寫有效金額及調整原因";return}
+ if(!confirm("確認將"+(kind==="regularUniform"?"團 T":"A 團比賽服")+"單價調整為 NT$ "+unitPrice.toLocaleString("zh-TW")+"？新價格適用於後續核准的申請。"))return;
+ try{await api("uniform-events/prices",{method:"POST",body:JSON.stringify({kind,unitPrice,reason,etag:uniformPrices[kind]?.etag??null})});form.elements.reason.value="";await loadUniformPrices();message.textContent+=" 新價格已儲存。"}
+ catch(error){message.textContent="價格更新失敗："+error.message}
+});
+loadUniformPrices();
 el("requests").addEventListener("click",async e=>{
  const i=e.target.dataset.update??e.target.dataset.adjust??e.target.dataset.amount;if(i===undefined)return;
  const adjusting=e.target.dataset.adjust!==undefined;
- if(e.target.dataset.amount!==undefined){const row=visibleModuleRequests[Number(i)];if(!row)return;const due=row.kind==="regularUniform"?row.quantity*400:2625;if(!confirm("確認補正此筆應繳金額 NT$ "+due+"？"))return;await updateUniformRequest(row,{action:"SET_AMOUNT"},{successText:"應繳金額已補正"});return;}
+ if(e.target.dataset.amount!==undefined){const row=visibleModuleRequests[Number(i)];if(!row)return;const due=(uniformPrices[row.kind]?.unitPrice||0)*(row.kind==="regularUniform"?row.quantity:1);if(!confirm("確認補正此筆應繳金額 NT$ "+due+"？"))return;await updateUniformRequest(row,{action:"SET_AMOUNT"},{successText:"應繳金額已補正"});return;}
  if(adjusting){
   const row=visibleModuleRequests[Number(i)];if(!row)return;
   const raw=prompt("請輸入正確件數（1–20 件；全部不要請選取消申請）",String(row.quantity||1));if(raw===null)return;
