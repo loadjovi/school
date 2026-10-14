@@ -30,6 +30,7 @@ async function api(path,options={}){
 }
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[];
 let visibleModuleRequests=[];
+let uniformStudentNames=new Map();
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let savedConfigs=[];
 let activeAdminTab="settings";
@@ -86,7 +87,7 @@ function renderModuleRequests(){
  const details=[...sizes].sort((a,b)=>a[0].localeCompare(b[0],"zh-Hant")).map(([size,n])=>size+"："+n+" 件").join("、");
  const label=activeAdminTab==="regularUniform"?"團 T":"A 團比賽服";
  el("requestSummary").textContent=label+" 家長申請 "+rows.length+" 筆；待處理 "+(counts.PENDING||0)+" 筆；核准 "+(counts.APPROVED||0)+" 筆。待處理需求共 "+total+" 件；尺寸統計："+(details||"尚無需求")+"。此為待處理需求，非已確認採購單；請核對免費資格及重複申請後再統一採購。";
- table("requests",rows,[["studentId","學生ID"],["kind","項目"],["size","尺寸"],["quantity","申請件數"],["status","狀態"],["createdAt","建立時間"]],true);
+ table("requests",rows.map(x=>({...x,studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",statusLabel:({PENDING:"待審核",APPROVED:"已核准｜待採購",CANCELLED:"已取消"})[x.status]||x.status})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["size","尺寸"],["quantity","申請件數"],["statusLabel","狀態"],["createdAt","建立時間"]],true);
 }
 
 function renderModuleStock(){
@@ -296,6 +297,14 @@ el("configModule").addEventListener("change",()=>{el("existingActivity").value="
 el("existingActivity").addEventListener("change",()=>{syncConfig();if(el("configModule").value==="fieldTrip")refreshFieldTripBanks();if(!el("existingActivity").value){const form=el("config");for(const k of ["title","location","openAt","closeAt","startAt","endAt"])form.elements[k].value="";for(const k of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=0;}});
 syncConfig();
 async function load(){
+ try{
+  const response=await fetch("/api/students",{credentials:"same-origin",cache:"no-store",headers:typeof window.uniformEventAuthHeaders==="function"?window.uniformEventAuthHeaders():{}});
+  if(response.ok){
+   const data=await response.json();
+   const students=Array.isArray(data)?data:(data.items||[]);
+   uniformStudentNames=new Map(students.filter(x=>x.studentId||x.id).map(x=>[String(x.studentId||x.id),String(x.name||x.studentName||"姓名待核對")]));
+  }
+ }catch(error){console.warn("團服申請學生姓名查詢失敗",error)}
  const sections=[
   {path:"uniform-events/family-registration",status:"familyStatus",render:data=>{cachedFamilyRegistrations=data.items||[];refreshFamilyStatistics()}},
   {path:"uniform-events/config",status:"status",render:data=>{savedConfigs=data.items||[];syncConfig();refreshFamilyStatistics()}},
