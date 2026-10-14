@@ -88,20 +88,49 @@ app.http("uniformEventRequests",{
         await client.createEntity({partitionKey:schoolId,rowKey:id,payload:encode(payload),updatedAt:createdAt});
         return json({item:{...payload,id}},201);
       }
-      if(access.role!=="admin")return err("Admin only",403);
-      if(!validId(data.id)||!states.has(data.status)||!safe(data.etag,200))return err("Invalid update");
+      if(!validId(data.id)||!safe(data.etag,200))return err("Invalid update");
       const previous=await find(client,schoolId,data.id);
       if(!previous)return err("Not found",404);
       if(data.etag!==previous.etag)return err("Record changed, refresh and retry",409);
       const before=decode(previous);
-      if(!allowedNext[before.status]?.has(data.status))return err("Invalid status transition; refresh and check the current stage",409);
-      const next={...JSON.parse(previous.payload),status:data.status,updatedAt:new Date().toISOString()};
-      if(data.status==="FULFILLED" && before.status!=="FULFILLED")return err("Use inventory issuance workflow before fulfillment",409);
-      await audit(schoolId,access,"request.status",data.id,{from:before.status,to:data.status});
+      if(access.role==="parent"&&!await studentGuard(access,schoolId,before.studentId))return err("Forbidden",403);
+      const next={...JSON.parse(previous.payload),updatedAt:new Date().toISOString()};
+      let action="request.status",auditDetail={},shouldNotify=false;
+      if(access.role==="parent"){
+        if(before.status!=="PENDING")return err("已進入校方審核或採購流程，請聯繫學校更正",409);
+        if(data.action==="CANCEL"){
+          next.status="CANCELLED";next.cancelReason="家長自行取消";action="request.parent_cancel";
+          auditDetail={studentId:before.studentId,from:before.status,to:next.status};
+        }else if(data.action==="EDIT"){
+          if(!["regularUniform","competitionUniform"].includes(before.kind))return err("此申請不支援家長修改",400);
+          const student=await getStudentMaster(before.studentId,schoolId);
+          const fields=validateRequest({...before,...data,kind:before.kind,studentId:before.studentId},student);
+          for(const key of ["size","quantity","style"])if(key in fields)next[key]=fields[key];
+          if(before.kind==="regularUniform")next.note=`團 T 自費加購 ${next.quantity} 件；待校方審核`;
+          action="request.parent_edit";auditDetail={studentId:before.studentId,before:{size:before.size,quantity:before.quantity,style:before.style},after:{size:next.size,quantity:next.quantity,style:next.style}};
+        }else return err("不支援的家長操作",400);
+      }else if(data.action==="ADJUST"){
+        if(!["PENDING","APPROVED"].includes(before.status)||before.kind!=="regularUniform")return err("僅可更正尚未採購的團 T 件數",409);
+        if(!Number.isSafeInteger(data.quantity)||data.quantity<1||data.quantity>20||!safe(data.reason,300)||!data.reason.trim())return err("請輸入 1–20 件及更正原因；全部取消請選取消申請",400);
+        if(data.quantity===before.quantity)return err("件數未變更",400);
+        next.quantity=data.quantity;next.adjustmentReason=data.reason.trim();next.note=`團 T 自費加購 ${next.quantity} 件；${before.status==="APPROVED"?"已核准待採購":"待校方審核"}`;action="request.admin_adjust";
+        auditDetail={studentId:before.studentId,fromQuantity:before.quantity,toQuantity:next.quantity,reason:next.adjustmentReason};shouldNotify=true;
+      }else{
+        if(!states.has(data.status))return err("Invalid update");
+        if(!allowedNext[before.status]?.has(data.status))return err("Invalid status transition; refresh and check the current stage",409);
+        next.status=data.status;
+        if(next.status==="CANCELLED"){
+          if(!safe(data.reason,300)||!String(data.reason||"").trim())return err("取消已核准申請請填寫原因",400);
+          next.cancelReason=data.reason.trim();
+        }
+        if(data.status==="FULFILLED")return err("Use inventory issuance workflow before fulfillment",409);
+        auditDetail={studentId:before.studentId,from:before.status,to:next.status,reason:next.cancelReason||""};shouldNotify=true;
+      }
+      await audit(schoolId,access,action,data.id,auditDetail);
       try{await client.updateEntity({partitionKey:schoolId,rowKey:data.id,payload:encode(next),updatedAt:next.updatedAt},"Replace",{etag:previous.etag})}
       catch(e){if(e.statusCode===412)return err("Record changed, refresh and retry",409);throw e}
       let notificationStatus="not_attempted";
-      if(["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP","CANCELLED"].includes(next.status)){
+      if(shouldNotify){
         try{
           const mappings=await listUserStudentMappings("active",schoolId),recipients=new Set();
           for(const mapping of mappings){
