@@ -76,6 +76,7 @@ function renderModuleRequests(){
   return activeAdminTab==="regularUniform"?/regular|tshirt|t-shirt/i.test(kind):/competition/i.test(kind);
  });
  visibleModuleRequests=rows;
+ el("requestsStatus").textContent="目前顯示 "+rows.length+" 筆"+(activeAdminTab==="competitionUniform"?" A 團比賽服":"團 T")+"申請";
  const counts=rows.reduce((a,x)=>(a[x.status]=(a[x.status]||0)+1,a),{});
  const pending=rows.filter(x=>x.status==="PENDING");
  const sizes=new Map();
@@ -93,6 +94,8 @@ function renderModuleRequests(){
 }
 
 function renderModuleStock(){
+ const visibleStock=cachedStock.filter(x=>String(x.key).startsWith(activeAdminTab==="competitionUniform"?"competition:":"regular:"));
+ el("stockStatus").textContent="目前顯示 "+visibleStock.length+" 筆"+(activeAdminTab==="competitionUniform"?" A 團比賽服":"團 T")+"庫存紀錄";
  if(activeAdminTab==="regularUniform"){
   const byKey=new Map(cachedStock.map(x=>[x.key,x]));
   const rows=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"].map(size=>{
@@ -376,7 +379,7 @@ async function load(){
  ];
  const results=await Promise.allSettled(sections.map(async section=>{
    const data=await api(section.path);section.render(data);
-   if(section.status!=="status")el(section.status).textContent="已載入 "+(data.items?.length??0)+" 筆";
+   if(!["status","requestsStatus","stockStatus"].includes(section.status))el(section.status).textContent="已載入 "+(data.items?.length??0)+" 筆";
  }));
  results.forEach((result,i)=>{
    if(result.status==="rejected"){
