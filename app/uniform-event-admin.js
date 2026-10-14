@@ -291,7 +291,7 @@ function syncConfig(){
 
  updateActivityConfigClarity();
  el("existingActivityWrap").hidden=!activity;el("activityIdHint").hidden=!activity;
- el("configModeHint").textContent=activity?"活動可新增多筆，請選擇建立或編輯既有活動。":"團服模組僅有一組設定；只能啟用或關閉，不能新增活動。";
+ el("configModeHint").textContent=activity?"活動可新增多筆，請選擇建立或編輯既有活動。":"團服模組僅有一組設定；可啟用或關閉，並在下方設定價格及收款帳戶。";
  const select=el("existingActivity"),old=select.value;
  select.innerHTML="<option value=''>建立新活動</option>"+savedConfigs.filter(x=>x.module===module).map(x=>"<option value='"+esc(x.id)+"'>"+esc(x.title||x.id)+"</option>").join("");
  if([...select.options].some(x=>x.value===old))select.value=old;
