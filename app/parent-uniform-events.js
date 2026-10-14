@@ -103,7 +103,7 @@ function renderTshirtPurchase(items){
   try{
    const resp=await fetch("/api/uniform-events/requests",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...parentAuthHeaders()},body:JSON.stringify({kind:"regularUniform",studentId:student.value,size:size.value,quantity:Number(count.value),acquisition:"PURCHASE",note:"團 T 自費加購 "+count.value+" 件，每件 NT$400；待校方審核"})});
    const data=await resp.json().catch(()=>({}));if(!resp.ok)throw Error(data.error||"HTTP "+resp.status);
-   message.textContent="團 T 加購申請已送出，等待學校後台審核。";submit.textContent="已送出";
+   message.textContent="團 T 加購申請已送出，等待學校審核。核准後將由幹部統一採購；到貨、可領取及領取完成須待學校另行公告。核准不代表已付款、已到貨或已領取。";submit.textContent="已送出";
   }catch(error){message.textContent="送出失敗："+error.message;submit.disabled=false}
  });
 }
