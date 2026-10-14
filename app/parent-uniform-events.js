@@ -1,4 +1,5 @@
 import {confirmedReceived} from "./competition-paper-receipts.js";
+import {buildUniformGrowth} from "./uniform-growth.js";
 const buttons=[...document.querySelectorAll("[data-view]")];const panels=[...document.querySelectorAll("[data-panel]")];function select(name){for(const b of buttons){const active=b.dataset.view===name;b.setAttribute("aria-selected",String(active));b.tabIndex=active?0:-1}for(const p of panels)p.hidden=p.dataset.panel!==name;document.getElementById("uniformRequestProgress").hidden=!["uniform","history"].includes(name)}buttons.forEach((b,i)=>{b.addEventListener("click",()=>select(b.dataset.view));b.addEventListener("keydown",e=>{if(!["ArrowRight","ArrowLeft","Home","End"].includes(e.key))return;e.preventDefault();const index=e.key==="Home"?0:e.key==="End"?buttons.length-1:(i+(e.key==="ArrowRight"?1:-1)+buttons.length)%buttons.length;select(buttons[index].dataset.view);buttons[index].focus()})});select("uniform");function mix(a,b,t){const x=parseInt(a.slice(1),16),y=parseInt(b.slice(1),16);return "#"+[16,8,0].map(n=>Math.round(((x>>n)&255)*(1-t)+((y>>n)&255)*t).toString(16).padStart(2,"0")).join("")}function luminance(c){const n=parseInt(c.slice(1),16),v=[16,8,0].map(k=>((n>>k)&255)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return .2126*v[0]+.7152*v[1]+.0722*v[2]}async function theme(){try{const schoolId=sessionStorage.getItem("school_context_id")||"";const q=new URLSearchParams();if(schoolId)q.set("schoolId",schoolId);const r=await fetch("/api/branding?"+q,{credentials:"same-origin"});if(!r.ok)return;const data=await r.json();let c=String(data.primaryColor||"");if(!/^#[0-9a-f]{6}$/i.test(c))return;for(let i=0;i<16&&1.05/(luminance(c)+.05)<4.5;i++)c=mix(c,"#000000",.13);document.documentElement.style.setProperty("--main",c);document.documentElement.style.setProperty("--soft",mix(c,"#ffffff",.91));document.documentElement.style.setProperty("--ink",mix(c,"#000000",.55))}catch(e){console.warn("Branding fallback",e)}}theme();
 
 function parentAuthHeaders(){
@@ -6,6 +7,40 @@ function parentAuthHeaders(){
  const schoolId=sessionStorage.getItem("school_context_id")||"";
  const roleContext=sessionStorage.getItem("role_context")||"";
  return {...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(schoolId?{"X-School-Id":schoolId}:{}),...(roleContext?{"X-Role-Context":roleContext}:{})};
+}
+let growthStudents=[],growthRequests=[],growthTshirts=[],growthRequestsLoaded=false,growthTshirtsLoaded=false,growthTshirtsError="";
+function renderUniformGrowth(){
+ const host=document.getElementById("uniformGrowth");if(!host)return;
+ host.replaceChildren(element("h3","📈 孩子的團服成長紀錄"));
+ if(!growthStudents.length){host.append(element("p","正在讀取孩子資料…","muted"));return}
+ if(!growthRequestsLoaded){host.append(element("p","正在讀取團服申請…","muted"));return}
+ host.append(element("p","依孩子與團服分開顯示；新購申請尚未等於已領用。","growth-note"));
+ for(const student of growthStudents){
+  const id=String(student.studentId||student.id||"");if(!id)continue;
+  const name=student.name||student.studentName||id;
+  const section=element("section",undefined,"growth-student");section.append(element("h4",name));
+  const group=String(student.groupName||student.group||"").trim().toUpperCase().replace(/\s/g,"");
+  const kinds=group==="A"||group==="A團"?["regularUniform","competitionUniform"]:["regularUniform"];
+  for(const kind of kinds){
+   const kindSection=element("div",undefined,"growth-kind"),label=kind==="regularUniform"?"🎽 團 T":"🏅 A 團比賽服";
+   kindSection.append(element("h4",label));
+   const tshirt=growthTshirts.find(x=>String(x.studentId)===id);
+   const paperClass=kind==="competitionUniform"?confirmedReceived.get(String(name).trim()):"";
+   const {entries,comparison}=buildUniformGrowth(student,kind,tshirt,growthRequests,paperClass);
+   if(!entries.length){kindSection.append(element("p",kind==="regularUniform"&&!growthTshirtsLoaded?"歷史領用資料載入中…":"目前沒有可顯示的歷史尺寸或新購紀錄。","muted"))}
+   for(const entry of entries){
+    const step=element("div",undefined,"growth-step");
+    const date=entry.date?formatDate(entry.date).split(" ")[0]+"｜":"";
+    step.append(element("strong",date+entry.title+(entry.size?"｜尺寸 "+entry.size:"")));
+    step.append(element("p",entry.detail,"growth-note"));kindSection.append(step);
+   }
+   if(comparison)kindSection.append(element("p",comparison,"growth-change"));
+   if(kind==="competitionUniform"&&paperClass)kindSection.append(element("p","紙本只確認領用班級；歷史尺寸、款式與正式發放仍待校方核對。","growth-note"));
+   section.append(kindSection);
+  }
+  host.append(section);
+ }
+ if(growthTshirtsError)host.append(element("p","團 T 歷史紀錄暫時無法讀取："+growthTshirtsError,"hint"));
 }
 async function eligibleUniforms(){
  const status=document.getElementById("uniformEligibilityStatus"),regular=document.getElementById("regularUniformCard"),competition=document.getElementById("competitionUniformCard");
@@ -15,6 +50,7 @@ async function eligibleUniforms(){
   if(!studentsResponse.ok||!configsResponse.ok)throw Error("學生資料 HTTP "+studentsResponse.status+"；模組設定 HTTP "+configsResponse.status);
   const studentData=await studentsResponse.json(),configData=await configsResponse.json();
   const students=Array.isArray(studentData)?studentData:(studentData.items||[]);
+  growthStudents=students;renderUniformGrowth();
   const configs=configData.items||[];
   const active=module=>configs.some(x=>x.module===module&&x.id==="default"&&x.enabled===true);
   const isA=s=>["A","A團"].includes(String(s.groupName||s.group||"").trim().toUpperCase().replace(/\s/g,""));
@@ -53,6 +89,7 @@ async function loadInlineSizes(){
   const res=await fetch("/api/uniform-events/tshirt-historical-size",{credentials:"same-origin",cache:"no-store",headers:parentAuthHeaders()});
   const data=await res.json().catch(()=>({}));
   if(!res.ok)throw Error(data.error||"HTTP "+res.status);
+  growthTshirts=data.items||[];growthTshirtsLoaded=true;growthTshirtsError="";renderUniformGrowth();
   if(!data.items?.length){host.textContent="目前尚無已領取團 T 的歷史補登資料；未領取學生需由校方確認領用狀態。";return}
   const summary=document.createElement("div");summary.id="tshirtRegisteredSummary";host.parentElement.insertBefore(summary,host);
   for(const item of data.items){
@@ -93,7 +130,7 @@ async function loadInlineSizes(){
    host.append(box);
   }
   renderTshirtPurchase(data.items);
- }catch(e){host.textContent="無法讀取尺寸補登資料";status.textContent=e.message}
+ }catch(e){growthTshirtsLoaded=true;growthTshirtsError=e.message;renderUniformGrowth();host.textContent="無法讀取尺寸補登資料";status.textContent=e.message}
 }
 
 function renderTshirtPurchase(items){
@@ -175,8 +212,10 @@ async function loadUniformRequestProgress(){
  try{
   const [result,me]=await Promise.all([parentApi("uniform-events/requests"),parentApi("me")]);
   if(me.role!=="parent")throw Error("請切換至家長身分後重新載入");
+  if(!growthStudents.length){growthStudents=me.students||[];renderUniformGrowth()}
   const names=new Map((me.students||[]).map(x=>[String(x.studentId),x.name||x.studentName||x.studentId]));
   const requests=(result.items||[]).filter(x=>["regularUniform","competitionUniform"].includes(x.kind)).sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||"")));
+  growthRequests=requests;growthRequestsLoaded=true;renderUniformGrowth();
   summary.replaceChildren();history.replaceChildren();
   if(!requests.length){summary.append(element("p","目前沒有團服申請。送出後可在此查看學校審核與後續進度。","muted"));history.append(element("p","目前沒有團服申請紀錄。","muted"));return}
   const approved=requests.filter(x=>x.status==="APPROVED").length;
