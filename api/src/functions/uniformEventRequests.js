@@ -145,6 +145,7 @@ app.http("uniformEventRequests",{
       }else{
         if(!states.has(data.status))return err("Invalid update");
         if(!allowedNext[before.status]?.has(data.status))return err("Invalid status transition; refresh and check the current stage",409);
+        if(data.status==="READY_FOR_PICKUP"&&["regularUniform","competitionUniform"].includes(before.kind)&&before.acquisition!=="PUBLIC"&&before.paymentStatus!=="VERIFIED")return err("自費申請須先完成財務核帳，才可開放領取",409);
         next.status=data.status;
         if(data.status==="APPROVED"&&["regularUniform","competitionUniform"].includes(before.kind)){
           if(before.kind==="competitionUniform"&&before.acquisition==="PUBLIC"){
