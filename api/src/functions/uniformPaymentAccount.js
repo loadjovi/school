@@ -14,9 +14,13 @@ app.http("uniformPaymentAccount",{methods:["GET","POST"],authLevel:"anonymous",r
   const accounts=await db("TenantUniformPaymentAccounts"),key="uniform:"+input.kind;
   if(request.method==="POST"){
    if(access.role!=="admin")return fail("Admin only",403);
-   if(!/^[0-9]{3}$/.test(input.bankCode)||!/^[0-9]{6,30}$/.test(input.accountNumber)||![input.bankName,input.accountHolder].every(x=>typeof x==="string"&&x.trim()&&x.length<=100))return fail("Invalid account");
+   if(!valid(input.templateId))return fail("請選擇既有的幹部收款帳戶",400);
+   const templates=await db("TenantPaymentAccountTemplates"),template=await find(templates,schoolId,input.templateId);
+   if(!template)return fail("收款帳戶範本不存在",404);
+   const selected=JSON.parse(template.payload||"{}");
+   if(selected.active!==true||!/^[0-9]{3}$/.test(selected.bankCode)||!/^[0-9]{6,30}$/.test(selected.accountNumber)||![selected.bankName,selected.accountHolder].every(x=>typeof x==="string"&&x.trim()&&x.length<=100))return fail("此幹部收款帳戶已停用或資料不完整",409);
    const stamp=new Date().toISOString();
-   await accounts.upsertEntity({partitionKey:schoolId,rowKey:key,payload:JSON.stringify({bankCode:input.bankCode,bankName:input.bankName.trim(),accountHolder:input.accountHolder.trim(),accountNumber:input.accountNumber}),updatedAt:stamp,updatedBy:String(access.email||"admin")},"Replace");
+   await accounts.upsertEntity({partitionKey:schoolId,rowKey:key,payload:JSON.stringify({templateId:input.templateId,bankCode:selected.bankCode,bankName:selected.bankName.trim(),accountHolder:selected.accountHolder.trim(),accountNumber:selected.accountNumber}),updatedAt:stamp,updatedBy:String(access.email||"admin")},"Replace");
    return json({saved:true});
   }
   if(access.role!=="admin"&&access.role!=="parent")return fail("Forbidden",403);
