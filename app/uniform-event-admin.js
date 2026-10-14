@@ -314,7 +314,7 @@ async function refreshFieldTripBanks(){
    api("uniform-events/payment-account-templates"),
    activityId?api("uniform-events/field-trip-payment-account?activityId="+encodeURIComponent(activityId)).catch(()=>({item:null})):Promise.resolve({item:null})
   ]);
-  fieldTripBankTemplates=(templates.items||[]).filter(x=>x.active===true);
+  fieldTripBankTemplates=(templates.items||[]).filter(x=>x.active!==false&&x.isActive!==false);
   select.replaceChildren(new Option("請選擇已儲存帳戶",""));
   for(const b of fieldTripBankTemplates)select.add(new Option((b.label||"收款帳戶")+"｜"+b.bankName+"（"+b.bankCode+"）末四碼 "+String(b.accountNumber||"").slice(-4),b.id));
   const current=linked.item;
@@ -333,9 +333,10 @@ el("bindFieldTripBank").addEventListener("click",async()=>{
  const message=el("fieldTripBankStatus"),activityId=el("existingActivity").value;
  const bank=fieldTripBankTemplates.find(x=>x.id===el("fieldTripBankTemplate").value);
  if(el("configModule").value!=="fieldTrip"||!activityId){message.textContent="請先儲存並選擇既有校外活動。";return}
- if(el("fieldTripBankTemplate").value==="__linked__"){message.textContent="目前帳戶已綁定，無須重複綁定。";return}\n if(!bank){message.textContent="請先選擇收款帳戶。";return}
+ if(el("fieldTripBankTemplate").value==="__linked__"){message.textContent="目前帳戶已綁定，無須重複綁定。";return}
+ if(!bank){message.textContent="請先選擇收款帳戶。";return}
  if(!confirm("確定將此收款帳戶綁定目前活動？"))return;
- try{await api("uniform-events/field-trip-payment-account",{method:"POST",body:JSON.stringify({activityId,bankName:bank.bankName,bankCode:bank.bankCode,accountHolder:bank.accountHolder,accountNumber:bank.accountNumber})});message.textContent="已綁定本活動收款帳戶；可再選擇開放第二階段收款並儲存設定。"}
+ try{await api("uniform-events/field-trip-payment-account",{method:"POST",body:JSON.stringify({activityId,bankName:bank.bankName,bankCode:bank.bankCode,accountHolder:bank.accountHolder,accountNumber:bank.accountNumber})});await refreshFieldTripBanks();message.textContent="已更新本活動收款帳戶，請確認顯示的帳戶正確。"}
  catch(e){message.textContent="綁定失敗："+e.message}
 });
 el("configModule").addEventListener("change",()=>{if(el("configModule").value==="fieldTrip")refreshFieldTripBanks()});
