@@ -6,7 +6,7 @@ import { auditSaved } from "../lib/adminAudit.js";
 const safe=v=>String(v||"").replaceAll("'","''");
 const validDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||""));
 const validTime=v=>!v||/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v||""));
-const normGroup=v=>String(v||"").trim().replace(/團$/,"");
+const normGroup=v=>{const g=String(v||"").trim().replace(/團$/,"").toUpperCase();return g==="儲備"||g==="預備"?"C":g};
 async function hasTrainingAttendance(schoolId,eventId){
   const filter=`PartitionKey eq '${safe(tenantSchoolPartition(schoolId))}' and eventId eq '${safe(eventId)}'`;
   for await(const _ of table("tenantTrainingAttendance").listEntities({queryOptions:{filter}}))return true;
@@ -55,22 +55,23 @@ export async function listCalendarEvents(schoolId,startDate="",endDate="",groupN
   return items.sort((a,b)=>a.eventDate.localeCompare(b.eventDate)||a.startTime.localeCompare(b.startTime)||a.title.localeCompare(b.title,"zh-Hant"));
 }
 
-const tripCalendarId=id=>`evt_fieldTrip_${id}`;
+const activityCalendarId=(module,id)=>`evt_${module}_${id}`;
 const taipeiPart=(date,part)=>new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(date).find(x=>x.type===part)?.value||"";
 const tripDate=d=>`${taipeiPart(d,"year")}-${taipeiPart(d,"month")}-${taipeiPart(d,"day")}`;
 const tripTime=d=>`${taipeiPart(d,"hour")}:${taipeiPart(d,"minute")}`;
 
-export async function syncFieldTripCalendar(schoolId,access,data){
+export async function syncActivityCalendar(schoolId,access,data){
   await ensureTenantTables();
-  const sid=tenantSchoolPartition(schoolId),client=table("tenantCalendarEvent"),eventId=tripCalendarId(data.id),now=new Date().toISOString();
-  const start=new Date(data.startAt),end=new Date(data.endAt||data.startAt);
+  const sid=tenantSchoolPartition(schoolId),client=table("tenantCalendarEvent"),eventId=activityCalendarId(data.module,data.id),now=new Date().toISOString();
+  const isTrip=data.module==="fieldTrip",start=isTrip?new Date(data.startAt):null,end=isTrip?new Date(data.endAt||data.startAt):null;
   let old=null;try{old=await client.getEntity(sid,eventId)}catch(e){if(e.statusCode!==404)throw e}
-  const entity={partitionKey:sid,rowKey:eventId,schoolId:sid,eventType:"field_trip",sourceModule:"fieldTrip",sourceActivityId:data.id,
-    title:String(data.title).slice(0,120),eventDate:tripDate(start),endDate:tripDate(end),startTime:tripTime(start),endTime:data.endAt?tripTime(end):"",
-    timeLabel:"",targetGroups:"ALL",teacherName:"",teacherEmail:"",location:String(data.location).slice(0,300),note:"",requiresAttendance:false,
+  const entity={partitionKey:sid,rowKey:eventId,schoolId:sid,eventType:isTrip?"field_trip":data.eventType,sourceModule:data.module,sourceActivityId:data.id,
+    title:String(data.title).slice(0,120),eventDate:isTrip?tripDate(start):data.eventDate,endDate:isTrip?tripDate(end):(data.endDate||data.eventDate),
+    startTime:isTrip?tripTime(start):String(data.startTime||""),endTime:isTrip?(data.endAt?tripTime(end):""):String(data.endTime||""),
+    timeLabel:isTrip?"":String(data.timeLabel||"").slice(0,80),targetGroups:String(data.targetGroups||"ALL"),teacherName:"",teacherEmail:"",location:String(data.location).slice(0,300),note:isTrip?"":String(data.note||"").slice(0,1000),requiresAttendance:false,
     visibleToParents:true,status:data.enabled===true?"active":"cancelled",updatedAt:now,updatedBy:String(access.email||"admin")};
   await client.upsertEntity(entity,"Replace");
-  await auditSaved(schoolId,access.email,old?"calendar_event_update":"calendar_event_create",{eventId,title:entity.title,eventDate:entity.eventDate,sourceModule:"fieldTrip",sourceActivityId:data.id,before:old?eventView(old,true):null,after:eventView(entity,true)});
+  await auditSaved(schoolId,access.email,old?"calendar_event_update":"calendar_event_create",{eventId,title:entity.title,eventDate:entity.eventDate,sourceModule:data.module,sourceActivityId:data.id,before:old?eventView(old,true):null,after:eventView(entity,true)});
   return eventView(entity,true);
 }
 
@@ -119,7 +120,7 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
       const deterministic=body.action==="preset_a_competition_2026"
         ?("evt_"+Buffer.from([x.eventType,x.title,eventDate,startTime,endTime,x.targetGroups].join("|"),"utf8").toString("base64url").slice(0,220))
         :String(x.eventId||rowKey("evt"));
-      if(deterministic.startsWith("evt_fieldTrip_"))return json({error:"校外活動行事曆請於活動設定中維護"},409);
+      if(deterministic.startsWith("evt_fieldTrip_")||deterministic.startsWith("evt_calendarActivity_"))return json({error:"此活動行事曆請於活動設定中維護"},409);
       const teacherEmail=String(x.teacherEmail||"").trim().toLowerCase();
       if(x.requiresAttendance===true&&String(x.eventType||"general")!=="competition_training")return json({error:"目前僅比賽加練支援獨立點名"},400);
       if(teacherEmail){const t=await teacherForDate(teacherEmail,schoolId,eventDate);if(!t||t.temporary&&t.courseType!=="practice")return json({error:"點名老師需在活動日期具備本校加練權限"},400)}
@@ -141,7 +142,7 @@ app.http("calendarEvents",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
   const eventId=String(body.eventId||"");
   if(!eventId)return json({error:"缺少活動 ID"},400);
   let old;try{old=await client.getEntity(sid,eventId)}catch(e){if(e.statusCode===404)return json({error:"找不到活動"},404);throw e}
-  if(old.sourceModule==="fieldTrip")return json({error:"此行事曆由校外活動設定同步，請至活動設定修改或關閉"},409);
+  if(["fieldTrip","calendarActivity"].includes(old.sourceModule))return json({error:"此行事曆由活動設定同步，請至活動設定修改或關閉"},409);
   if(["confirmTeaching","revokeTeaching"].includes(String(body.action||""))){
     if(String(old.eventType||"")!=="competition_training")return json({error:"只有加練活動可認列老師工時"},400);
     if(body.action==="confirmTeaching"){
