@@ -92,7 +92,7 @@ app.http("uniformEventConfig",{
       if(["fieldTrip","calendarActivity"].includes(data.module))await syncActivityCalendar(schoolId,access,data);
       return json({item:publicValue(record)});
     }catch(error){
-      if(error instanceof SyntaxError||String(error.message||"").startsWith("Invalid")||String(error.message||"").includes("requires"))return json({error:error.message},400);
+      if(error instanceof SyntaxError||String(error.message||"").startsWith("Invalid")||String(error.message||"").includes("requires")||/^(活動|時間|備註|請選擇|演出)/.test(String(error.message||"")))return json({error:error.message},400);
       console.error("uniformEventConfig error",error);
       return json({error:"設定或行事曆同步失敗；請重新儲存並確認行事曆紀錄。"},500);
     }
