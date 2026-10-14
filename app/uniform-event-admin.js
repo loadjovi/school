@@ -497,7 +497,7 @@ window.addEventListener("uniformBankTemplatesLoaded",loadUniformBankTemplates);
 let uniformPrices={};
 function showUniformPrice(){
  const form=el("uniformPriceForm"),kind=form.elements.kind.value,price=uniformPrices[kind];
- el("uniformBasePriceLabel").firstChild.textContent=kind==="competitionUniform"?"比賽服未稅原價（NT$）":"團 T 每件價格（NT$）";
+ el("uniformBasePriceLabel").firstChild.textContent=kind==="competitionUniform"?"比賽服未稅原價（NT$）":"團 T 每件含稅售價（NT$）";
  form.elements.basePrice.value=price?.basePrice??"";
  updateUniformPricePreview();
 }
@@ -505,14 +505,14 @@ function updateUniformPricePreview(){
  const form=el("uniformPriceForm"),base=Number(form.elements.basePrice.value),kind=form.elements.kind.value;
  el("uniformPriceBreakdown").textContent=!Number.isSafeInteger(base)||base<1?"請輸入原價。":kind==="competitionUniform"
   ?"未稅原價 NT$ "+base.toLocaleString("zh-TW")+" ＋ 5% 稅額 NT$ "+(Math.round(base*1.05)-base).toLocaleString("zh-TW")+" ＝ 應繳 NT$ "+Math.round(base*1.05).toLocaleString("zh-TW")
-  :"團 T 每件 NT$ "+base.toLocaleString("zh-TW")+"，目前不另計 5% 稅額。";
+  :"團 T 每件應繳 NT$ "+base.toLocaleString("zh-TW")+"（已含 5% 稅額，不再額外加計）。";
 }
 el("uniformPriceForm").elements.basePrice.addEventListener("input",updateUniformPricePreview);
 async function loadUniformPrices(){
  const form=el("uniformPriceForm"),message=el("uniformPriceMessage");
  try{const data=await api("uniform-events/prices");uniformPrices=data.items||{};
   showUniformPrice();
-  message.textContent="目前售價：團 T NT$ "+Number(uniformPrices.regularUniform?.unitPrice).toLocaleString("zh-TW")+"／件（不另加稅）；A 團比賽服 NT$ "+Number(uniformPrices.competitionUniform?.unitPrice).toLocaleString("zh-TW")+"／套（含 5%）。";
+  message.textContent="目前含稅售價：團 T NT$ "+Number(uniformPrices.regularUniform?.unitPrice).toLocaleString("zh-TW")+"／件；A 團比賽服 NT$ "+Number(uniformPrices.competitionUniform?.unitPrice).toLocaleString("zh-TW")+"／套。";
  }catch(e){message.textContent="團服價格讀取失敗："+e.message}
 }
 
@@ -520,7 +520,7 @@ el("uniformPriceForm").addEventListener("submit",async e=>{
  e.preventDefault();const form=e.currentTarget,message=el("uniformPriceMessage"),kind=form.elements.kind.value,basePrice=Number(form.elements.basePrice.value),reason=form.elements.reason.value.trim();
  if(!Number.isSafeInteger(basePrice)||basePrice<1||basePrice>100000||!reason){message.textContent="請填寫有效原價及調整原因";return}
  const total=Math.round(basePrice*(kind==="competitionUniform"?1.05:1));
- if(!confirm("確認將"+(kind==="regularUniform"?"團 T 每件售價":"A 團比賽服未稅原價")+"調整為 NT$ "+basePrice.toLocaleString("zh-TW")+"？"+(kind==="competitionUniform"?"加 5% 後應繳 NT$ "+total.toLocaleString("zh-TW")+"。":"目前不另計 5% 稅額。")+"新價格適用於後續核准申請。"))return;
+ if(!confirm("確認將"+(kind==="regularUniform"?"團 T 每件含稅售價":"A 團比賽服未稅原價")+"調整為 NT$ "+basePrice.toLocaleString("zh-TW")+"？"+(kind==="competitionUniform"?"加 5% 後應繳 NT$ "+total.toLocaleString("zh-TW")+"。":"此金額已含 5%，不再額外加計。")+"新價格適用於後續核准申請。"))return;
  try{await api("uniform-events/prices",{method:"POST",body:JSON.stringify({kind,basePrice,reason,etag:uniformPrices[kind]?.etag??null})});form.elements.reason.value="";await loadUniformPrices();message.textContent+=" 新價格已儲存。"}
  catch(error){message.textContent="價格更新失敗："+error.message}
 });
