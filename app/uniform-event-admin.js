@@ -231,7 +231,15 @@ el("settings").addEventListener("click",e=>{
 });
 function table(id,rows,columns,actions=false){
  const header=columns.map(([key,label])=>"<th>"+esc(label)+"</th>").join("");
- const body=rows.map((r,i)=>"<tr>"+columns.map(([key])=>"<td>"+esc(r[key])+"</td>").join("")+(actions?"<td><select data-index='"+i+"'><option value=''>選擇操作</option><option value='APPROVED'>核准</option><option value='CANCELLED'>取消</option><option value='PENDING'>待處理</option></select><button type='button' data-update='"+i+"'>更新</button></td>":"")+"</tr>").join("");
+ const body=rows.map((r,i)=>{
+  const cells=columns.map(([key])=>"<td>"+esc(r[key])+"</td>").join("");
+  let controls="";
+  if(actions){
+   const locked=["APPROVED","CANCELLED"].includes(String(r.status).toUpperCase());
+   controls="<td>"+(locked?"<span>"+(r.status==="APPROVED"?"已核准，等待採購":"已取消")+"（審核已鎖定）</span>":"<select data-index='"+i+"'><option value=''>選擇操作</option><option value='APPROVED'>核准</option><option value='CANCELLED'>取消</option></select><button type='button' data-update='"+i+"'>更新</button>")+"</td>";
+  }
+  return "<tr>"+cells+controls+"</tr>";
+ }).join("");
  el(id).innerHTML=rows.length?"<table><thead><tr>"+header+(actions?"<th>狀態管理</th>":"")+"</tr></thead><tbody>"+body+"</tbody></table>":"<p>目前沒有資料</p>";
 }
 function csv(name,rows,keys){
