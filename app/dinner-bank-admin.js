@@ -64,24 +64,24 @@ async function loadTemplates(){
 templateSelect.addEventListener("change",()=>{
  const selected=templates.find(t=>t.id===templateSelect.value);
  if(!selected){templateForm.reset();return}
- form.hidden=false;
- for(const key of fields)form.elements[key].value=selected[key]||"";
+ templateForm.hidden=false;
+ for(const key of fields)templateForm.elements[key].value=selected[key]||"";
  templateForm.elements.label.value=selected.label;
  templateForm.elements.active.value=String(selected.active);
- message.textContent="已帶入內部帳戶範本；若要作為家長匯款資訊，請再按「儲存活動收款帳戶（供家長匯款）」。";
+ templateForm.querySelector("#templateSaveFeedback").textContent="已帶入範本，修改後按儲存；已綁定的活動帳戶不會自動更新。";
 });
 document.getElementById("reloadBankTemplates").addEventListener("click",loadTemplates);
 templateForm.addEventListener("submit",async e=>{
  e.preventDefault();
  const payload={id:templateSelect.value||undefined,label:templateForm.elements.label.value.trim(),active:templateForm.elements.active.value==="true"};
- for(const key of fields)payload[key]=form.elements[key].value.trim();
+ for(const key of fields)payload[key]=templateForm.elements[key].value.trim();
  if(!confirm("儲存內部帳戶範本？此範本僅供後台管理員選用，不會公布給家長，也不會自動變更已建立活動的收款帳戶。"))return;
  try{
   const response=await fetch("/api/uniform-events/payment-account-templates",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...bankAuthHeaders()},body:JSON.stringify(payload)});
   const data=await response.json();if(!response.ok)throw Error(data.error||"HTTP "+response.status);
   await loadTemplates();templateSelect.value=data.id;
-  message.textContent="內部帳戶範本已儲存，僅供後台管理員使用，不會對家長公布；活動收款帳戶未變更。若要套用，請按「儲存活動收款帳戶（供家長匯款）」。";
- }catch(err){message.textContent="範本儲存失敗："+err.message}
+  templateForm.querySelector("#templateSaveFeedback").textContent="帳戶範本已儲存；已綁定的團服及活動帳戶不會自動更新，請另行套用。";
+ }catch(err){templateForm.querySelector("#templateSaveFeedback").textContent="範本儲存失敗："+err.message}
 });
 loadTemplates();
 
@@ -90,7 +90,7 @@ function showBankEditor(clear){if(!activityEl.value){message.textContent="請先
 document.getElementById("manageDinnerBank").addEventListener("click",()=>{if(moduleEl.value!=="yearEndDinner")return;bankPanelExpanded=!bankPanelExpanded;panel.hidden=!bankPanelExpanded;if(!bankPanelExpanded)return;panel.scrollIntoView({behavior:"smooth",block:"start"});message.textContent=activityEl.value?"請點選「新增帳戶」或「修改目前帳戶」。":"請先儲存此期末聚餐活動（保持關閉），再新增收款帳戶。";});
 document.getElementById("bankAddNew").addEventListener("click",()=>showBankEditor(true));
 document.getElementById("bankEditCurrent").addEventListener("click",()=>showBankEditor(false));
-document.getElementById("bankTemplateToggle").addEventListener("click",()=>{templateForm.hidden=!templateForm.hidden;if(!templateForm.hidden){form.hidden=false;templateForm.scrollIntoView({behavior:"smooth",block:"center"});}});
+document.getElementById("bankTemplateToggle").addEventListener("click",()=>{templateForm.hidden=!templateForm.hidden;if(!templateForm.hidden){templateForm.scrollIntoView({behavior:"smooth",block:"center"});}});
 
 function installQuickBankBinding(){
  const manage=document.getElementById("manageDinnerBank");
