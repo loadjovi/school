@@ -173,6 +173,38 @@ async function loadUniformRequestProgress(){
    card.append(element("p","申請狀態："+stage.title));
    card.append(element("p",stage.next,"hint"));
    card.append(element("p",`尺寸：${item.size||"待確認"}${item.style?`｜${item.style}款`:""}｜件數：${item.quantity||1}｜申請時間：${formatDate(item.createdAt)||"—"}｜更新時間：${formatDate(item.updatedAt)||"—"}`,"muted"));
+   if(item.cancelReason)card.append(element("p","取消原因："+item.cancelReason,"hint"));
+   if(item.adjustmentReason)card.append(element("p","最近件數更正原因："+item.adjustmentReason,"hint"));
+   if(item.status==="PENDING"){
+    const controls=element("div");controls.style.cssText="display:flex;flex-wrap:wrap;gap:8px";
+    const edit=element("button",item.kind==="regularUniform"?"修改尺寸／件數":"修改款式／尺寸");
+    const cancel=element("button","取消這筆申請");
+    for(const button of [edit,cancel]){button.type="button";button.style.cssText="padding:9px;border:1px solid var(--main);border-radius:8px;background:white;color:var(--main)";controls.append(button)}
+    const message=element("p","","hint");message.setAttribute("role","status");
+    edit.addEventListener("click",async()=>{
+     let update={action:"EDIT",id:item.id,etag:item.etag};
+     if(item.kind==="regularUniform"){
+      const size=prompt("請輸入團 T 尺寸（8、10、12、XS、S、M、L、XL、2L、3L、5L）",item.size||"");if(size===null)return;
+      const amount=prompt("請輸入正確件數（1–20 件；若全部不要，請按取消申請）",String(item.quantity||1));if(amount===null)return;
+      update={...update,size:size.trim().toUpperCase(),quantity:Number(amount)};
+     }else{
+      const style=prompt("請輸入款式：男或女",item.style||"");if(style===null)return;
+      const size=prompt("請輸入正確尺寸",item.size||"");if(size===null)return;
+      update={...update,style:style.trim(),size:size.trim().toUpperCase()};
+     }
+     if(!confirm("確定更正這筆待審申請？"))return;
+     edit.disabled=true;cancel.disabled=true;message.textContent="正在儲存…";
+     try{await parentApi("uniform-events/requests",{method:"PATCH",body:JSON.stringify(update)});await loadUniformRequestProgress()}
+     catch(e){message.textContent="更正失敗："+e.message;edit.disabled=false;cancel.disabled=false}
+    });
+    cancel.addEventListener("click",async()=>{
+     if(!confirm("確定取消這筆待審申請？紀錄會保留，取消後不能恢復。"))return;
+     edit.disabled=true;cancel.disabled=true;message.textContent="正在取消…";
+     try{await parentApi("uniform-events/requests",{method:"PATCH",body:JSON.stringify({action:"CANCEL",id:item.id,etag:item.etag})});await loadUniformRequestProgress()}
+     catch(e){message.textContent="取消失敗："+e.message;edit.disabled=false;cancel.disabled=false}
+    });
+    card.append(controls,message);
+   }
    history.append(card);
   }
   const latest=requests[0],stage=uniformRequestStage[latest.status]||{title:"狀態待確認",next:"請洽學校確認。"};
@@ -180,7 +212,7 @@ async function loadUniformRequestProgress(){
   latestCard.append(element("strong",(latest.kind==="regularUniform"?"團 T":"A 團比賽服")+"｜"+(names.get(String(latest.studentId))||"學生 "+latest.studentId)));
   latestCard.append(element("p","目前狀態："+stage.title));latestCard.append(element("p",stage.next,"hint"));
   latestCard.append(element("p","更新時間："+(formatDate(latest.updatedAt)||"—"),"muted"));summary.append(latestCard);
-  if(requests.length>1){const button=element("button",`查看全部 ${requests.length} 筆申請紀錄`);button.type="button";button.style.cssText="padding:9px;border:1px solid var(--main);border-radius:8px;background:white;color:var(--main)";button.addEventListener("click",()=>{select("history");history.scrollIntoView({behavior:"smooth",block:"start"})});summary.append(button)}
+  {const button=element("button",`查看／管理 ${requests.length} 筆申請紀錄`);button.type="button";button.style.cssText="padding:9px;border:1px solid var(--main);border-radius:8px;background:white;color:var(--main)";button.addEventListener("click",()=>{select("history");history.scrollIntoView({behavior:"smooth",block:"start"})});summary.append(button)}
  }catch(e){summary.replaceChildren(element("p","申請進度讀取失敗："+e.message,"hint"));history.replaceChildren(element("p","團服申請紀錄讀取失敗："+e.message,"hint"))}
 }
 document.getElementById("refreshUniformRequests")?.addEventListener("click",loadUniformRequestProgress);
