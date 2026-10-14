@@ -36,7 +36,8 @@ const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 let savedConfigs=[];
 let activeAdminTab="settings";
 const adminTabDescriptions={
- settings:"設定模組啟用狀態、建立活動及管理收款設定。",
+ settings:"設定活動啟用狀態與團服價格；團 T、A 團比賽服固定開放。",
+ accounts:"新增／修改幹部帳戶範本，並設定團服匯款帳戶。",
  regularUniform:"團 T：首次免費資格及歷史配發核對。",
  competitionUniform:"A 團比賽服：學生尺寸、公發與歸還核對。",
  events:"校外活動與期末聚餐的家庭報名統計。",
@@ -125,17 +126,14 @@ function syncUniformModuleVisibility(){
  placeSharedUniformPanels();
  for(const panel of document.querySelectorAll("[data-admin-view]")){
   const tab=panel.dataset.adminView;
-  const enabled=!panel.dataset.uniformModulePanel||savedConfigs.some(item=>item.module===tab&&item.id==="default"&&item.enabled===true);
-  panel.hidden=tab!==activeAdminTab||!enabled;
+  panel.hidden=tab!==activeAdminTab;
  }
  for(const button of document.querySelectorAll("[data-admin-tab]")){
   button.setAttribute("aria-selected",String(button.dataset.adminTab===activeAdminTab));
  }
  const description=el("adminTabDescription");
  if(description){
-  const isUniform=["regularUniform","competitionUniform"].includes(activeAdminTab);
-  const enabled=savedConfigs.some(item=>item.module===activeAdminTab&&item.id==="default"&&item.enabled===true);
-  description.textContent=isUniform&&!enabled?"此團服模組目前未啟用；請先至「模組與活動設定」啟用。":adminTabDescriptions[activeAdminTab];
+  description.textContent=adminTabDescriptions[activeAdminTab];
  }
  if(activeAdminTab==="regularUniform"&&typeof window.syncTshirtViews==="function")window.syncTshirtViews();
 }
@@ -161,7 +159,7 @@ function renderConfigSummary(items){
    "<p>報名期間："+esc(fmtDate(x.openAt))+" ～ "+esc(fmtDate(x.closeAt))+"</p>"+
    "<p>學生："+money(x.studentFee)+"｜首位大人："+money(x.firstAdultFee)+"｜額外大人："+money(x.extraAdultFee)+"｜額外兒童："+money(x.extraChildFee)+"</p>"):"<p>團服模組設定，非活動報名。</p>")+
    (activityTypes.has(x.module)?renderActivityRegistrationStats(x):"")+(calendarOnly?"<p style='color:#98620b'>啟用後將依團別顯示在家長行事曆；仍請在群組公告重要異動。</p>":"<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>")+
-   "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>"+(activity?"編輯此活動":"設定啟用狀態")+"</button></article>";
+   "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>"+(activity?"編輯此活動":"檢視團服設定")+"</button></article>";
  };
  const enabled=items.filter(x=>x.enabled===true),disabled=items.filter(x=>x.enabled!==true);
  target.innerHTML="<h3>活動與團服設定（"+items.length+" 筆）</h3><p>已啟用與未啟用分區顯示；已啟用設定仍須確認報名期間及收款公告。</p>"+
@@ -292,17 +290,19 @@ function syncConfig(){
  form.elements.targetGroups.closest("label").hidden=module!=="fieldTrip";
  const stagePanel=el("fieldTripCollectionPanel");if(stagePanel)stagePanel.hidden=module!=="fieldTrip";
  const finance=el("uniformFinanceSettings");if(finance)finance.hidden=!["regularUniform","competitionUniform"].includes(module);
- if(!finance.hidden){el("uniformFinanceKind").value=module;el("uniformBankForm").elements.kind.value=module;el("uniformPriceForm").elements.kind.value=module;}
+ if(!finance.hidden){el("uniformFinanceKind").value=module;el("uniformPriceForm").elements.kind.value=module;}
+ const fixedUniform=["regularUniform","competitionUniform"].includes(module);
+ el("configEnabledWrap").hidden=fixedUniform;form.elements.enabled.disabled=fixedUniform;form.elements.enabled.value=fixedUniform?"true":form.elements.enabled.value;
 
  updateActivityConfigClarity();
  el("existingActivityWrap").hidden=!activity;el("activityIdHint").hidden=!activity;
- el("configModeHint").textContent=calendarOnly?"此類公告只會同步行事曆，不會開放家長報名或顯示匯款資訊。":activity?"活動可新增多筆，請選擇建立或編輯既有活動。":"團服模組僅有一組設定；可啟用或關閉，並在下方設定價格及收款帳戶。";
+ el("configModeHint").textContent=calendarOnly?"此類公告只會同步行事曆，不會開放家長報名或顯示匯款資訊。":activity?"活動可新增多筆，請選擇建立或編輯既有活動。":"團 T、A 團比賽服固定啟用；此處設定價格，匯款帳戶請至「匯款帳戶」。";
  const select=el("existingActivity"),old=select.value;
  select.innerHTML="<option value=''>建立新活動</option>"+savedConfigs.filter(x=>x.module===module).map(x=>"<option value='"+esc(x.id)+"'>"+esc(x.title||x.id)+"</option>").join("");
  if([...select.options].some(x=>x.value===old))select.value=old;
  form.elements.id.value=activity?(select.value||"default"):"default";
  if(activity&&select.value)populateActivity();
- if(!activity){const item=savedConfigs.find(x=>x.module===module&&x.id==="default");form.elements.enabled.value=String(item?.enabled===true)}
+ if(!activity){form.elements.enabled.value="true"}
 }
 function localDateTimeValue(value){const d=new Date(value);if(!Number.isFinite(d.getTime()))return "";const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;}
 function populateActivity(){
@@ -422,7 +422,7 @@ el("config").onsubmit=async e=>{
  try{
   const f=new FormData(e.target),module=f.get("module"),activity=configActivityTypes.has(module);
   const id=activity?(el("existingActivity").value||createActivityId()):"default";
-  const item={module,id,enabled:f.get("enabled")==="true"};
+  const item={module,id,enabled:["regularUniform","competitionUniform"].includes(module)||f.get("enabled")==="true"};
   if(module==="calendarActivity"){
    item.title=String(f.get("calendarTitle")||"").trim();item.location=String(f.get("calendarLocation")||"").trim();
    item.eventType=String(f.get("eventType")||"performance");item.targetGroups=String(f.get("calendarTargetGroups")||"ALL");
@@ -493,7 +493,7 @@ async function loadUniformBankTemplates(){
  try{const data=await api("uniform-events/payment-account-templates");uniformBankTemplates=(data.items||[]).filter(t=>t.active===true);
   select.replaceChildren(new Option("請選擇已建立的幹部收款帳戶",""));
   for(const t of uniformBankTemplates)select.add(new Option(t.label+"｜"+t.bankName+" ****"+t.accountNumber.slice(-4),t.id));
-  if(!uniformBankTemplates.length)message.textContent="目前沒有已啟用的幹部帳戶範本；請先至「模組與活動設定」建立。";
+  if(!uniformBankTemplates.length)message.textContent="目前沒有已啟用的幹部帳戶範本；請先在本頁新增。";
   await loadUniformBank();
  }catch(e){message.textContent="帳戶範本讀取失敗："+e.message}
 }
@@ -505,12 +505,7 @@ async function loadUniformBank(){
   message.textContent=bank?.templateId?"已沿用幹部帳戶範本。":bank?"此項使用舊版帳戶設定；請選擇幹部帳戶範本後重新綁定。":"請選擇既有帳戶並綁定，才能核准付費申請。";
  }catch(e){message.textContent="無法讀取收款帳戶："+e.message}
 }
-function selectUniformFinanceKind(event){
- const kind=event.currentTarget.value;
- el("configModule").value=kind;
- el("configModule").dispatchEvent(new Event("change"));
-}
-el("uniformFinanceKind").addEventListener("change",selectUniformFinanceKind);
+el("uniformBankKind").addEventListener("change",e=>{el("uniformBankForm").elements.kind.value=e.target.value;loadUniformBank()});
 el("uniformBankForm").elements.templateId.addEventListener("change",e=>{
  const selected=uniformBankTemplates.find(t=>t.id===e.target.value);
  if(selected)el("uniformBankPreview").textContent="將綁定："+selected.bankName+"（"+selected.bankCode+"）｜戶名："+selected.accountHolder+"｜帳號末四碼："+selected.accountNumber.slice(-4);
@@ -557,7 +552,6 @@ el("uniformPriceForm").addEventListener("submit",async e=>{
 loadUniformPrices();
 el("configModule").addEventListener("change",()=>{
  if(!["regularUniform","competitionUniform"].includes(el("configModule").value))return;
- loadUniformBank();
  showUniformPrice();
 });
 el("requests").addEventListener("click",async e=>{
