@@ -47,40 +47,48 @@ const adminTabDescriptions={
 function renderUniformRequestAlerts(){
  const host=el("uniformRequestAlerts");
  if(!host)return;
- const countFor=kind=>cachedRequests.filter(x=>{
-  const k=String(x.kind||x.type||"");
-  return (kind==="regularUniform"?/regular|tshirt|t-shirt/i.test(k):/competition/i.test(k))&&String(x.status||"").toUpperCase()==="PENDING";
- }).length;
- const regular=countFor("regularUniform"),competition=countFor("competitionUniform");
- const tabs=[["regularUniform","團 T",regular],["competitionUniform","A 團比賽服",competition]];
- for(const [tab,label,n] of tabs){
+ const tracked=new Set(["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"]);
+ const countsFor=kind=>{
+  const rows=cachedRequests.filter(x=>String(x.kind||x.type||"")===kind&&tracked.has(String(x.status||"").toUpperCase()));
+  return {total:rows.length,pending:rows.filter(x=>x.status==="PENDING").length,approved:rows.filter(x=>x.status==="APPROVED").length,
+   ongoing:rows.filter(x=>["ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(x.status)).length};
+ };
+ const tabs=[["regularUniform","團 T",countsFor("regularUniform")],["competitionUniform","A 團比賽服",countsFor("competitionUniform")]];
+ for(const [tab,label,counts] of tabs){
   const button=document.querySelector('[data-admin-tab="'+tab+'"]');
-  if(button)button.textContent=label+"管理"+(n?"（待審 "+n+"）":"");
+  if(button)button.textContent=label+"管理"+(counts.total?"（進行中 "+counts.total+"）":"");
  }
  host.replaceChildren();
- const total=regular+competition;
+ const total=tabs.reduce((sum,[,,counts])=>sum+counts.total,0);
  if(!total){host.hidden=true;return}
  host.hidden=false;
- const title=document.createElement("strong");title.textContent="待處理團服申請："+total+" 筆";
+ const title=document.createElement("strong");title.textContent="團服申請進行中："+total+" 筆";
  host.append(title);
- for(const [tab,label,n] of tabs){
-  if(!n)continue;
-  const btn=document.createElement("button");btn.type="button";btn.textContent="查看 "+label+" 待審 "+n+" 筆";btn.style.marginLeft="10px";
-  btn.addEventListener("click",()=>{activeAdminTab=tab;syncUniformModuleVisibility();el("uniformRequestsPanel")?.scrollIntoView({behavior:"smooth",block:"start"})});
-  host.append(btn);
+ for(const [tab,label,counts] of tabs){
+  if(!counts.total)continue;
+  const row=document.createElement("div");row.style.marginTop="8px";
+  const description=document.createElement("span");
+  description.textContent=label+"：待審 "+counts.pending+"、已核准待付款／採購 "+counts.approved+"、採購／領取中 "+counts.ongoing+"。";
+  const btn=document.createElement("button");btn.type="button";btn.textContent="查看申請";btn.style.marginLeft="10px";
+  btn.addEventListener("click",()=>{
+   activeAdminTab=tab;syncUniformModuleVisibility();
+   if(tab==="regularUniform")document.querySelector('[data-tshirt-view="requests"]')?.click();
+   el("uniformRequestsPanel")?.scrollIntoView({behavior:"smooth",block:"start"});
+  });
+  row.append(description,btn);host.append(row);
  }
 }
 function renderModuleRequests(){
  const rows=cachedRequests.filter(x=>{
   const kind=String(x.kind||x.type||"");
   return activeAdminTab==="regularUniform"?/regular|tshirt|t-shirt/i.test(kind):/competition/i.test(kind);
- });
+ }).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
  visibleModuleRequests=rows;
  el("requestsStatus").textContent="目前顯示 "+rows.length+" 筆"+(activeAdminTab==="competitionUniform"?" A 團比賽服":"團 T")+"申請";
  const counts=rows.reduce((a,x)=>(a[x.status]=(a[x.status]||0)+1,a),{});
- const pending=rows.filter(x=>x.status==="PENDING");
+ const notOrdered=rows.filter(x=>["PENDING","APPROVED"].includes(x.status));
  const sizes=new Map();
- for(const item of pending){
+ for(const item of notOrdered){
   const size=String(item.size||"未填尺寸");
   const quantity=Number(item.quantity);
   const count=Number.isSafeInteger(quantity)&&quantity>0?quantity:1;
@@ -89,7 +97,7 @@ function renderModuleRequests(){
  const total=[...sizes.values()].reduce((sum,n)=>sum+n,0);
  const details=[...sizes].sort((a,b)=>a[0].localeCompare(b[0],"zh-Hant")).map(([size,n])=>size+"："+n+" 件").join("、");
  const label=activeAdminTab==="regularUniform"?"團 T":"A 團比賽服";
- el("requestSummary").textContent=label+" 家長申請 "+rows.length+" 筆；待處理 "+(counts.PENDING||0)+" 筆；核准 "+(counts.APPROVED||0)+" 筆。待處理需求共 "+total+" 件；尺寸統計："+(details||"尚無需求")+"。公費申請由學校審核，買斷申請須核對匯款與發放；請確認重複申請後再統一採購。";
+ el("requestSummary").textContent=label+" 家長申請 "+rows.length+" 筆；待審 "+(counts.PENDING||0)+" 筆；已核准待採購 "+(counts.APPROVED||0)+" 筆。尚未採購需求共 "+total+" 件；尺寸統計："+(details||"尚無需求")+"。公費申請由學校審核，買斷申請須核對匯款與發放；請確認重複申請後再統一採購。";
  if(activeAdminTab==="competitionUniform"){
   const actionable=rows.filter(x=>["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(x.status));
   el("competitionProcurementSummary").textContent="申請共 "+rows.length+" 筆；尚在處理 "+actionable.length+" 筆，已採購 "+(counts.ORDERED||0)+" 筆，已到貨 "+(counts.ARRIVED||0)+" 筆。請依款式與尺寸核對採購需求；取消或已領取申請不列入待處理數。";
