@@ -12,6 +12,7 @@ async function table(){
   if(!cached){cached=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,tableName());await cached.createTable().catch(e=>{if(e.statusCode!==409)throw e})}
   return cached;
 }
+const fixedUniformModules=new Set(["regularUniform","competitionUniform"]);
 const modules=new Set(["competitionUniform","regularUniform","fieldTrip","yearEndDinner","calendarActivity"]);
 const rowKey=(type,id)=>type+":"+id;
 const safeId=(s)=>typeof s==="string"&&/^[a-zA-Z0-9_-]{1,80}$/.test(s);
@@ -40,7 +41,7 @@ function validate(data){
 }
 function publicValue(row){
   const payload=JSON.parse(row.payload||"{}");
-  return {...payload,id:row.rowKey.split(":").slice(1).join(":"),updatedAt:row.updatedAt};
+  return {...payload,enabled:fixedUniformModules.has(payload.module)?true:payload.enabled,id:row.rowKey.split(":").slice(1).join(":"),updatedAt:row.updatedAt};
 }
 app.http("uniformEventConfig",{
   methods:["GET","POST"],authLevel:"anonymous",route:"uniform-events/config",
@@ -56,12 +57,14 @@ app.http("uniformEventConfig",{
           const item=publicValue(row);
           if(access.role==="admin"||item.enabled===true)results.push(item);
         }
+        for(const module of fixedUniformModules)if(!results.some(item=>item.module===module&&item.id==="default"))results.push({module,id:"default",enabled:true});
         return json({items:results});
       }
       if(access.role!=="admin")return json({error:"Admin only"},403);
       const data=await request.json();
       if(!safeId(data.id))return json({error:"Invalid id"},400);
       validate(data);
+      if(fixedUniformModules.has(data.module)&&data.enabled!==true)return json({error:"團 T 與 A 團比賽服固定啟用，無法關閉。"},400);
       // Never publish or enable dinner collection without a saved, valid bank account.
       if(data.module==="yearEndDinner"&&data.enabled===true){
         const accounts=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantEventPaymentAccounts");
