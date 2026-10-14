@@ -1,11 +1,13 @@
 import { app } from "@azure/functions";
 import { TableClient } from "@azure/data-tables";
 import { randomUUID } from "node:crypto";
-import { getTenantContext, ensureStudentAccess, json } from "../lib/auth.js";
-import { getStudentMaster } from "../lib/storage.js";
+import { getTenantContext, ensureStudentAccess, getStudentAliasInfo, json } from "../lib/auth.js";
+import { getStudentMaster, listUserStudentMappings } from "../lib/storage.js";
+import { sendUniformRequestStatusEmail } from "../lib/email.js";
 
 const kinds=new Set(["regularUniform","competitionUniform","fieldTrip","yearEndDinner"]);
-const states=new Set(["PENDING","APPROVED","CANCELLED","FULFILLED"]);
+const states=new Set(["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP","CANCELLED","FULFILLED"]);
+const allowedNext={PENDING:new Set(["APPROVED","CANCELLED"]),APPROVED:new Set(["ORDERED","CANCELLED"]),ORDERED:new Set(["ARRIVED","CANCELLED"]),ARRIVED:new Set(["READY_FOR_PICKUP","CANCELLED"]),READY_FOR_PICKUP:new Set([]),CANCELLED:new Set([]),FULFILLED:new Set([])};
 const connection=()=>process.env.STORAGE_CONNECTION_STRING;
 const clients=new Map();
 async function table(kind){
@@ -92,12 +94,28 @@ app.http("uniformEventRequests",{
       if(!previous)return err("Not found",404);
       if(data.etag!==previous.etag)return err("Record changed, refresh and retry",409);
       const before=decode(previous);
+      if(!allowedNext[before.status]?.has(data.status))return err("Invalid status transition; refresh and check the current stage",409);
       const next={...JSON.parse(previous.payload),status:data.status,updatedAt:new Date().toISOString()};
       if(data.status==="FULFILLED" && before.status!=="FULFILLED")return err("Use inventory issuance workflow before fulfillment",409);
       await audit(schoolId,access,"request.status",data.id,{from:before.status,to:data.status});
       try{await client.updateEntity({partitionKey:schoolId,rowKey:data.id,payload:encode(next),updatedAt:next.updatedAt},"Replace",{etag:previous.etag})}
       catch(e){if(e.statusCode===412)return err("Record changed, refresh and retry",409);throw e}
-      return json({item:{...next,id:data.id}});
+      let notificationStatus="not_attempted";
+      if(["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP","CANCELLED"].includes(next.status)){
+        try{
+          const mappings=await listUserStudentMappings("active",schoolId),recipients=new Set();
+          for(const mapping of mappings){
+            if(!mapping.parentEmail)continue;
+            const alias=await getStudentAliasInfo(mapping.studentId,schoolId).catch(()=>null);
+            if(String(alias?.canonicalStudentId||mapping.studentId)===String(next.studentId))recipients.add(mapping.parentEmail);
+          }
+          const student=await getStudentMaster(next.studentId,schoolId);
+          const result=await sendUniformRequestStatusEmail({recipients:[...recipients],studentName:student?.studentName||"學生",kind:next.kind,status:next.status,size:next.size,quantity:next.quantity});
+          notificationStatus=result.status;
+          if(result.status!=="sent")console.warn("uniform request email not fully sent",{requestId:data.id,status:result.status,recipientCount:result.recipientCount||0});
+        }catch(e){notificationStatus="failed";console.error("uniform request email failed",{requestId:data.id,error:e?.message||String(e)})}
+      }
+      return json({item:{...next,id:data.id},notificationStatus});
     }catch(e){
       if(e instanceof SyntaxError||String(e.message||"").startsWith("Invalid")||String(e.message||"").startsWith("Only"))return err(e.message);
       console.error("uniformEventRequests",e);return err("Request processing failed",500);
