@@ -216,6 +216,10 @@ const uniformRequestStage={
  CANCELLED:{title:"申請已取消",next:"此申請已取消。如有疑問，請洽學校確認。"},
  FULFILLED:{title:"已完成領用",next:"此申請的領用流程已完成。"}
 };
+function requestStage(item){
+ if(item.status==="READY_FOR_PICKUP"&&item.acquisition!=="PUBLIC"&&item.paymentStatus!=="VERIFIED")return {title:"待財務核帳，暫不可領取",next:"請等待學校確認入帳；核帳完成後再依學校通知領取。"};
+ return uniformRequestStage[item.status]||{title:"狀態待確認",next:"請洽學校確認目前進度。"};
+}
 async function loadUniformRequestProgress(){
  const summary=document.getElementById("uniformRequestSummary"),history=document.getElementById("uniformRequestHistory");
  if(!summary||!history)return;
@@ -232,7 +236,7 @@ async function loadUniformRequestProgress(){
   const approved=requests.filter(x=>x.status==="APPROVED").length;
   summary.append(element("p",`共 ${requests.length} 筆團服申請${approved?`，其中 ${approved} 筆已核准`:""}。`));
   for(const item of requests){
-   const stage=uniformRequestStage[item.status]||{title:"狀態待確認",next:"請洽學校確認目前進度。"};
+   const stage=requestStage(item);
    const title=(item.kind==="regularUniform"?"團 T":"A 團比賽服")+"｜"+(names.get(String(item.studentId))||"學生 "+item.studentId);
    const card=element("div",undefined,"card");card.style.margin="10px 0";
    card.append(element("strong",title));
@@ -307,7 +311,7 @@ async function loadUniformRequestProgress(){
    }
    history.append(card);
   }
-  const latest=requests[0],stage=uniformRequestStage[latest.status]||{title:"狀態待確認",next:"請洽學校確認。"};
+  const latest=requests[0],stage=requestStage(latest);
   const latestCard=element("div",undefined,"card");latestCard.style.margin="10px 0";
   latestCard.append(element("strong",(latest.kind==="regularUniform"?"團 T":"A 團比賽服")+"｜"+(names.get(String(latest.studentId))||"學生 "+latest.studentId)));
   latestCard.append(element("p","目前狀態："+stage.title));latestCard.append(element("p",stage.next,"hint"));
