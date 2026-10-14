@@ -14,6 +14,7 @@ app.http("uniformPaymentAccount",{methods:["GET","POST"],authLevel:"anonymous",r
   const accounts=await db("TenantUniformPaymentAccounts"),key="uniform:"+input.kind;
   if(request.method==="POST"){
    if(access.role!=="admin")return fail("Admin only",403);
+   if(access.capabilities?.financeVerifier!==true)return fail("僅已指派的財務人員可設定團服帳戶",403);
    if(!valid(input.templateId))return fail("請選擇既有的幹部收款帳戶",400);
    const templates=await db("TenantPaymentAccountTemplates"),template=await find(templates,schoolId,input.templateId);
    if(!template)return fail("收款帳戶範本不存在",404);
