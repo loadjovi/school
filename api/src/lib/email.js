@@ -15,6 +15,23 @@ export function emailConfigured(){
   return !!(c.connectionString&&c.senderAddress);
 }
 
+export async function sendUniformRequestStatusEmail({recipients=[],studentName="",kind="",status="",size="",quantity=1}={}){
+  const addresses=[...new Set(recipients.map(x=>clean(x,320).toLowerCase()).filter(x=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x)))];
+  if(!addresses.length)return {status:"no_recipients"};
+  const c=config();if(!c.connectionString||!c.senderAddress)return {status:"not_configured"};
+  const item=kind==="competitionUniform"?"A 團比賽服":"團 T";
+  const state={APPROVED:"已核准，等待統一採購",ORDERED:"已統一採購，等待到貨",ARRIVED:"已到貨，等待領取安排",READY_FOR_PICKUP:"可以領取，請依學校通知辦理",CANCELLED:"申請已取消",FULFILLED:"已完成領用"}[status];
+  if(!state)return {status:"unsupported"};
+  const subject=`【弦樂團】${clean(studentName,80)}的${item}申請進度更新：${state}`;
+  const detail=`學生：${clean(studentName,80)}\n項目：${item}\n尺寸：${clean(size,20)}\n件數：${Number(quantity)||1}\n目前進度：${state}`;
+  const next=status==="APPROVED"?"核准不代表已付款、到貨或可以領取。採購及領取進度仍需等待後續通知。":"請登入平台「活動與團服 → 我的紀錄」查看最新進度。";
+  const plainText=`您好：\n\n您的團服申請狀態已更新。\n${detail}\n\n${next}\n請登入平台「活動與團服 → 我的紀錄」查詢最新狀態。`;
+  const html=`<div style="font-family:Arial,sans-serif;line-height:1.7"><h2>${esc(subject)}</h2><p>您的團服申請狀態已更新。</p><p>${esc(detail).replaceAll("\n","<br>")}</p><p>${esc(next)}</p><p>請登入平台「活動與團服 → 我的紀錄」查詢最新狀態。</p></div>`;
+  const client=new EmailClient(c.connectionString);
+  const results=await Promise.allSettled(addresses.map(address=>sendOne(client,c.senderAddress,address,{subject,plainText,html})));
+  return {status:results.every(x=>x.status==="fulfilled"&&String(x.value.status).toLowerCase()==="succeeded")?"sent":"partial",recipientCount:addresses.length,sentCount:results.filter(x=>x.status==="fulfilled"&&String(x.value.status).toLowerCase()==="succeeded").length};
+}
+
 async function sendOne(client,senderAddress,address,message){
   const poller=await client.beginSend({
     senderAddress,
