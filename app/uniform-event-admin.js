@@ -454,22 +454,38 @@ async function updateUniformRequest(row,body,{expectedStatus="",expectedQuantity
   finally{pendingRequestIds.delete(row.id);renderModuleRequests()}
  }
 }
+let uniformBankTemplates=[];
+async function loadUniformBankTemplates(){
+ const form=el("uniformBankForm"),select=form.elements.templateId,message=el("uniformBankMessage");
+ try{const data=await api("uniform-events/payment-account-templates");uniformBankTemplates=(data.items||[]).filter(t=>t.active===true);
+  select.replaceChildren(new Option("請選擇已建立的幹部收款帳戶",""));
+  for(const t of uniformBankTemplates)select.add(new Option(t.label+"｜"+t.bankName+" ****"+t.accountNumber.slice(-4),t.id));
+  if(!uniformBankTemplates.length)message.textContent="目前沒有已啟用的幹部帳戶範本；請先至「模組與活動設定」建立。";
+  await loadUniformBank();
+ }catch(e){message.textContent="帳戶範本讀取失敗："+e.message}
+}
 async function loadUniformBank(){
  const form=el("uniformBankForm"),message=el("uniformBankMessage");
  try{const data=await api("uniform-events/uniform-payment-account?kind="+encodeURIComponent(form.elements.kind.value));
-  for(const key of ["bankName","bankCode","accountHolder","accountNumber"])form.elements[key].value=data.item?.[key]||"";
-  message.textContent=data.item?"已設定此項收款帳戶；儲存變更後，請再次核對帳號。":"此項尚未設定收款帳戶，無法核准付費申請。";
+  const bank=data.item;form.elements.templateId.value=bank?.templateId||"";
+  el("uniformBankPreview").textContent=bank?"目前綁定："+bank.bankName+"（"+bank.bankCode+"）｜戶名："+bank.accountHolder+"｜帳號末四碼："+bank.accountNumber.slice(-4):"目前未綁定此團服的收款帳戶。";
+  message.textContent=bank?.templateId?"已沿用幹部帳戶範本。":bank?"此項使用舊版帳戶設定；請選擇幹部帳戶範本後重新綁定。":"請選擇既有帳戶並綁定，才能核准付費申請。";
  }catch(e){message.textContent="無法讀取收款帳戶："+e.message}
 }
 el("uniformBankForm").elements.kind.addEventListener("change",loadUniformBank);
-el("uniformBankForm").addEventListener("submit",async e=>{
- e.preventDefault();const form=e.currentTarget,message=el("uniformBankMessage");
- if(!confirm("確認收款帳戶資料正確？核准後家長會看到此帳號。"))return;
- const body=Object.fromEntries(new FormData(form));
- try{await api("uniform-events/uniform-payment-account",{method:"POST",body:JSON.stringify(body)});message.textContent="已儲存收款帳戶。"}
- catch(error){message.textContent="儲存失敗："+error.message}
+el("uniformBankForm").elements.templateId.addEventListener("change",e=>{
+ const selected=uniformBankTemplates.find(t=>t.id===e.target.value);
+ if(selected)el("uniformBankPreview").textContent="將綁定："+selected.bankName+"（"+selected.bankCode+"）｜戶名："+selected.accountHolder+"｜帳號末四碼："+selected.accountNumber.slice(-4);
 });
-loadUniformBank();
+el("uniformBankForm").addEventListener("submit",async e=>{
+ e.preventDefault();const form=e.currentTarget,message=el("uniformBankMessage"),selected=uniformBankTemplates.find(t=>t.id===form.elements.templateId.value);
+ if(!selected)return;
+ if(!confirm("確認將「"+selected.label+"」綁定至此團服？核准後家長會看到此帳號。"))return;
+ try{await api("uniform-events/uniform-payment-account",{method:"POST",body:JSON.stringify({kind:form.elements.kind.value,templateId:selected.id})});await loadUniformBank();message.textContent="已綁定幹部收款帳戶。"}
+ catch(error){message.textContent="綁定失敗："+error.message}
+});
+loadUniformBankTemplates();
+window.addEventListener("uniformBankTemplatesLoaded",loadUniformBankTemplates);
 el("requests").addEventListener("click",async e=>{
  const i=e.target.dataset.update??e.target.dataset.adjust??e.target.dataset.amount;if(i===undefined)return;
  const adjusting=e.target.dataset.adjust!==undefined;
