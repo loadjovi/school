@@ -145,16 +145,16 @@ async function parentApi(path,options={}){
 }
 async function appendFieldTripPayment(card,item,match){
  if(item.kind!=="fieldTrip"||match?.collectionOpen!==true||item.paymentStatus==="VERIFIED")return;
-    const box=element("div",undefined,"payment-account");box.append(element("p","第二階段收款已開放，請核對帳戶及應繳金額後匯款。"));
+    const box=element("div",undefined,"payment-account");box.append(element("p","第二階段收款已開放。請先核對收款帳戶與應繳金額，完成匯款後填寫匯款日期、實際匯款金額及匯款帳號末五碼。"));
     const form=element("form"),amount=element("input"),last=element("input"),date=element("input"),message=element("p","","hint");
     amount.type="number";amount.min="1";amount.required=true;amount.value=String(item.transferReport?.amount||item.estimatedAmount||"");
     last.inputMode="numeric";last.pattern="[0-9]{5}";last.maxLength=5;last.required=true;last.placeholder="匯款帳號末五碼";
     date.type="date";date.required=true;
-    for(const [label,input] of [["實際匯款金額",amount],["匯款帳號末五碼",last],["匯款日期",date]]){const l=element("label",label);l.append(input);form.append(l)}
-    const submit=element("button","回報匯款（待幹部核帳）");submit.type="submit";form.append(submit,message);box.append(form);
+    for(const [label,input] of [["實際匯款金額",amount],["匯款帳號末五碼",last],["匯款日期",date]]){const l=element("label",label);l.style.display="block";l.style.marginBottom="12px";input.style.display="block";input.style.boxSizing="border-box";input.style.width="100%";input.style.marginTop="6px";l.append(input);form.append(l)}
+    const submit=element("button","匯款完成回覆");submit.type="submit";form.append(submit,message);box.append(form);
     try{const result=await parentApi("uniform-events/field-trip-payment-account?activityId="+encodeURIComponent(item.activityId));const b=result.item;if(!b)throw Error("活動尚未綁定帳戶");box.prepend(element("p","收款帳戶："+b.bankName+"（"+b.bankCode+"）｜"+b.accountHolder+"｜帳號："+b.accountNumber))}
     catch(e){submit.disabled=true;message.textContent="收款帳戶讀取失敗："+e.message}
-    form.addEventListener("submit",async e=>{e.preventDefault();if(!confirm("已確認匯款完成，送出末五碼供幹部核帳？"))return;submit.disabled=true;try{await parentApi("uniform-events/family-registration",{method:"PATCH",body:JSON.stringify({kind:item.kind,activityId:item.activityId,action:"REPORT_TRANSFER",amount:Number(amount.value),lastFive:last.value,transferDate:date.value})});message.textContent="已回報匯款，等待幹部核帳。";await renderInlineActivities()}catch(err){message.textContent="回報失敗："+err.message;submit.disabled=false}});
+    form.addEventListener("submit",async e=>{e.preventDefault();if(!confirm("確認已完成匯款，並送出匯款日期、金額及帳號末五碼供幹部核帳？"))return;submit.disabled=true;try{await parentApi("uniform-events/family-registration",{method:"PATCH",body:JSON.stringify({kind:item.kind,activityId:item.activityId,action:"REPORT_TRANSFER",amount:Number(amount.value),lastFive:last.value,transferDate:date.value})});message.textContent="已收到您的匯款回覆，待幹部核對款項。核帳完成後將更新繳費狀態。";await renderInlineActivities()}catch(err){message.textContent="回報失敗："+err.message;submit.disabled=false}});
  card.append(box);
 }
 async function renderInlineActivities(){
