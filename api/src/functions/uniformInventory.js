@@ -28,7 +28,10 @@ app.http("uniformInventory",{
       const {inventory:client,audit:a}=await clients();
       if(request.method==="GET"){
         const items=[];
-        for await(const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${ctx.schoolId.replaceAll("'","''")}'`}}))items.push({key:e.rowKey,onHand:e.onHand,reserved:e.reserved,unavailable:e.unavailable,etag:e.etag});
+        for await(const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${ctx.schoolId.replaceAll("'","''")}'`}})){
+          if(!String(e.rowKey).startsWith("regular:")&&!String(e.rowKey).startsWith("competition:"))continue;
+          items.push({key:e.rowKey,onHand:e.onHand,reserved:e.reserved,unavailable:e.unavailable,etag:e.etag});
+        }
         return json({items});
       }
       const data=await request.json(),id=key(data.type,data.style,data.size);
