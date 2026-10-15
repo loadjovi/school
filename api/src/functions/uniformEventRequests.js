@@ -7,6 +7,16 @@ import { sendUniformRequestStatusEmail } from "../lib/email.js";
 import { getUniformPrice } from "../lib/uniformPricing.js";
 
 const kinds=new Set(["regularUniform","competitionUniform","fieldTrip","yearEndDinner"]);
+// 已核對的歷史公費配發，依校別與學生 ID 登錄；不依姓名或尺寸推定資格。
+const historicalPublicIssues={"sacred-heart":new Set(["112068"])};
+const hasHistoricalPublicIssue=(schoolId,studentId)=>historicalPublicIssues[schoolId]?.has(String(studentId))===true;
+async function hasPublicRequest(client,schoolId,studentId,excludeId=""){
+ for await(const row of client.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
+  const item=decode(row);
+  if(item.id!==excludeId&&item.kind==="competitionUniform"&&String(item.studentId)===String(studentId)&&item.acquisition==="PUBLIC"&&item.status!=="CANCELLED")return true;
+ }
+ return false;
+}
 const states=new Set(["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP","CANCELLED","FULFILLED"]);
 const allowedNext={PENDING:new Set(["APPROVED","CANCELLED"]),APPROVED:new Set(["ORDERED","CANCELLED"]),ORDERED:new Set(["ARRIVED","CANCELLED"]),ARRIVED:new Set(["READY_FOR_PICKUP","CANCELLED"]),READY_FOR_PICKUP:new Set([]),CANCELLED:new Set([]),FULFILLED:new Set([])};
 const connection=()=>process.env.STORAGE_CONNECTION_STRING;
@@ -77,7 +87,10 @@ app.http("uniformEventRequests",{
             else out.push(item);
           }
         }
-        return json({items:out});
+        const used=new Set(out.filter(x=>x.kind==="competitionUniform"&&x.acquisition==="PUBLIC"&&x.status!=="CANCELLED").map(x=>String(x.studentId)));
+        const historical=[];
+        for(const id of historicalPublicIssues[schoolId]||[])if(access.role==="admin"||ensureStudentAccess(access,id)){used.add(id);historical.push(id)}
+        return json({items:out,publicUsedStudentIds:[...used],historicalPublicStudentIds:historical});
       }
       const data=await request.json();
       if(request.method==="POST"){
@@ -85,6 +98,7 @@ app.http("uniformEventRequests",{
         if(!await configuredAndOpen(schoolId,data))return err("Module or activity is not open",403);
         const student=await getStudentMaster(data.studentId,schoolId);
         const fields=validateRequest(data,student);
+        if(data.kind==="competitionUniform"&&fields.acquisition==="PUBLIC"&&(hasHistoricalPublicIssue(schoolId,data.studentId)||await hasPublicRequest(client,schoolId,data.studentId)))return err("此學生已有公費比賽服領用或申請紀錄，後續只能選擇自費買斷",409);
         const id=randomUUID(),createdAt=new Date().toISOString();
         const payload={kind:data.kind,studentId:data.studentId,...fields,status:"PENDING",note:data.note||"",createdAt,updatedAt:createdAt};
         if(data.kind==="competitionUniform"&&fields.acquisition==="PURCHASE"){
@@ -145,6 +159,7 @@ app.http("uniformEventRequests",{
       }else{
         if(!states.has(data.status))return err("Invalid update");
         if(!allowedNext[before.status]?.has(data.status))return err("Invalid status transition; refresh and check the current stage",409);
+        if(data.status==="APPROVED"&&before.kind==="competitionUniform"&&before.acquisition==="PUBLIC"&&(hasHistoricalPublicIssue(schoolId,before.studentId)||await hasPublicRequest(client,schoolId,before.studentId,data.id)))return err("此學生已有公費比賽服領用或其他公費申請，請取消重複申請",409);
         if(data.status==="READY_FOR_PICKUP"&&["regularUniform","competitionUniform"].includes(before.kind)&&before.acquisition!=="PUBLIC"&&before.paymentStatus!=="VERIFIED")return err("自費申請須先完成財務核帳，才可開放領取",409);
         next.status=data.status;
         if(data.status==="APPROVED"&&["regularUniform","competitionUniform"].includes(before.kind)){
