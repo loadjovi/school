@@ -31,6 +31,7 @@ async function api(path,options={}){
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[],receivedRequestIds=new Set();
 let visibleModuleRequests=[];
 const pendingRequestIds=new Set();
+const issueErrors=new Map();
 let uniformStudentNames=new Map();
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let savedConfigs=[];
@@ -267,9 +268,12 @@ function table(id,rows,columns,actions=false){
    const next={PENDING:[["APPROVED","核准，等待採購"],["CANCELLED","取消申請"]],APPROVED:[["ORDERED","已統一採購"],["CANCELLED","取消申請"]],ORDERED:[["CANCELLED","取消申請"]],ARRIVED:[...(mayCollect&&r.received?[["READY_FOR_PICKUP","開放領取"]]:[]),["CANCELLED","取消申請"]]}[r.status]||[];
    const adjust=r.kind==="團 T"&&["PENDING","APPROVED"].includes(r.status)?"<button type='button' data-adjust='"+i+"'>更正件數</button>":"";
    const amount=r.status==="APPROVED"&&r.acquisition!=="PUBLIC"&&!Number.isSafeInteger(r.amount)?"<button type='button' data-amount='"+i+"'>補正應繳金額</button>":"";
-   const issue=r.status==="READY_FOR_PICKUP"&&mayCollect&&r.received?"<button type='button' data-issue='"+i+"'>確認實際發放</button>":"";
+   const stockKey=r.kind==="A 團比賽服"?"competition:"+r.style+":"+r.size:"regular:"+r.size;
+   const stock=cachedStock.find(x=>x.key===stockKey),needed=r.kind==="A 團比賽服"?1:Number(r.quantity);
+   const existingStock=!r.received&&stock&&Number(stock.onHand)-Number(stock.reserved||0)-Number(stock.unavailable||0)>=needed;
+   const issue=r.status==="READY_FOR_PICKUP"&&mayCollect&&(r.received||existingStock)?"<button type='button' data-issue='"+i+"'>"+(r.received?"確認實際發放":"以現有庫存發放")+"</button>":"";
    const receive=["ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&!r.received?"<button type='button' data-receive='"+i+"'>"+(r.status==="ORDERED"?"驗收入庫":"補登驗收入庫")+"</button>":"";
-   controls="<td data-label='狀態管理'>"+(next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":issue||"<span>"+esc(r.statusLabel||r.status)+"</span>")+receive+adjust+amount+"</td>";
+   controls="<td data-label='狀態管理'>"+(next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":issue||"<span>"+esc(r.statusLabel||r.status)+"</span>")+(!existingStock?receive:"")+adjust+amount+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
   }
   return "<tr>"+cells+controls+"</tr>";
@@ -392,6 +396,7 @@ async function load(){
   }},
   {path:"uniform-events/inventory",status:"stockStatus",render:data=>{
     cachedStock=data.items||[];
+    window.uniformInventoryItems=cachedStock;
     if(["regularUniform","competitionUniform"].includes(activeAdminTab))renderModuleStock();
     window.dispatchEvent(new CustomEvent("uniformInventoryLoaded",{detail:{items:cachedStock}}));
   }}
@@ -664,12 +669,14 @@ el("requests").addEventListener("click",async e=>{
   const receivedBy=prompt("請填寫實際領取人（例如家長姓名）","");if(receivedBy===null)return;
   const note=prompt("請填寫發放備註（例如現場核對尺寸）","");if(note===null)return;
   if(!receivedBy.trim()||!note.trim()){el("status").textContent="領取人與發放備註皆不可空白";return}
-  if(!confirm("確認已將 "+(row.kind==="regularUniform"?"團 T":"A 團比賽服")+" "+row.size+" 實際交給 "+receivedBy.trim()+"？確認後會扣除庫存並留下紀錄。"))return;
+  const useExistingStock=!receivedRequestIds.has(row.id);
+  if(!confirm("確認已將 "+(row.kind==="regularUniform"?"團 T":"A 團比賽服")+" "+row.size+" 實際交給 "+receivedBy.trim()+"？"+(useExistingStock?"將使用已盤點的現有庫存，不再增加庫存，並補記此筆入庫來源。":"")+"確認後會扣除庫存並留下紀錄。"))return;
+  issueErrors.delete(row.id);
   pendingRequestIds.add(row.id);renderModuleRequests();
   try{
-   await api("uniform-events/fulfillment",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,receivedBy:receivedBy.trim(),note:note.trim()})});
+   await api("uniform-events/fulfillment",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,receivedBy:receivedBy.trim(),note:note.trim(),useExistingStock})});
    el("status").textContent="已確認發放並扣除庫存";await load();
-  }catch(error){el("status").textContent=error.message;await load()}
+  }catch(error){issueErrors.set(row.id,"發放未完成："+error.message);el("status").textContent=error.message;await load()}
   finally{pendingRequestIds.delete(row.id);renderModuleRequests()}
   return;
  }
