@@ -201,6 +201,7 @@ function renderConfigSummary(items){
    "<p>活動期間："+esc(dateText)+"｜對象："+esc(x.targetGroups||"ALL")+"</p>"+
    (calendarOnly?"<p>免報名、免收費｜"+esc(x.timeLabel||"時間另行通知")+"</p>"+(x.note?"<p>注意事項："+esc(x.note)+"</p>":""):
    "<p>報名期間："+esc(fmtDate(x.openAt))+" ～ "+esc(fmtDate(x.closeAt))+"</p>"+
+   (x.closeAt&&Date.parse(x.closeAt)<Date.now()&&((x.module==="yearEndDinner"&&x.paymentOpen)||(x.module==="fieldTrip"&&x.collectionOpen))?"<p class='warn'>報名已截止，收款仍開放：僅已報名家庭可回報匯款。若要接受新報名，請延長上方「報名結束」時間並儲存。</p>":"")+
    "<p>學生："+money(x.studentFee)+"｜首位大人："+money(x.firstAdultFee)+"｜額外大人："+money(x.extraAdultFee)+"｜額外兒童："+money(x.extraChildFee)+"</p>"):"<p>團服模組設定，非活動報名。</p>")+
    (activityTypes.has(x.module)?renderActivityRegistrationStats(x):"")+(calendarOnly?"<p style='color:#98620b'>啟用後將依團別顯示在家長行事曆；仍請在群組公告重要異動。</p>":"<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>")+
    "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>"+(activity?"編輯此活動":"檢視團服設定")+"</button></article>";
@@ -238,9 +239,9 @@ function activityReportRows(){
  }
  return activities.map(activity=>({activity,rows:activityRegistrationRows(activity),counts:activityCounts(activityRegistrationRows(activity))}));
 }
-function paymentStatusLabel(status){
+function paymentStatusLabel(status,activity){
  const labels={
-  NOT_OPEN:"尚未開放匯款",
+  NOT_OPEN:(activity?.paymentOpen===true||activity?.collectionOpen===true)?"已開放匯款，待家長回報":"尚未開放匯款",
   AWAITING_TRANSFER:"待匯款",
   REPORTED_UNVERIFIED:"已回報匯款，待核帳",
   VERIFIED:"已確認入帳",
@@ -264,7 +265,7 @@ function refreshFamilyStatistics(){
   "<h3>"+esc(activity.title||activity.id)+"</h3><p>"+esc(names[activity.module]||activity.module)+"｜報名家庭 "+counts.families+" 戶｜弦樂團學生 "+counts.students+" 位｜大人 "+counts.adults+" 位｜其他兒童 "+counts.children+" 位｜<strong>總計 "+counts.total+" 位</strong></p>"+
   "<p><button type='button' data-export-activity-summary='"+index+"'>匯出本活動人數統計 CSV</button> <button type='button' data-export-activity-detail='"+index+"'>匯出本活動報名明細 CSV</button></p>"+
   "<div style='overflow-x:auto'><table><thead><tr><th>報名學生</th><th>弦樂團學生</th><th>大人</th><th>其他兒童</th><th>小計</th><th>應繳／回報金額</th><th>匯款末五碼</th><th>匯款日期</th><th>繳費狀態</th></tr></thead><tbody>"+
-  (rows.length?rows.map(r=>"<tr><td>"+esc(registrationStudentNames(r))+"</td><td>"+(Array.isArray(r.studentIds)?r.studentIds.length:0)+"</td><td>"+Number(r.adults||0)+"</td><td>"+Number(r.extraChildren||0)+"</td><td>"+((r.studentIds?.length||0)+Number(r.adults||0)+Number(r.extraChildren||0))+"</td><td>"+esc(r.transferReport?.amount??r.estimatedAmount??"待核定")+"</td><td>"+esc(r.transferReport?.lastFive||"尚未回報")+"</td><td>"+esc(r.transferReport?.transferDate||"—")+"</td><td>"+paymentStatusLabel(r.paymentStatus)+"</td></tr>").join(""):"<tr><td colspan='9'>尚無已報名資料</td></tr>")+
+  (rows.length?rows.map(r=>"<tr><td>"+esc(registrationStudentNames(r))+"</td><td>"+(Array.isArray(r.studentIds)?r.studentIds.length:0)+"</td><td>"+Number(r.adults||0)+"</td><td>"+Number(r.extraChildren||0)+"</td><td>"+((r.studentIds?.length||0)+Number(r.adults||0)+Number(r.extraChildren||0))+"</td><td>"+esc(r.transferReport?.amount??r.estimatedAmount??"待核定")+"</td><td>"+esc(r.transferReport?.lastFive||"尚未回報")+"</td><td>"+esc(r.transferReport?.transferDate||"—")+"</td><td>"+paymentStatusLabel(r.paymentStatus,activity)+"</td></tr>").join(""):"<tr><td colspan='9'>尚無已報名資料</td></tr>")+
   "</tbody></table></div></section>").join(""):"<p>目前沒有活動資料</p>";
  renderConfigSummary(savedConfigs);
  syncUniformModuleVisibility();
@@ -279,7 +280,7 @@ el("familyRows").addEventListener("click",event=>{
  if(btn.hasAttribute("data-export-activity-summary")){
   csv(name+"_人數統計.csv",[{activityName:activity.title||activity.id,category:activity.module,families:counts.families,students:counts.students,adults:counts.adults,children:counts.children,total:counts.total}],["activityName","category","families","students","adults","children","total"]);
  }else{
-  csv(name+"_報名明細.csv",rows.map(r=>({activityName:activity.title||activity.id,studentNames:registrationStudentNames(r),parentEmail:r.parentEmail||"",studentIds:(r.studentIds||[]).join(";"),students:(r.studentIds||[]).length,adults:Number(r.adults||0),extraChildren:Number(r.extraChildren||0),total:(r.studentIds||[]).length+Number(r.adults||0)+Number(r.extraChildren||0),paymentStatus:paymentStatusLabel(r.paymentStatus),transferAmount:r.transferReport?.amount??"",transferLastFive:r.transferReport?.lastFive||"",transferDate:r.transferReport?.transferDate||""})),["activityName","studentNames","parentEmail","studentIds","students","adults","extraChildren","total","paymentStatus","transferAmount","transferLastFive","transferDate"]);
+  csv(name+"_報名明細.csv",rows.map(r=>({activityName:activity.title||activity.id,studentNames:registrationStudentNames(r),parentEmail:r.parentEmail||"",studentIds:(r.studentIds||[]).join(";"),students:(r.studentIds||[]).length,adults:Number(r.adults||0),extraChildren:Number(r.extraChildren||0),total:(r.studentIds||[]).length+Number(r.adults||0)+Number(r.extraChildren||0),paymentStatus:paymentStatusLabel(r.paymentStatus,activity),transferAmount:r.transferReport?.amount??"",transferLastFive:r.transferReport?.lastFive||"",transferDate:r.transferReport?.transferDate||""})),["activityName","studentNames","parentEmail","studentIds","students","adults","extraChildren","total","paymentStatus","transferAmount","transferLastFive","transferDate"]);
  }
 });
 el("settings").addEventListener("click",e=>{
@@ -355,7 +356,13 @@ function updateActivityAudiencePreview(){
  const form=el("config"),module=el("configModule").value,groups=form.elements[module==="calendarActivity"?"calendarTargetGroups":"targetGroups"].value;
  const groupText={ALL:"A、B、儲備團",A:"A 團",B:"B 團",C:"儲備團","A,B":"A、B 團","A,C":"A、儲備團","B,C":"B、儲備團"}[module==="yearEndDinner"?"ALL":groups]||"所選團別";
  const visible=form.elements.enabled.value==="true";
- el("activityAudiencePreview").textContent="家長端："+(visible?groupText+"會看到此活動":"暫不顯示給家長")+"；"+(module==="calendarActivity"?"只顯示公告與行事曆，無須報名、繳費。":module==="yearEndDinner"?"家長需報名；收款需另設定帳戶。":"家長需報名；收款開放時間另行設定。")+" 儲存後請在下方核對活動。";
+ const closeAt=form.elements.closeAt?.value,registrationClosed=closeAt&&Date.parse(closeAt)<Date.now();
+ const collecting=module==="yearEndDinner"?form.elements.paymentOpen.value==="true":module==="fieldTrip"&&form.elements.collectionOpen.value==="true";
+ el("activityAudiencePreview").textContent="家長端："+(visible?groupText+"會看到此活動":"暫不顯示給家長")+"；"+(module==="calendarActivity"?"只顯示公告與行事曆，無須報名、繳費。":module==="yearEndDinner"?"家長需報名；收款需另設定帳戶。":"家長需報名；收款開放時間另行設定。")+(registrationClosed&&collecting?" 報名已截止，收款仍開放：新家庭無法報名，已報名家庭可回報匯款。若要開放新報名，請延長報名結束時間並儲存。":" 儲存後請在下方核對活動。 ");
+}
+for(const name of ["openAt","closeAt","paymentOpen","collectionOpen"]){
+ const input=el("config").elements[name];
+ if(input){input.addEventListener("change",updateActivityAudiencePreview);input.addEventListener("input",updateActivityAudiencePreview)}
 }
 function syncConfig(){
  const form=el("config"),module=el("configModule").value,activity=configActivityTypes.has(module),calendarOnly=module==="calendarActivity";
