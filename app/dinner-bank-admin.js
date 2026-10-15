@@ -106,6 +106,12 @@ function installQuickBankBinding(){
  const savedState=document.createElement("p");savedState.setAttribute("role","status");savedState.style.fontWeight="700";
  const actionHint=document.createElement("p");actionHint.style.margin="8px 0 0";
  publishPanel.append(heading,savedState,visibilityWrap,actionHint);wrap.insertAdjacentElement("afterend",publishPanel);
+ const tripPanel=document.createElement("div");tripPanel.id="fieldTripPublishPanel";tripPanel.style.cssText=publishPanel.style.cssText;
+ const tripHeading=document.createElement("h3");tripHeading.textContent="📣 開放給家長報名";tripHeading.style.margin="0 0 10px";
+ const tripSavedState=document.createElement("p");tripSavedState.setAttribute("role","status");tripSavedState.style.fontWeight="700";
+ const tripHint=document.createElement("p");tripHint.style.margin="8px 0 0";
+ tripPanel.append(tripHeading,tripSavedState,tripHint);
+ document.getElementById("fieldTripCollectionPanel").insertAdjacentElement("afterend",tripPanel);
  visibilityWrap.querySelector('option[value="false"]').textContent="暫不顯示（家長看不到）";
  visibilityWrap.querySelector('option[value="true"]').textContent="顯示並開放報名與匯款";
  let boundAccount=null,selectionActivityId="";
@@ -113,21 +119,37 @@ function installQuickBankBinding(){
  const validAccount=a=>a&&a.bankName&&a.accountHolder&&/^[0-9]{3}$/.test(a.bankCode||"")&&/^[0-9]{6,30}$/.test(a.accountNumber||"");
  window.dinnerBankSelection=()=>activityEl.value&&activityEl.value===selectionActivityId&&(selectedTemplate()||validAccount(boundAccount))||null;
  function syncVisibility(){
-  const dinner=moduleEl.value==="yearEndDinner",available=!!window.dinnerBankSelection();
+  const dinner=moduleEl.value==="yearEndDinner",trip=moduleEl.value==="fieldTrip",available=!!window.dinnerBankSelection();
   const enabled=document.getElementById("config").elements.enabled;
   const showOption=[...enabled.options].find(o=>o.value==="true");
   if(showOption)showOption.disabled=dinner&&!available;
   wrap.hidden=!dinner;
   publishPanel.hidden=!dinner;
+  tripPanel.hidden=!trip;
   if(dinner){if(visibilityWrap.parentNode!==publishPanel)publishPanel.insertBefore(visibilityWrap,actionHint)}
+  else if(trip){if(visibilityWrap.parentNode!==tripPanel)tripPanel.insertBefore(visibilityWrap,tripHint)}
   else if(visibilityWrap.parentNode!==originalParent)originalParent.insertBefore(visibilityWrap,originalNext);
   if(dinner){
+   visibilityWrap.querySelector('option[value="false"]').textContent="暫不顯示（家長看不到）";
+   visibilityWrap.querySelector('option[value="true"]').textContent="顯示並開放報名與匯款";
    const persisted=visibilityWrap.dataset.savedEnabled==="true",newActivity=!activityEl.value,opening=enabled.value==="true";
    savedState.textContent=newActivity?"目前狀態：新活動尚未儲存，家長看不到":persisted?"目前狀態：已開放給家長":"目前狀態：尚未開放給家長";
    savedState.style.color=persisted?"#176543":"#8b560b";
    actionHint.textContent=newActivity?"先選帳戶並儲存活動；建立後即可選「顯示並開放」。":opening?persisted?"目前已開放；按下方按鈕儲存本次設定。":"選擇開放後，按下方「儲存並開放」才會讓家長看到。":"按下方按鈕儲存後，家長仍看不到此活動。";
    document.getElementById("saveConfigButton").textContent=opening?persisted?"儲存活動設定（維持開放）":"儲存並開放家長報名與匯款":"儲存活動設定（暫不顯示）";
-  }else document.getElementById("saveConfigButton").textContent="儲存活動設定";
+  }else if(trip){
+   visibilityWrap.querySelector('option[value="false"]').textContent="暫不顯示（家長看不到）";
+   visibilityWrap.querySelector('option[value="true"]').textContent="顯示並開放報名";
+   const persisted=visibilityWrap.dataset.savedEnabled==="true",opening=enabled.value==="true";
+   tripSavedState.textContent=!activityEl.value?"目前狀態：新活動尚未儲存，家長看不到":persisted?"目前狀態：家長可見（報名依設定期間）":"目前狀態：尚未開放給家長";
+   tripSavedState.style.color=persisted?"#176543":"#8b560b";
+   tripHint.textContent=opening?persisted?"活動已顯示；家長須在報名期間內報名，收款須另於上方第二階段設定。":"按下方按鈕儲存後，家長才會看到活動；報名依設定期間開放，收款須另行開放。":"按下方按鈕儲存後，家長仍看不到此活動。";
+   document.getElementById("saveConfigButton").textContent=opening?persisted?"儲存活動設定（維持報名開放）":"儲存並開放家長報名":"儲存活動設定（暫不顯示）";
+  }else{
+   visibilityWrap.querySelector('option[value="false"]').textContent="暫不顯示";
+   visibilityWrap.querySelector('option[value="true"]').textContent="顯示";
+   document.getElementById("saveConfigButton").textContent="儲存活動設定";
+  }
   status.textContent=!dinner?"":!activityEl.value?selectedTemplate()?"已選擇帳戶；儲存新活動時會同步綁定，活動仍暫不顯示。":"可先選擇帳戶，再以「暫不顯示」儲存新活動。":selectedTemplate()?"已選擇帳戶；按「儲存活動設定」即綁定本活動。設定為「顯示」後同時開放報名與匯款。":validAccount(boundAccount)?"已綁定本活動收款帳戶；可設定為「顯示」。":"請選擇帳戶，才能設定家長端顯示。";
  }
  window.syncDinnerBankVisibility=syncVisibility;
