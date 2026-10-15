@@ -557,6 +557,7 @@ el("config").onsubmit=async e=>{
  e.preventDefault();
  const feedback=el("configSaveFeedback"),button=el("saveConfigButton");
  feedback.textContent="正在儲存活動設定…";button.disabled=true;
+ let savedActivityId="",bankVerifiedOnSave=false;
  try{
   const f=new FormData(e.target),module=f.get("module"),activity=configActivityTypes.has(module);
   const id=activity?(el("existingActivity").value||createActivityId()):"default";
@@ -587,18 +588,29 @@ el("config").onsubmit=async e=>{
   if(module==="yearEndDinner"&&item.enabled){
    feedback.textContent="正在綁定並核對本活動收款帳戶…";
    await window.applyDinnerBankSelection(id);
+   bankVerifiedOnSave=true;
   }
   await api("uniform-events/config",{method:"POST",body:JSON.stringify(item)});
+  savedActivityId=id;
+  if(module==="yearEndDinner"&&!item.enabled&&window.hasDinnerBankTemplateSelection?.()){
+   feedback.textContent="活動已儲存，正在綁定並核對收款帳戶…";
+   await window.applyDinnerBankSelection(id);
+   bankVerifiedOnSave=true;
+  }
   feedback.textContent="資料已送出，正在讀回驗證…";
   await load();
   if(activity){el("existingActivity").value=id;syncConfig();el("existingActivity").dispatchEvent(new Event("change"))}
   const persisted=savedConfigs.find(x=>x.module===module&&x.id===id);
   if(!persisted)throw Error("API 已回覆，但重新查詢未找到活動，請勿視為儲存成功");
   feedback.textContent=module==="yearEndDinner"&&!persisted.enabled
-   ?"活動已建立並確認成功："+(persisted.title||module)+"（暫不顯示）。請選擇下方收款帳戶，再將家長端改為「顯示」並儲存。"
+   ?"活動已建立並確認成功："+(persisted.title||module)+"（暫不顯示）。"+(bankVerifiedOnSave||window.dinnerBankSelection?.()?"收款帳戶已綁定，可將家長端改為「顯示」並儲存。":"請選擇下方收款帳戶並儲存，再將家長端改為「顯示」。")
    :"設定已儲存並確認成功："+(persisted.title||module)+(["fieldTrip","calendarActivity"].includes(module)?"；已依對象團別同步至行事曆／特殊活動（"+(persisted.enabled?"顯示中":"已取消")+"）。":"。")+(module==="calendarActivity"?"此公告免報名、免收費。":module==="yearEndDinner"?"收款帳戶已綁定；是否可報名依報名期間判定。":"是否開放家長報名依活動啟用狀態與報名期間判定。");
   el("status").textContent=feedback.textContent;
- }catch(err){feedback.textContent="儲存失敗："+err.message;el("status").textContent=feedback.textContent}
+ }catch(err){
+  if(savedActivityId){try{await load();el("existingActivity").value=savedActivityId;syncConfig();el("existingActivity").dispatchEvent(new Event("change"))}catch(refreshError){console.warn("活動已儲存，但重新讀取失敗",refreshError)}}
+  feedback.textContent=(savedActivityId?"活動資料已儲存，但收款帳戶綁定或讀回未完成：":"儲存失敗：")+err.message;
+  el("status").textContent=feedback.textContent;
+ }
  finally{button.disabled=false}
 };
 document.getElementById("retryAdminAuth").addEventListener("click",start);
