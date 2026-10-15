@@ -49,6 +49,7 @@ app.http("uniformFulfillment",{
      return failure("此取得方式尚無正式發放流程，請先核對",409);
     if(before.acquisition!=="PUBLIC"&&before.paymentStatus!=="VERIFIED")
      return failure("自費申請須先完成財務核帳",409);
+    if(!await get(inventory,schoolId,"received:"+input.id))return failure("此申請尚未驗收入庫，請先入庫再確認發放",409);
     const quantity=before.kind==="regularUniform"?before.quantity:1,key=stockKey(before);
     if(!key||!Number.isSafeInteger(quantity)||quantity<1||quantity>20)return failure("尺寸或件數有誤，無法發放",409);
     const stock=await get(inventory,schoolId,key);
