@@ -159,6 +159,11 @@ app.http("uniformEventRequests",{
       }else{
         if(!states.has(data.status))return err("Invalid update");
         if(!allowedNext[before.status]?.has(data.status))return err("Invalid status transition; refresh and check the current stage",409);
+        if(data.status==="ARRIVED"&&["regularUniform","competitionUniform"].includes(before.kind))return err("請使用驗收入庫功能，入庫後會自動更新為已到貨",409);
+        if(data.status==="READY_FOR_PICKUP"&&["regularUniform","competitionUniform"].includes(before.kind)){
+          const inventory=TableClient.fromConnectionString(connection(),"TenantUniformInventory");
+          if(!await find(inventory,schoolId,"received:"+data.id))return err("此申請尚未驗收入庫，請先入庫再開放領取",409);
+        }
         if(data.status==="APPROVED"&&before.kind==="competitionUniform"&&before.acquisition==="PUBLIC"&&(hasHistoricalPublicIssue(schoolId,before.studentId)||await hasPublicRequest(client,schoolId,before.studentId,data.id)))return err("此學生已有公費比賽服領用或其他公費申請，請取消重複申請",409);
         if(data.status==="READY_FOR_PICKUP"&&["regularUniform","competitionUniform"].includes(before.kind)&&before.acquisition!=="PUBLIC"&&before.paymentStatus!=="VERIFIED")return err("自費申請須先完成財務核帳，才可開放領取",409);
         next.status=data.status;
