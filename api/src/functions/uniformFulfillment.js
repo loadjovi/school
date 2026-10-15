@@ -49,7 +49,11 @@ app.http("uniformFulfillment",{
      return failure("此取得方式尚無正式發放流程，請先核對",409);
     if(before.acquisition!=="PUBLIC"&&before.paymentStatus!=="VERIFIED")
      return failure("自費申請須先完成財務核帳",409);
-    if(!await get(inventory,schoolId,"received:"+input.id))return failure("此申請尚未驗收入庫，請先入庫再確認發放",409);
+    const receiptKey="received:"+input.id;
+    const receipt=await get(inventory,schoolId,receiptKey);
+    if(!receipt&&input.useExistingStock!==true)return failure("此申請尚未驗收入庫。若已手動盤點入庫，請選擇『以現有庫存發放』，避免重複加庫存",409);
+    if(receipt&&(receipt.requestId!==input.id||receipt.quantity!==(before.kind==="regularUniform"?before.quantity:1)))
+     return failure("入庫紀錄與申請件數不一致，請先核對",409);
     const quantity=before.kind==="regularUniform"?before.quantity:1,key=stockKey(before);
     if(!key||!Number.isSafeInteger(quantity)||quantity<1||quantity>20)return failure("尺寸或件數有誤，無法發放",409);
     const stock=await get(inventory,schoolId,key);
@@ -61,20 +65,26 @@ app.http("uniformFulfillment",{
     const ledger={partitionKey:schoolId,rowKey:ledgerKey,requestId:input.id,studentId:before.studentId,
      kind:before.kind,style:before.style||"",size:before.size,quantity,issuedAt,issuedBy,
      receivedBy:input.receivedBy.trim(),note:input.note.trim()};
+    const reconciledReceipt=!receipt?{partitionKey:schoolId,rowKey:receiptKey,requestId:input.id,
+     studentId:before.studentId,kind:before.kind,style:before.style||"",size:before.size,quantity,
+     receivedDate:issuedAt.slice(0,10),receivedAt:issuedAt,receivedBy:issuedBy,
+     note:"由既有盤點庫存發放；"+input.note.trim(),source:"existing_stock"}:null;
     try{
      await inventory.submitTransaction([
       ["update",{partitionKey:schoolId,rowKey:key,onHand:onHand-quantity,reserved,unavailable},"Replace",{etag:stock.etag}],
+      ...(reconciledReceipt?[["create",reconciledReceipt]]:[]),
       ["create",ledger]
      ]);
     }catch(error){
-     if([409,412].includes(error.statusCode))return failure("庫存或申請已變更，請重新整理後再操作",409);
+    if([409,412].includes(error.statusCode))return failure("庫存、入庫紀錄或申請已變更，請重新整理後再操作",409);
      // A network timeout can occur after the batch commits. Check its durable ledger.
      if(!await get(inventory,schoolId,ledgerKey))throw error;
     }
    }
    const issued=existing||await get(inventory,schoolId,ledgerKey);
    if(!issued)throw Error("Issuance ledger missing");
-   const updated={...before,status:"FULFILLED",issuedAt:issued.issuedAt,issuedBy:issued.issuedBy,
+   const updated={...before,status:"FULFILLED",stockReceivedAt:before.stockReceivedAt||issued.issuedAt,
+    issuedAt:issued.issuedAt,issuedBy:issued.issuedBy,
     receivedBy:issued.receivedBy,issuedQuantity:issued.quantity,issueNote:issued.note,updatedAt:new Date().toISOString()};
    try{
     await orders.updateEntity({partitionKey:schoolId,rowKey:input.id,payload:JSON.stringify(updated),updatedAt:updated.updatedAt},"Replace",{etag:order.etag});
@@ -85,7 +95,7 @@ app.http("uniformFulfillment",{
    return json({item:{...updated,id:input.id},alreadyCompleted:Boolean(existing)});
   }catch(error){
    console.error("uniformFulfillment",error);
-   return failure("發放結果未確認，請重新整理並核對庫存與申請；再次操作不會重複扣庫存",500);
+   return failure("發放結果未確認（"+String(error.statusCode||error.code||"unknown")+"），請重新整理並核對庫存與申請；再次操作不會重複扣庫存",500);
   }
  }
 });
