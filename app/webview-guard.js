@@ -82,10 +82,11 @@
     ];
     if(role==="school")return ["/school-access.js?v=20261008-select-student"];
     if(role==="parent")return [
+      "/parent-activity-notice.js?v=20261016-new-activity-alert",
       "/practice-timer.js?v=20261004-manual4h",
       "/private-lesson-confirmation.js?v=20260929-late10",
       "/parent-semester-attendance.js?v=20261003-practice20",
-      "/parent-home-summary.js?v=20261003-practice20",
+      "/parent-home-summary.js?v=20261016-new-activity-alert",
       "/parent-practice-history.js?v=20261003-practice-history-toggle"
     ];
     if(role==="globalAdmin")return [
