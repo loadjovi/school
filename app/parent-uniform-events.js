@@ -1,4 +1,5 @@
 import {confirmedReceived} from "./competition-paper-receipts.js";
+import "./parent-activity-notice.js";
 import {buildUniformGrowth} from "./uniform-growth.js";
 import {roster as competitionRoster} from "./competition-roster-data.js";
 const competitionByName=new Map(competitionRoster.map(row=>[row[1],{style:row[2],size:row[3]}]));
@@ -388,6 +389,26 @@ async function renderInlineActivities(){
   if(me.role!=="parent")throw Error("請切換至家長身分後重新載入");
   const students=(me.students||[]).filter(x=>x.studentId);
   const cfg=(config.items||[]).filter(x=>x.enabled===true && (x.module!=="yearEndDinner" || x.feeStatus==="PUBLISHED"));
+  const notice=document.getElementById("newActivityNotice");
+  const activityNotice=window.parentActivityNotice;
+  function drawNotice(){
+   const unseen=activityNotice?.unseen(cfg,me,students)||[];
+   notice.replaceChildren();notice.hidden=!unseen.length;
+   if(!unseen.length)return;
+   notice.append(element("h2","🔔 新活動或活動更新（"+unseen.length+"）"),element("p","請留意活動日期與注意事項。點選後可直接查看活動。","muted"));
+   for(const item of unseen.slice(0,3)){
+    const button=element("button",(item.title||"活動")+"｜"+activityNotice.activityDate(item)+"　查看 ›","new-activity-link");button.type="button";
+    button.addEventListener("click",()=>openActivity(item));notice.append(button);
+   }
+   if(unseen.length>3)notice.append(element("p","還有 "+(unseen.length-3)+" 筆，查看後會依序顯示。","hint"));
+  }
+  function openActivity(item){
+   const category=item.module==="yearEndDinner"?"events":"performance";
+   select(category);activityNotice.mark(item,me,students);drawNotice();
+   const card=document.getElementById("activity_"+activityNotice.key(item));
+   card?.scrollIntoView({behavior:"smooth",block:"start"});
+   card?.querySelector("details.activity-details")?.setAttribute("open","");
+  }
   const history=hosts.history;history.replaceChildren();
   if(!(registration.items||[]).length)history.append(element("p","目前沒有活動報名或付款紀錄。","muted"));
   for(const item of registration.items||[]){
@@ -418,7 +439,7 @@ async function renderInlineActivities(){
    });
    if(!items.length){host.append(element("p",category==="performance"?"目前沒有此學生團別已啟用的演出或交流活動。":"目前沒有已開放的活動。","muted"));continue}
    for(const item of items){
-    const card=element("article",undefined,"activity-event");card.append(element("h3",item.title||"活動"));
+    const card=element("article",undefined,"activity-event");card.id="activity_"+activityNotice.key(item);card.append(element("h3",item.title||"活動"));
     const start=item.module==="calendarActivity"?item.eventDate:item.module==="fieldTrip"?taipeiDay(item.startAt):formatDate(item.startAt);
     const end=item.module==="fieldTrip"?taipeiDay(item.endAt||item.startAt):item.endDate;
     const range=(item.module==="calendarActivity"||item.module==="fieldTrip")&&end&&end!==start?start+"～"+end:start;
@@ -468,6 +489,15 @@ async function renderInlineActivities(){
      catch(err){message.textContent="送出失敗："+err.message;submit.disabled=false}
     });action.append(form);card.append(action);host.append(card);calc();
    }
+  }
+  drawNotice();
+  if(!window.__parentActivityDeepLinkHandled){
+   window.__parentActivityDeepLinkHandled=true;
+   const query=new URLSearchParams(location.search),target=query.get("activity"),view=query.get("view");
+   const item=cfg.find(x=>activityNotice.key(x)===target);
+   if(item&&activityNotice.unseen([item],me,students).length)openActivity(item);
+   else if(item){select(item.module==="yearEndDinner"?"events":"performance");document.getElementById("activity_"+target)?.scrollIntoView({behavior:"smooth",block:"start"})}
+   else if(["events","performance","history","uniform"].includes(view))select(view);
   }
  }catch(e){for(const host of Object.values(hosts)){host.replaceChildren();host.append(element("p","資料讀取失敗："+e.message,"hint"))}}
 }
