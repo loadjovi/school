@@ -37,11 +37,11 @@ form.addEventListener("submit",async e=>{
  const id=activityEl.value;
  if(moduleEl.value!=="yearEndDinner"||!id){message.textContent="請先選取已儲存的期末聚餐活動";return}
  const payload={activityId:id};for(const f of fields)payload[f]=form.elements[f].value.trim();
- if(!confirm("確認儲存此期末聚餐的活動收款帳戶？此帳戶將作為後續公布給家長匯款的資訊；目前尚不會自動發布。"))return;
+ if(!confirm("確認儲存此期末聚餐的活動收款帳戶？若活動已啟用，新帳號將立即顯示給家長，請先核對資料。"))return;
  try{
   const res=await fetch("/api/uniform-events/dinner-payment-account",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...bankAuthHeaders()},body:JSON.stringify(payload)});
   const data=await res.json();if(!res.ok)throw Error(data.error||"HTTP "+res.status);
-  message.textContent="收款帳戶已儲存，正在重新讀取資料驗證…";await refresh();if(!message.textContent.startsWith("已載入收款帳戶"))throw Error("已送出儲存，但重新讀取未確認成功："+message.textContent);message.textContent="活動收款帳戶已儲存並完成讀回驗證，將作為後續提供家長匯款的資訊；目前尚未自動公布，家長端匯款回報與核帳功能尚未開放。";
+  message.textContent="收款帳戶已儲存，正在重新讀取資料驗證…";await refresh();if(!message.textContent.startsWith("已載入收款帳戶"))throw Error("已送出儲存，但重新讀取未確認成功："+message.textContent);message.textContent="活動收款帳戶已儲存並完成讀回驗證；啟用家長端顯示後即開放報名與匯款。";window.dispatchEvent(new Event("dinnerBankAccountSaved"));
  }catch(err){message.textContent="儲存或讀回驗證未完成："+err.message}
 });
 refresh();
@@ -80,7 +80,7 @@ templateForm.addEventListener("submit",async e=>{
   const response=await fetch("/api/uniform-events/payment-account-templates",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...bankAuthHeaders()},body:JSON.stringify(payload)});
   const data=await response.json();if(!response.ok)throw Error(data.error||"HTTP "+response.status);
   await loadTemplates();templateSelect.value=data.id;
-  templateForm.querySelector("#templateSaveFeedback").textContent="帳戶範本已儲存；已綁定的團服及活動帳戶不會自動更新，請另行套用。";
+  templateForm.querySelector("#templateSaveFeedback").textContent="帳戶範本已儲存；期末聚餐可在活動設定選取帳戶，啟用時自動套用。已綁定的舊帳戶不會自動更新。";
  }catch(err){templateForm.querySelector("#templateSaveFeedback").textContent="範本儲存失敗："+err.message}
 });
 loadTemplates();
@@ -96,49 +96,56 @@ function installQuickBankBinding(){
  const manage=document.getElementById("manageDinnerBank");
  if(!manage||document.getElementById("quickBankBinding"))return;
  const wrap=document.createElement("div");wrap.id="quickBankBinding";wrap.style.cssText="margin:12px 0;padding:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff";
- const label=document.createElement("label");label.textContent="選擇已建立的收款帳戶（綁定本活動）";label.style.display="block";
+ const label=document.createElement("label");label.textContent="本活動收款帳戶（啟用家長端顯示時自動套用）";label.style.display="block";
  const select=document.createElement("select");select.style.cssText="display:block;width:100%;margin:8px 0";
- const button=document.createElement("button");button.type="button";button.textContent="套用至目前期末聚餐";button.style.marginTop="6px";
  const status=document.createElement("p");status.setAttribute("role","status");
- label.appendChild(select);wrap.append(label,button,status);manage.insertAdjacentElement("afterend",wrap);
- let boundAccountNumber="";
+ label.appendChild(select);wrap.append(label,status);manage.insertAdjacentElement("afterend",wrap);
+ let boundAccount=null,selectionActivityId="";
+ const selectedTemplate=()=>templates.find(t=>t.id===select.value&&t.active);
+ const validAccount=a=>a&&a.bankName&&a.accountHolder&&/^[0-9]{3}$/.test(a.bankCode||"")&&/^[0-9]{6,30}$/.test(a.accountNumber||"");
+ window.dinnerBankSelection=()=>activityEl.value&&activityEl.value===selectionActivityId&&(selectedTemplate()||validAccount(boundAccount))||null;
+ function syncVisibility(){
+  const dinner=moduleEl.value==="yearEndDinner",available=!!window.dinnerBankSelection();
+  const enabled=document.getElementById("config").elements.enabled;
+  const showOption=[...enabled.options].find(o=>o.value==="true");
+  if(showOption)showOption.disabled=dinner&&!available;
+  wrap.hidden=!dinner;
+  status.textContent=!dinner?"":!activityEl.value?"先以「暫不顯示」儲存活動，再選擇帳戶。":selectedTemplate()?"已選擇帳戶；設定為「顯示」並儲存時，會自動綁定並開放家長報名與匯款。":validAccount(boundAccount)?"已綁定本活動收款帳戶；可設定為「顯示」。":"請選擇帳戶，才能設定家長端顯示。";
+ }
+ window.syncDinnerBankVisibility=syncVisibility;
  async function updateBound(){
-  const id=activityEl.value;
-  if(!id){boundAccountNumber="";fill();return}
-  try{const res=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(id),{credentials:"same-origin",headers:bankAuthHeaders()});const data=await res.json();if(id!==activityEl.value)return;boundAccountNumber=res.ok?String(data.item?.accountNumber||""):"";fill();}catch(e){status.textContent="讀取目前活動帳戶失敗："+e.message}
+  const id=activityEl.value;selectionActivityId=id;boundAccount=null;select.value="";fill();
+  if(!id)return;
+  try{const res=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(id),{credentials:"same-origin",headers:bankAuthHeaders()});const data=await res.json();if(id!==activityEl.value)return;if(!res.ok)throw Error(data.error||"HTTP "+res.status);boundAccount=data.item||null;fill();}catch(e){status.textContent="讀取目前活動帳戶失敗："+e.message}
  }
  function fill(){
   const previous=select.value;
   select.replaceChildren(new Option("請選擇已啟用的帳戶範本",""));
   for(const t of templates.filter(t=>t.active))select.add(new Option(t.label+"｜"+t.bankName+"（"+t.bankCode+"）末四碼 "+String(t.accountNumber).slice(-4),t.id));
-  const matched=templates.find(t=>t.active&&String(t.accountNumber)===boundAccountNumber);
+  const matched=templates.find(t=>t.active&&boundAccount&&String(t.accountNumber)===String(boundAccount.accountNumber));
   if(templates.some(t=>t.active&&t.id===previous))select.value=previous;
   else if(matched)select.value=matched.id;
-  const dinner=moduleEl.value==="yearEndDinner";wrap.hidden=!dinner;
-  button.disabled=!dinner||!activityEl.value;
-  status.textContent=!activityEl.value?"請先儲存並選取期末聚餐活動。":matched?"此活動已綁定帳戶："+matched.label+"；重新儲存設定不會取消綁定。":"選擇帳戶後按套用，才會建立活動收款關聯。";
+  syncVisibility();
  }
- button.addEventListener("click",async()=>{
-  const id=activityEl.value,t=templates.find(x=>x.id===select.value&&x.active);
-  if(!id||moduleEl.value!=="yearEndDinner"){status.textContent="請先儲存並選擇期末聚餐活動。";return}
-  if(!t){status.textContent="請選擇已啟用的帳戶。";return}
-  if(!confirm("將「"+t.label+"」綁定至目前期末聚餐？此操作不會自動對家長公布。"))return;
-  button.disabled=true;status.textContent="正在儲存並驗證…";
-  try{
-   const payload={activityId:id};for(const f of fields)payload[f]=t[f];
+ window.applyDinnerBankSelection=async id=>{
+  if(moduleEl.value!=="yearEndDinner"||id!==activityEl.value)throw Error("請先選擇已儲存的期末聚餐活動。");
+  const t=selectedTemplate(),target=t||boundAccount;
+  if(!validAccount(target))throw Error("請先選擇有效的收款帳戶。");
+  if(!boundAccount||fields.some(f=>String(boundAccount[f])!==String(target[f]))){
+   const payload={activityId:id};for(const f of fields)payload[f]=target[f];
    const response=await fetch("/api/uniform-events/dinner-payment-account",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json",...bankAuthHeaders()},body:JSON.stringify(payload)});
-   const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"HTTP "+response.status);
-   const verify=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(id),{credentials:"same-origin",headers:bankAuthHeaders()});
-   const verified=await verify.json().catch(()=>({}));if(!verify.ok||!verified.item||String(verified.item.accountNumber)!==String(t.accountNumber))throw Error(verified.error||"儲存後讀回帳號未通過驗證");
-   boundAccountNumber=String(t.accountNumber);
-   status.textContent="已成功綁定此活動的收款帳戶；可再儲存活動設定。";
-   await refresh();
-  }catch(e){status.textContent="帳戶綁定失敗："+e.message}
-  finally{button.disabled=false}
- });
+   const data=await response.json().catch(()=>({}));if(!response.ok)throw Error("綁定收款帳戶失敗："+(data.error||"HTTP "+response.status));
+  }
+  const verify=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(id),{credentials:"same-origin",cache:"no-store",headers:bankAuthHeaders()});
+  const verified=await verify.json().catch(()=>({}));
+  if(!verify.ok||!validAccount(verified.item)||fields.some(f=>String(verified.item[f])!==String(target[f])))throw Error("收款帳戶讀回驗證失敗，活動尚未啟用。"+(verified.error||""));
+  boundAccount=verified.item;fill();
+ };
+ select.addEventListener("change",syncVisibility);
  moduleEl.addEventListener("change",()=>queueMicrotask(fill));
  activityEl.addEventListener("change",()=>queueMicrotask(updateBound));
  window.addEventListener("uniformBankTemplatesLoaded",fill);
+ window.addEventListener("dinnerBankAccountSaved",updateBound);
  fill();
  updateBound();
 }
