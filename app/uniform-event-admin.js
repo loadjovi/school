@@ -194,7 +194,8 @@ function renderConfigSummary(items){
  const names={yearEndDinner:"期末聚餐",fieldTrip:"交流／快閃活動",calendarActivity:"演出／競賽活動",regularUniform:"團T（T-shirt）",competitionUniform:"A團比賽服"};
  const renderCard=x=>{
   const activity=configActivityTypes.has(x.module),calendarOnly=x.module==="calendarActivity";
-  const dateText=calendarOnly?(x.eventDate||"未設定")+((x.endDate&&x.endDate!==x.eventDate)?" ～ "+x.endDate:""):fmtDate(x.startAt)+" ～ "+fmtDate(x.endAt||x.startAt);
+  const taipeiDay=value=>value?new Date(value).toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"}):"未設定";
+  const dateText=calendarOnly?(x.eventDate||"未設定")+((x.endDate&&x.endDate!==x.eventDate)?" ～ "+x.endDate:""):x.module==="fieldTrip"?taipeiDay(x.startAt)+(taipeiDay(x.endAt||x.startAt)!==taipeiDay(x.startAt)?" ～ "+taipeiDay(x.endAt):""):fmtDate(x.startAt)+" ～ "+fmtDate(x.endAt||x.startAt);
   return "<article style='border:1px solid "+(x.enabled?"#8dbda2":"#d9e3dd")+";border-radius:10px;padding:14px;margin:12px 0;"+(x.enabled?"":"background:#f5f6f5;")+"'>"+
    "<strong>"+esc(x.title||names[x.module]||x.module)+"</strong>　<span style='font-weight:700;color:"+(x.enabled?"#176543":"#66736d")+"'>"+(x.enabled?"● 家長端顯示中":"○ 暫不顯示")+"</span>"+
    (activity?"<p>類別："+esc(names[x.module])+"｜地點："+esc(x.location||"未設定")+"</p>"+
@@ -202,7 +203,7 @@ function renderConfigSummary(items){
    (calendarOnly?"<p>免報名、免收費｜"+esc(x.timeLabel||"時間另行通知")+"</p>"+(x.note?"<p>注意事項："+esc(x.note)+"</p>":""):
    "<p>報名期間："+esc(fmtDate(x.openAt))+" ～ "+esc(fmtDate(x.closeAt))+"</p>"+
    (x.closeAt&&Date.parse(x.closeAt)<Date.now()&&((x.module==="yearEndDinner"&&x.paymentOpen)||(x.module==="fieldTrip"&&x.collectionOpen))?"<p class='warn'>報名已截止，收款仍開放：僅已報名家庭可回報匯款。若要接受新報名，請延長上方「報名結束」時間並儲存。</p>":"")+
-   "<p>學生："+money(x.studentFee)+"｜首位大人："+money(x.firstAdultFee)+"｜額外大人："+money(x.extraAdultFee)+"｜額外兒童："+money(x.extraChildFee)+"</p>"):"<p>團服模組設定，非活動報名。</p>")+
+   "<p>學生："+money(x.studentFee)+"｜首位陪同者："+money(x.firstAdultFee)+"｜其他陪同者："+money(x.extraAdultFee)+"｜6 歲以下兒童（非團員）："+money(x.extraChildFee)+"</p>"):"<p>團服模組設定，非活動報名。</p>")+
    (activityTypes.has(x.module)?renderActivityRegistrationStats(x):"")+(calendarOnly?"<p style='color:#98620b'>啟用後將依團別顯示在家長行事曆；仍請在群組公告重要異動。</p>":"<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>")+
    "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>"+(activity?"編輯此活動":"檢視團服設定")+"</button></article>";
  };
@@ -259,12 +260,12 @@ function refreshFamilyStatistics(){
  const target=el("familyRows"),summary=el("familySummary");
  const names={fieldTrip:"交流／快閃活動",yearEndDinner:"期末聚餐"};
  const totals=reports.reduce((a,r)=>{for(const k of ["families","students","adults","children","total"])a[k]+=r.counts[k];return a},{families:0,students:0,adults:0,children:0,total:0});
- summary.textContent="共 "+reports.length+" 場活動；各活動分開計算。跨活動參加者可能重複，請勿將總計視為不重複人數。報名 "+totals.families+" 筆｜弦樂團學生 "+totals.students+" 位｜大人 "+totals.adults+" 位｜其他兒童 "+totals.children+" 位。";
+ summary.textContent="共 "+reports.length+" 場活動；各活動分開計算。跨活動參加者可能重複，請勿將總計視為不重複人數。報名 "+totals.families+" 筆｜弦樂團學生 "+totals.students+" 位｜陪同者 "+totals.adults+" 位｜6 歲以下兒童（非團員） "+totals.children+" 位。";
  target.innerHTML=reports.length?reports.map(({activity,rows,counts},index)=>
   "<section style='border:1px solid #d9e0eb;border-radius:12px;padding:16px;margin:16px 0'>"+
-  "<h3>"+esc(activity.title||activity.id)+"</h3><p>"+esc(names[activity.module]||activity.module)+"｜報名家庭 "+counts.families+" 戶｜弦樂團學生 "+counts.students+" 位｜大人 "+counts.adults+" 位｜其他兒童 "+counts.children+" 位｜<strong>總計 "+counts.total+" 位</strong></p>"+
+  "<h3>"+esc(activity.title||activity.id)+"</h3><p>"+esc(names[activity.module]||activity.module)+"｜報名家庭 "+counts.families+" 戶｜弦樂團學生 "+counts.students+" 位｜陪同者 "+counts.adults+" 位｜6 歲以下兒童（非團員） "+counts.children+" 位｜<strong>總計 "+counts.total+" 位</strong></p>"+
   "<p><button type='button' data-export-activity-summary='"+index+"'>匯出本活動人數統計 CSV</button> <button type='button' data-export-activity-detail='"+index+"'>匯出本活動報名明細 CSV</button></p>"+
-  "<div style='overflow-x:auto'><table><thead><tr><th>報名學生</th><th>弦樂團學生</th><th>大人</th><th>其他兒童</th><th>小計</th><th>應繳／回報金額</th><th>匯款末五碼</th><th>匯款日期</th><th>繳費狀態</th></tr></thead><tbody>"+
+  "<div style='overflow-x:auto'><table><thead><tr><th>報名學生</th><th>弦樂團學生</th><th>陪同者</th><th>6 歲以下兒童（非團員）</th><th>小計</th><th>應繳／回報金額</th><th>匯款末五碼</th><th>匯款日期</th><th>繳費狀態</th></tr></thead><tbody>"+
   (rows.length?rows.map(r=>"<tr><td>"+esc(registrationStudentNames(r))+"</td><td>"+(Array.isArray(r.studentIds)?r.studentIds.length:0)+"</td><td>"+Number(r.adults||0)+"</td><td>"+Number(r.extraChildren||0)+"</td><td>"+((r.studentIds?.length||0)+Number(r.adults||0)+Number(r.extraChildren||0))+"</td><td>"+esc(r.transferReport?.amount??r.estimatedAmount??"待核定")+"</td><td>"+esc(r.transferReport?.lastFive||"尚未回報")+"</td><td>"+esc(r.transferReport?.transferDate||"—")+"</td><td>"+paymentStatusLabel(r.paymentStatus,activity)+"</td></tr>").join(""):"<tr><td colspan='9'>尚無已報名資料</td></tr>")+
   "</tbody></table></div></section>").join(""):"<p>目前沒有活動資料</p>";
  renderConfigSummary(savedConfigs);
@@ -348,7 +349,7 @@ function updateActivityConfigClarity(){
  if(fees.some(n=>!Number.isFinite(n)||n<0)){preview.textContent="請輸入有效的非負費率。";return}
  const [student,first,extra,child]=fees;
  const amount=student+first+child;
- preview.textContent="試算範例：1 位團員＋1 位大人＋1 位其他兒童＝NT$ "+amount.toLocaleString("zh-TW")+"（團員 "+student+"＋首位大人 "+first+"＋其他兒童 "+child+"）。第 2 位起每位大人加 NT$ "+extra.toLocaleString("zh-TW")+"。";
+ preview.textContent="試算範例：1 位團員＋1 位陪同者＋1 位 6 歲以下兒童（非團員）＝NT$ "+amount.toLocaleString("zh-TW")+"（團員 "+student+"＋首位陪同者 "+first+"＋6 歲以下兒童（非團員） "+child+"）。第 2 位起每位陪同者加 NT$ "+extra.toLocaleString("zh-TW")+"。";
 }
 el("config").addEventListener("input",e=>{if(e.target.matches('input[name$="Fee"]'))updateActivityConfigClarity();updateActivityAudiencePreview()});
 el("config").addEventListener("change",updateActivityAudiencePreview);
@@ -388,6 +389,7 @@ function syncConfig(){
  el("configEnabledWrap").dataset.savedEnabled=String(savedConfigs.find(x=>x.module===module&&x.id===select.value)?.enabled===true);
  updateActivityAudiencePreview();
  if(typeof window.syncDinnerBankVisibility==="function")window.syncDinnerBankVisibility();
+ queueMicrotask(()=>window.dispatchEvent(new Event("activityDatesLoaded")));
 }
 function localDateTimeValue(value){const d=new Date(value);if(!Number.isFinite(d.getTime()))return "";const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;}
 function populateActivity(){
@@ -576,8 +578,8 @@ el("config").onsubmit=async e=>{
    for(const key of ["openAt","closeAt"])if(f.get(key))item[key]=new Date(f.get(key)).toISOString();
    item.title=String(f.get("title")||"");item.location=String(f.get("location")||"");
    if(module==="fieldTrip")item.targetGroups=String(f.get("targetGroups")||"ALL");
-   if(f.get("startAt"))item.startAt=new Date(f.get("startAt")).toISOString();
-   if(f.get("endAt"))item.endAt=new Date(f.get("endAt")).toISOString();
+   if(f.get("startAt"))item.startAt=new Date(module==="fieldTrip"?String(f.get("startAt")).slice(0,10)+"T12:00:00+08:00":f.get("startAt")).toISOString();
+   if(f.get("endAt"))item.endAt=new Date(module==="fieldTrip"?String(f.get("endAt")).slice(0,10)+"T12:00:00+08:00":f.get("endAt")).toISOString();
    if(item.endAt&&item.startAt&&Date.parse(item.endAt)<Date.parse(item.startAt))throw Error("活動結束時間不可早於開始時間");
    item.paymentMode=module==="yearEndDinner"?"PAY_NOW":"PAY_LATER";
    if(module==="fieldTrip"){item.collectionOpen=f.get("collectionOpen")==="true";item.feeStatus=item.collectionOpen?"PUBLISHED":"DRAFT";item.paymentOpen=item.collectionOpen;}
