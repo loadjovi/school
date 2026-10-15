@@ -29,6 +29,25 @@ async function api(path,options={}){
  return data;
 }
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[],receivedRequestIds=new Set();
+function showFinancePending(uniformItems=cachedRequests,familyItems=cachedFamilyRegistrations){
+ if(!hasFinanceAccess)return;
+ const pending=uniformItems.filter(x=>x.paymentStatus==="REPORTED_UNVERIFIED");
+ const tshirt=pending.filter(x=>x.kind==="regularUniform").length;
+ const competition=pending.filter(x=>x.kind==="competitionUniform").length;
+ const activities=familyItems.filter(x=>x.paymentStatus==="REPORTED_UNVERIFIED").length;
+ const total=tshirt+competition+activities,review=el("inlineFinanceReview");
+ review.dataset.pending=total>0?"true":"false";
+ review.querySelector("summary").textContent=total
+  ?"💰 待財務核帳 "+total+" 筆｜團 T "+tshirt+"、A 團比賽服 "+competition+"、活動 "+activities+"（點此處理）"
+  :"💰 財務核帳｜目前無待核帳款項";
+}
+async function refreshFinancePending(){
+ if(!hasFinanceAccess||!adminAuthenticated||document.visibilityState!=="visible")return;
+ try{
+  const [uniform,family]=await Promise.all([api("uniform-events/requests"),api("uniform-events/family-registration")]);
+  showFinancePending(uniform.items||[],family.items||[]);
+ }catch(error){el("inlineFinanceReview").querySelector("summary").textContent="💰 財務核帳｜待辦讀取失敗，點此重新查詢"}
+}
 let visibleModuleRequests=[];
 const pendingRequestIds=new Set();
 const issueErrors=new Map();
@@ -416,6 +435,10 @@ async function load(){
      if(section.path.includes("inventory")){el("stock").textContent="庫存資料讀取失敗，請檢查 API";window.dispatchEvent(new CustomEvent("uniformInventoryLoadFailed",{detail:{message:result.reason.message}}))}
    }
  });
+ if(hasFinanceAccess){
+  if(results[0].status==="fulfilled"&&results[2].status==="fulfilled")showFinancePending();
+  else el("inlineFinanceReview").querySelector("summary").textContent="💰 財務核帳｜待辦讀取失敗，請重新整理";
+ }
 }
 async function start(){
  try{
@@ -463,10 +486,12 @@ async function loadInlineFinance(){
   el("inlineFinanceUniform").replaceChildren(...(u.length?u.map(x=>financeCard(x,"uniform")):[empty("目前沒有待核對的團服匯款。")]));
   el("inlineFinanceFamily").replaceChildren(...(f.length?f.map(x=>financeCard(x,"family")):[empty("目前沒有待核對的活動匯款。")]));
   el("inlineFinanceStatus").textContent="待核帳：團服 "+u.length+" 筆、活動 "+f.length+" 筆。";
+  showFinancePending(uniform.items||[],family.items||[]);
  }catch(error){el("inlineFinanceStatus").textContent="載入失敗："+error.message}
 }
 el("inlineFinanceReview").addEventListener("toggle",()=>{if(el("inlineFinanceReview").open)loadInlineFinance()});
 el("inlineFinanceReload").addEventListener("click",loadInlineFinance);
+setInterval(refreshFinancePending,60000);
 let fieldTripBankTemplates=[];
 async function refreshFieldTripBanks(){
  const select=el("fieldTripBankTemplate"),message=el("fieldTripBankStatus");
