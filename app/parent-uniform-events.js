@@ -300,7 +300,7 @@ async function loadUniformRequestProgress(){
     edit.addEventListener("click",async()=>{
      let update={action:"EDIT",id:item.id,etag:item.etag};
      if(item.kind==="regularUniform"){
-      const size=prompt("請輸入團 T 尺寸（8、10、12、XS、S、M、L、XL、2L、3L、5L）",item.size||"");if(size===null)return;
+      const size=prompt("請輸入團 T 尺寸（8、10、12、14、XS、S、M、L、XL、2L、3L、5L）",item.size||"");if(size===null)return;
       const amount=prompt("請輸入正確件數（1–20 件；若全部不要，請按取消申請）",String(item.quantity||1));if(amount===null)return;
       update={...update,size:size.trim().toUpperCase(),quantity:Number(amount)};
      }else{
