@@ -355,8 +355,12 @@ function appendActivityFeeBreakdown(card,config,registration){
  if(registration.estimatedAmount!=null&&Number(registration.estimatedAmount)!==total)wrap.append(element("p","注意：報名時登記金額為 "+currency(registration.estimatedAmount)+"，與目前費率試算不同，請先向學校確認。","hint"));
  card.append(wrap);
 }
-async function appendFieldTripPayment(card,item,match){
- if(item.kind!=="fieldTrip")return;
+function activityPaymentLabel(item,config){
+ if(item.paymentStatus==="NOT_OPEN")return config?.paymentOpen===true||config?.collectionOpen===true?"已開放匯款，待您回報":"尚未開放匯款";
+ return {REPORTED_UNVERIFIED:"已回報匯款，待幹部核帳",VERIFIED:"已確認入帳"}[item.paymentStatus]||"待確認";
+}
+async function appendActivityPayment(card,item,match){
+ if(!["fieldTrip","yearEndDinner"].includes(item.kind))return;
  if(["REPORTED_UNVERIFIED","VERIFIED"].includes(item.paymentStatus)){
   const box=element("div",undefined,"payment-account");
   box.append(element("strong",item.paymentStatus==="VERIFIED"?"✅ 學校已確認入帳":"🕒 已回報匯款，等待學校核帳"));
@@ -364,15 +368,15 @@ async function appendFieldTripPayment(card,item,match){
   if(item.paymentStatus==="REPORTED_UNVERIFIED")box.append(element("p","學校正在核對銀行入帳紀錄；無須重複匯款或回報。","hint"));
   card.append(box);return;
  }
- if(match?.collectionOpen!==true)return;
-    const box=element("div",undefined,"payment-account");box.append(element("p","第二階段收款已開放。請先核對收款帳戶與應繳金額，完成匯款後填寫匯款日期、實際匯款金額及匯款帳號末五碼。"));
+ if((item.kind==="fieldTrip"?match?.collectionOpen:match?.paymentOpen)!==true)return;
+    const box=element("div",undefined,"payment-account");box.append(element("p","收款已開放。請先核對收款帳戶與應繳金額，完成匯款後填寫匯款日期、實際匯款金額及匯款帳號末五碼。"));
     const form=element("form"),amount=element("input"),last=element("input"),date=element("input"),message=element("p","","hint");
     amount.type="number";amount.min="1";amount.required=true;amount.value=String(item.transferReport?.amount||item.estimatedAmount||"");
     last.inputMode="numeric";last.pattern="[0-9]{5}";last.maxLength=5;last.required=true;last.placeholder="匯款帳號末五碼";
     date.type="date";date.required=true;
     for(const [label,input] of [["實際匯款金額",amount],["匯款帳號末五碼",last],["匯款日期",date]]){const l=element("label",label);l.style.display="block";l.style.marginBottom="12px";input.style.display="block";input.style.boxSizing="border-box";input.style.width="100%";input.style.marginTop="6px";l.append(input);form.append(l)}
     const submit=element("button","匯款完成回覆");submit.type="submit";form.append(submit,message);box.append(form);
-    try{const result=await parentApi("uniform-events/field-trip-payment-account?activityId="+encodeURIComponent(item.activityId));const b=result.item;if(!b)throw Error("活動尚未綁定帳戶");box.prepend(element("p","收款帳戶："+b.bankName+"（"+b.bankCode+"）｜"+b.accountHolder+"｜帳號："+b.accountNumber))}
+    try{const accountPath=item.kind==="yearEndDinner"?"dinner-payment-account":"field-trip-payment-account";const result=await parentApi("uniform-events/"+accountPath+"?activityId="+encodeURIComponent(item.activityId));const b=result.item;if(!b)throw Error("活動尚未綁定帳戶");box.prepend(element("p","收款帳戶："+b.bankName+"（"+b.bankCode+"）｜"+b.accountHolder+"｜帳號："+b.accountNumber))}
     catch(e){submit.disabled=true;message.textContent="收款帳戶讀取失敗："+e.message}
     form.addEventListener("submit",async e=>{e.preventDefault();if(!confirm("確認已完成匯款，並送出匯款日期、金額及帳號末五碼供幹部核帳？"))return;submit.disabled=true;try{await parentApi("uniform-events/family-registration",{method:"PATCH",body:JSON.stringify({kind:item.kind,activityId:item.activityId,action:"REPORT_TRANSFER",amount:Number(amount.value),lastFive:last.value,transferDate:date.value})});message.textContent="已收到您的匯款回覆，待幹部核對款項。核帳完成後將更新繳費狀態。";await renderInlineActivities()}catch(err){message.textContent="回報失敗："+err.message;submit.disabled=false}});
  card.append(box);
@@ -390,11 +394,10 @@ async function renderInlineActivities(){
    const match=cfg.find(x=>x.module===item.kind&&x.id===item.activityId);
    const card=element("div",undefined,"card");card.append(element("strong",match?.title||item.activityId));
    card.append(element("p","學生 "+(item.studentIds||[]).length+" 位｜大人 "+item.adults+" 位｜其他兒童 "+item.extraChildren+" 位"));
-   const states={NOT_OPEN:"尚未開放付款",REPORTED_UNVERIFIED:"已回報匯款，待幹部核帳",VERIFIED:"已確認入帳"};
-   card.append(element("p","報名："+(item.registrationStatus==="REGISTERED"?"已送出":item.registrationStatus)+"｜付款："+(states[item.paymentStatus]||item.paymentStatus)));
+   card.append(element("p","報名："+(item.registrationStatus==="REGISTERED"?"已送出":item.registrationStatus)+"｜付款："+activityPaymentLabel(item,match)));
    if(item.estimatedAmount!=null)card.append(element("p","登記金額 NT$ "+Number(item.estimatedAmount).toLocaleString("zh-TW")));
    appendActivityFeeBreakdown(card,match,item);
-   await appendFieldTripPayment(card,item,match);
+   await appendActivityPayment(card,item,match);
    history.append(card);
   }
   const categories={events:["yearEndDinner"],performance:["fieldTrip","calendarActivity","performance","flashMob","schoolExchange","jointConcert"]};
@@ -425,8 +428,11 @@ async function renderInlineActivities(){
      host.append(card);continue;
     }
     const already=(registration.items||[]).find(x=>x.kind===item.module&&x.activityId===item.id);
-    if(already){card.append(element("p",already.paymentStatus==="VERIFIED"?"已報名・學校已確認入帳":already.paymentStatus==="REPORTED_UNVERIFIED"?"已報名・已回報匯款，待核帳":"已送出報名，可到「我的紀錄」查看進度。","status-pill"));appendActivityFeeBreakdown(card,item,already);await appendFieldTripPayment(card,already,item);host.append(card);continue}
+    if(already){card.append(element("p","已報名・"+activityPaymentLabel(already,item),"status-pill"));appendActivityFeeBreakdown(card,item,already);await appendActivityPayment(card,already,item);host.append(card);continue}
     if(!["yearEndDinner","fieldTrip"].includes(item.module)){card.append(element("p","活動資訊依校方公告。","hint"));host.append(card);continue}
+    const now=Date.now();
+    if(item.openAt&&Date.parse(item.openAt)>now){card.append(element("p","報名尚未開始，請於開放時間再回來查看。","status-pill"));host.append(card);continue}
+    if(item.closeAt&&Date.parse(item.closeAt)<now){card.append(element("p","報名已於 "+formatDate(item.closeAt)+" 截止。收款開放僅供已報名家庭回報匯款；若需補報名，請聯絡學校延長報名期限。","status-pill"));host.append(card);continue}
     const action=element("details",undefined,"activity-details"),summary=element("summary",item.module==="yearEndDinner"?"我要報名餐會":"我要報名此活動");action.append(summary);const form=element("form");form.className="inline-activity-form";
     const studentWrap=element("fieldset");studentWrap.append(element("legend","參加學生"));
     for(const st of students){const label=element("label");const input=element("input");input.type="checkbox";input.value=st.studentId;label.append(input,document.createTextNode(" "+(st.name||st.studentName||st.studentId)));studentWrap.append(label)}
