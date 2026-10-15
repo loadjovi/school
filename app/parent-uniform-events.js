@@ -346,7 +346,7 @@ function appendActivityFeeBreakdown(card,config,registration){
  const dinner=config.module==="yearEndDinner";
  const students=(registration.studentIds||[]).length,adults=Math.max(0,Number(registration.adults)||0),children=Math.max(0,Number(registration.extraChildren)||0);
  const studentRate=dinner?0:Number(config.studentFee||0),firstRate=Number(config.firstAdultFee),extraRate=Number(config.extraAdultFee),childRate=Number(config.extraChildFee);
- const lines=[["弦樂團學生",students,studentRate],["首位陪同大人",Math.min(adults,1),firstRate],["第二位起陪同大人",Math.max(adults-1,0),extraRate],["其他兒童",children,childRate]];
+ const lines=[["弦樂團學生",students,studentRate],["首位陪同者",Math.min(adults,1),firstRate],["第二位起陪同者",Math.max(adults-1,0),extraRate],["6 歲以下兒童（非團員）",children,childRate]];
  const wrap=element("div",undefined,"activity-fee-breakdown");wrap.style.margin="12px 0";wrap.style.padding="12px";wrap.style.border="1px solid #dbe1eb";wrap.style.borderRadius="8px";
  wrap.append(element("strong","本次報名費用明細（依學校活動設定）"));
  let total=0;
@@ -393,7 +393,7 @@ async function renderInlineActivities(){
   for(const item of registration.items||[]){
    const match=cfg.find(x=>x.module===item.kind&&x.id===item.activityId);
    const card=element("div",undefined,"card");card.append(element("strong",match?.title||item.activityId));
-   card.append(element("p","學生 "+(item.studentIds||[]).length+" 位｜大人 "+item.adults+" 位｜其他兒童 "+item.extraChildren+" 位"));
+   card.append(element("p","學生 "+(item.studentIds||[]).length+" 位｜陪同者 "+item.adults+" 位｜6 歲以下兒童（非團員） "+item.extraChildren+" 位"));
    card.append(element("p","報名："+(item.registrationStatus==="REGISTERED"?"已送出":item.registrationStatus)+"｜付款："+activityPaymentLabel(item,match)));
    if(item.estimatedAmount!=null)card.append(element("p","登記金額 NT$ "+Number(item.estimatedAmount).toLocaleString("zh-TW")));
    appendActivityFeeBreakdown(card,match,item);
@@ -419,8 +419,9 @@ async function renderInlineActivities(){
    if(!items.length){host.append(element("p",category==="performance"?"目前沒有此學生團別已啟用的演出或交流活動。":"目前沒有已開放的活動。","muted"));continue}
    for(const item of items){
     const card=element("article",undefined,"activity-event");card.append(element("h3",item.title||"活動"));
-    const start=item.module==="calendarActivity"?item.eventDate:formatDate(item.startAt);
-    const range=item.module==="calendarActivity"&&item.endDate&&item.endDate!==item.eventDate?start+"～"+item.endDate:start;
+    const start=item.module==="calendarActivity"?item.eventDate:item.module==="fieldTrip"?taipeiDay(item.startAt):formatDate(item.startAt);
+    const end=item.module==="fieldTrip"?taipeiDay(item.endAt||item.startAt):item.endDate;
+    const range=(item.module==="calendarActivity"||item.module==="fieldTrip")&&end&&end!==start?start+"～"+end:start;
     card.append(element("p",[range,item.timeLabel,item.location].filter(Boolean).join("｜"),"muted"));
     if(item.module==="calendarActivity"){
      card.append(element("p","免報名・免繳費","status-pill"));
@@ -437,13 +438,13 @@ async function renderInlineActivities(){
     const studentWrap=element("fieldset");studentWrap.append(element("legend","參加學生"));
     for(const st of students){const label=element("label");const input=element("input");input.type="checkbox";input.value=st.studentId;label.append(input,document.createTextNode(" "+(st.name||st.studentName||st.studentId)));studentWrap.append(label)}
     const adults=element("select"),children=element("select");
-    for(let i=1;i<=5;i++)adults.add(new Option(i+" 位大人",i));
-    for(let i=0;i<=5;i++)children.add(new Option(i+" 位其他兒童",i));
-    const adultLabel=element("label","陪同大人數量"),childLabel=element("label","其他兒童數量");adultLabel.append(adults);childLabel.append(children);
+    for(let i=1;i<=5;i++)adults.add(new Option(i+" 位陪同者",i));
+    for(let i=0;i<=5;i++)children.add(new Option(i+" 位 6 歲以下兒童（非團員）",i));
+    const adultLabel=element("label","陪同者人數（大人及 7 歲以上非團員）"),childLabel=element("label","6 歲以下兒童（非團員）數量");adultLabel.append(adults);childLabel.append(children);
     const total=element("p","","amount-summary");
     const dinner=item.module==="yearEndDinner";
     const rates=["firstAdultFee","extraAdultFee","extraChildFee"].every(k=>Number.isSafeInteger(item[k])&&item[k]>=0);
-    const calc=()=>{const n=studentWrap.querySelectorAll("input:checked").length,a=Number(adults.value),c=Number(children.value);const amount=rates?(dinner?0:Number(item.studentFee||0)*n)+item.firstAdultFee+(a-1)*item.extraAdultFee+c*item.extraChildFee:null;total.textContent="團員 "+n+" 位＋大人 "+a+" 位＋其他兒童 "+c+" 位｜"+(amount===null?"費率尚未公布":"合計 NT$ "+amount.toLocaleString("zh-TW"));return amount};
+    const calc=()=>{const n=studentWrap.querySelectorAll("input:checked").length,a=Number(adults.value),c=Number(children.value);const amount=rates?(dinner?0:Number(item.studentFee||0)*n)+item.firstAdultFee+(a-1)*item.extraAdultFee+c*item.extraChildFee:null;total.textContent="團員 "+n+" 位＋陪同者 "+a+" 位＋6 歲以下兒童（非團員） "+c+" 位｜"+(amount===null?"費率尚未公布":"合計 NT$ "+amount.toLocaleString("zh-TW"));return amount};
     for(const input of [adults,children,studentWrap])input.addEventListener("change",calc);
     form.append(studentWrap,adultLabel,childLabel,total);
     let lastFive=null,transferDate=null,accountReady=!dinner;
