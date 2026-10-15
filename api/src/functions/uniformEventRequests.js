@@ -56,7 +56,7 @@ function validateRequest(data,student){
   if(!data||!kinds.has(data.kind)||!validId(data.studentId))throw new Error("Invalid request");
   if(!safe(data.note||"",1000))throw new Error("Invalid note");
   if(data.kind==="regularUniform"){
-    if(!["8","10","12","XS","S","M","L","XL","2L","3L","5L"].includes(data.size)||!qty(data.quantity)||data.quantity<1||data.quantity>20)throw new Error("Invalid shirt size or quantity");
+    if(!["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"].includes(data.size)||!qty(data.quantity)||data.quantity<1||data.quantity>20)throw new Error("Invalid shirt size or quantity");
     // Eligibility is not client-authoritative; all requests await admin verification.
     return {size:data.size,quantity:data.quantity,freeEligibility:"PENDING",amount:null};
   }
