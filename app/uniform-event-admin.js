@@ -383,7 +383,7 @@ function syncConfig(){
  if([...select.options].some(x=>x.value===old))select.value=old;
  form.elements.id.value=activity?(select.value||"default"):"default";
  if(activity&&select.value)populateActivity();
- if(module==="yearEndDinner"&&!select.value){form.elements.enabled.value="false";form.elements.paymentOpen.value="false"}
+ if(["yearEndDinner","fieldTrip"].includes(module)&&!select.value){form.elements.enabled.value="false";form.elements.paymentOpen.value="false";if(module==="fieldTrip")form.elements.collectionOpen.value="false"}
  if(!activity){form.elements.enabled.value="true"}
  el("configEnabledWrap").dataset.savedEnabled=String(savedConfigs.find(x=>x.module===module&&x.id===select.value)?.enabled===true);
  updateActivityAudiencePreview();
