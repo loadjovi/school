@@ -48,16 +48,16 @@ app.http("uniformReceiving",{methods:["GET","POST"],authLevel:"anonymous",route:
    const stock=await get(inventory,schoolId,key);
    const onHand=stock?.onHand??0,reserved=stock?.reserved??0,unavailable=stock?.unavailable??0;
    if(![onHand,reserved,unavailable].every(n=>Number.isSafeInteger(n)&&n>=0)||onHand+quantity>100000)return fail("庫存數量有誤，請先核對盤點資料",409);
+   if(input.useExistingStock===true&&onHand-reserved-unavailable<quantity)return fail("此款式尺寸的現有可用庫存不足，請先核對盤點數量",409);
    const stamp=new Date().toISOString();
    const receipt={partitionKey:schoolId,rowKey:ledgerKey,requestId:input.id,studentId:before.studentId,kind:before.kind,
     style:before.style||"",size:before.size,quantity,receivedDate:input.receivedDate,receivedAt:stamp,
-    receivedBy:String(ctx.access.email||"admin"),note:input.note.trim()};
+    receivedBy:String(ctx.access.email||"admin"),note:input.note.trim(),source:input.useExistingStock===true?"existing_stock":"new_arrival"};
    const nextStock={partitionKey:schoolId,rowKey:key,onHand:onHand+quantity,reserved,unavailable};
    try{
-    await inventory.submitTransaction([
-     stock?["update",nextStock,"Replace",{etag:stock.etag}]:["create",nextStock],
-     ["create",receipt]
-    ]);
+    await inventory.submitTransaction(input.useExistingStock===true
+     ?[["create",receipt]]
+     :[stock?["update",nextStock,"Replace",{etag:stock.etag}]:["create",nextStock],["create",receipt]]);
    }catch(error){
     if([409,412].includes(error.statusCode))return fail("庫存或此申請的入庫紀錄已變更，請重新整理後再試",409);
     ledger=await get(inventory,schoolId,ledgerKey);if(!ledger)throw error;
