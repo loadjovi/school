@@ -359,7 +359,7 @@ function updateActivityAudiencePreview(){
  const visible=form.elements.enabled.value==="true";
  const closeAt=form.elements.closeAt?.value,registrationClosed=closeAt&&Date.parse(closeAt)<Date.now();
  const collecting=module==="yearEndDinner"?form.elements.enabled.value==="true":module==="fieldTrip"&&form.elements.collectionOpen.value==="true";
- el("activityAudiencePreview").textContent="家長端："+(visible?groupText+"會看到此活動":"暫不顯示給家長")+"；"+(module==="calendarActivity"?"只顯示公告與行事曆，無須報名、繳費。":module==="yearEndDinner"?"家長需報名；收款需另設定帳戶。":"家長需報名；收款開放時間另行設定。")+(registrationClosed&&collecting?" 報名已截止，收款仍開放：新家庭無法報名，已報名家庭可回報匯款。若要開放新報名，請延長報名結束時間並儲存。":" 儲存後請在下方核對活動。 ");
+ el("activityAudiencePreview").textContent="家長端："+(visible?groupText+"會看到此活動":"暫不顯示給家長")+"；"+(module==="calendarActivity"?"只顯示公告與行事曆，無須報名、繳費。":module==="yearEndDinner"?"家長需報名；收款需另設定帳戶。":"家長需在報名期間內報名；收款須在第二階段另外開放。")+(registrationClosed&&collecting?" 報名已截止，收款仍開放：新家庭無法報名，已報名家庭可回報匯款。若要開放新報名，請延長報名結束時間並儲存。":" 儲存後請在下方核對活動。 ");
 }
 for(const name of ["openAt","closeAt","paymentOpen","collectionOpen"]){
  const input=el("config").elements[name];
@@ -389,7 +389,7 @@ function syncConfig(){
  el("configEnabledWrap").dataset.savedEnabled=String(savedConfigs.find(x=>x.module===module&&x.id===select.value)?.enabled===true);
  updateActivityAudiencePreview();
  if(typeof window.syncDinnerBankVisibility==="function")window.syncDinnerBankVisibility();
- queueMicrotask(()=>window.dispatchEvent(new Event("activityDatesLoaded")));
+ queueMicrotask(()=>{window.dispatchEvent(new Event("activityDatesLoaded"));syncFieldTripCollection()});
 }
 function localDateTimeValue(value){const d=new Date(value);if(!Number.isFinite(d.getTime()))return "";const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;}
 function populateActivity(){
@@ -520,20 +520,35 @@ async function loadInlineFinance(){
 el("inlineFinanceReview").addEventListener("toggle",()=>{if(el("inlineFinanceReview").open)loadInlineFinance()});
 el("inlineFinanceReload").addEventListener("click",loadInlineFinance);
 setInterval(refreshFinancePending,60000);
-let fieldTripBankTemplates=[];
+let fieldTripBankTemplates=[],fieldTripBoundAccount=null,fieldTripBoundActivityId="",fieldTripSelectionActivityId="";
+function syncFieldTripCollection(){
+ const form=el("config"),activityId=el("existingActivity").value,trip=el("configModule").value==="fieldTrip",enabled=form.elements.enabled.value==="true";
+ if(!trip)return;
+ const select=el("fieldTripBankTemplate"),selected=fieldTripBankTemplates.find(x=>x.id===select.value),bound=fieldTripBoundActivityId===activityId&&!!fieldTripBoundAccount;
+ const same=bound&&selected&&String(selected.accountNumber)===String(fieldTripBoundAccount.accountNumber)&&String(selected.bankCode)===String(fieldTripBoundAccount.bankCode);
+ el("bindFieldTripBank").disabled=!activityId||!selected||!!same;
+ el("fieldTripBankStatus").textContent=bound?(same||select.value==="__linked__"?"✓ 此活動已綁定收款帳戶，可設定收款狀態。":"已綁定其他帳戶；若要改用目前選取的帳戶，請按「綁定此帳戶」。"):selected?activityId?"已選擇帳戶，請按「綁定此帳戶」。":"已選擇帳戶；儲存新活動時會自動綁定。":"請選擇本活動的收款帳戶。";
+ const published=!!activityId&&savedConfigs.some(x=>x.module==="fieldTrip"&&x.id===activityId&&x.enabled===true);
+ const ready=published&&enabled&&bound,openOption=[...form.elements.collectionOpen.options].find(x=>x.value==="true");
+ openOption.disabled=!ready;
+ el("fieldTripCollectionHint").textContent=!activityId?"請先儲存活動；若已選帳戶，儲存時會自動綁定。":!published||!enabled?"請先在上方「開放給家長報名」選擇顯示並儲存。":!bound?"請先綁定並確認本活動的收款帳戶。":"已具備開放條件；選擇收款狀態，再按下方儲存按鈕。";
+}
 async function refreshFieldTripBanks(){
  const select=el("fieldTripBankTemplate"),message=el("fieldTripBankStatus");
  if(!select)return;
- const activityId=el("existingActivity").value;
+ const activityId=el("existingActivity").value,previous=fieldTripSelectionActivityId===activityId?select.value:"";
+ fieldTripSelectionActivityId=activityId;fieldTripBoundAccount=null;fieldTripBoundActivityId="";
  try{
   const [templates,linked]=await Promise.all([
    api("uniform-events/payment-account-templates"),
    activityId?api("uniform-events/field-trip-payment-account?activityId="+encodeURIComponent(activityId)).catch(()=>({item:null})):Promise.resolve({item:null})
   ]);
   fieldTripBankTemplates=(templates.items||[]).filter(x=>x.active!==false&&x.isActive!==false);
+  if(activityId!==el("existingActivity").value)return;
   select.replaceChildren(new Option("請選擇已儲存帳戶",""));
   for(const b of fieldTripBankTemplates)select.add(new Option((b.label||"收款帳戶")+"｜"+b.bankName+"（"+b.bankCode+"）末四碼 "+String(b.accountNumber||"").slice(-4),b.id));
   const current=linked.item;
+  if(current){fieldTripBoundAccount=current;fieldTripBoundActivityId=activityId}
   if(current){
    const matched=fieldTripBankTemplates.find(b=>String(b.accountNumber)===String(current.accountNumber)&&String(b.bankCode)===String(current.bankCode));
    if(matched)select.value=matched.id;
@@ -541,22 +556,37 @@ async function refreshFieldTripBanks(){
     const option=new Option("目前已綁定｜"+current.bankName+"（"+current.bankCode+"）末四碼 "+String(current.accountNumber||"").slice(-4),"__linked__");
     select.add(option);select.value="__linked__";
    }
-   message.textContent="此活動已綁定收款帳戶；如需更換，請另選帳戶後按「綁定收款帳戶」。";
-  }else message.textContent=fieldTripBankTemplates.length?"請選擇要綁定的帳戶。":"尚無可用帳戶，請先新增帳戶範本。";
- }catch(e){message.textContent="讀取帳戶失敗："+e.message}
+  }
+  if(previous&&[...select.options].some(x=>x.value===previous))select.value=previous;
+  syncFieldTripCollection();
+ }catch(e){syncFieldTripCollection();message.textContent="讀取帳戶失敗："+e.message}
 }
+el("fieldTripBankTemplate").addEventListener("change",syncFieldTripCollection);
+el("config").elements.collectionOpen.addEventListener("change",syncFieldTripCollection);
+el("config").elements.enabled.addEventListener("change",()=>{
+ if(el("configModule").value==="fieldTrip"&&el("config").elements.enabled.value!=="true")el("config").elements.collectionOpen.value="false";
+ syncFieldTripCollection();updateActivityAudiencePreview();
+});
 el("bindFieldTripBank").addEventListener("click",async()=>{
  const message=el("fieldTripBankStatus"),activityId=el("existingActivity").value;
  const bank=fieldTripBankTemplates.find(x=>x.id===el("fieldTripBankTemplate").value);
  if(el("configModule").value!=="fieldTrip"||!activityId){message.textContent="請先儲存並選擇既有校外活動。";return}
  if(el("fieldTripBankTemplate").value==="__linked__"){message.textContent="目前帳戶已綁定，無須重複綁定。";return}
  if(!bank){message.textContent="請先選擇收款帳戶。";return}
- if(!confirm("確定將此收款帳戶綁定目前活動？"))return;
+ if(!confirm("確定將此收款帳戶綁定目前活動？若已開放收款，家長將看到新帳戶。"))return;
  try{await api("uniform-events/field-trip-payment-account",{method:"POST",body:JSON.stringify({activityId,bankName:bank.bankName,bankCode:bank.bankCode,accountHolder:bank.accountHolder,accountNumber:bank.accountNumber})});await refreshFieldTripBanks();message.textContent="已更新本活動收款帳戶，請確認顯示的帳戶正確。"}
  catch(e){message.textContent="綁定失敗："+e.message}
 });
 el("configModule").addEventListener("change",()=>{if(el("configModule").value==="fieldTrip")refreshFieldTripBanks()});
 if(el("configModule").value==="fieldTrip")refreshFieldTripBanks();
+async function bindSelectedFieldTripAccount(activityId){
+ const bank=fieldTripBankTemplates.find(x=>x.id===el("fieldTripBankTemplate").value);
+ if(!bank)throw Error("請先選擇有效的本活動收款帳戶。");
+ await api("uniform-events/field-trip-payment-account",{method:"POST",body:JSON.stringify({activityId,bankName:bank.bankName,bankCode:bank.bankCode,accountHolder:bank.accountHolder,accountNumber:bank.accountNumber})});
+ const result=await api("uniform-events/field-trip-payment-account?activityId="+encodeURIComponent(activityId));
+ if(!result.item||String(result.item.accountNumber)!==String(bank.accountNumber)||String(result.item.bankCode)!==String(bank.bankCode))throw Error("收款帳戶尚未通過讀回驗證，請勿開放收款。");
+ fieldTripBoundAccount=result.item;fieldTripBoundActivityId=activityId;
+}
 el("config").onsubmit=async e=>{
  e.preventDefault();
  const feedback=el("configSaveFeedback"),button=el("saveConfigButton");
@@ -588,6 +618,7 @@ el("config").onsubmit=async e=>{
   }
   if(module==="yearEndDinner"&&item.enabled&&!el("existingActivity").value)throw Error("請先以「暫不顯示」儲存新活動，再選擇收款帳戶並啟用。");
   if(module==="yearEndDinner"&&item.enabled&&!window.dinnerBankSelection?.())throw Error("請先為這場期末聚餐選擇有效的收款帳戶。");
+  if(module==="fieldTrip"&&item.collectionOpen&&(!el("existingActivity").value||!item.enabled||!savedConfigs.some(x=>x.module==="fieldTrip"&&x.id===id&&x.enabled===true)||fieldTripBoundActivityId!==id||!fieldTripBoundAccount))throw Error("請先儲存並開放家長報名，再確認此活動收款帳戶，才能開放第二階段收款。");
   if(!confirm("確定儲存設定？")){feedback.textContent="已取消儲存";return}
   if(module==="yearEndDinner"&&item.enabled){
    feedback.textContent="正在綁定並核對本活動收款帳戶…";
@@ -596,6 +627,10 @@ el("config").onsubmit=async e=>{
   }
   await api("uniform-events/config",{method:"POST",body:JSON.stringify(item)});
   savedActivityId=id;
+  if(module==="fieldTrip"&&!el("existingActivity").value&&fieldTripBankTemplates.some(x=>x.id===el("fieldTripBankTemplate").value)){
+   feedback.textContent="活動已建立，正在綁定並驗證收款帳戶…";
+   await bindSelectedFieldTripAccount(id);bankVerifiedOnSave=true;
+  }
   if(module==="yearEndDinner"&&!item.enabled&&window.hasDinnerBankTemplateSelection?.()){
    feedback.textContent="活動已儲存，正在綁定並核對收款帳戶…";
    await window.applyDinnerBankSelection(id);
@@ -608,7 +643,7 @@ el("config").onsubmit=async e=>{
   if(!persisted)throw Error("API 已回覆，但重新查詢未找到活動，請勿視為儲存成功");
   feedback.textContent=module==="yearEndDinner"&&!persisted.enabled
    ?"活動已建立並確認成功："+(persisted.title||module)+"（暫不顯示）。"+(bankVerifiedOnSave||window.dinnerBankSelection?.()?"收款帳戶已綁定，可將家長端改為「顯示」並儲存。":"請選擇下方收款帳戶並儲存，再將家長端改為「顯示」。")
-   :"設定已儲存並確認成功："+(persisted.title||module)+(["fieldTrip","calendarActivity"].includes(module)?"；已依對象團別同步至行事曆／特殊活動（"+(persisted.enabled?"顯示中":"已取消")+"）。":"。")+(module==="calendarActivity"?"此公告免報名、免收費。":module==="yearEndDinner"?"收款帳戶已綁定；是否可報名依報名期間判定。":"是否開放家長報名依活動啟用狀態與報名期間判定。");
+   :"設定已儲存並確認成功："+(persisted.title||module)+(["fieldTrip","calendarActivity"].includes(module)?"；已依對象團別同步至行事曆／特殊活動（"+(persisted.enabled?"顯示中":"已取消")+"）。":"。")+(module==="calendarActivity"?"此公告免報名、免收費。":module==="yearEndDinner"?"收款帳戶已綁定；是否可報名依報名期間判定。":bankVerifiedOnSave?"收款帳戶已綁定；開放家長報名後，可再設定第二階段收款。":"是否可報名依活動顯示狀態與報名期間判定；收款需另行開放。");
   el("status").textContent=feedback.textContent;
  }catch(err){
   if(savedActivityId){try{await load();el("existingActivity").value=savedActivityId;syncConfig();el("existingActivity").dispatchEvent(new Event("change"))}catch(refreshError){console.warn("活動已儲存，但重新讀取失敗",refreshError)}}
