@@ -67,7 +67,7 @@ export async function syncActivityCalendar(schoolId,access,data){
   let old=null;try{old=await client.getEntity(sid,eventId)}catch(e){if(e.statusCode!==404)throw e}
   const entity={partitionKey:sid,rowKey:eventId,schoolId:sid,eventType:isTrip?"field_trip":data.eventType,sourceModule:data.module,sourceActivityId:data.id,
     title:String(data.title).slice(0,120),eventDate:isTrip?tripDate(start):data.eventDate,endDate:isTrip?tripDate(end):(data.endDate||data.eventDate),
-    startTime:isTrip?tripTime(start):String(data.startTime||""),endTime:isTrip?(data.endAt?tripTime(end):""):String(data.endTime||""),
+    startTime:isTrip?"":String(data.startTime||""),endTime:isTrip?"":String(data.endTime||""),
     timeLabel:isTrip?"":String(data.timeLabel||"").slice(0,80),targetGroups:String(data.targetGroups||"ALL"),teacherName:"",teacherEmail:"",location:String(data.location).slice(0,300),note:isTrip?"":String(data.note||"").slice(0,1000),requiresAttendance:false,
     visibleToParents:true,status:data.enabled===true?"active":"cancelled",updatedAt:now,updatedBy:String(access.email||"admin")};
   await client.upsertEntity(entity,"Replace");
