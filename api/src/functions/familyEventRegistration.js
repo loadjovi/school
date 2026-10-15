@@ -71,7 +71,8 @@ app.http("familyEventRegistration",{
     if(access.role!=="parent")return fail("Parent only",403);
     if(cfg.enabled!==true)return fail("Activity closed",403);
     const time=Date.now();
-    if((cfg.openAt&&Date.parse(cfg.openAt)>time)||(cfg.closeAt&&Date.parse(cfg.closeAt)<time))return fail("Registration window closed",403);
+    if(cfg.openAt&&Date.parse(cfg.openAt)>time)return fail("報名尚未開始，請於開放時間再申請。",403);
+    if(cfg.closeAt&&Date.parse(cfg.closeAt)<time)return fail("活動報名已截止；已報名家庭仍可回報匯款。如需補報名，請聯絡學校。",403);
     const ids=body.studentIds;
     if(!Array.isArray(ids)||ids.length<1||ids.length>10||new Set(ids).size!==ids.length||!ids.every(s=>safeId(s)&&ensureStudentAccess(access,s)))return fail("Select authorized students");
     if(!integer(body.adults,1,20)||!integer(body.extraChildren,0,20))return fail("At least one adult required");
