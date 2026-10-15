@@ -65,6 +65,7 @@ app.http("uniformEventConfig",{
       if(!safeId(data.id))return json({error:"Invalid id"},400);
       validate(data);
       if(fixedUniformModules.has(data.module)&&data.enabled!==true)return json({error:"團 T 與 A 團比賽服固定啟用，無法關閉。"},400);
+      if(data.module==="yearEndDinner"&&(data.paymentOpen!==data.enabled||data.feeStatus!==(data.enabled?"PUBLISHED":"DRAFT")))return json({error:"期末聚餐的收款與費率狀態須和家長端顯示同步。"},400);
       // Never publish or enable dinner collection without a saved, valid bank account.
       if(data.module==="yearEndDinner"&&data.enabled===true){
         const accounts=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantEventPaymentAccounts");
