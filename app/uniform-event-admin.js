@@ -272,8 +272,10 @@ function table(id,rows,columns,actions=false){
    const stock=cachedStock.find(x=>x.key===stockKey),needed=r.kind==="A 團比賽服"?1:Number(r.quantity);
    const existingStock=!r.received&&stock&&Number(stock.onHand)-Number(stock.reserved||0)-Number(stock.unavailable||0)>=needed;
    const issue=r.status==="READY_FOR_PICKUP"&&mayCollect&&(r.received||existingStock)?"<button type='button' data-issue='"+i+"'>"+(r.received?"確認實際發放":"以現有庫存發放")+"</button>":"";
-   const receive=["ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&!r.received?"<button type='button' data-receive='"+i+"'>"+(r.status==="ORDERED"?"驗收入庫":"補登驗收入庫")+"</button>":"";
-   controls="<td data-label='狀態管理'>"+(next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":issue||"<span>"+esc(r.statusLabel||r.status)+"</span>")+(!existingStock?receive:"")+adjust+amount+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
+   const needsReceipt=r.status==="ORDERED"||(r.status==="ARRIVED"||r.status==="READY_FOR_PICKUP")&&!r.received;
+   const receive=needsReceipt?"<button type='button' data-receive='"+i+"'>"+(r.received?"同步已入庫狀態":r.status==="ORDERED"?"驗收到貨並入庫":"補登驗收入庫")+"</button>":"";
+   const progress=next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":issue||"<span>"+esc(r.statusLabel||r.status)+"</span>";
+   controls="<td data-label='狀態管理'>"+(!existingStock?receive:"")+progress+adjust+amount+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
   }
   return "<tr>"+cells+controls+"</tr>";
@@ -645,19 +647,35 @@ el("requests").addEventListener("click",async e=>{
  if(e.target.dataset.receive!==undefined){
   const row=visibleModuleRequests[Number(e.target.dataset.receive)];if(!row||pendingRequestIds.has(row.id))return;
   const cell=e.target.closest("td"),button=e.target;
+  if(receivedRequestIds.has(row.id)){
+   if(!confirm("這筆申請已有驗收入庫紀錄。確認只同步申請的『已到貨』狀態，不會再次增加庫存？"))return;
+   pendingRequestIds.add(row.id);renderModuleRequests();
+   try{
+    const date=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+    await api("uniform-events/receiving",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,quantity:row.kind==="regularUniform"?row.quantity:1,receivedDate:date,note:"同步既有驗收入庫紀錄"})});
+    el("status").textContent="已同步到貨狀態，庫存沒有重複增加";
+   }catch(error){issueErrors.set(row.id,"同步到貨狀態失敗："+error.message)}
+   finally{pendingRequestIds.delete(row.id);await load();renderModuleRequests()}
+   return;
+  }
   if(cell.querySelector("form"))return;
-  const form=document.createElement("form"),date=document.createElement("input"),note=document.createElement("textarea"),save=document.createElement("button"),message=document.createElement("p");
+  const form=document.createElement("form"),date=document.createElement("input"),note=document.createElement("textarea"),save=document.createElement("button"),message=document.createElement("p"),mode=document.createElement("select");
   form.className="receiving-form";date.type="date";date.required=true;date.value=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   note.required=true;note.maxLength=300;note.rows=2;note.placeholder="例：核對女款 S 號 1 套，外觀與數量無誤";
   for(const [label,input] of [["實際到貨日期",date],["驗收備註",note]]){const wrap=document.createElement("label");wrap.textContent=label;wrap.append(input);form.append(wrap)}
   const quantity=row.kind==="regularUniform"?row.quantity:1;
-  const detail=document.createElement("p");detail.textContent="本筆入庫："+(row.kind==="competitionUniform"?"A 團比賽服 "+row.style+"款 ":"團 T ")+row.size+"，"+quantity+" 件。請核對實物；如先前已手動盤點入庫，請先核對庫存，避免重複計入。";
+  const stockKey=row.kind==="competitionUniform"?"competition:"+row.style+":"+row.size:"regular:"+row.size;
+  const stock=cachedStock.find(item=>item.key===stockKey);
+  mode.required=true;mode.add(new Option("請選擇這件衣服如何入庫",""));mode.add(new Option("新貨到校：增加正式庫存","new"));
+  if(stock&&Number(stock.onHand)-Number(stock.reserved||0)-Number(stock.unavailable||0)>=quantity)mode.add(new Option("先前已盤點：使用現有庫存，不重複增加","existing"));
+  const modeLabel=document.createElement("label");modeLabel.textContent="庫存來源";modeLabel.append(mode);form.prepend(modeLabel);
+  const detail=document.createElement("p");detail.textContent="本筆驗收："+(row.kind==="competitionUniform"?"A 團比賽服 "+row.style+"款 ":"團 T ")+row.size+"，"+quantity+" 件。現有庫存 "+(stock?stock.onHand+" 件":"尚未建檔")+"，請依實物選擇來源。";
   save.type="submit";save.textContent="確認驗收入庫";message.setAttribute("role","status");form.prepend(detail);form.append(save,message);cell.append(form);button.hidden=true;
   form.addEventListener("submit",async event=>{
    event.preventDefault();if(!note.value.trim()){message.textContent="請填寫驗收備註。";return}
-   if(!confirm("確認已收到並驗收此筆 "+quantity+" 件，將計入正式庫存？"))return;
+   if(!confirm("確認已核對此筆 "+quantity+" 件？"+(mode.value==="existing"?"將使用現有盤點庫存，不增加庫存。":"新貨到校，將增加正式庫存。")))return;
    save.disabled=true;message.textContent="入庫中…";pendingRequestIds.add(row.id);
-   try{await api("uniform-events/receiving",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,quantity,receivedDate:date.value,note:note.value.trim()})});el("status").textContent="已驗收入庫並更新申請進度";await load()}
+   try{await api("uniform-events/receiving",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,quantity,receivedDate:date.value,note:note.value.trim(),useExistingStock:mode.value==="existing"})});el("status").textContent="已驗收入庫並更新申請進度";await load()}
    catch(error){message.textContent="入庫未完成："+error.message+"；請重新整理核對後再操作。";save.disabled=false}
    finally{pendingRequestIds.delete(row.id)}
   });
