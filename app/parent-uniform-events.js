@@ -227,6 +227,7 @@ const uniformRequestStage={
  FULFILLED:{title:"已完成領用",next:"此申請的領用流程已完成。"}
 };
 function requestStage(item){
+ if(item.status==="READY_FOR_PICKUP"&&!item.stockReceivedAt)return {title:"待學校驗收入庫，暫不可領取",next:"學校尚未完成此筆團服的正式入庫確認，請等待後續通知。"};
  if(item.status==="READY_FOR_PICKUP"&&item.acquisition!=="PUBLIC"&&item.paymentStatus!=="VERIFIED")return {title:"待財務核帳，暫不可領取",next:"請等待學校確認入帳；核帳完成後再依學校通知領取。"};
  return uniformRequestStage[item.status]||{title:"狀態待確認",next:"請洽學校確認目前進度。"};
 }
