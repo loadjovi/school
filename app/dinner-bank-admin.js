@@ -107,11 +107,11 @@ function installQuickBankBinding(){
  const actionHint=document.createElement("p");actionHint.style.margin="8px 0 0";
  publishPanel.append(heading,savedState,visibilityWrap,actionHint);wrap.insertAdjacentElement("afterend",publishPanel);
  const tripPanel=document.createElement("div");tripPanel.id="fieldTripPublishPanel";tripPanel.style.cssText=publishPanel.style.cssText;
- const tripHeading=document.createElement("h3");tripHeading.textContent="📣 開放給家長報名";tripHeading.style.margin="0 0 10px";
+ const tripHeading=document.createElement("h3");tripHeading.textContent="⑤ 開放給家長報名";tripHeading.style.margin="0 0 10px";
  const tripSavedState=document.createElement("p");tripSavedState.setAttribute("role","status");tripSavedState.style.fontWeight="700";
  const tripHint=document.createElement("p");tripHint.style.margin="8px 0 0";
  tripPanel.append(tripHeading,tripSavedState,tripHint);
- document.getElementById("fieldTripCollectionPanel").insertAdjacentElement("afterend",tripPanel);
+ document.getElementById("fieldTripCollectionPanel").insertAdjacentElement("beforebegin",tripPanel);
  visibilityWrap.querySelector('option[value="false"]').textContent="暫不顯示（家長看不到）";
  visibilityWrap.querySelector('option[value="true"]').textContent="顯示並開放報名與匯款";
  let boundAccount=null,selectionActivityId="";
