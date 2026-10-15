@@ -11,6 +11,7 @@ function parentAuthHeaders(){
  return {...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(schoolId?{"X-School-Id":schoolId}:{}),...(roleContext?{"X-Role-Context":roleContext}:{})};
 }
 let growthStudents=[],growthRequests=[],growthTshirts=[],growthRequestsLoaded=false,growthTshirtsLoaded=false,growthTshirtsError="";
+let publicUsedStudentIds=new Set(),historicalPublicStudentIds=new Set(),syncCompetitionPublicEligibility=()=>{};
 function renderUniformGrowth(){
  const host=document.getElementById("uniformGrowth");if(!host)return;
  host.replaceChildren(element("h3","📈 孩子的團服成長紀錄"));
@@ -162,12 +163,20 @@ function renderCompetitionPurchase(students){
  const host=document.getElementById("competitionPurchaseArea");host.replaceChildren();
  const purchase=document.createElement("details");purchase.className="action-details";
  const heading=document.createElement("summary");heading.textContent="確認 A 團比賽服取得方式／申請新尺寸";purchase.append(heading);host.append(purchase);
- const note=element("p","選擇公費配發會送交學校審核；選擇自費買斷，送出後會顯示已設定的匯款帳戶。歷史領用紀錄不會因本次申請而改寫。","hint");purchase.append(note);
+ const note=element("p","每位學生僅能申請一次公費配發；已領用或已有公費申請者，後續請選自費買斷。買斷送出後會顯示匯款帳戶。","hint");purchase.append(note);
  const form=document.createElement("form");
  const studentLabel=document.createElement("label");studentLabel.textContent="學生";
  const studentSelect=document.createElement("select");studentSelect.required=true;for(const st of students)studentSelect.add(new Option((st.studentName||st.name||"學生")+"（"+st.studentId+"）",st.studentId));studentLabel.append(studentSelect);
  const acquisitionLabel=document.createElement("label");acquisitionLabel.textContent="本次取得方式";
  const acquisition=document.createElement("select");acquisition.required=true;for(const option of [["請選擇取得方式",""],["公費配發｜送學校審核","PUBLIC"],["自費買斷｜顯示匯款帳戶","PURCHASE"]])acquisition.add(new Option(...option));acquisitionLabel.append(acquisition);
+ const eligibility=element("p","正在確認公費申請資格…","hint");
+ syncCompetitionPublicEligibility=()=>{
+  const id=studentSelect.value,used=publicUsedStudentIds.has(String(id)),option=acquisition.querySelector('option[value="PUBLIC"]');
+  option.disabled=!growthRequestsLoaded||used;
+  eligibility.textContent=!growthRequestsLoaded?"正在確認公費申請資格；暫時只能選自費買斷。":used?"此學生已領用或已有公費申請紀錄，本次僅能選自費買斷。":"此學生尚無公費申請紀錄，可提出一次公費申請並等待學校審核。";
+  if(option.disabled&&acquisition.value==="PUBLIC"){acquisition.value="";acquisition.dispatchEvent(new Event("change"))}
+ };
+ studentSelect.addEventListener("change",syncCompetitionPublicEligibility);syncCompetitionPublicEligibility();
  const styleLabel=document.createElement("label");styleLabel.textContent="款式";
  const styleSelect=document.createElement("select");for(const style of ["女","男"])styleSelect.add(new Option(style+"款",style));styleLabel.append(styleSelect);
  const sizeLabel=document.createElement("label");sizeLabel.textContent="這次需要的尺寸";
@@ -182,10 +191,11 @@ function renderCompetitionPurchase(students){
  acquisition.addEventListener("change",updatePreview);
  const button=document.createElement("button");button.type="submit";button.textContent="送出比賽服申請";
  const message=element("p","","hint");message.setAttribute("role","status");
- form.append(studentLabel,acquisitionLabel,styleLabel,sizeLabel,preview,button,message);purchase.append(form);
+ form.append(studentLabel,acquisitionLabel,eligibility,styleLabel,sizeLabel,preview,button,message);purchase.append(form);
  uniformPricePromise.then(updatePreview).catch(()=>{if(acquisition.value==="PURCHASE")preview.textContent="暫時無法讀取比賽服價格，請稍後重試。"});
  form.addEventListener("submit",async e=>{
   e.preventDefault();if(!sizeSelect.value||!acquisition.value)return;
+  if(acquisition.value==="PUBLIC"&&(!growthRequestsLoaded||publicUsedStudentIds.has(String(studentSelect.value)))){message.textContent="此學生已有公費紀錄，後續請選自費買斷。";syncCompetitionPublicEligibility();return}
   if(acquisition.value==="PURCHASE"&&!Number.isSafeInteger(currentUniformPrices?.competitionUniform?.unitPrice)){message.textContent="價格尚未讀取完成，請稍後重試。";return}
   const isPurchase=acquisition.value==="PURCHASE";
   if(!confirm(isPurchase?"確認申請自費買斷？送出後可查看匯款帳戶，請依顯示金額匯款。":"確認送出公費配發申請？學校審核後才會安排後續領用。"))return;
@@ -230,7 +240,7 @@ async function loadUniformRequestProgress(){
   if(!growthStudents.length){growthStudents=me.students||[];renderUniformGrowth()}
   const names=new Map((me.students||[]).map(x=>[String(x.studentId),x.name||x.studentName||x.studentId]));
   const requests=(result.items||[]).filter(x=>["regularUniform","competitionUniform"].includes(x.kind)).sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||"")));
-  growthRequests=requests;growthRequestsLoaded=true;renderUniformGrowth();
+  growthRequests=requests;publicUsedStudentIds=new Set((result.publicUsedStudentIds||[]).map(String));historicalPublicStudentIds=new Set((result.historicalPublicStudentIds||[]).map(String));growthRequestsLoaded=true;syncCompetitionPublicEligibility();renderUniformGrowth();
   summary.replaceChildren();history.replaceChildren();
   if(!requests.length){summary.append(element("p","目前沒有團服申請。送出後可在此查看學校審核與後續進度。","muted"));history.append(element("p","目前沒有團服申請紀錄。","muted"));return}
   const approved=requests.filter(x=>x.status==="APPROVED").length;
@@ -242,6 +252,7 @@ async function loadUniformRequestProgress(){
    card.append(element("strong",title));
    const badge=element("span",stage.title,"status-pill");card.append(badge);
    card.append(element("p",item.kind==="competitionUniform"&&item.acquisition==="PUBLIC"?(item.status==="PENDING"?"公費配發｜等待學校審核資格與尺寸；無須匯款。":"公費配發｜不需匯款；請依學校通知辦理領用。"):item.kind==="competitionUniform"&&item.acquisition==="PURCHASE"?"自費買斷｜"+stage.next:stage.next,"hint"));
+   if(item.kind==="competitionUniform"&&item.acquisition==="PUBLIC"&&item.status==="PENDING"&&historicalPublicStudentIds.has(String(item.studentId)))card.append(element("p","此學生已有公費領用紀錄；這筆重複申請無法核准。請在下方取消申請，若需新尺寸可改選自費買斷。","hint"));
    card.append(element("p",`尺寸：${item.size||"待確認"}${item.style?`｜${item.style}款`:""}｜件數：${item.quantity||1}｜申請時間：${formatDate(item.createdAt)||"—"}｜更新時間：${formatDate(item.updatedAt)||"—"}`,"muted"));
    if(item.status==="FULFILLED")card.append(element("p",`實際領取：${formatDate(item.issuedAt)||"日期待確認"}｜領取人：${item.receivedBy||"待核對"}｜件數：${item.issuedQuantity||item.quantity||1}`,"hint"));
    if(["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(item.status)&&item.acquisition!=="PUBLIC"){
