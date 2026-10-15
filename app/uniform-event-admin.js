@@ -286,7 +286,7 @@ el("familyRows").addEventListener("click",event=>{
 el("settings").addEventListener("click",e=>{
  const button=e.target.closest("button[data-edit-id]");if(!button)return;
  el("configModule").value=button.dataset.editModule;syncConfig();
- if(configActivityTypes.has(button.dataset.editModule)){el("existingActivity").value=button.dataset.editId;populateActivity()}
+ if(configActivityTypes.has(button.dataset.editModule)){el("existingActivity").value=button.dataset.editId;el("existingActivity").dispatchEvent(new Event("change"))}
  else{const item=savedConfigs.find(x=>x.module===button.dataset.editModule&&x.id===button.dataset.editId);if(item)el("config").elements.enabled.value=String(item.enabled===true)}
  el("config").scrollIntoView({behavior:"smooth",block:"start"});
 });
@@ -385,6 +385,8 @@ function syncConfig(){
  if(activity&&select.value)populateActivity();
  if(module==="yearEndDinner"&&!select.value){form.elements.enabled.value="false";form.elements.paymentOpen.value="false"}
  if(!activity){form.elements.enabled.value="true"}
+ el("configEnabledWrap").dataset.savedEnabled=String(savedConfigs.find(x=>x.module===module&&x.id===select.value)?.enabled===true);
+ updateActivityAudiencePreview();
  if(typeof window.syncDinnerBankVisibility==="function")window.syncDinnerBankVisibility();
 }
 function localDateTimeValue(value){const d=new Date(value);if(!Number.isFinite(d.getTime()))return "";const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;}
