@@ -357,7 +357,7 @@ function updateActivityAudiencePreview(){
  const groupText={ALL:"A、B、儲備團",A:"A 團",B:"B 團",C:"儲備團","A,B":"A、B 團","A,C":"A、儲備團","B,C":"B、儲備團"}[module==="yearEndDinner"?"ALL":groups]||"所選團別";
  const visible=form.elements.enabled.value==="true";
  const closeAt=form.elements.closeAt?.value,registrationClosed=closeAt&&Date.parse(closeAt)<Date.now();
- const collecting=module==="yearEndDinner"?form.elements.paymentOpen.value==="true":module==="fieldTrip"&&form.elements.collectionOpen.value==="true";
+ const collecting=module==="yearEndDinner"?form.elements.enabled.value==="true":module==="fieldTrip"&&form.elements.collectionOpen.value==="true";
  el("activityAudiencePreview").textContent="家長端："+(visible?groupText+"會看到此活動":"暫不顯示給家長")+"；"+(module==="calendarActivity"?"只顯示公告與行事曆，無須報名、繳費。":module==="yearEndDinner"?"家長需報名；收款需另設定帳戶。":"家長需報名；收款開放時間另行設定。")+(registrationClosed&&collecting?" 報名已截止，收款仍開放：新家庭無法報名，已報名家庭可回報匯款。若要開放新報名，請延長報名結束時間並儲存。":" 儲存後請在下方核對活動。 ");
 }
 for(const name of ["openAt","closeAt","paymentOpen","collectionOpen"]){
@@ -383,7 +383,9 @@ function syncConfig(){
  if([...select.options].some(x=>x.value===old))select.value=old;
  form.elements.id.value=activity?(select.value||"default"):"default";
  if(activity&&select.value)populateActivity();
+ if(module==="yearEndDinner"&&!select.value){form.elements.enabled.value="false";form.elements.paymentOpen.value="false"}
  if(!activity){form.elements.enabled.value="true"}
+ if(typeof window.syncDinnerBankVisibility==="function")window.syncDinnerBankVisibility();
 }
 function localDateTimeValue(value){const d=new Date(value);if(!Number.isFinite(d.getTime()))return "";const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;}
 function populateActivity(){
@@ -403,8 +405,8 @@ function populateActivity(){
  updateActivityConfigClarity();
  updateActivityAudiencePreview();
 }
-el("configModule").addEventListener("change",()=>{el("existingActivity").value="";syncConfig()});
-el("existingActivity").addEventListener("change",()=>{syncConfig();if(el("configModule").value==="fieldTrip")refreshFieldTripBanks();if(!el("existingActivity").value){const form=el("config");for(const k of ["title","location","openAt","closeAt","startAt","endAt","calendarTitle","calendarLocation","eventDate","endDate","timeLabel","startTime","endTime","note"])form.elements[k].value="";form.elements.targetGroups.value="ALL";form.elements.calendarTargetGroups.value="ALL";for(const k of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=0;updateActivityAudiencePreview();}});
+el("configModule").addEventListener("change",()=>{el("configSaveFeedback").textContent="尚未儲存本次設定";el("existingActivity").value="";syncConfig()});
+el("existingActivity").addEventListener("change",()=>{el("configSaveFeedback").textContent="尚未儲存本次設定";syncConfig();if(el("configModule").value==="fieldTrip")refreshFieldTripBanks();if(!el("existingActivity").value){const form=el("config");for(const k of ["title","location","openAt","closeAt","startAt","endAt","calendarTitle","calendarLocation","eventDate","endDate","timeLabel","startTime","endTime","note"])form.elements[k].value="";form.elements.targetGroups.value="ALL";form.elements.calendarTargetGroups.value="ALL";for(const k of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])form.elements[k].value=0;updateActivityAudiencePreview();}});
 const calendarExamples={
  competition:{eventType:"competition",calendarTitle:"A 團全國賽｜賽事期間（實際賽程待公告）",calendarTargetGroups:"A",eventDate:"2026-11-30",endDate:"2026-12-04",calendarLocation:"基隆市表演藝術中心、成功國小、深澳國小、中山高中（實際場地待公告）",timeLabel:"A 團實際比賽時間待主辦單位通知",note:"目前公告的是整體賽事期間與候選場地；A 團實際比賽日期、時間及場地，待報名完成後由主辦單位通知。"},
  christmas:{eventType:"performance",calendarTitle:"聖心弦樂團耶誕演出",calendarTargetGroups:"ALL",eventDate:"2026-12-18",endDate:"",calendarLocation:"聖心校園（A、B 團：四樓 A 團練教室；儲備團：四樓 B 團練教室）",timeLabel:"08:30 集合；演出時間以學校通知為準",note:"請帶自己的大、中、小提琴。服裝為團 T、制服黑長褲、黑皮鞋；早上穿團 T 到校，怕冷可加黑色內搭。頭髮梳理整齊，長髮請綁馬尾。08:30 準時集合，老師及志工家長會引導。此為校內慶祝活動，僅在校師生參加；活動花絮將由志工家長於群組分享。"}
@@ -576,28 +578,27 @@ el("config").onsubmit=async e=>{
    if(item.endAt&&item.startAt&&Date.parse(item.endAt)<Date.parse(item.startAt))throw Error("活動結束時間不可早於開始時間");
    item.paymentMode=module==="yearEndDinner"?"PAY_NOW":"PAY_LATER";
    if(module==="fieldTrip"){item.collectionOpen=f.get("collectionOpen")==="true";item.feeStatus=item.collectionOpen?"PUBLISHED":"DRAFT";item.paymentOpen=item.collectionOpen;}
-   if(module==="yearEndDinner"){item.feeStatus=item.enabled?"PUBLISHED":"DRAFT";item.paymentOpen=item.enabled&&f.get("paymentOpen")==="true";}
+   if(module==="yearEndDinner"){item.feeStatus=item.enabled?"PUBLISHED":"DRAFT";item.paymentOpen=item.enabled;}
    for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0);
   }
-  if(module==="yearEndDinner"&&item.enabled){
-   const currentActivity=el("existingActivity").value;
-   if(!currentActivity)throw Error("請先建立期末聚餐活動，再綁定活動專屬收款帳戶。");
-   const bankResponse=await fetch("/api/uniform-events/dinner-payment-account?activityId="+encodeURIComponent(currentActivity),{credentials:"same-origin",cache:"no-store",headers:adminAuthHeaders()});
-   const bankData=await bankResponse.json().catch(()=>({}));
-   if(!bankResponse.ok)throw Error("無法驗證活動收款帳戶（HTTP "+bankResponse.status+"）："+(bankData.error||"請確認帳戶讀取權限"));
-   if(!bankData.item?.accountNumber||!bankData.item?.bankCode||!bankData.item?.accountHolder)throw Error("目前活動「"+(item.title||currentActivity)+"」尚未綁定有效收款帳戶。請確認下方帳戶已按「套用至目前期末聚餐」，並核對活動名稱是否一致。");
-  }
-  if(module==="yearEndDinner"&&item.enabled&& !el("existingActivity").value)throw Error("這是新建期末聚餐，尚未建立活動專屬收款帳戶。請先將「啟用」改為「關閉」並儲存活動，再點「管理收款帳戶」選擇範本、儲存活動收款帳戶，最後返回開啟活動。");
+  if(module==="yearEndDinner"&&item.enabled&&!el("existingActivity").value)throw Error("請先以「暫不顯示」儲存新活動，再選擇收款帳戶並啟用。");
+  if(module==="yearEndDinner"&&item.enabled&&!window.dinnerBankSelection?.())throw Error("請先為這場期末聚餐選擇有效的收款帳戶。");
   if(!confirm("確定儲存設定？")){feedback.textContent="已取消儲存";return}
+  if(module==="yearEndDinner"&&item.enabled){
+   feedback.textContent="正在綁定並核對本活動收款帳戶…";
+   await window.applyDinnerBankSelection(id);
+  }
   await api("uniform-events/config",{method:"POST",body:JSON.stringify(item)});
   feedback.textContent="資料已送出，正在讀回驗證…";
   await load();
   if(activity){el("existingActivity").value=id;syncConfig();el("existingActivity").dispatchEvent(new Event("change"))}
   const persisted=savedConfigs.find(x=>x.module===module&&x.id===id);
   if(!persisted)throw Error("API 已回覆，但重新查詢未找到活動，請勿視為儲存成功");
-  feedback.textContent="設定已儲存並確認成功："+(persisted.title||module)+(["fieldTrip","calendarActivity"].includes(module)?"；已依對象團別同步至行事曆／特殊活動（"+(persisted.enabled?"顯示中":"已取消")+"）。":"。")+(module==="calendarActivity"?"此公告免報名、免收費。":"是否開放家長報名依活動啟用狀態與報名期間判定。");
+  feedback.textContent=module==="yearEndDinner"&&!persisted.enabled
+   ?"活動已建立並確認成功："+(persisted.title||module)+"（暫不顯示）。請選擇下方收款帳戶，再將家長端改為「顯示」並儲存。"
+   :"設定已儲存並確認成功："+(persisted.title||module)+(["fieldTrip","calendarActivity"].includes(module)?"；已依對象團別同步至行事曆／特殊活動（"+(persisted.enabled?"顯示中":"已取消")+"）。":"。")+(module==="calendarActivity"?"此公告免報名、免收費。":module==="yearEndDinner"?"收款帳戶已綁定；是否可報名依報名期間判定。":"是否開放家長報名依活動啟用狀態與報名期間判定。");
   el("status").textContent=feedback.textContent;
- }catch(err){const bankMissing=String(err.message).includes("收款帳戶");feedback.textContent="儲存失敗："+err.message+(bankMissing?"\n處理方式：先確認上方選取的活動名稱與下方帳戶綁定的活動一致；若尚未建立活動，請先關閉並儲存，再套用帳戶後啟用。":"");feedback.style.whiteSpace="pre-line";el("status").textContent=feedback.textContent}
+ }catch(err){feedback.textContent="儲存失敗："+err.message;el("status").textContent=feedback.textContent}
  finally{button.disabled=false}
 };
 document.getElementById("retryAdminAuth").addEventListener("click",start);
