@@ -249,6 +249,10 @@ function paymentStatusLabel(status){
  };
  return labels[status]||"待確認";
 }
+function registrationStudentNames(row){
+ const ids=Array.isArray(row.studentIds)&&row.studentIds.length?row.studentIds:[row.studentId].filter(Boolean);
+ return ids.length?ids.map(id=>uniformStudentNames.get(String(id))||"姓名待核對（學生 ID："+id+"）").join("、"):"學生資料待核對";
+}
 function refreshFamilyStatistics(){
  const reports=activityReportRows();
  const target=el("familyRows"),summary=el("familySummary");
@@ -259,8 +263,8 @@ function refreshFamilyStatistics(){
   "<section style='border:1px solid #d9e0eb;border-radius:12px;padding:16px;margin:16px 0'>"+
   "<h3>"+esc(activity.title||activity.id)+"</h3><p>"+esc(names[activity.module]||activity.module)+"｜報名家庭 "+counts.families+" 戶｜弦樂團學生 "+counts.students+" 位｜大人 "+counts.adults+" 位｜其他兒童 "+counts.children+" 位｜<strong>總計 "+counts.total+" 位</strong></p>"+
   "<p><button type='button' data-export-activity-summary='"+index+"'>匯出本活動人數統計 CSV</button> <button type='button' data-export-activity-detail='"+index+"'>匯出本活動報名明細 CSV</button></p>"+
-  "<div style='overflow-x:auto'><table><thead><tr><th>家長帳號</th><th>弦樂團學生</th><th>大人</th><th>其他兒童</th><th>小計</th><th>應繳／回報金額</th><th>匯款末五碼</th><th>匯款日期</th><th>繳費狀態</th></tr></thead><tbody>"+
-  (rows.length?rows.map(r=>"<tr><td>"+esc(r.parentEmail||"")+"</td><td>"+(Array.isArray(r.studentIds)?r.studentIds.length:0)+"</td><td>"+Number(r.adults||0)+"</td><td>"+Number(r.extraChildren||0)+"</td><td>"+((r.studentIds?.length||0)+Number(r.adults||0)+Number(r.extraChildren||0))+"</td><td>"+esc(r.transferReport?.amount??r.estimatedAmount??"待核定")+"</td><td>"+esc(r.transferReport?.lastFive||"尚未回報")+"</td><td>"+esc(r.transferReport?.transferDate||"—")+"</td><td>"+paymentStatusLabel(r.paymentStatus)+"</td></tr>").join(""):"<tr><td colspan='9'>尚無已報名資料</td></tr>")+
+  "<div style='overflow-x:auto'><table><thead><tr><th>報名學生</th><th>弦樂團學生</th><th>大人</th><th>其他兒童</th><th>小計</th><th>應繳／回報金額</th><th>匯款末五碼</th><th>匯款日期</th><th>繳費狀態</th></tr></thead><tbody>"+
+  (rows.length?rows.map(r=>"<tr><td>"+esc(registrationStudentNames(r))+"</td><td>"+(Array.isArray(r.studentIds)?r.studentIds.length:0)+"</td><td>"+Number(r.adults||0)+"</td><td>"+Number(r.extraChildren||0)+"</td><td>"+((r.studentIds?.length||0)+Number(r.adults||0)+Number(r.extraChildren||0))+"</td><td>"+esc(r.transferReport?.amount??r.estimatedAmount??"待核定")+"</td><td>"+esc(r.transferReport?.lastFive||"尚未回報")+"</td><td>"+esc(r.transferReport?.transferDate||"—")+"</td><td>"+paymentStatusLabel(r.paymentStatus)+"</td></tr>").join(""):"<tr><td colspan='9'>尚無已報名資料</td></tr>")+
   "</tbody></table></div></section>").join(""):"<p>目前沒有活動資料</p>";
  renderConfigSummary(savedConfigs);
  syncUniformModuleVisibility();
@@ -275,7 +279,7 @@ el("familyRows").addEventListener("click",event=>{
  if(btn.hasAttribute("data-export-activity-summary")){
   csv(name+"_人數統計.csv",[{activityName:activity.title||activity.id,category:activity.module,families:counts.families,students:counts.students,adults:counts.adults,children:counts.children,total:counts.total}],["activityName","category","families","students","adults","children","total"]);
  }else{
-  csv(name+"_報名明細.csv",rows.map(r=>({activityName:activity.title||activity.id,parentEmail:r.parentEmail||"",studentIds:(r.studentIds||[]).join(";"),students:(r.studentIds||[]).length,adults:Number(r.adults||0),extraChildren:Number(r.extraChildren||0),total:(r.studentIds||[]).length+Number(r.adults||0)+Number(r.extraChildren||0),paymentStatus:paymentStatusLabel(r.paymentStatus),transferAmount:r.transferReport?.amount??"",transferLastFive:r.transferReport?.lastFive||"",transferDate:r.transferReport?.transferDate||""})),["activityName","parentEmail","studentIds","students","adults","extraChildren","total","paymentStatus","transferAmount","transferLastFive","transferDate"]);
+  csv(name+"_報名明細.csv",rows.map(r=>({activityName:activity.title||activity.id,studentNames:registrationStudentNames(r),parentEmail:r.parentEmail||"",studentIds:(r.studentIds||[]).join(";"),students:(r.studentIds||[]).length,adults:Number(r.adults||0),extraChildren:Number(r.extraChildren||0),total:(r.studentIds||[]).length+Number(r.adults||0)+Number(r.extraChildren||0),paymentStatus:paymentStatusLabel(r.paymentStatus),transferAmount:r.transferReport?.amount??"",transferLastFive:r.transferReport?.lastFive||"",transferDate:r.transferReport?.transferDate||""})),["activityName","studentNames","parentEmail","studentIds","students","adults","extraChildren","total","paymentStatus","transferAmount","transferLastFive","transferDate"]);
  }
 });
 el("settings").addEventListener("click",e=>{
