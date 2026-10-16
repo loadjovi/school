@@ -159,6 +159,7 @@ app.http("uniformEventRequests",{
       }else{
         if(!states.has(data.status))return err("Invalid update");
         if(!allowedNext[before.status]?.has(data.status))return err("Invalid status transition; refresh and check the current stage",409);
+        if(data.status==="ORDERED"&&["regularUniform","competitionUniform"].includes(before.kind)&&before.acquisition!=="PUBLIC"&&before.paymentStatus!=="VERIFIED")return err("財務尚未確認入帳，不能更新為已統一採購",409);
         if(data.status==="ARRIVED"&&["regularUniform","competitionUniform"].includes(before.kind))return err("請使用驗收入庫功能，入庫後會自動更新為已到貨",409);
         if(data.status==="READY_FOR_PICKUP"&&["regularUniform","competitionUniform"].includes(before.kind)){
           const inventory=TableClient.fromConnectionString(connection(),"TenantUniformInventory");
