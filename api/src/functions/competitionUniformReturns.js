@@ -1,7 +1,7 @@
 import {app} from "@azure/functions";
 import {TableClient} from "@azure/data-tables";
-import {getTenantContext,json} from "../lib/auth.js";
-import {getStudentMaster} from "../lib/storage.js";
+import {getTenantContext,json,parseJsonEnv} from "../lib/auth.js";
+import {getStudentMaster,getMappedStudentsByEmail,getTeacherDirectory,defaultTenantId} from "../lib/storage.js";
 
 const reply=(error,status)=>json({error},status);
 const validId=x=>typeof x==="string"&&/^[a-zA-Z0-9_-]{1,100}$/.test(x);
@@ -9,6 +9,24 @@ const validSize=(style,size)=>(style==="男"&&["S","M","L","2L"].includes(size))
 const get=async(table,schoolId,key)=>{try{return await table.getEntity(schoolId,key)}catch(e){if(e.statusCode===404)return null;throw e}};
 const stamp=()=>new Date().toISOString();
 const publicView=x=>({id:x.rowKey,studentId:x.studentId,studentName:x.studentName,sourceRequestId:x.sourceRequestId||"",source:x.source,style:x.style,size:x.size,status:x.status,sourceNote:x.sourceNote||"",receivedAt:x.receivedAt||"",receivedBy:x.receivedBy||"",washingAt:x.washingAt||"",stockedAt:x.stockedAt||"",stockedBy:x.stockedBy||"",stockedByName:x.stockedByName||"",rejectedAt:x.rejectedAt||"",updatedAt:x.updatedAt||"",etag:x.etag});
+async function operatorLabel(email,schoolId){
+ const account=String(email||"").trim().toLowerCase();
+ if(!account||account==="admin")return "";
+ try{
+  const teacher=await getTeacherDirectory(account,schoolId);
+  if(teacher?.status==="active"&&teacher.teacherName){
+   const name=String(teacher.teacherName).trim();
+   return name.endsWith("老師")?name:name+"老師";
+  }
+ }catch(error){console.warn("competition return teacher lookup",error)}
+ let mapped=[];
+ try{mapped=await getMappedStudentsByEmail(account,schoolId)}catch(error){console.warn("competition return operator mapping",error)}
+ const parentMap=schoolId===defaultTenantId()?parseJsonEnv("STUDENT_MAP_JSON",{}):{};
+ const legacy=Object.entries(parentMap).find(([key])=>key.trim().toLowerCase()===account)?.[1];
+ const legacyStudents=Array.isArray(legacy)?legacy:(Array.isArray(legacy?.students)?legacy.students:[]);
+ const names=[...new Set([...mapped,...legacyStudents].map(student=>String(student?.name||student?.studentName||"").trim()).filter(Boolean))];
+ return names.length?names.join("、")+"家長":"";
+}
 
 // A public uniform is returned once per issuance. The return ledger and stock
 // increment share one Azure Table transaction, so retries cannot add twice.
@@ -32,6 +50,12 @@ app.http("competitionUniformReturns",{
       const student=await getStudentMaster(row.studentId,schoolId);
       issues.push({requestId:row.requestId,studentId:row.studentId,studentName:student?.studentName||row.studentId,style:row.style,size:row.size,issuedAt:row.issuedAt});
      }
+    }
+    const labels=new Map();
+    for(const item of items){
+     if(item.status!=="STOCKED"||!item.stockedBy)continue;
+     if(!labels.has(item.stockedBy))labels.set(item.stockedBy,await operatorLabel(item.stockedBy,schoolId));
+     item.stockedByLabel=labels.get(item.stockedBy);
     }
     return json({items,issues});
    }
