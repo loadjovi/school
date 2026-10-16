@@ -17,10 +17,11 @@ function adminAuthHeaders(){
 window.uniformEventAuthHeaders=adminAuthHeaders;
 async function api(path,options={}){
  const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),path==="uniform-events/requests"&&options.method==="PATCH"?45000:12000);
+ const timeoutMs=path==="uniform-events/receiving"&&options.method==="POST"?60000:path==="uniform-events/requests"&&options.method==="PATCH"?45000:12000;
+ const timeout=setTimeout(()=>controller.abort(),timeoutMs);
  let r;
  try{r=await fetch("/api/"+path,{...options,signal:controller.signal,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...adminAuthHeaders(),...(options.headers||{})}})}
- catch(e){if(e.name==="AbortError")throw Error("API 連線逾時（12 秒），請檢查預覽環境 API 或重新驗證登入");throw e}
+ catch(e){if(e.name==="AbortError")throw Error("API 等待逾時（"+(timeoutMs/1000)+" 秒）；操作結果尚未確認，請查核入庫紀錄");throw e}
  finally{clearTimeout(timeout)}
  const data=await r.json().catch(()=>({}));
  if(r.status===401){setAuthGate("API 回傳 401 Unauthorized：登入憑證未通過後端驗證，所有管理操作已停用。");throw Error("401 Unauthorized：請重新登入")}
@@ -878,7 +879,16 @@ el("requests").addEventListener("click",async e=>{
    if(!confirm("確認驗收 "+receivedBreakdown.map(p=>p.size+" "+p.quantity+" 件").join("、")+"，合計 "+procurementQuantity+" 件？"+(mode.value==="existing"?"將使用現有盤點庫存，不增加庫存。":"新貨到校，將依各尺碼增加正式庫存。")))return;
    save.disabled=true;message.textContent="入庫中…";pendingRequestIds.add(row.id);
    try{await api("uniform-events/receiving",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,quantity,procurementQuantity,receivedBreakdown,receivedDate:date.value,note:note.value.trim(),useExistingStock:mode.value==="existing"})});el("status").textContent="已依各尺碼驗收入庫並更新申請進度";await load()}
-   catch(error){message.textContent="入庫未完成："+error.message+"；請重新整理核對後再操作。";save.disabled=false}
+   catch(error){
+    message.textContent="正在查核入庫紀錄…";
+    try{
+     const receipts=await api("uniform-events/receiving");
+     if((receipts.items||[]).some(item=>String(item.requestId)===String(row.id))){
+      message.textContent="已找到這筆入庫紀錄，正在同步申請狀態；不會重複增加庫存。";
+      await load();
+     }else{message.textContent="入庫結果尚未確認："+error.message+"。目前未查到入庫紀錄，請稍後重新整理再核對，勿直接重複提交。";save.disabled=false}
+    }catch(checkError){message.textContent="入庫結果尚未確認："+error.message+"。查核暫時失敗，請稍後重新整理申請與庫存，再決定是否重試。";save.disabled=false}
+   }
    finally{pendingRequestIds.delete(row.id)}
   });
   return;
