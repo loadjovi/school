@@ -36,12 +36,13 @@
 
   async function loadAdmins(sid){
     state.globalTenant.selectedSchoolId=String(sid||"");
-    state.globalTenant.admins=[];state.globalTenant.schoolTeachers=[];
+    state.globalTenant.admins=[];state.globalTenant.schoolTeachers=[];state.globalTenant.financeAssignments=[];
     if(!sid)return;
-    const d=await api("/api/tenant-admins?schoolId="+encodeURIComponent(sid));
+    const [d,finance]=await Promise.all([api("/api/tenant-admins?schoolId="+encodeURIComponent(sid)),api("/api/finance-assignments?schoolId="+encodeURIComponent(sid))]);
     if(state.globalTenant.selectedSchoolId!==String(sid))return;
     state.globalTenant.admins=d.admins||d.items||[];
     state.globalTenant.schoolTeachers=d.teachers||[];
+    state.globalTenant.financeAssignments=finance.items||[];
   }
   async function loadGlobal(force){
     if(!canGlobal()||state.globalTenant.loading)return;
@@ -66,7 +67,8 @@
     const selfEmail=String(state.me?.email||"").toLowerCase();
     const selfIsAdmin=rows.some(a=>String(a.email||"").toLowerCase()===selfEmail);
     const adminLabel=a=>a.teacherStatus==="active"?"老師＋學校後台":a.teacherStatus==="inactive"?"僅學校後台（老師帳號已停用）":"僅學校後台（未建本校老師帳號）";
-    const list=rows.length?rows.map(a=>'<div class="item"><div><b>'+esc(a.teacherName||a.email)+'</b><small>'+esc(a.email)+'｜<b>'+adminLabel(a)+'</b><span class="global-action-hint">移除權限不會刪除帳號或學校資料</span></small></div><button class="global-danger-btn" style="margin:0" onclick="revokeSchoolAdmin(\''+esc(sid)+'\',\''+esc(a.email)+'\')">🗑️ 移除權限</button></div>').join(""):'<div class="notice" style="margin-top:10px">尚未指定學校管理員。</div>';
+    const financeSet=new Set((state.globalTenant.financeAssignments||[]).filter(a=>a.status==="active").map(a=>String(a.email||"").toLowerCase()));
+    const list=rows.length?rows.map(a=>{const finance=financeSet.has(String(a.email||"").toLowerCase());return '<div class="item"><div><b>'+esc(a.teacherName||a.email)+'</b><small>'+esc(a.email)+'｜<b>'+adminLabel(a)+'</b>'+ (finance?'｜💰 財務核帳':'') +'<span class="global-action-hint">財務權限僅開放帳戶設定與核帳；撤銷後立即失效。</span></small></div><div><button class="secondary" style="margin:0" onclick="setSchoolFinance(\''+esc(sid)+'\',\''+esc(a.email)+'\',\''+(finance?'revoke':'grant')+'\')">'+(finance?'撤銷財務權限':'指派財務權限')+'</button><button class="global-danger-btn" style="margin:0" onclick="revokeSchoolAdmin(\''+esc(sid)+'\',\''+esc(a.email)+'\')">🗑️ 移除權限</button></div></div>'}).join(""):'<div class="notice" style="margin-top:10px">尚未指定學校管理員。</div>';
     const teachers=state.globalTenant.schoolTeachers||[],activeTeachers=teachers.filter(t=>t.status==="active"),inactiveTeachers=teachers.filter(t=>t.status!=="active");
     const teacherRow=t=>'<div class="item"><div><b>'+esc(t.teacherName||t.email)+'</b><small>'+esc(t.email)+'｜'+(t.status==="active"?(t.hasSchoolAdmin?'老師＋學校後台':'只有老師權限'):(t.hasSchoolAdmin?'老師帳號已停用，仍有學校後台權限':'老師帳號已停用'))+'</small></div></div>';
     const teacherList='<div class="global-inline-admin"><h3>👩‍🏫 老師與學校後台權限對照</h3><div class="notice">老師兼後台 '+rows.filter(a=>a.teacherStatus==="active").length+' 人｜僅後台 '+rows.filter(a=>a.teacherStatus!=="active").length+' 人｜只有老師 '+activeTeachers.filter(t=>!t.hasSchoolAdmin).length+' 人。以此校啟用中的老師帳號及 School Admin 指派為準；短期跨校支援另列於師資調度。</div>'+(activeTeachers.length?activeTeachers.map(teacherRow).join(""):'<div class="notice">目前沒有啟用中的老師帳號。</div>')+(inactiveTeachers.length?'<details style="margin-top:10px"><summary>已停用老師帳號（'+inactiveTeachers.length+'）</summary>'+inactiveTeachers.map(teacherRow).join("")+'</details>':'')+'</div>';
@@ -85,7 +87,7 @@
     const lifecycleLocked=sid==="sacred-heart"||["onboarding","active"].includes(x.status);
     const statusOptions=sid==="sacred-heart"?'<option value="active">啟用（固定）</option>':lifecycleLocked?'<option value="'+esc(x.status)+'">'+esc(st[x.status]||x.status)+'（由 Phase 4 管理）</option>':['setup','inactive'].map(value=>'<option value="'+value+'" '+(value===x.status?'selected':'')+'>'+esc(st[value]||value)+'</option>').join("");
     const schoolForm='<div class="global-inline-admin"><h3>🏫 學校基本設定</h3><div class="notice"><b>schoolId：'+esc(sid)+'</b><br>schoolId 建立後不可修改；「隔離驗證中」與「正式啟用」只能由 Phase 4 安全流程切換。</div><label>學校名稱</label><input id="tenantName_'+esc(sid)+'" value="'+esc(x.schoolName||'')+'" maxlength="120"><div class="row2"><div><label>簡稱</label><input id="tenantShort_'+esc(sid)+'" value="'+esc(x.shortName||'')+'" maxlength="60"></div><div><label>系統名稱</label><input id="tenantSystem_'+esc(sid)+'" value="'+esc(x.systemName||'')+'" maxlength="160"></div></div><div class="row2"><div><label>縣市</label><select id="tenantCity_'+esc(sid)+'">'+cityOptions+'</select></div><div><label>學制</label><select id="tenantLevel_'+esc(sid)+'">'+levelOptions+'</select></div></div><div class="row2"><div><label>時區</label><select id="tenantTimezone_'+esc(sid)+'"><option value="Asia/Taipei" selected>Asia/Taipei</option></select></div><div><label>狀態</label><select id="tenantStatus_'+esc(sid)+'" '+(lifecycleLocked?'disabled':'')+'>'+statusOptions+'</select></div></div><button class="primary" onclick="saveSchoolTenant(\''+esc(sid)+'\')">💾 儲存學校設定</button></div>';
-    return schoolForm+'<div class="global-inline-admin"><h3>🔐 '+esc(x.schoolName)+'｜學校管理員</h3><div class="notice">Global 可管理此校 School Admin 權限；權限與工時分開呈現；工時仍依實際授課紀錄認列。學校啟用後，已指派者才可進入營運後台。</div>'+selfAction+list+revokedList+'<label>新增此校管理員 Google Email</label><input id="globalAdminEmail_'+esc(sid)+'" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 '+esc(x.schoolName)+' School Admin</button></div>'+teacherList;
+    return schoolForm+'<div class="global-inline-admin"><h3>🔐 '+esc(x.schoolName)+'｜學校管理員與財務權限</h3><div class="notice">先指定 School Admin，再於對應人員旁指派財務核帳權限。只有具財務權限的人可設定收款帳戶及確認入帳，操作會留下稽核紀錄。</div>'+selfAction+list+revokedList+'<label>新增此校管理員 Google Email</label><input id="globalAdminEmail_'+esc(sid)+'" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 '+esc(x.schoolName)+' School Admin</button></div>'+teacherList;
   }
   function schoolCard(x){
     const mode=x.dataMode==="tenant-scoped-operational"?"學生、家長、老師、出勤、練習與個別課資料均已 Tenant 化。":x.dataMode==="tenant-onboarding-testing"?"正在隔離驗證；測試帳號只能操作此校 Tenant，尚未正式啟用。":"Tenant 結構已備妥，但維持建置狀態且尚未加入正式營運資料。";
@@ -544,6 +546,10 @@
   window.grantSchoolAdmin=async function(sid){
     const email=document.getElementById("globalAdminEmail_"+sid)?.value.trim();if(!email){toast("請輸入此校管理員 Email");return}
     try{await api("/api/tenant-admins",{method:"PATCH",body:JSON.stringify({schoolId:sid,email,action:"grant"})});toast("✅ 已指定此校 School Admin");await loadGlobal(true)}catch(e){toast("❌ "+e.message)}
+  };
+  window.setSchoolFinance=async function(sid,email,action){
+    if(!confirm((action==="grant"?"指派":"撤銷")+"「"+email+"」於此校的財務核帳權限？"))return;
+    try{await api("/api/finance-assignments",{method:"PATCH",body:JSON.stringify({schoolId:sid,email,action})});toast("✅ 財務權限已"+(action==="grant"?"指派":"撤銷"));await loadGlobal(true)}catch(e){toast("❌ "+e.message)}
   };
   window.grantKnownSchoolAdmin=async function(sid,email){
     try{await api("/api/tenant-admins",{method:"PATCH",body:JSON.stringify({schoolId:sid,email,action:"grant"})});toast("✅ 已重新啟用此校 School Admin");await loadGlobal(true)}catch(e){toast("❌ "+e.message)}

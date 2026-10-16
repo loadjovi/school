@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {freeEligibility,availableStock} from '../app/uniform-event-rules.js';
+test('unknown history remains pending',()=>assert.equal(freeEligibility([]),'PENDING'));
+test('reserved stock is excluded',()=>assert.equal(availableStock(5,2),3));
+import {COMPETITION_ROSTER,freeEligibility,planUniformAllocation,aggregateShortages,competitionInventoryKey,householdAttendance,activityTotal,validateRegularRequest} from '../app/uniform-event-rules.js';
+test('A 團 15 人分類',()=>{assert.equal(COMPETITION_ROSTER.length,15);assert.equal(COMPETITION_ROSTER.filter(x=>x.acquisition==='RENTAL').length,8);assert.equal(COMPETITION_ROSTER.filter(x=>x.acquisition==='PURCHASE').length,4);assert.equal(COMPETITION_ROSTER.filter(x=>x.acquisition==='PENDING').length,3)});
+test('未知領用歷史不可免費',()=>{assert.equal(freeEligibility([]),'PENDING');assert.throws(()=>validateRegularRequest({size:'M',quantity:1,freeQuantity:1,eligibility:'PENDING'}))});
+test('庫存分配不可超配',()=>{const rows=planUniformAllocation([{id:'a',size:'M',quantity:2,createdAt:'2026-10-01'},{id:'b',size:'M',quantity:2,createdAt:'2026-10-02'}],{M:{onHand:3,reserved:1}});assert.deepEqual(rows.map(x=>[x.allocated,x.shortage]),[[2,0],[0,2]]);assert.deepEqual(aggregateShortages(rows),{M:2})});
+test('比賽服男女款分庫',()=>{assert.equal(competitionInventoryKey('男','M'),'男:M');assert.notEqual(competitionInventoryKey('女','M'),competitionInventoryKey('男','M'));assert.throws(()=>competitionInventoryKey('女','2L'))});
+test('同家庭陪同大人不重複',()=>{const a=householdAttendance([{householdId:'h1',studentId:'s1',adults:1},{householdId:'h1',studentId:'s2',adults:1}]);assert.deepEqual(a,{students:2,firstAdults:1,extraAdults:0,extraChildren:0,totalAttendees:3});assert.equal(activityTotal(a,{studentFee:200,firstAdultFee:100}),500)});

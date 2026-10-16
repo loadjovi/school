@@ -1,6 +1,7 @@
 import { OAuth2Client } from "google-auth-library";
 import { getMappedStudentsByEmail, listStudentMaster, getTeacherProfile, getTeacherDirectory, activeTeacherSupport, listUserStudentMappings, ensureDefaultTenant, ensureBootstrapGlobalAdmin, listTenantRolesByEmail, getTenantDirectory, defaultTenantId, tenantIdValue } from "./storage.js";
 import { teacherCourseAccess } from "./teacherAccountType.js";
+import {financeAssigned} from "./financeAccess.js";
 
 const googleClient = new OAuth2Client();
 const aliasCaches=new Map();
@@ -279,7 +280,7 @@ export async function getAccess(request){
         if(selectedRole){
           const tenant=await getTenantDirectory(selectedRole.schoolId)||defaultTenant;
           const tenantOnboarding=String(tenant?.status||"")==="onboarding";
-          return {authenticated:true,...identity,role:"admin",schoolId:String(selectedRole.schoolId),schoolName:String(tenant?.schoolName||selectedRole.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selectedRole.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,tenantOnboarding,globalAdmin:false,identityGlobalAdmin:true}};
+          return {authenticated:true,...identity,role:"admin",schoolId:String(selectedRole.schoolId),schoolName:String(tenant?.schoolName||selectedRole.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selectedRole.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,tenantOnboarding,globalAdmin:false,identityGlobalAdmin:true,financeVerifier:await financeAssigned(String(selectedRole.schoolId),email)}};
         }
         return {authenticated:true,...identity,role:"contextDenied",schoolId:requestedSchoolId||null,schoolName:"",systemName:"",memberships,capabilities:{globalAdmin:true,contextDenied:true}};
       }
@@ -293,7 +294,7 @@ export async function getAccess(request){
       if(selected){
         const tenant=await getTenantDirectory(selected.schoolId)||defaultTenant;
         const tenantOnboarding=String(tenant?.status||"")==="onboarding";
-        return {authenticated:true,...identity,role:"admin",schoolId:String(selected.schoolId),schoolName:String(tenant?.schoolName||selected.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selected.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,tenantOnboarding,globalAdmin:false}};
+        return {authenticated:true,...identity,role:"admin",schoolId:String(selected.schoolId),schoolName:String(tenant?.schoolName||selected.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selected.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,tenantOnboarding,globalAdmin:false,financeVerifier:await financeAssigned(String(selected.schoolId),email)}};
       }
       if(wantsSchoolAdmin)return {authenticated:true,...identity,role:"contextDenied",schoolId:requestedSchoolId||null,schoolName:"",systemName:"",memberships,capabilities:{contextDenied:true}};
     }

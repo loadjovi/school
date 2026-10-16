@@ -59,7 +59,7 @@
       "/school-access.js?v=20261008-select-student",
       "/school-access-audit-admin.js?v=20260918-0005",
       "/school-admin-activity.js?v=20261008-activity2",
-      "/school-access-refresh-fix.js?v=20261002-school-admin-roles",
+      "/school-access-refresh-fix.js?v=20261015-finance-role",
       "/training-attendance.js?v=20261002-save-confirm"
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
@@ -78,20 +78,21 @@
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20261008-select-student",
-      "/school-access-refresh-fix.js?v=20261002-school-admin-roles"
+      "/school-access-refresh-fix.js?v=20261015-finance-role"
     ];
     if(role==="school")return ["/school-access.js?v=20261008-select-student"];
     if(role==="parent")return [
+      "/parent-activity-notice.js?v=20261016-new-activity-alert",
       "/practice-timer.js?v=20261004-manual4h",
       "/private-lesson-confirmation.js?v=20260929-late10",
       "/parent-semester-attendance.js?v=20261003-practice20",
-      "/parent-home-summary.js?v=20261003-practice20",
+      "/parent-home-summary.js?v=20261016-new-activity-alert",
       "/parent-practice-history.js?v=20261003-practice-history-toggle"
     ];
     if(role==="globalAdmin")return [
       "/school-access.js?v=20261008-select-student",
       "/school-access-audit-admin.js?v=20260918-0005",
-      "/school-access-refresh-fix.js?v=20261002-school-admin-roles"
+      "/school-access-refresh-fix.js?v=20261015-finance-role"
     ];
     return [];
   }

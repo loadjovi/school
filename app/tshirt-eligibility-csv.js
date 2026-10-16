@@ -1,0 +1,77 @@
+// 團T資格核對：匯出已取得的申請學生，不推斷未申請者；匯入只預覽，不寫入資料庫。
+const $=id=>document.getElementById(id);
+const headers=["studentId","studentName","group","firstFreeEligible","firstIssued","issuedAt","size","notes"];
+const statuses=new Set(["YES","NO","UNKNOWN"]);
+function download(rows){
+ const csv="\uFEFF"+[headers,...rows].map(row=>row.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(",")).join("\r\n");
+ const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+ const a=document.createElement("a");a.href=url;a.download="團T_首次免費資格核對.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+$("exportTshirtEligibility").addEventListener("click",async()=>{
+ try{
+  const headers=typeof window.uniformEventAuthHeaders==="function"?window.uniformEventAuthHeaders():{};
+  const r=await fetch("/api/students",{credentials:"same-origin",cache:"no-store",headers});
+  if(r.status===401)throw Error("登入驗證失敗（HTTP 401）。請重新登入。");
+  if(r.status===403)throw Error("權限不足（HTTP 403）。請切換為此校管理員。");
+  if(!r.ok)throw Error("無法取得學生主檔（HTTP "+r.status+"）");
+  const payload=await r.json();
+  const students=Array.isArray(payload)?payload:(payload.items||[]);
+  const map=new Map(),unclassified=[];
+  for(const student of students){
+   const id=String(student.studentId||"").trim(),name=String(student.name||student.studentName||"").trim();
+   const raw=String(student.groupName||student.group||"").trim().toUpperCase();
+   const group=/^(A|A團|A 團)$/.test(raw)?"A":/^(B|B團|B 團)$/.test(raw)?"B":/^(C|C團|C 團|儲備團|儲備)$/.test(raw)?"儲備團":"";
+   if(!id)continue;
+   if(!group){unclassified.push(name||id);continue}
+   const exception=name==="李沛臻";
+   const issued=(group==="A"||group==="B")&&!exception;
+   const eligible=!issued;
+   map.set(id,[id,name,group,eligible?"YES":"NO",issued?"YES":"NO",issued?"UNKNOWN":"", "",issued?"115學年度首次已領取；尺寸未知，待家長補登；歷史資料未寫入正式領用庫存":exception?"李沛臻例外：尚未首次領取，保留免費申請資格":"115學年度儲備團：尚未首次領取，保留免費申請資格"]);
+  }
+  if(!map.size)throw Error("學生主檔沒有可辨識的 A、B 或儲備團資料；請確認學生主檔團別及學校身分，未產生空白檔。");
+  download([...map.values()]);
+  $("tshirtEligibilityPreview").textContent="已由學生主檔匯出 "+map.size+" 位學生（A、B 團已領取但尺寸未知；李沛臻及儲備團未領取）。"+(unclassified.length?"另有 "+unclassified.length+" 位團別無法辨識，未列入；請檢查學生主檔團別。":"")+" 僅供核對，不會寫入資料庫或扣除庫存。";
+ }catch(e){$("tshirtEligibilityPreview").textContent="匯出失敗："+e.message}
+});
+function parseCsv(src){
+ const result=[],row=[];let value="",quoted=false;
+ src=src.replace(/^\uFEFF/,"");
+ for(let i=0;i<src.length;i++){
+  const c=src[i];
+  if(quoted){if(c==='"'&&src[i+1]==='"'){value+='"';i++}else if(c==='"')quoted=false;else value+=c}
+  else if(c==='"')quoted=true;
+  else if(c===','){row.push(value);value=""}
+  else if(c==='\n'){row.push(value.replace(/\r$/,""));result.push([...row]);row.length=0;value=""}
+  else value+=c;
+ }
+ if(quoted)throw Error("CSV 引號未關閉");
+ if(value||row.length){row.push(value.replace(/\r$/,""));result.push([...row])}
+ return result;
+}
+$("importTshirtEligibility").addEventListener("change",async e=>{
+ const file=e.target.files?.[0],out=$("tshirtEligibilityPreview");if(!file)return;
+ try{
+  if(file.size>1024*1024)throw Error("檔案不得超過 1MB");
+  const rows=parseCsv(await file.text()),head=rows.shift();
+  if(!head||headers.some((h,i)=>head[i]!==h)||head.length!==headers.length)throw Error("CSV 欄位需依原範本順序："+headers.join("、"));
+  const ids=new Set(),errors=[],data=[];
+  for(const [i,row] of rows.entries()){
+   if(!row.some(v=>v.trim()))continue;
+   const [id,name,group,eligible,issued,date,size,notes]=row;
+   if(row.length!==headers.length)errors.push("第 "+(i+2)+" 行：欄位數量不符");
+   if(!/^[a-zA-Z0-9_-]{1,100}$/.test(id||""))errors.push("第 "+(i+2)+" 行：學生 ID 格式錯誤");
+   if(ids.has(id))errors.push("第 "+(i+2)+" 行：重複學生 ID");
+   ids.add(id);
+   if(!["A","B","C","儲備團"].includes(group))errors.push("第 "+(i+2)+" 行：團別不正確");
+   if(!statuses.has(eligible)||!statuses.has(issued))errors.push("第 "+(i+2)+" 行：資格與領用請使用 YES／NO／UNKNOWN");
+   if(issued==="YES"&&eligible==="YES")errors.push("第 "+(i+2)+" 行：已領取卻仍標示免費可申請，需人工核對");
+   if(issued==="YES"&&!date)errors.push("第 "+(i+2)+" 行：已領用但缺少日期（可填 UNKNOWN 待查）");
+   data.push({id,name,group,eligible,issued,date,size,notes});
+  }
+  out.replaceChildren();
+  const p=document.createElement("p");p.textContent="匯入預覽 "+data.length+" 筆；錯誤 "+errors.length+" 項。此功能不會寫入資料庫。";out.appendChild(p);
+  if(errors.length){const list=document.createElement("ul");for(const msg of errors.slice(0,30)){const li=document.createElement("li");li.textContent=msg;list.appendChild(li)}out.appendChild(list)}
+  const table=document.createElement("table");table.innerHTML="<thead><tr><th>學生 ID</th><th>姓名</th><th>團別</th><th>免費資格</th><th>首次已領</th><th>日期</th></tr></thead>";
+  const body=document.createElement("tbody");for(const r of data.slice(0,100)){const tr=document.createElement("tr");for(const v of [r.id,r.name,r.group,r.eligible,r.issued,r.date]){const td=document.createElement("td");td.textContent=v;tr.appendChild(td)}body.appendChild(tr)}table.appendChild(body);out.appendChild(table);
+ }catch(err){out.textContent="匯入預覽失敗："+err.message}
+});
