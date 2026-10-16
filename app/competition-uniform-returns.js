@@ -99,13 +99,13 @@ byId("competitionReturnForm").addEventListener("submit",async event=>{
  const id=byId("competitionReturnStudent").value,entry=studentRows.get(id),source=byId("competitionReturnSource").value;
  const message=byId("competitionReturnMessage"),button=event.submitter;
  if(!entry||!source){message.textContent="請先選擇可辦理公費歸還的學生。";return}
- const body=source==="FORMAL"?{action:"REGISTER",source,sourceRequestId:byId("competitionFormalIssue").value}:
-  {action:"REGISTER",source,studentId:id,style:byId("competitionReturnStyle").value,size:byId("competitionReturnSize").value,sourceNote:byId("competitionReturnEvidence").value.trim()};
+ const body=source==="FORMAL"?{action:"REGISTER",source,sourceRequestId:byId("competitionFormalIssue").value,confirmWashedAndStock:true}:
+  {action:"REGISTER",source,studentId:id,style:byId("competitionReturnStyle").value,size:byId("competitionReturnSize").value,sourceNote:byId("competitionReturnEvidence").value.trim(),confirmWashedAndStock:true};
  if(source==="HISTORICAL"&&body.sourceNote.length<8){message.textContent="請填寫至少 8 字的領用及實物核對說明。";return}
  if(source==="HISTORICAL"&&(body.style!==entry.row[2]||body.size!==entry.row[3])&&!confirm("實際交回的款式或尺寸與學生登記資料不同，已於核對說明記錄原因並確認實物嗎？"))return;
- if(!confirm("確認 "+entry.name+" 已實際交回 "+(source==="FORMAL"?issues.find(issue=>issue.requestId===body.sourceRequestId)?.style+"款 "+issues.find(issue=>issue.requestId===body.sourceRequestId)?.size:body.style+"款 "+body.size)+" 的公費比賽服？此時尚不增加庫存。"))return;
- button.disabled=true;message.textContent="正在登記歸還…";
- try{await call("uniform-events/competition-returns",{method:"POST",body:JSON.stringify(body)});message.textContent="已登記收回，請安排送洗；目前尚未增加庫存。";await reload()}
+ if(!confirm("確認 "+entry.name+" 已交回 "+(source==="FORMAL"?issues.find(issue=>issue.requestId===body.sourceRequestId)?.style+"款 "+issues.find(issue=>issue.requestId===body.sourceRequestId)?.size:body.style+"款 "+body.size)+" 的公費比賽服，且已完成送洗、可再次發放？確認後將直接入庫 1 件。"))return;
+ button.disabled=true;message.textContent="正在登記歸還並入庫…";
+ try{await call("uniform-events/competition-returns",{method:"POST",body:JSON.stringify(body)});message.textContent="已確認送洗並入庫 1 件。";await reload();byId("reload")?.click()}
  catch(error){message.textContent="登記未完成："+error.message;await reload()}
  finally{button.disabled=false;syncStudent()}
 });
