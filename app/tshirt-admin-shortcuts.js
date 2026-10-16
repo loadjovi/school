@@ -75,8 +75,7 @@ async function loadRoster(){
  }catch(e){rosterLoaded=false;byId("tshirtRosterStatus").textContent=e.message}
 }
 function renderProcurement(){
- const text=byId("requestSummary")?.textContent||"";
- byId("tshirtProcurementSummary").textContent="採購門檻：10 件。"+(text?" 目前申請統計："+text:" 尚未載入申請統計。")+" 請在「家長申請」核對實際有效需求。";
+ if(typeof window.renderTshirtProcurementSummary==="function")window.renderTshirtProcurementSummary();
 }
 document.querySelectorAll("[data-tshirt-view]").forEach(b=>b.addEventListener("click",()=>{if(!views.has(b.dataset.tshirtView))return;selected=b.dataset.tshirtView;applyView()}));
 document.querySelectorAll("[data-admin-tab]").forEach(b=>b.addEventListener("click",()=>queueMicrotask(applyView)));
