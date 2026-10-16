@@ -61,6 +61,12 @@ function render(){
   const state=document.createElement("p");state.textContent=labels[item.status]||item.status;
   const source=document.createElement("p");source.textContent=(item.source==="FORMAL"?"系統正式發放":"已確認歷史領用")+"｜收回 "+date(item.receivedAt)+(item.stockedAt?"｜入庫 "+date(item.stockedAt):"");
   card.append(heading,state,source);
+  if(item.status==="STOCKED"){
+   const operator=document.createElement("p");
+   const account=item.stockedBy&&item.stockedBy!=="admin"?item.stockedBy:"";
+   operator.textContent="入庫經辦："+(account?(item.stockedByName&&item.stockedByName.toLowerCase()!==account.toLowerCase()?item.stockedByName+"（"+account+"）":account):"舊紀錄未留存帳號");
+   card.append(operator);
+  }
   if(item.sourceNote){const evidence=document.createElement("p");evidence.textContent="核對依據："+item.sourceNote;card.append(evidence)}
   const actions=document.createElement("div");actions.className="return-actions";
   const choices=["RECEIVED","WASHING"].includes(item.status)?[["ACCEPT","確認已完成送洗並入庫"],["REJECT","不合格，不入庫"]]:[];
