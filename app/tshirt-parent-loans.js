@@ -1,5 +1,6 @@
 const $=id=>document.getElementById(id);
 let links=[],records=[],names=new Map();
+let parentSearch="",parentRole="ALL";
 const headers=()=>({"Content-Type":"application/json",...(window.uniformEventAuthHeaders?.()||{})});
 async function call(path,options={}){
  const r=await fetch("/api/"+path,{credentials:"same-origin",cache:"no-store",...options,headers:{...headers(),...(options.headers||{})}});
@@ -7,8 +8,42 @@ async function call(path,options={}){
  if(!r.ok)throw Error(d.error||"HTTP "+r.status);
  return d;
 }
-function cell(tr,label,v){const td=document.createElement("td");td.dataset.label=label;td.textContent=String(v??"");tr.append(td)}
 function displayTime(value){if(!value)return "—";const date=new Date(value);return Number.isNaN(date.getTime())?String(value):new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(date)}
+const loanStatus=x=>({ISSUED_LIFETIME:"已領取（終身一次）",BORROWED:"借用中",WASHING:"送洗中",RETURNED:"已歸還"})[x.status]||x.status;
+function drawRecords(){
+ const container=$("tshirtParentRecords");container.replaceChildren();
+ const toolbar=document.createElement("div");toolbar.className="parent-loan-toolbar";
+ const search=document.createElement("input");search.type="search";search.placeholder="搜尋家長、Email 或學生";search.setAttribute("aria-label","搜尋家長領用紀錄");search.value=parentSearch;
+ const role=document.createElement("select");role.setAttribute("aria-label","篩選家長角色");
+ for(const [value,label] of [["ALL","全部角色"],["CADRE","幹部"],["VOLUNTEER","志工"]])role.add(new Option(label,value));role.value=parentRole;
+ toolbar.append(search,role);
+ const list=document.createElement("div");list.className="parent-loan-list";
+ const count=document.createElement("p");count.className="parent-loan-count";
+ container.append(toolbar,count,list);
+ function updateList(){
+  const query=parentSearch.trim().toLocaleLowerCase();
+  const filtered=records.filter(x=>(parentRole==="ALL"||x.role===parentRole)&&(!query||[x.parentName,x.parentEmail,names.get(String(x.studentId)),x.studentId].some(v=>String(v||"").toLocaleLowerCase().includes(query))));
+  filtered.sort((a,b)=>(a.role===b.role?0:a.role==="CADRE"?-1:1)||String(a.parentName||a.parentEmail).localeCompare(String(b.parentName||b.parentEmail),"zh-TW"));
+  count.textContent="顯示 "+filtered.length+"／"+records.length+" 位家長";
+  list.replaceChildren();
+  if(!filtered.length){const empty=document.createElement("p");empty.textContent=records.length?"找不到符合條件的家長。":"目前尚無家長領用或借還紀錄。";list.append(empty);return}
+  for(const x of filtered){
+   const details=document.createElement("details");details.className="parent-loan-record";
+   const summary=document.createElement("summary"),name=document.createElement("strong"),meta=document.createElement("span"),status=document.createElement("span");
+   name.textContent=x.parentName||x.parentEmail||"家長";
+   meta.textContent=(x.role==="CADRE"?"幹部":"志工")+" · "+(x.size||"尺寸待補")+" · "+(names.get(String(x.studentId))||"學生姓名待補");
+   status.className="parent-loan-status";status.textContent=loanStatus(x);
+   summary.append(name,meta,status);details.append(summary);
+   const body=document.createElement("dl");
+   for(const [label,value] of [["家長 Email",x.parentEmail],["關聯學生",(names.get(String(x.studentId))||"姓名待補登")+"（"+x.studentId+"）"],["角色",x.role==="CADRE"?"幹部":"志工"],["尺寸",x.size||"—"],["目前狀態",loanStatus(x)],["領取時間",displayTime(x.issuedAt)],["歸還時間",displayTime(x.returnedAt)]]){
+    const dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=label;dd.textContent=String(value||"—");body.append(dt,dd)
+   }
+   details.append(body);list.append(details)
+  }
+ }
+ search.addEventListener("input",()=>{parentSearch=search.value;updateList()});role.addEventListener("change",()=>{parentRole=role.value;updateList()});updateList();
+ $("tshirtParentListStatus").textContent="幹部 "+records.filter(x=>x.role==="CADRE").length+" 位、志工 "+records.filter(x=>x.role!=="CADRE").length+" 位；點選人員可查看完整紀錄。";
+}
 function draw(){
  const student=$("tshirtParentStudent"),before=student.value,unique=new Map();
  for(const l of links){const key=String(l.studentId||"").trim();if(key&&!unique.has(key))unique.set(key,l)}
@@ -16,13 +51,7 @@ function draw(){
  for(const [id,l] of [...unique].sort((a,b)=>a[0].localeCompare(b[0])))student.add(new Option((names.get(id)||l.studentName||"姓名待補登")+"（"+id+"）",id));
  if([...student.options].some(o=>o.value===before))student.value=before;
  drawParents();
- const container=$("tshirtParentRecords"),table=document.createElement("table"),head=document.createElement("tr"),thead=document.createElement("thead"),tbody=document.createElement("tbody");
- const titles=["家長","關聯學生","角色","尺寸","目前狀態","領取時間","歸還時間"];
- for(const title of titles){const th=document.createElement("th");th.textContent=title;head.append(th)}
- thead.append(head);table.append(thead,tbody);
- for(const x of records){const tr=document.createElement("tr"),values=[(x.parentName||"家長")+"\n"+x.parentEmail,(names.get(x.studentId)||"姓名待補登")+"（"+x.studentId+"）",x.role==="CADRE"?"幹部":"志工",x.size||"—",({ISSUED_LIFETIME:"已領取（終身一次）",BORROWED:"借用中",WASHING:"送洗中",RETURNED:"已歸還"})[x.status]||x.status,displayTime(x.issuedAt),displayTime(x.returnedAt)];values.forEach((v,i)=>cell(tr,titles[i],v));tbody.append(tr)}
- container.replaceChildren(records.length?table:document.createTextNode("目前尚無家長領用或借還紀錄。"));
- $("tshirtParentListStatus").textContent="共 "+records.length+" 位家長有紀錄；同一家長只會有一筆目前狀態。";
+ drawRecords();
 }
 function drawParents(){
  const studentId=$("tshirtParentStudent").value,parent=$("tshirtParentSelect"),before=parent.value;
