@@ -68,7 +68,9 @@ app.http("competitionUniformReturns",{
    if(typeof input.id!=="string"||!/^return:(?:[a-zA-Z0-9_-]{1,100}|legacy:[a-zA-Z0-9_-]{1,100})$/.test(input.id)||typeof input.etag!=="string")return reply("請重新載入歸還紀錄",400);
    const old=await get(inventory,schoolId,input.id);if(!old)return reply("找不到歸還紀錄",404);
    if(old.etag!==input.etag)return reply("紀錄已更新，請重新整理",409);
-   const allowed={WASHING:["RECEIVED"],ACCEPT:["WASHING"],REJECT:["RECEIVED","WASHING"]};
+   // Confirming the completed wash is the stocking action. Old WASHING
+   // records remain finishable without requiring another state transition.
+   const allowed={WASHING:["RECEIVED"],ACCEPT:["RECEIVED","WASHING"],REJECT:["RECEIVED","WASHING"]};
    const target={WASHING:"WASHING",ACCEPT:"STOCKED",REJECT:"REJECTED"}[action];
    if(!allowed[action].includes(old.status))return reply(old.status===target?"這個步驟已完成，請重新整理":"請依序辦理歸還、送洗、驗收入庫",409);
    const next={...old,status:target,updatedAt:now,updatedBy:actor};
@@ -83,6 +85,7 @@ app.http("competitionUniformReturns",{
     const stockKey="competition:"+old.style+":"+old.size,stock=await get(inventory,schoolId,stockKey);
     const onHand=stock?.onHand??0,reserved=stock?.reserved??0,unavailable=stock?.unavailable??0;
     if(![onHand,reserved,unavailable].every(v=>Number.isSafeInteger(v)&&v>=0)||onHand>=100000)return reply("庫存數量異常，請先核對",409);
+    next.washingAt=old.washingAt||now;next.washingBy=old.washingBy||actor;
     next.stockedAt=now;next.stockedBy=actor;
     const entity={partitionKey:schoolId,rowKey:stockKey,onHand:onHand+1,reserved,unavailable};
     try{await inventory.submitTransaction([
