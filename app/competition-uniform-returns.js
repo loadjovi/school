@@ -79,6 +79,7 @@ async function reload(){
  try{
   const [data,students]=await Promise.all([call("uniform-events/competition-returns"),call("students")]);
   returns=data.items||[];issues=data.issues||[];
+  window.dispatchEvent(new CustomEvent("competitionReturnsUpdated",{detail:data}));
   const list=Array.isArray(students)?students:students.items||[];
   studentRows=new Map();
   for(const student of list){
