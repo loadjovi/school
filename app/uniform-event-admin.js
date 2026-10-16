@@ -191,6 +191,10 @@ function placeSharedUniformPanels(){
  if(!last)return;
  requests.dataset.adminView=inventory.dataset.adminView=activeAdminTab;
  requests.dataset.uniformModulePanel=inventory.dataset.uniformModulePanel=activeAdminTab;
+ requests.dataset.competitionPanel="requests";
+ inventory.dataset.competitionPanel="inventory";
+ el("uniformRequestsHeading").textContent=activeAdminTab==="competitionUniform"?"A 團比賽服｜家長申請":"家長團 T 申請｜需求與採購統計";
+ el("uniformInventoryHeading").textContent=activeAdminTab==="competitionUniform"?"A 團比賽服｜庫存管理":"團 T｜庫存管理";
  last.insertAdjacentElement("afterend",requests);
  requests.insertAdjacentElement("afterend",inventory);
  el("inventoryType").value=activeAdminTab;
@@ -223,6 +227,7 @@ function syncUniformModuleVisibility(){
   description.textContent=adminTabDescriptions[activeAdminTab];
  }
  if(activeAdminTab==="regularUniform"&&typeof window.syncTshirtViews==="function")window.syncTshirtViews();
+ if(activeAdminTab==="competitionUniform"&&typeof window.syncCompetitionViews==="function")window.syncCompetitionViews();
 }
 document.querySelectorAll("[data-admin-tab]").forEach(button=>button.addEventListener("click",()=>{
  activeAdminTab=button.dataset.adminTab;
