@@ -6,6 +6,22 @@ import {sendUniformRequestStatusEmail} from "../lib/email.js";
 
 const fail=(error,status=400)=>json({error},status);
 const validId=value=>typeof value==="string"&&/^[a-zA-Z0-9_-]{1,100}$/.test(value);
+const regularSizes=new Set(["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"]);
+function validBreakdown(parts,order,total){
+ if(!Array.isArray(parts)||!parts.length||parts.length>regularSizes.size)return false;
+ const seen=new Set();let sum=0,parent=0;
+ for(const part of parts){
+  if(!part||!regularSizes.has(part.size)||seen.has(part.size)||!Number.isSafeInteger(part.quantity)||part.quantity<1||part.quantity>100)return false;
+  seen.add(part.size);sum+=part.quantity;if(part.size===order.size)parent=part.quantity;
+ }
+ return sum===total&&parent>=order.quantity;
+}
+function sameBreakdown(left,right){
+ if(!Array.isArray(left)||!Array.isArray(right)||left.length!==right.length)return false;
+ const bySize=parts=>[...parts].sort((a,b)=>String(a?.size).localeCompare(String(b?.size)));
+ const actual=bySize(left),expected=bySize(right);
+ return actual.every((x,i)=>x?.size===expected[i]?.size&&x?.quantity===expected[i]?.quantity);
+}
 async function get(table,schoolId,id){try{return await table.getEntity(schoolId,id)}catch(error){if(error.statusCode===404)return null;throw error}}
 function stockKey(order){
  if(order.kind==="regularUniform"&&["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"].includes(order.size))return "regular:"+order.size;
@@ -43,30 +59,38 @@ app.http("uniformReceiving",{methods:["GET","POST"],authLevel:"anonymous",route:
   const quantity=before.kind==="regularUniform"?before.quantity:1,key=stockKey(before);
   const procurementQuantity=before.kind==="regularUniform"?(before.procurementQuantity??quantity):1;
   if(!key||!Number.isSafeInteger(quantity)||quantity<1||quantity>20||!Number.isSafeInteger(procurementQuantity)||procurementQuantity<quantity||procurementQuantity>100||input.quantity!==quantity||input.procurementQuantity!==undefined&&input.procurementQuantity!==procurementQuantity)return fail("入庫件數與申請或採購紀錄不一致，請重新整理",409);
+  const breakdown=before.kind==="regularUniform"?(before.procurementBreakdown||procurementQuantity===quantity&&[{size:before.size,quantity}]):[{size:before.size,quantity:1}];
   const ledgerKey="received:"+input.id;
   let ledger=await get(inventory,schoolId,ledgerKey);
   if(!ledger){
+   if(before.kind==="regularUniform"&&!validBreakdown(breakdown,before,procurementQuantity))return fail("舊採購紀錄尚未分配各尺碼，請先使用『更正採購尺碼』填寫廠商採購明細",409);
+   if(!sameBreakdown(input.receivedBreakdown,breakdown))return fail("實際到貨的各尺碼件數須與採購明細一致；若有差異，請先更正採購尺碼再驗收",409);
    if(input.etag!==order.etag)return fail("申請資料已更新，請重新整理後再入庫",409);
-   const stock=await get(inventory,schoolId,key);
-   const onHand=stock?.onHand??0,reserved=stock?.reserved??0,unavailable=stock?.unavailable??0;
-   if(![onHand,reserved,unavailable].every(n=>Number.isSafeInteger(n)&&n>=0)||onHand+(input.useExistingStock===true?0:procurementQuantity)>100000)return fail("庫存數量有誤，請先核對盤點資料",409);
-   if(input.useExistingStock===true&&onHand-reserved-unavailable<procurementQuantity)return fail("此款式尺寸的現有可用庫存不足，請先核對盤點數量",409);
+   const changes=[];
+   for(const part of breakdown){
+    const sizeKey=before.kind==="regularUniform"?"regular:"+part.size:key;
+    const stock=await get(inventory,schoolId,sizeKey);
+    const onHand=stock?.onHand??0,reserved=stock?.reserved??0,unavailable=stock?.unavailable??0;
+    if(![onHand,reserved,unavailable].every(n=>Number.isSafeInteger(n)&&n>=0)||onHand+(input.useExistingStock===true?0:part.quantity)>100000)return fail("庫存數量有誤，請先核對盤點資料",409);
+    if(input.useExistingStock===true&&onHand-reserved-unavailable<part.quantity)return fail("部分尺碼的現有可用庫存不足，請先核對盤點數量",409);
+    if(input.useExistingStock!==true){
+     const next={partitionKey:schoolId,rowKey:sizeKey,onHand:onHand+part.quantity,reserved,unavailable};
+     changes.push(stock?["update",next,"Replace",{etag:stock.etag}]:["create",next]);
+    }
+   }
    const stamp=new Date().toISOString();
    const receipt={partitionKey:schoolId,rowKey:ledgerKey,requestId:input.id,studentId:before.studentId,kind:before.kind,
     style:before.style||"",size:before.size,quantity,procurementQuantity,receivedDate:input.receivedDate,receivedAt:stamp,
-    receivedBy:String(ctx.access.email||"admin"),note:input.note.trim(),source:input.useExistingStock===true?"existing_stock":"new_arrival"};
-   const nextStock={partitionKey:schoolId,rowKey:key,onHand:onHand+procurementQuantity,reserved,unavailable};
+    breakdown:JSON.stringify(breakdown),receivedBy:String(ctx.access.email||"admin"),note:input.note.trim(),source:input.useExistingStock===true?"existing_stock":"new_arrival"};
    try{
-    await inventory.submitTransaction(input.useExistingStock===true
-     ?[["create",receipt]]
-     :[stock?["update",nextStock,"Replace",{etag:stock.etag}]:["create",nextStock],["create",receipt]]);
+    await inventory.submitTransaction([...changes,["create",receipt]]);
    }catch(error){
     if([409,412].includes(error.statusCode))return fail("庫存或此申請的入庫紀錄已變更，請重新整理後再試",409);
     ledger=await get(inventory,schoolId,ledgerKey);if(!ledger)throw error;
    }
    ledger=ledger||await get(inventory,schoolId,ledgerKey);
   }
-  if(!ledger||ledger.requestId!==input.id||ledger.quantity!==quantity||(ledger.procurementQuantity||ledger.quantity)!==procurementQuantity)return fail("入庫紀錄與申請或採購件數不一致，請人工核對",409);
+  if(!ledger||ledger.requestId!==input.id||ledger.quantity!==quantity||(ledger.procurementQuantity||ledger.quantity)!==procurementQuantity||ledger.breakdown&&(!Array.isArray(breakdown)||!sameBreakdown(JSON.parse(ledger.breakdown),breakdown)))return fail("入庫紀錄與申請或採購尺碼不一致，請人工核對",409);
   if(before.status==="ORDERED"||!before.stockReceivedAt){
    const stamp=new Date().toISOString();
    const next={...before,status:before.status==="ORDERED"?"ARRIVED":before.status,stockReceivedAt:ledger.receivedAt,stockReceivedDate:ledger.receivedDate,updatedAt:stamp};
