@@ -71,7 +71,7 @@ function renderUniformRequestAlerts(){
  const countsFor=kind=>{
   const rows=cachedRequests.filter(x=>String(x.kind||x.type||"")===kind&&tracked.has(String(x.status||"").toUpperCase()));
   return {total:rows.length,pending:rows.filter(x=>x.status==="PENDING").length,approved:rows.filter(x=>x.status==="APPROVED").length,
-   ongoing:rows.filter(x=>["ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(x.status)).length};
+   ordered:rows.filter(x=>x.status==="ORDERED").length,arrived:rows.filter(x=>x.status==="ARRIVED").length,pickup:rows.filter(x=>x.status==="READY_FOR_PICKUP").length};
  };
  const tabs=[["regularUniform","團 T",countsFor("regularUniform")],["competitionUniform","A 團比賽服",countsFor("competitionUniform")]];
  for(const [tab,label,counts] of tabs){
@@ -88,7 +88,7 @@ function renderUniformRequestAlerts(){
   if(!counts.total)continue;
   const row=document.createElement("div");row.style.marginTop="8px";
   const description=document.createElement("span");
-  description.textContent=label+"：待審 "+counts.pending+"、已核准待付款／採購 "+counts.approved+"、採購／領取中 "+counts.ongoing+"。";
+  description.textContent=label+"：待審 "+counts.pending+"、已核准待付款／採購 "+counts.approved+"、已採購待到貨 "+counts.ordered+"、已到貨待開放領取 "+counts.arrived+"、可領取 "+counts.pickup+"。";
   const btn=document.createElement("button");btn.type="button";btn.textContent="查看申請";btn.style.marginLeft="10px";
   btn.addEventListener("click",()=>{
    activeAdminTab=tab;syncUniformModuleVisibility();
@@ -313,8 +313,8 @@ function table(id,rows,columns,actions=false){
    const issue=r.status==="READY_FOR_PICKUP"&&mayCollect&&(r.received||existingStock)?"<button type='button' data-issue='"+i+"'>"+(r.received?"確認實際發放":"以現有庫存發放")+"</button>":"";
    const needsReceipt=r.status==="ORDERED"||(r.status==="ARRIVED"||r.status==="READY_FOR_PICKUP")&&!r.received;
    const receive=needsReceipt?"<button type='button' data-receive='"+i+"'>"+(r.received?"同步已入庫狀態":r.status==="ORDERED"?"驗收到貨並入庫":"補登驗收入庫")+"</button>":"";
-   const progress=next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":issue||"<span>"+esc(r.statusLabel||r.status)+"</span>";
-   controls="<td data-label='狀態管理'>"+(!existingStock?receive:"")+(r.status==="APPROVED"&&!mayOrder?"<p class='hint'>待財務確認入帳後，才能更新為已統一採購。</p>":"")+progress+adjust+amount+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
+   const progress=r.status==="ORDERED"?"<button type='button' data-cancel='"+i+"'>取消申請</button>":next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":issue||"<span>"+esc(r.statusLabel||r.status)+"</span>";
+   controls="<td data-label='狀態管理'>"+receive+(r.status==="APPROVED"&&!mayOrder?"<p class='hint'>待財務確認入帳後，才能更新為已統一採購。</p>":"")+progress+adjust+amount+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
   }
   return "<tr>"+cells+controls+"</tr>";
@@ -783,7 +783,7 @@ el("requests").addEventListener("click",async e=>{
   });
   return;
  }
- const i=e.target.dataset.update??e.target.dataset.adjust??e.target.dataset.amount??e.target.dataset.issue;if(i===undefined)return;
+ const i=e.target.dataset.update??e.target.dataset.cancel??e.target.dataset.adjust??e.target.dataset.amount??e.target.dataset.issue;if(i===undefined)return;
  if(e.target.dataset.issue!==undefined){
   const row=visibleModuleRequests[Number(i)];if(!row||pendingRequestIds.has(row.id))return;
   const receivedBy=prompt("請填寫實際領取人（例如家長姓名）","");if(receivedBy===null)return;
@@ -813,7 +813,7 @@ el("requests").addEventListener("click",async e=>{
   return;
  }
  const row=visibleModuleRequests[Number(i)],select=el("requests").querySelector("select[data-index='"+i+"']");
- const status=select?.value;if(!row||!status)return;
+ const status=e.target.dataset.cancel!==undefined?"CANCELLED":select?.value;if(!row||!status)return;
  if(!confirm("確定將這筆申請改為 "+status+"？"))return;
  const reason=status==="CANCELLED"?prompt("請填寫取消原因（家長可在申請紀錄查看）",""):"";
  if(status==="CANCELLED"&&(!reason||!reason.trim())){el("status").textContent="取消申請須填寫原因";return}
