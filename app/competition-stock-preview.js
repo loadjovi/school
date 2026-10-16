@@ -23,18 +23,3 @@ window.addEventListener("uniformInventoryLoadFailed",event=>{
 });
 table.appendChild(body);stock.appendChild(table);
 if(Array.isArray(window.uniformInventoryItems))renderStock(window.uniformInventoryItems);
-const styleEl=document.getElementById("competitionReturnStyle"),sizeEl=document.getElementById("competitionReturnSize");
-function syncSizes(){sizeEl.replaceChildren(...sizes[styleEl.value].map(x=>new Option(x,x)))}
-styleEl.addEventListener("change",syncSizes);syncSizes();
-const preview=document.getElementById("competitionReturnPreview");
-for(const id of ["competitionReturnStudent","competitionReturnStyle","competitionReturnSize","competitionReturnStatus"]){
- document.getElementById(id).addEventListener("change",()=>preview.replaceChildren());
-}
-document.getElementById("competitionReturnPreviewAdd").addEventListener("click",()=>{
- const student=document.getElementById("competitionReturnStudent").value.trim();
- if(!student){preview.textContent="請先選擇 A 團學生。";return}
- const heading=document.createElement("strong");heading.textContent="歸還流程預覽（未儲存）";
- const detail=document.createElement("p");detail.textContent=student+"｜"+styleEl.value+"款 "+sizeEl.value+"｜"+document.getElementById("competitionReturnStatus").selectedOptions[0].textContent;
- const note=document.createElement("p");note.textContent="僅供核對流程；不會新增歸還紀錄、變更庫存或發送通知。";
- preview.replaceChildren(heading,detail,note);
-});
