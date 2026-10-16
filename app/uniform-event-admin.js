@@ -354,7 +354,7 @@ function table(id,rows,columns,actions=false){
    const issue=r.status==="READY_FOR_PICKUP"&&mayCollect&&(r.received||existingStock)?"<button type='button' data-issue='"+i+"'>"+(r.received?"確認實際發放":"以現有庫存發放")+"</button>":"";
    const needsReceipt=r.status==="ORDERED"||(r.status==="ARRIVED"||r.status==="READY_FOR_PICKUP")&&!r.received;
    const receive=needsReceipt?"<button type='button' data-receive='"+i+"'>"+(r.received?"同步已入庫狀態":r.status==="ORDERED"?"驗收到貨並入庫":"補登驗收入庫")+"</button>":"";
-   const progress=r.status==="ORDERED"?"<button type='button' data-cancel='"+i+"'>取消申請</button>":next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":issue||"<span>"+esc(r.statusLabel||r.status)+"</span>";
+   const progress=r.status==="ORDERED"?"<button type='button' data-cancel='"+i+"'>取消申請</button>":next.length?"<select data-index='"+i+"'><option value=''>選擇下一步</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>選擇後執行</button>"+(r.status==="ARRIVED"&&mayCollect&&r.received?"<p class='hint'>選擇「開放領取」後，家長畫面會顯示可以領取，並寄送通知信；實際交付時再按「確認實際發放」。</p>":""):issue||"<span>"+esc(r.statusLabel||r.status)+"</span>";
    controls="<td data-label='狀態管理'>"+receive+(r.status==="APPROVED"&&!mayOrder?"<p class='hint'>待財務確認入帳後，才能更新為已統一採購。</p>":"")+progress+procurementAdjust+amount+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
   }
@@ -832,6 +832,11 @@ function openProcurementForm(row,cell,trigger,correction){
   catch(error){message.textContent="更新失敗："+error.message;submit.disabled=false}
  });
 }
+el("requests").addEventListener("change",e=>{
+ const select=e.target.closest("select[data-index]");if(!select)return;
+ const button=el("requests").querySelector("button[data-update='"+select.dataset.index+"']");if(!button)return;
+ button.textContent=select.value==="READY_FOR_PICKUP"?"開放領取並通知家長":select.value==="CANCELLED"?"取消申請並通知家長":select.value?"確認更新並通知家長":"選擇後執行";
+});
 el("requests").addEventListener("click",async e=>{
  if(e.target.dataset.receive!==undefined){
   const row=visibleModuleRequests[Number(e.target.dataset.receive)];if(!row||pendingRequestIds.has(row.id))return;
@@ -920,10 +925,11 @@ el("requests").addEventListener("click",async e=>{
  if(status==="ORDERED"&&row.kind==="regularUniform"){
   openProcurementForm(row,e.target.closest("td"),e.target,false);return;
  }
- if(!confirm("確定將這筆申請改為 "+status+"？"))return;
+ const confirmation=status==="READY_FOR_PICKUP"?"確認庫存已驗收入庫，並開放家長領取？送出後家長畫面會顯示「可以領取」，系統將寄送通知信。此步驟不代表已實際發放。":status==="CANCELLED"?"確定取消這筆申請並通知家長？":"確定更新這筆申請並通知家長？";
+ if(!confirm(confirmation))return;
  const reason=status==="CANCELLED"?prompt("請填寫取消原因（家長可在申請紀錄查看）",""):"";
  if(status==="CANCELLED"&&(!reason||!reason.trim())){el("status").textContent="取消申請須填寫原因";return}
- await updateUniformRequest(row,{status,reason:reason?.trim()||""},{expectedStatus:status,successText:"申請狀態已更新"});
+ await updateUniformRequest(row,{status,reason:reason?.trim()||""},{expectedStatus:status,successText:status==="READY_FOR_PICKUP"?"已開放領取；家長畫面顯示可以領取":"申請狀態已更新"});
 });
 el("inventoryForm").onsubmit=async e=>{
  e.preventDefault();const f=new FormData(e.target),type=String(f.get("type")),style=String(f.get("style"));
