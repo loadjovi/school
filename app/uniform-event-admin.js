@@ -94,6 +94,7 @@ function renderUniformRequestAlerts(){
   btn.addEventListener("click",()=>{
    activeAdminTab=tab;syncUniformModuleVisibility();
    if(tab==="regularUniform")document.querySelector('[data-tshirt-view="requests"]')?.click();
+   if(tab==="competitionUniform")document.querySelector('[data-competition-view="requests"]')?.click();
    el("uniformRequestsPanel")?.scrollIntoView({behavior:"smooth",block:"start"});
   });
   row.append(description,btn);host.append(row);
