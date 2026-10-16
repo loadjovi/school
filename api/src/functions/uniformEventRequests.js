@@ -136,17 +136,7 @@ app.http("uniformEventRequests",{
           action="request.parent_edit";auditDetail={studentId:before.studentId,before:{size:before.size,quantity:before.quantity,style:before.style},after:{size:next.size,quantity:next.quantity,style:next.style}};
         }else return err("不支援的家長操作",400);
       }else if(data.action==="ADJUST"){
-        if(!["PENDING","APPROVED"].includes(before.status)||before.kind!=="regularUniform")return err("僅可更正尚未採購的團 T 件數",409);
-        if(["REPORTED_UNVERIFIED","VERIFIED"].includes(before.paymentStatus))return err("已有匯款紀錄，請先由財務核對，不可直接更正件數",409);
-        if(!Number.isSafeInteger(data.quantity)||data.quantity<1||data.quantity>20||!safe(data.reason,300)||!data.reason.trim())return err("請輸入 1–20 件及更正原因；全部取消請選取消申請",400);
-        if(data.quantity===before.quantity)return err("件數未變更",400);
-        next.quantity=data.quantity;next.adjustmentReason=data.reason.trim();next.note=`團 T 自費加購 ${next.quantity} 件；${before.status==="APPROVED"?"已核准待採購":"待校方審核"}`;action="request.admin_adjust";
-        auditDetail={studentId:before.studentId,fromQuantity:before.quantity,toQuantity:next.quantity,reason:next.adjustmentReason};shouldNotify=true;
-        if(before.status==="APPROVED"){
-          const unitPrice=Number.isSafeInteger(before.unitPrice)&&before.unitPrice>0?before.unitPrice:(Number.isSafeInteger(before.amount)&&before.amount>0?before.amount/before.quantity:(await getUniformPrice(schoolId,before.kind)).unitPrice);
-          if(!Number.isSafeInteger(unitPrice))return err("原核准單價不明，請先核對付款資料",409);
-          next.unitPrice=unitPrice;next.amount=next.quantity*unitPrice;
-        }
+        return err("後台不得修改家長申請件數；如家長填錯，請家長於核准前自行更正或取消重填",403);
       }else if(data.action==="SET_AMOUNT"){
         if(access.capabilities?.financeVerifier!==true)return err("僅財務人員可補正應繳金額",403);
         if(before.status!=="APPROVED"||!["regularUniform","competitionUniform"].includes(before.kind)||before.acquisition==="PUBLIC")return err("僅可補正已核准的自費團服金額",409);
@@ -156,10 +146,18 @@ app.http("uniformEventRequests",{
         next.unitPrice=(await getUniformPrice(schoolId,before.kind)).unitPrice;
         next.amount=next.unitPrice*(before.kind==="regularUniform"?before.quantity:1);next.paymentStatus="AWAITING_TRANSFER";
         action="request.amount_confirm";auditDetail={studentId:before.studentId,amount:next.amount};shouldNotify=true;
+      }else if(data.action==="SET_PROCUREMENT_QUANTITY"){
+        if(before.kind!=="regularUniform"||before.status!=="ORDERED")return err("僅可更正已採購、尚未入庫的團 T 採購數量",409);
+        const inventory=TableClient.fromConnectionString(connection(),"TenantUniformInventory");
+        if(await find(inventory,schoolId,"received:"+data.id))return err("此筆已驗收入庫，採購數量不可再更正",409);
+        if(!Number.isSafeInteger(data.procurementQuantity)||data.procurementQuantity<before.quantity||data.procurementQuantity>100||!safe(data.reason,300)||!data.reason.trim())return err("採購件數須不小於家長申請件數、至多 100 件，並填寫原因",400);
+        next.procurementQuantity=data.procurementQuantity;next.procurementReason=data.reason.trim();action="request.procurement_quantity_adjust";
+        auditDetail={studentId:before.studentId,requestQuantity:before.quantity,from:before.procurementQuantity??before.quantity,to:next.procurementQuantity,reason:next.procurementReason};
       }else{
         if(!states.has(data.status))return err("Invalid update");
         if(!allowedNext[before.status]?.has(data.status))return err("Invalid status transition; refresh and check the current stage",409);
         if(data.status==="ORDERED"&&["regularUniform","competitionUniform"].includes(before.kind)&&before.acquisition!=="PUBLIC"&&before.paymentStatus!=="VERIFIED")return err("財務尚未確認入帳，不能更新為已統一採購",409);
+        if(data.status==="ORDERED"&&before.kind==="regularUniform"&&(!Number.isSafeInteger(data.procurementQuantity)||data.procurementQuantity<before.quantity||data.procurementQuantity>100))return err("請填寫實際向廠商採購的團 T 件數（不得小於家長申請件數）",400);
         if(data.status==="ARRIVED"&&["regularUniform","competitionUniform"].includes(before.kind))return err("請使用驗收入庫功能，入庫後會自動更新為已到貨",409);
         if(data.status==="READY_FOR_PICKUP"&&["regularUniform","competitionUniform"].includes(before.kind)){
           const inventory=TableClient.fromConnectionString(connection(),"TenantUniformInventory");
@@ -168,6 +166,7 @@ app.http("uniformEventRequests",{
         if(data.status==="APPROVED"&&before.kind==="competitionUniform"&&before.acquisition==="PUBLIC"&&(hasHistoricalPublicIssue(schoolId,before.studentId)||await hasPublicRequest(client,schoolId,before.studentId,data.id)))return err("此學生已有公費比賽服領用或其他公費申請，請取消重複申請",409);
         if(data.status==="READY_FOR_PICKUP"&&["regularUniform","competitionUniform"].includes(before.kind)&&before.acquisition!=="PUBLIC"&&before.paymentStatus!=="VERIFIED")return err("自費申請須先完成財務核帳，才可開放領取",409);
         next.status=data.status;
+        if(data.status==="ORDERED"&&before.kind==="regularUniform")next.procurementQuantity=data.procurementQuantity;
         if(data.status==="APPROVED"&&["regularUniform","competitionUniform"].includes(before.kind)){
           if(before.kind==="competitionUniform"&&before.acquisition==="PUBLIC"){
             next.amount=0;next.paymentStatus="NOT_REQUIRED";
@@ -184,7 +183,7 @@ app.http("uniformEventRequests",{
           next.cancelReason=data.reason.trim();
         }
         if(data.status==="FULFILLED")return err("Use inventory issuance workflow before fulfillment",409);
-        auditDetail={studentId:before.studentId,from:before.status,to:next.status,reason:next.cancelReason||""};shouldNotify=true;
+        auditDetail={studentId:before.studentId,from:before.status,to:next.status,procurementQuantity:next.procurementQuantity||null,reason:next.cancelReason||""};shouldNotify=true;
       }
       await audit(schoolId,access,action,data.id,auditDetail);
       try{await client.updateEntity({partitionKey:schoolId,rowKey:data.id,payload:encode(next),updatedAt:next.updatedAt},"Replace",{etag:previous.etag})}
