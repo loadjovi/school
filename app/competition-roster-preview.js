@@ -26,7 +26,7 @@ if(root){
   const received=confirmedReceived.has(row[1]);
   const details=document.createElement("details");details.className="competition-roster-row";
   details.innerHTML="<summary><span class=\"roster-identity\"><span class=\"roster-class\">"+safe(klass)+"</span><strong>"+safe(row[1])+"</strong></span>"+
-   "<span class=\"roster-size\">"+safe(row[2])+"款 · "+safe(row[3])+"</span>"+
+   "<span class=\"roster-size\">"+safe(row[2])+"款 · "+safe(row[3])+" · "+safe(row[4])+"</span>"+
    "<span class=\"roster-status"+(received?"":" is-pending")+"\">"+(received?"已確認領用":"領用待核對")+"</span>"+
    "<span class=\"roster-expand\" aria-hidden=\"true\">⌄</span></summary>"+
    "<div class=\"roster-row-extra\"><span>取得方式：<strong>"+safe(row[4])+"</strong></span><span>樂器："+safe(row[5])+"</span>"+
