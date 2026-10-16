@@ -64,7 +64,8 @@ function render(){
   if(item.status==="STOCKED"){
    const operator=document.createElement("p");
    const account=item.stockedBy&&item.stockedBy!=="admin"?item.stockedBy:"";
-   operator.textContent="入庫經辦："+(account?(item.stockedByName&&item.stockedByName.toLowerCase()!==account.toLowerCase()?item.stockedByName+"（"+account+"）":account):"舊紀錄未留存帳號");
+   const display=item.stockedByLabel||item.stockedByName&&item.stockedByName.toLowerCase()!==account.toLowerCase()&&item.stockedByName||account||"舊紀錄未留存帳號";
+   operator.textContent="入庫經辦："+display;
    card.append(operator);
   }
   if(item.sourceNote){const evidence=document.createElement("p");evidence.textContent="核對依據："+item.sourceNote;card.append(evidence)}
