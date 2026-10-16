@@ -160,7 +160,7 @@ function renderModuleRequests(){
   const actionable=rows.filter(x=>["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(x.status));
   el("competitionProcurementSummary").textContent="申請共 "+rows.length+" 筆；尚在處理 "+actionable.length+" 筆，已採購 "+(counts.ORDERED||0)+" 筆，已到貨 "+(counts.ARRIVED||0)+" 筆。請依款式與尺寸核對採購需求；取消或已領取申請不列入待處理數。";
  }
- table("requests",rows.map(x=>({...x,processing:pendingRequestIds.has(x.id),received:receivedRequestIds.has(x.id),studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",acquisitionLabel:x.kind==="competitionUniform"?({PUBLIC:"公費配發",PURCHASE:"自費買斷",RENTAL:"租借",PENDING:"取得方式待核對"})[x.acquisition]||"待核對":"自費加購",statusLabel:pendingRequestIds.has(x.id)?"更新處理中…":x.status==="APPROVED"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"已核准｜待財務核帳":["ARRIVED","READY_FOR_PICKUP"].includes(x.status)&&!receivedRequestIds.has(x.id)?"待補登入庫｜暫不可發放":x.status==="READY_FOR_PICKUP"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"待財務核帳｜暫不可領取":({PENDING:"待審核",APPROVED:"已核准｜可統一採購",ORDERED:"已採購｜待到貨",ARRIVED:"已到貨｜待安排領取",READY_FOR_PICKUP:"可以領取",FULFILLED:"已領取",CANCELLED:"已取消"})[x.status]||x.status,procurementLabel:["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(x.status)?((x.procurementQuantity??x.quantity??1)+" 件"):"—",issueDetail:x.status==="FULFILLED"?`${x.receivedBy||"領取人待核對"}｜${x.issuedAt?new Date(x.issuedAt).toLocaleDateString("zh-TW"):"日期待核對"}`:"—"})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["acquisitionLabel","取得方式"],["size","尺寸"],["quantity","家長申請"],["procurementLabel","向廠商採購"],["statusLabel","狀態"],["issueDetail","實際領取"],["createdAt","建立時間"]],true);
+ table("requests",rows.map(x=>({...x,processing:pendingRequestIds.has(x.id),received:receivedRequestIds.has(x.id),studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",acquisitionLabel:x.kind==="competitionUniform"?({PUBLIC:"公費配發",PURCHASE:"自費買斷",RENTAL:"租借",PENDING:"取得方式待核對"})[x.acquisition]||"待核對":"自費加購",statusLabel:pendingRequestIds.has(x.id)?"更新處理中…":x.status==="APPROVED"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"已核准｜待財務核帳":["ARRIVED","READY_FOR_PICKUP"].includes(x.status)&&!receivedRequestIds.has(x.id)?"待補登入庫｜暫不可發放":x.status==="READY_FOR_PICKUP"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"待財務核帳｜暫不可領取":({PENDING:"待審核",APPROVED:"已核准｜可統一採購",ORDERED:"已採購｜待到貨",ARRIVED:"已到貨｜待安排領取",READY_FOR_PICKUP:"可以領取",FULFILLED:"已領取",CANCELLED:"已取消"})[x.status]||x.status,procurementLabel:["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(x.status)?((x.procurementQuantity??x.quantity??1)+" 件"+(x.kind==="regularUniform"?"｜"+(Array.isArray(x.procurementBreakdown)?x.procurementBreakdown.map(p=>p.size+" "+p.quantity).join("、"):(x.procurementQuantity??x.quantity)>x.quantity?"尺碼未分配":x.size+" "+x.quantity):"")):"—",issueDetail:x.status==="FULFILLED"?`${x.receivedBy||"領取人待核對"}｜${x.issuedAt?new Date(x.issuedAt).toLocaleDateString("zh-TW"):"日期待核對"}`:"—"})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["acquisitionLabel","取得方式"],["size","尺寸"],["quantity","家長申請"],["procurementLabel","向廠商採購"],["statusLabel","狀態"],["issueDetail","實際領取"],["createdAt","建立時間"]],true);
 }
 
 function renderModuleStock(){
@@ -341,7 +341,7 @@ function table(id,rows,columns,actions=false){
    const mayCollect=!payable||r.paymentStatus==="VERIFIED";
    const mayOrder=!payable||r.paymentStatus==="VERIFIED";
    const next={PENDING:[["APPROVED",payable?"核准，等待付款":"核准，等待採購"],["CANCELLED","取消申請"]],APPROVED:[...(mayOrder?[["ORDERED","已統一採購"]]:[]),["CANCELLED","取消申請"]],ORDERED:[["CANCELLED","取消申請"]],ARRIVED:[...(mayCollect&&r.received?[["READY_FOR_PICKUP","開放領取"]]:[]),["CANCELLED","取消申請"]]}[r.status]||[];
-   const procurementAdjust=r.kind==="團 T"&&r.status==="ORDERED"&&!r.received?"<button type='button' data-procurement='"+i+"'>更正採購件數</button>":"";
+   const procurementAdjust=r.kind==="團 T"&&r.status==="ORDERED"&&!r.received?"<button type='button' data-procurement='"+i+"'>更正採購尺碼與件數</button>":"";
    const amount=r.status==="APPROVED"&&r.acquisition!=="PUBLIC"&&!Number.isSafeInteger(r.amount)?"<button type='button' data-amount='"+i+"'>補正應繳金額</button>":"";
    const stockKey=r.kind==="A 團比賽服"?"competition:"+r.style+":"+r.size:"regular:"+r.size;
    const stock=cachedStock.find(x=>x.key===stockKey),needed=r.kind==="A 團比賽服"?1:Number(r.quantity);
@@ -693,7 +693,7 @@ el("config").onsubmit=async e=>{
 };
 document.getElementById("retryAdminAuth").addEventListener("click",start);
 start();
-async function updateUniformRequest(row,body,{expectedStatus="",expectedProcurementQuantity=null,successText="申請已更新"}={}){
+async function updateUniformRequest(row,body,{expectedStatus="",expectedProcurementQuantity=null,expectedProcurementBreakdown=null,successText="申請已更新"}={}){
  if(pendingRequestIds.has(row.id))return;
  pendingRequestIds.add(row.id);renderModuleRequests();
  el("status").textContent="正在儲存申請異動並通知家長…";
@@ -708,7 +708,7 @@ async function updateUniformRequest(row,body,{expectedStatus="",expectedProcurem
   try{
    const data=await api("uniform-events/requests"),updated=(data.items||[]).find(x=>x.id===row.id);
    cachedRequests=data.items||[];
-   const saved=updated&&(expectedStatus?updated.status===expectedStatus:expectedProcurementQuantity!==null&&updated.procurementQuantity===expectedProcurementQuantity);
+   const saved=updated&&(expectedStatus?updated.status===expectedStatus:expectedProcurementQuantity!==null&&updated.procurementQuantity===expectedProcurementQuantity&&JSON.stringify(updated.procurementBreakdown)===JSON.stringify(expectedProcurementBreakdown));
    el("status").textContent=saved?successText+"；已向後端確認，通知信狀態待查": "更新未完成："+error.message;
   }catch(refreshError){el("status").textContent="無法確認異動結果："+error.message+"；請按下方「重新整理」核對。"}
   finally{pendingRequestIds.delete(row.id);renderModuleRequests()}
@@ -781,6 +781,43 @@ el("uniformPriceForm").addEventListener("submit",async e=>{
  catch(error){message.textContent="價格更新失敗："+error.message}
 });
 loadUniformPrices();
+const tshirtSizes=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"];
+function openProcurementForm(row,cell,trigger,correction){
+ if(cell.querySelector("form"))return;
+ const form=document.createElement("form");form.className="receiving-form procurement-size-form";
+ const intro=document.createElement("p");intro.textContent="家長申請 "+row.size+" 號 "+row.quantity+" 件。請按廠商採購單輸入各尺碼件數；多出的尺碼將在驗收到貨後分別入庫。";form.append(intro);
+ if(correction&&!row.procurementBreakdown&&(row.procurementQuantity??row.quantity)>row.quantity){
+  const warning=document.createElement("p");warning.className="warn";warning.textContent="原採購共 "+row.procurementQuantity+" 件，但尚未分配尺碼。請核對廠商明細並重新登錄，入庫前不會把多出的件數算到家長尺碼。";form.append(warning);
+ }
+ const grid=document.createElement("div");grid.className="procurement-size-grid";
+ const previous=new Map((row.procurementBreakdown||[{size:row.size,quantity:row.quantity}]).map(p=>[p.size,p.quantity]));
+ const fields=new Map();
+ for(const size of tshirtSizes){
+  const label=document.createElement("label"),input=document.createElement("input");input.type="number";input.min=size===row.size?String(row.quantity):"0";input.max="100";input.step="1";input.value=String(previous.get(size)||0);input.required=true;input.inputMode="numeric";
+  label.textContent=size+(size===row.size?"（家長尺碼）":"");label.append(input);grid.append(label);fields.set(size,input);
+ }
+ form.append(grid);
+ const total=document.createElement("p");total.className="procurement-note";
+ const updateTotal=()=>{const n=[...fields.values()].reduce((sum,input)=>sum+(Number(input.value)||0),0);total.textContent="採購合計 "+n+" 件；家長申請 "+row.quantity+" 件；其餘 "+Math.max(0,n-row.quantity)+" 件為備貨。"};
+ grid.addEventListener("input",updateTotal);updateTotal();form.append(total);
+ let reason;
+ if(correction){reason=document.createElement("textarea");reason.required=true;reason.maxLength=300;reason.rows=2;reason.placeholder="請填寫更正原因，例如依廠商採購單重新分配尺碼";const label=document.createElement("label");label.textContent="更正原因";label.append(reason);form.append(label)}
+ const submit=document.createElement("button");submit.type="submit";submit.textContent=correction?"確認更正採購尺碼":"登錄廠商採購";
+ const cancel=document.createElement("button");cancel.type="button";cancel.textContent="取消";cancel.addEventListener("click",()=>{form.remove();trigger.hidden=false});
+ const message=document.createElement("p");message.setAttribute("role","status");form.append(submit,cancel,message);cell.append(form);trigger.hidden=true;
+ form.addEventListener("submit",async event=>{
+  event.preventDefault();const procurementBreakdown=[];
+  for(const [size,input] of fields){const n=Number(input.value);if(!Number.isSafeInteger(n)||n<0||n>100){message.textContent="各尺碼請填寫 0～100 件的整數。";return}if(n)procurementBreakdown.push({size,quantity:n})}
+  const procurementQuantity=procurementBreakdown.reduce((sum,p)=>sum+p.quantity,0);
+  if((Number(fields.get(row.size).value)||0)<row.quantity||procurementQuantity<row.quantity||procurementQuantity>100){message.textContent="家長申請尺碼至少 "+row.quantity+" 件；採購合計最多 100 件。";return}
+  if(correction&&!reason.value.trim()){message.textContent="請填寫更正原因。";return}
+  const breakdown=procurementBreakdown.map(p=>p.size+" "+p.quantity+" 件").join("、");
+  if(!confirm("確認廠商採購："+breakdown+"，合計 "+procurementQuantity+" 件？家長仍只申請 "+row.quantity+" 件。"))return;
+  submit.disabled=true;
+  try{await updateUniformRequest(row,correction?{action:"SET_PROCUREMENT_QUANTITY",procurementQuantity,procurementBreakdown,reason:reason.value.trim()}:{status:"ORDERED",procurementQuantity,procurementBreakdown},{expectedProcurementQuantity:correction?procurementQuantity:null,expectedProcurementBreakdown:procurementBreakdown,expectedStatus:correction?null:"ORDERED",successText:correction?"採購尺碼已更正；家長費用未變":"已登錄廠商採購 "+breakdown})}
+  catch(error){message.textContent="更新失敗："+error.message;submit.disabled=false}
+ });
+}
 el("requests").addEventListener("click",async e=>{
  if(e.target.dataset.receive!==undefined){
   const row=visibleModuleRequests[Number(e.target.dataset.receive)];if(!row||pendingRequestIds.has(row.id))return;
@@ -796,24 +833,38 @@ el("requests").addEventListener("click",async e=>{
    finally{pendingRequestIds.delete(row.id);await load();renderModuleRequests()}
    return;
   }
+  if(row.kind==="regularUniform"&&!Array.isArray(row.procurementBreakdown)&&(row.procurementQuantity??row.quantity)>row.quantity){
+   issueErrors.set(row.id,"原採購件數尚未分配尺碼。請先點『更正採購尺碼與件數』，依廠商採購單填寫每個尺碼，再驗收入庫。");renderModuleRequests();return;
+  }
   if(cell.querySelector("form"))return;
   const form=document.createElement("form"),date=document.createElement("input"),note=document.createElement("textarea"),save=document.createElement("button"),message=document.createElement("p"),mode=document.createElement("select");
   form.className="receiving-form";date.type="date";date.required=true;date.value=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   note.required=true;note.maxLength=300;note.rows=2;note.placeholder="例：核對女款 S 號 1 套，外觀與數量無誤";
   for(const [label,input] of [["實際到貨日期",date],["驗收備註",note]]){const wrap=document.createElement("label");wrap.textContent=label;wrap.append(input);form.append(wrap)}
   const quantity=row.kind==="regularUniform"?row.quantity:1,procurementQuantity=row.kind==="regularUniform"?(row.procurementQuantity??quantity):1;
+  const breakdown=row.kind==="regularUniform"?(row.procurementBreakdown||[{size:row.size,quantity}]):[{size:row.size,quantity:1}];
   const stockKey=row.kind==="competitionUniform"?"competition:"+row.style+":"+row.size:"regular:"+row.size;
   const stock=cachedStock.find(item=>item.key===stockKey);
   mode.required=true;mode.add(new Option("請選擇這件衣服如何入庫",""));mode.add(new Option("新貨到校：增加正式庫存","new"));
-  if(stock&&Number(stock.onHand)-Number(stock.reserved||0)-Number(stock.unavailable||0)>=procurementQuantity)mode.add(new Option("先前已盤點：使用現有庫存，不重複增加","existing"));
+  if(breakdown.every(part=>{const item=cachedStock.find(x=>x.key===(row.kind==="regularUniform"?"regular:"+part.size:stockKey));return item&&Number(item.onHand)-Number(item.reserved||0)-Number(item.unavailable||0)>=part.quantity}))mode.add(new Option("先前已盤點：使用現有庫存，不重複增加","existing"));
   const modeLabel=document.createElement("label");modeLabel.textContent="庫存來源";modeLabel.append(mode);form.prepend(modeLabel);
-  const detail=document.createElement("p");detail.textContent="本筆驗收："+(row.kind==="competitionUniform"?"A 團比賽服 "+row.style+"款 ":"團 T ")+row.size+"，向廠商採購 "+procurementQuantity+" 件；家長申請 "+quantity+" 件，多出 "+(procurementQuantity-quantity)+" 件留作庫存。現有庫存 "+(stock?stock.onHand+" 件":"尚未建檔")+"，請依實物選擇來源。";
+  const detail=document.createElement("p");detail.textContent="採購合計 "+procurementQuantity+" 件；家長申請 "+row.size+" 號 "+quantity+" 件。請逐尺碼核對實際到貨；若與採購明細不同，先更正採購尺碼。";
+  const checks=document.createElement("div");checks.className="procurement-size-grid";
+  const receivedFields=new Map();
+  for(const part of breakdown){
+   const label=document.createElement("label"),input=document.createElement("input");input.type="number";input.min="0";input.max="100";input.step="1";input.required=true;input.inputMode="numeric";input.placeholder="實際件數";
+   label.textContent=(row.kind==="competitionUniform"?row.style+"款 ":"")+part.size+"｜應到 "+part.quantity+" 件";label.append(input);checks.append(label);receivedFields.set(part.size,input);
+  }
   save.type="submit";save.textContent="確認驗收入庫";message.setAttribute("role","status");form.prepend(detail);form.append(save,message);cell.append(form);button.hidden=true;
+  form.insertBefore(checks,save);
   form.addEventListener("submit",async event=>{
    event.preventDefault();if(!note.value.trim()){message.textContent="請填寫驗收備註。";return}
-   if(!confirm("確認已核對向廠商採購的 "+procurementQuantity+" 件？家長申請 "+quantity+" 件。"+(mode.value==="existing"?"將使用現有盤點庫存，不增加庫存。":"新貨到校，將增加正式庫存。")))return;
+   const receivedBreakdown=breakdown.map(part=>({size:part.size,quantity:Number(receivedFields.get(part.size).value)}));
+   if(receivedBreakdown.some((part,i)=>part.quantity!==breakdown[i].quantity)){message.textContent="實際到貨尺碼與採購明細不一致。請核對實物；若採購明細錯誤，先更正採購尺碼後再入庫。";return}
+   if(!mode.value){message.textContent="請選擇庫存來源。";return}
+   if(!confirm("確認驗收 "+receivedBreakdown.map(p=>p.size+" "+p.quantity+" 件").join("、")+"，合計 "+procurementQuantity+" 件？"+(mode.value==="existing"?"將使用現有盤點庫存，不增加庫存。":"新貨到校，將依各尺碼增加正式庫存。")))return;
    save.disabled=true;message.textContent="入庫中…";pendingRequestIds.add(row.id);
-   try{await api("uniform-events/receiving",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,quantity,procurementQuantity,receivedDate:date.value,note:note.value.trim(),useExistingStock:mode.value==="existing"})});el("status").textContent="已驗收入庫並更新申請進度";await load()}
+   try{await api("uniform-events/receiving",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,quantity,procurementQuantity,receivedBreakdown,receivedDate:date.value,note:note.value.trim(),useExistingStock:mode.value==="existing"})});el("status").textContent="已依各尺碼驗收入庫並更新申請進度";await load()}
    catch(error){message.textContent="入庫未完成："+error.message+"；請重新整理核對後再操作。";save.disabled=false}
    finally{pendingRequestIds.delete(row.id)}
   });
@@ -838,23 +889,15 @@ el("requests").addEventListener("click",async e=>{
  }
  if(e.target.dataset.procurement!==undefined){
   const row=visibleModuleRequests[Number(i)];if(!row)return;
-  const raw=prompt("請輸入實際向廠商採購的同尺寸團 T 件數（家長申請 "+row.quantity+" 件；多出的會列入庫存）",String(row.procurementQuantity??row.quantity));if(raw===null)return;
-  const procurementQuantity=Number(raw);if(!Number.isSafeInteger(procurementQuantity)||procurementQuantity<row.quantity||procurementQuantity>100){el("status").textContent="採購件數須介於家長申請件數與 100 件之間";return}
-  const reason=prompt("請填寫採購件數更正原因（不改變家長申請或應繳費用）","");if(reason===null)return;
-  if(!reason.trim()){el("status").textContent="請填寫更正原因";return}
-  if(!confirm("確認向廠商採購 "+procurementQuantity+" 件，其中家長申請 "+row.quantity+" 件，另外 "+(procurementQuantity-row.quantity)+" 件作為庫存？"))return;
-  await updateUniformRequest(row,{action:"SET_PROCUREMENT_QUANTITY",procurementQuantity,reason:reason.trim()},{expectedProcurementQuantity:procurementQuantity,successText:"採購件數已更正；家長申請與費用未變"});return;
+  openProcurementForm(row,e.target.closest("td"),e.target,true);return;
  }
  if(e.target.dataset.amount!==undefined){const row=visibleModuleRequests[Number(i)];if(!row)return;const due=(uniformPrices[row.kind]?.unitPrice||0)*(row.kind==="regularUniform"?row.quantity:1);if(!confirm("確認補正此筆應繳金額 NT$ "+due+"？"))return;await updateUniformRequest(row,{action:"SET_AMOUNT"},{successText:"應繳金額已補正"});return;}
  const row=visibleModuleRequests[Number(i)],select=el("requests").querySelector("select[data-index='"+i+"']");
  const status=e.target.dataset.cancel!==undefined?"CANCELLED":select?.value;if(!row||!status)return;
- if(!confirm("確定將這筆申請改為 "+status+"？"))return;
  if(status==="ORDERED"&&row.kind==="regularUniform"){
-  const raw=prompt("家長申請 "+row.quantity+" 件。請填實際向廠商採購的同尺寸團 T 件數；多出的會在到貨後列為庫存。",String(row.quantity));if(raw===null)return;
-  const procurementQuantity=Number(raw);if(!Number.isSafeInteger(procurementQuantity)||procurementQuantity<row.quantity||procurementQuantity>100){el("status").textContent="請填寫有效採購件數（不得小於家長申請件數，最多 100 件）";return}
-  if(!confirm("確認向廠商採購 "+procurementQuantity+" 件？家長申請仍為 "+row.quantity+" 件，另外 "+(procurementQuantity-row.quantity)+" 件留作庫存。"))return;
-  await updateUniformRequest(row,{status,procurementQuantity},{expectedStatus:status,successText:"已登錄採購 "+procurementQuantity+" 件"});return;
+  openProcurementForm(row,e.target.closest("td"),e.target,false);return;
  }
+ if(!confirm("確定將這筆申請改為 "+status+"？"))return;
  const reason=status==="CANCELLED"?prompt("請填寫取消原因（家長可在申請紀錄查看）",""):"";
  if(status==="CANCELLED"&&(!reason||!reason.trim())){el("status").textContent="取消申請須填寫原因";return}
  await updateUniformRequest(row,{status,reason:reason?.trim()||""},{expectedStatus:status,successText:"申請狀態已更新"});
