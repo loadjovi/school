@@ -117,14 +117,15 @@ function renderModuleRequests(){
  const total=[...sizes.values()].reduce((sum,n)=>sum+n,0);
  const details=[...sizes].sort((a,b)=>a[0].localeCompare(b[0],"zh-Hant")).map(([size,n])=>size+"："+n+" 件").join("、");
  const label=activeAdminTab==="regularUniform"?"團 T":"A 團比賽服";
+ const orderedUnits=rows.filter(x=>x.status==="ORDERED"||x.status==="ARRIVED"||x.status==="READY_FOR_PICKUP"||x.status==="FULFILLED").reduce((n,x)=>n+(Number(x.procurementQuantity)||Number(x.quantity)||1),0);
  const ready=rows.filter(x=>x.status==="APPROVED"&&(x.acquisition==="PUBLIC"||x.paymentStatus==="VERIFIED")).length;
  const awaitingFinance=(counts.APPROVED||0)-ready;
- el("requestSummary").textContent=label+" 家長申請 "+rows.length+" 筆；待審 "+(counts.PENDING||0)+" 筆；已核准待財務核帳 "+awaitingFinance+" 筆；可統一採購 "+ready+" 筆。尚未採購需求共 "+total+" 件；尺寸統計："+(details||"尚無需求")+"。自費申請須先確認入帳才可採購；公費申請依學校核准辦理。";
+ el("requestSummary").textContent=label+" 家長申請 "+rows.length+" 筆；待審 "+(counts.PENDING||0)+" 筆；已核准待財務核帳 "+awaitingFinance+" 筆；可統一採購 "+ready+" 筆。尚未採購需求共 "+total+" 件；已登錄採購 "+orderedUnits+" 件（含備貨）；尺寸統計："+(details||"尚無需求")+"。自費申請須先確認入帳才可採購；公費申請依學校核准辦理。";
  if(activeAdminTab==="competitionUniform"){
   const actionable=rows.filter(x=>["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(x.status));
   el("competitionProcurementSummary").textContent="申請共 "+rows.length+" 筆；尚在處理 "+actionable.length+" 筆，已採購 "+(counts.ORDERED||0)+" 筆，已到貨 "+(counts.ARRIVED||0)+" 筆。請依款式與尺寸核對採購需求；取消或已領取申請不列入待處理數。";
  }
- table("requests",rows.map(x=>({...x,processing:pendingRequestIds.has(x.id),received:receivedRequestIds.has(x.id),studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",acquisitionLabel:x.kind==="competitionUniform"?({PUBLIC:"公費配發",PURCHASE:"自費買斷",RENTAL:"租借",PENDING:"取得方式待核對"})[x.acquisition]||"待核對":"自費加購",statusLabel:pendingRequestIds.has(x.id)?"更新處理中…":x.status==="APPROVED"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"已核准｜待財務核帳":["ARRIVED","READY_FOR_PICKUP"].includes(x.status)&&!receivedRequestIds.has(x.id)?"待補登入庫｜暫不可發放":x.status==="READY_FOR_PICKUP"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"待財務核帳｜暫不可領取":({PENDING:"待審核",APPROVED:"已核准｜可統一採購",ORDERED:"已採購｜待到貨",ARRIVED:"已到貨｜待安排領取",READY_FOR_PICKUP:"可以領取",FULFILLED:"已領取",CANCELLED:"已取消"})[x.status]||x.status,issueDetail:x.status==="FULFILLED"?`${x.receivedBy||"領取人待核對"}｜${x.issuedAt?new Date(x.issuedAt).toLocaleDateString("zh-TW"):"日期待核對"}`:"—"})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["acquisitionLabel","取得方式"],["size","尺寸"],["quantity","申請件數"],["statusLabel","狀態"],["issueDetail","實際領取"],["createdAt","建立時間"]],true);
+ table("requests",rows.map(x=>({...x,processing:pendingRequestIds.has(x.id),received:receivedRequestIds.has(x.id),studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",acquisitionLabel:x.kind==="competitionUniform"?({PUBLIC:"公費配發",PURCHASE:"自費買斷",RENTAL:"租借",PENDING:"取得方式待核對"})[x.acquisition]||"待核對":"自費加購",statusLabel:pendingRequestIds.has(x.id)?"更新處理中…":x.status==="APPROVED"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"已核准｜待財務核帳":["ARRIVED","READY_FOR_PICKUP"].includes(x.status)&&!receivedRequestIds.has(x.id)?"待補登入庫｜暫不可發放":x.status==="READY_FOR_PICKUP"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"待財務核帳｜暫不可領取":({PENDING:"待審核",APPROVED:"已核准｜可統一採購",ORDERED:"已採購｜待到貨",ARRIVED:"已到貨｜待安排領取",READY_FOR_PICKUP:"可以領取",FULFILLED:"已領取",CANCELLED:"已取消"})[x.status]||x.status,procurementLabel:["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(x.status)?((x.procurementQuantity??x.quantity??1)+" 件"):"—",issueDetail:x.status==="FULFILLED"?`${x.receivedBy||"領取人待核對"}｜${x.issuedAt?new Date(x.issuedAt).toLocaleDateString("zh-TW"):"日期待核對"}`:"—"})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["acquisitionLabel","取得方式"],["size","尺寸"],["quantity","家長申請"],["procurementLabel","向廠商採購"],["statusLabel","狀態"],["issueDetail","實際領取"],["createdAt","建立時間"]],true);
 }
 
 function renderModuleStock(){
@@ -305,7 +306,7 @@ function table(id,rows,columns,actions=false){
    const mayCollect=!payable||r.paymentStatus==="VERIFIED";
    const mayOrder=!payable||r.paymentStatus==="VERIFIED";
    const next={PENDING:[["APPROVED",payable?"核准，等待付款":"核准，等待採購"],["CANCELLED","取消申請"]],APPROVED:[...(mayOrder?[["ORDERED","已統一採購"]]:[]),["CANCELLED","取消申請"]],ORDERED:[["CANCELLED","取消申請"]],ARRIVED:[...(mayCollect&&r.received?[["READY_FOR_PICKUP","開放領取"]]:[]),["CANCELLED","取消申請"]]}[r.status]||[];
-   const adjust=r.kind==="團 T"&&["PENDING","APPROVED"].includes(r.status)?"<button type='button' data-adjust='"+i+"'>更正件數</button>":"";
+   const procurementAdjust=r.kind==="團 T"&&r.status==="ORDERED"&&!r.received?"<button type='button' data-procurement='"+i+"'>更正採購件數</button>":"";
    const amount=r.status==="APPROVED"&&r.acquisition!=="PUBLIC"&&!Number.isSafeInteger(r.amount)?"<button type='button' data-amount='"+i+"'>補正應繳金額</button>":"";
    const stockKey=r.kind==="A 團比賽服"?"competition:"+r.style+":"+r.size:"regular:"+r.size;
    const stock=cachedStock.find(x=>x.key===stockKey),needed=r.kind==="A 團比賽服"?1:Number(r.quantity);
@@ -314,7 +315,7 @@ function table(id,rows,columns,actions=false){
    const needsReceipt=r.status==="ORDERED"||(r.status==="ARRIVED"||r.status==="READY_FOR_PICKUP")&&!r.received;
    const receive=needsReceipt?"<button type='button' data-receive='"+i+"'>"+(r.received?"同步已入庫狀態":r.status==="ORDERED"?"驗收到貨並入庫":"補登驗收入庫")+"</button>":"";
    const progress=r.status==="ORDERED"?"<button type='button' data-cancel='"+i+"'>取消申請</button>":next.length?"<select data-index='"+i+"'><option value=''>更新進度</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>更新</button>":issue||"<span>"+esc(r.statusLabel||r.status)+"</span>";
-   controls="<td data-label='狀態管理'>"+receive+(r.status==="APPROVED"&&!mayOrder?"<p class='hint'>待財務確認入帳後，才能更新為已統一採購。</p>":"")+progress+adjust+amount+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
+   controls="<td data-label='狀態管理'>"+receive+(r.status==="APPROVED"&&!mayOrder?"<p class='hint'>待財務確認入帳後，才能更新為已統一採購。</p>":"")+progress+procurementAdjust+amount+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
   }
   return "<tr>"+cells+controls+"</tr>";
@@ -657,7 +658,7 @@ el("config").onsubmit=async e=>{
 };
 document.getElementById("retryAdminAuth").addEventListener("click",start);
 start();
-async function updateUniformRequest(row,body,{expectedStatus="",expectedQuantity=null,successText="申請已更新"}={}){
+async function updateUniformRequest(row,body,{expectedStatus="",expectedProcurementQuantity=null,successText="申請已更新"}={}){
  if(pendingRequestIds.has(row.id))return;
  pendingRequestIds.add(row.id);renderModuleRequests();
  el("status").textContent="正在儲存申請異動並通知家長…";
@@ -666,13 +667,13 @@ async function updateUniformRequest(row,body,{expectedStatus="",expectedQuantity
   const index=cachedRequests.findIndex(x=>x.id===row.id);
   if(index>=0)cachedRequests[index]={...cachedRequests[index],...result.item};
   pendingRequestIds.delete(row.id);renderModuleRequests();
-  el("status").textContent=successText+(result.notificationStatus==="sent"?"，已寄送家長通知信":"；家長頁面已同步，通知信未確認送達");
+  el("status").textContent=body.action==="SET_PROCUREMENT_QUANTITY"?successText:successText+(result.notificationStatus==="sent"?"，已寄送家長通知信":"；家長頁面已同步，通知信未確認送達");
   await load();
  }catch(error){
   try{
    const data=await api("uniform-events/requests"),updated=(data.items||[]).find(x=>x.id===row.id);
    cachedRequests=data.items||[];
-   const saved=updated&&(expectedStatus?updated.status===expectedStatus:expectedQuantity!==null&&updated.quantity===expectedQuantity);
+   const saved=updated&&(expectedStatus?updated.status===expectedStatus:expectedProcurementQuantity!==null&&updated.procurementQuantity===expectedProcurementQuantity);
    el("status").textContent=saved?successText+"；已向後端確認，通知信狀態待查": "更新未完成："+error.message;
   }catch(refreshError){el("status").textContent="無法確認異動結果："+error.message+"；請按下方「重新整理」核對。"}
   finally{pendingRequestIds.delete(row.id);renderModuleRequests()}
@@ -765,25 +766,25 @@ el("requests").addEventListener("click",async e=>{
   form.className="receiving-form";date.type="date";date.required=true;date.value=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
   note.required=true;note.maxLength=300;note.rows=2;note.placeholder="例：核對女款 S 號 1 套，外觀與數量無誤";
   for(const [label,input] of [["實際到貨日期",date],["驗收備註",note]]){const wrap=document.createElement("label");wrap.textContent=label;wrap.append(input);form.append(wrap)}
-  const quantity=row.kind==="regularUniform"?row.quantity:1;
+  const quantity=row.kind==="regularUniform"?row.quantity:1,procurementQuantity=row.kind==="regularUniform"?(row.procurementQuantity??quantity):1;
   const stockKey=row.kind==="competitionUniform"?"competition:"+row.style+":"+row.size:"regular:"+row.size;
   const stock=cachedStock.find(item=>item.key===stockKey);
   mode.required=true;mode.add(new Option("請選擇這件衣服如何入庫",""));mode.add(new Option("新貨到校：增加正式庫存","new"));
-  if(stock&&Number(stock.onHand)-Number(stock.reserved||0)-Number(stock.unavailable||0)>=quantity)mode.add(new Option("先前已盤點：使用現有庫存，不重複增加","existing"));
+  if(stock&&Number(stock.onHand)-Number(stock.reserved||0)-Number(stock.unavailable||0)>=procurementQuantity)mode.add(new Option("先前已盤點：使用現有庫存，不重複增加","existing"));
   const modeLabel=document.createElement("label");modeLabel.textContent="庫存來源";modeLabel.append(mode);form.prepend(modeLabel);
-  const detail=document.createElement("p");detail.textContent="本筆驗收："+(row.kind==="competitionUniform"?"A 團比賽服 "+row.style+"款 ":"團 T ")+row.size+"，"+quantity+" 件。現有庫存 "+(stock?stock.onHand+" 件":"尚未建檔")+"，請依實物選擇來源。";
+  const detail=document.createElement("p");detail.textContent="本筆驗收："+(row.kind==="competitionUniform"?"A 團比賽服 "+row.style+"款 ":"團 T ")+row.size+"，向廠商採購 "+procurementQuantity+" 件；家長申請 "+quantity+" 件，多出 "+(procurementQuantity-quantity)+" 件留作庫存。現有庫存 "+(stock?stock.onHand+" 件":"尚未建檔")+"，請依實物選擇來源。";
   save.type="submit";save.textContent="確認驗收入庫";message.setAttribute("role","status");form.prepend(detail);form.append(save,message);cell.append(form);button.hidden=true;
   form.addEventListener("submit",async event=>{
    event.preventDefault();if(!note.value.trim()){message.textContent="請填寫驗收備註。";return}
-   if(!confirm("確認已核對此筆 "+quantity+" 件？"+(mode.value==="existing"?"將使用現有盤點庫存，不增加庫存。":"新貨到校，將增加正式庫存。")))return;
+   if(!confirm("確認已核對向廠商採購的 "+procurementQuantity+" 件？家長申請 "+quantity+" 件。"+(mode.value==="existing"?"將使用現有盤點庫存，不增加庫存。":"新貨到校，將增加正式庫存。")))return;
    save.disabled=true;message.textContent="入庫中…";pendingRequestIds.add(row.id);
-   try{await api("uniform-events/receiving",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,quantity,receivedDate:date.value,note:note.value.trim(),useExistingStock:mode.value==="existing"})});el("status").textContent="已驗收入庫並更新申請進度";await load()}
+   try{await api("uniform-events/receiving",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,quantity,procurementQuantity,receivedDate:date.value,note:note.value.trim(),useExistingStock:mode.value==="existing"})});el("status").textContent="已驗收入庫並更新申請進度";await load()}
    catch(error){message.textContent="入庫未完成："+error.message+"；請重新整理核對後再操作。";save.disabled=false}
    finally{pendingRequestIds.delete(row.id)}
   });
   return;
  }
- const i=e.target.dataset.update??e.target.dataset.cancel??e.target.dataset.adjust??e.target.dataset.amount??e.target.dataset.issue;if(i===undefined)return;
+ const i=e.target.dataset.update??e.target.dataset.cancel??e.target.dataset.procurement??e.target.dataset.amount??e.target.dataset.issue;if(i===undefined)return;
  if(e.target.dataset.issue!==undefined){
   const row=visibleModuleRequests[Number(i)];if(!row||pendingRequestIds.has(row.id))return;
   const receivedBy=prompt("請填寫實際領取人（例如家長姓名）","");if(receivedBy===null)return;
@@ -800,21 +801,25 @@ el("requests").addEventListener("click",async e=>{
   finally{pendingRequestIds.delete(row.id);renderModuleRequests()}
   return;
  }
- const adjusting=e.target.dataset.adjust!==undefined;
- if(e.target.dataset.amount!==undefined){const row=visibleModuleRequests[Number(i)];if(!row)return;const due=(uniformPrices[row.kind]?.unitPrice||0)*(row.kind==="regularUniform"?row.quantity:1);if(!confirm("確認補正此筆應繳金額 NT$ "+due+"？"))return;await updateUniformRequest(row,{action:"SET_AMOUNT"},{successText:"應繳金額已補正"});return;}
- if(adjusting){
+ if(e.target.dataset.procurement!==undefined){
   const row=visibleModuleRequests[Number(i)];if(!row)return;
-  const raw=prompt("請輸入正確件數（1–20 件；全部不要請選取消申請）",String(row.quantity||1));if(raw===null)return;
-  const quantity=Number(raw);if(!Number.isSafeInteger(quantity)||quantity<1||quantity>20){el("status").textContent="請輸入 1–20 件；全部取消請選取消申請";return}
-  const reason=prompt("請填寫更正原因（會留下操作紀錄）","");if(reason===null)return;
-  if(!reason.trim()){el("status").textContent="更正原因不可空白";return}
-  if(!confirm("確定將申請件數由 "+row.quantity+" 件更正為 "+quantity+" 件？"))return;
-  await updateUniformRequest(row,{action:"ADJUST",quantity,reason:reason.trim()},{expectedQuantity:quantity,successText:"件數已更正"});
-  return;
+  const raw=prompt("請輸入實際向廠商採購的同尺寸團 T 件數（家長申請 "+row.quantity+" 件；多出的會列入庫存）",String(row.procurementQuantity??row.quantity));if(raw===null)return;
+  const procurementQuantity=Number(raw);if(!Number.isSafeInteger(procurementQuantity)||procurementQuantity<row.quantity||procurementQuantity>100){el("status").textContent="採購件數須介於家長申請件數與 100 件之間";return}
+  const reason=prompt("請填寫採購件數更正原因（不改變家長申請或應繳費用）","");if(reason===null)return;
+  if(!reason.trim()){el("status").textContent="請填寫更正原因";return}
+  if(!confirm("確認向廠商採購 "+procurementQuantity+" 件，其中家長申請 "+row.quantity+" 件，另外 "+(procurementQuantity-row.quantity)+" 件作為庫存？"))return;
+  await updateUniformRequest(row,{action:"SET_PROCUREMENT_QUANTITY",procurementQuantity,reason:reason.trim()},{expectedProcurementQuantity:procurementQuantity,successText:"採購件數已更正；家長申請與費用未變"});return;
  }
+ if(e.target.dataset.amount!==undefined){const row=visibleModuleRequests[Number(i)];if(!row)return;const due=(uniformPrices[row.kind]?.unitPrice||0)*(row.kind==="regularUniform"?row.quantity:1);if(!confirm("確認補正此筆應繳金額 NT$ "+due+"？"))return;await updateUniformRequest(row,{action:"SET_AMOUNT"},{successText:"應繳金額已補正"});return;}
  const row=visibleModuleRequests[Number(i)],select=el("requests").querySelector("select[data-index='"+i+"']");
  const status=e.target.dataset.cancel!==undefined?"CANCELLED":select?.value;if(!row||!status)return;
  if(!confirm("確定將這筆申請改為 "+status+"？"))return;
+ if(status==="ORDERED"&&row.kind==="regularUniform"){
+  const raw=prompt("家長申請 "+row.quantity+" 件。請填實際向廠商採購的同尺寸團 T 件數；多出的會在到貨後列為庫存。",String(row.quantity));if(raw===null)return;
+  const procurementQuantity=Number(raw);if(!Number.isSafeInteger(procurementQuantity)||procurementQuantity<row.quantity||procurementQuantity>100){el("status").textContent="請填寫有效採購件數（不得小於家長申請件數，最多 100 件）";return}
+  if(!confirm("確認向廠商採購 "+procurementQuantity+" 件？家長申請仍為 "+row.quantity+" 件，另外 "+(procurementQuantity-row.quantity)+" 件留作庫存。"))return;
+  await updateUniformRequest(row,{status,procurementQuantity},{expectedStatus:status,successText:"已登錄採購 "+procurementQuantity+" 件"});return;
+ }
  const reason=status==="CANCELLED"?prompt("請填寫取消原因（家長可在申請紀錄查看）",""):"";
  if(status==="CANCELLED"&&(!reason||!reason.trim())){el("status").textContent="取消申請須填寫原因";return}
  await updateUniformRequest(row,{status,reason:reason?.trim()||""},{expectedStatus:status,successText:"申請狀態已更新"});
@@ -828,7 +833,7 @@ el("inventoryForm").onsubmit=async e=>{
  try{await api("uniform-events/inventory",{method:"POST",body:JSON.stringify(data)});await load();el("status").textContent="庫存已更新"}
  catch(err){el("status").textContent="庫存更新失敗："+err.message}
 };
-el("exportRequests").onclick=()=>csv("uniform-event-requests.csv",visibleModuleRequests,["id","kind","studentId","activityId","style","size","quantity","acquisition","freeEligibility","status","createdAt","updatedAt"]);
+el("exportRequests").onclick=()=>csv("uniform-event-requests.csv",visibleModuleRequests,["id","kind","studentId","activityId","style","size","quantity","procurementQuantity","acquisition","freeEligibility","status","createdAt","updatedAt"]);
 el("exportStock").onclick=()=>csv("uniform-inventory.csv",cachedStock,["key","onHand","reserved","unavailable"]);
 
 function parseCsv(text){
