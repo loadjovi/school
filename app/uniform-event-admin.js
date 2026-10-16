@@ -117,10 +117,35 @@ function renderModuleRequests(){
  const total=[...sizes.values()].reduce((sum,n)=>sum+n,0);
  const details=[...sizes].sort((a,b)=>a[0].localeCompare(b[0],"zh-Hant")).map(([size,n])=>size+"："+n+" 件").join("、");
  const label=activeAdminTab==="regularUniform"?"團 T":"A 團比賽服";
- const orderedUnits=rows.filter(x=>x.status==="ORDERED"||x.status==="ARRIVED"||x.status==="READY_FOR_PICKUP"||x.status==="FULFILLED").reduce((n,x)=>n+(Number(x.procurementQuantity)||Number(x.quantity)||1),0);
+ const units=x=>{const n=Number(x.procurementQuantity??x.quantity);return Number.isSafeInteger(n)&&n>0?n:1};
+ const purchasedWaiting=rows.filter(x=>x.status==="ORDERED").reduce((n,x)=>n+units(x),0);
+ const arrivedWaiting=rows.filter(x=>["ARRIVED","READY_FOR_PICKUP"].includes(x.status)).reduce((n,x)=>n+units(x),0);
+ const historicallyIssued=rows.filter(x=>x.status==="FULFILLED").reduce((n,x)=>n+(Number(x.quantity)||1),0);
  const ready=rows.filter(x=>x.status==="APPROVED"&&(x.acquisition==="PUBLIC"||x.paymentStatus==="VERIFIED")).length;
  const awaitingFinance=(counts.APPROVED||0)-ready;
- el("requestSummary").textContent=label+" 家長申請 "+rows.length+" 筆；待審 "+(counts.PENDING||0)+" 筆；已核准待財務核帳 "+awaitingFinance+" 筆；可統一採購 "+ready+" 筆。尚未採購需求共 "+total+" 件；已登錄採購 "+orderedUnits+" 件（含備貨）；尺寸統計："+(details||"尚無需求")+"。自費申請須先確認入帳才可採購；公費申請依學校核准辦理。";
+ const summary=el("requestSummary");
+ summary.replaceChildren();
+ const metrics=document.createElement("div");metrics.className="procurement-metrics";
+ for(const [name,value] of [["家長申請",rows.length+" 筆"],["待審核",(counts.PENDING||0)+" 筆"],["待財務核帳",awaitingFinance+" 筆"],["可統一採購",ready+" 筆"],["尚未採購需求",total+" 件"],["已採購待到貨",purchasedWaiting+" 件"],["已到貨待發放",arrivedWaiting+" 件"],["歷史已領取",historicallyIssued+" 件"]]){
+  const card=document.createElement("div");card.className="procurement-metric";
+  const heading=document.createElement("span");heading.textContent=name;
+  const amount=document.createElement("strong");amount.textContent=value;
+  card.append(heading,amount);metrics.append(card);
+ }
+ const detail=document.createElement("p");detail.className="procurement-note";detail.textContent="待採購尺寸："+(details||"尚無需求")+"。自費申請須先確認入帳才可採購；公費申請依學校核准辦理。";
+ summary.append(metrics,detail);
+ if(activeAdminTab==="regularUniform"){
+  window.renderTshirtProcurementSummary=()=>{
+   const host=el("tshirtProcurementSummary");if(!host)return;
+   host.replaceChildren();
+   const title=document.createElement("h3");title.textContent="目前採購進度";
+   const copy=metrics.cloneNode(true);
+   const note=document.createElement("p");note.className="procurement-note";
+   note.textContent="採購門檻：10 件。待到貨件數包含廠商備貨；歷史已領取單獨列示，不併入目前待到貨。請至「家長申請」核對每筆申請與採購件數。";
+   host.append(title,copy,note);
+  };
+  window.renderTshirtProcurementSummary();
+ }
  if(activeAdminTab==="competitionUniform"){
   const actionable=rows.filter(x=>["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(x.status));
   el("competitionProcurementSummary").textContent="申請共 "+rows.length+" 筆；尚在處理 "+actionable.length+" 筆，已採購 "+(counts.ORDERED||0)+" 筆，已到貨 "+(counts.ARRIVED||0)+" 筆。請依款式與尺寸核對採購需求；取消或已領取申請不列入待處理數。";
