@@ -8,7 +8,7 @@ const validId=x=>typeof x==="string"&&/^[a-zA-Z0-9_-]{1,100}$/.test(x);
 const validSize=(style,size)=>(style==="男"&&["S","M","L","2L"].includes(size))||(style==="女"&&["XS","S","M","L"].includes(size));
 const get=async(table,schoolId,key)=>{try{return await table.getEntity(schoolId,key)}catch(e){if(e.statusCode===404)return null;throw e}};
 const stamp=()=>new Date().toISOString();
-const publicView=x=>({id:x.rowKey,studentId:x.studentId,studentName:x.studentName,sourceRequestId:x.sourceRequestId||"",source:x.source,style:x.style,size:x.size,status:x.status,sourceNote:x.sourceNote||"",receivedAt:x.receivedAt||"",washingAt:x.washingAt||"",stockedAt:x.stockedAt||"",rejectedAt:x.rejectedAt||"",updatedAt:x.updatedAt||"",etag:x.etag});
+const publicView=x=>({id:x.rowKey,studentId:x.studentId,studentName:x.studentName,sourceRequestId:x.sourceRequestId||"",source:x.source,style:x.style,size:x.size,status:x.status,sourceNote:x.sourceNote||"",receivedAt:x.receivedAt||"",receivedBy:x.receivedBy||"",washingAt:x.washingAt||"",stockedAt:x.stockedAt||"",stockedBy:x.stockedBy||"",stockedByName:x.stockedByName||"",rejectedAt:x.rejectedAt||"",updatedAt:x.updatedAt||"",etag:x.etag});
 
 // A public uniform is returned once per issuance. The return ledger and stock
 // increment share one Azure Table transaction, so retries cannot add twice.
@@ -37,7 +37,8 @@ app.http("competitionUniformReturns",{
    }
    const input=await request.json(),action=input?.action;
    if(!["REGISTER","WASHING","ACCEPT","REJECT"].includes(action))return reply("無效的歸還操作",400);
-   const actor=String(ctx.access.email||"admin").slice(0,200),now=stamp();
+   const actor=String(ctx.access.email||"admin").slice(0,200);
+   const actorName=String(ctx.access.displayName||"").slice(0,100),now=stamp();
    if(action==="REGISTER"){
     let studentId,student,style,size,source,sourceRequestId="",sourceNote="";
     if(input.source==="FORMAL"){
@@ -67,7 +68,7 @@ app.http("competitionUniformReturns",{
      const stockKey="competition:"+style+":"+size,stock=await get(inventory,schoolId,stockKey);
      const onHand=stock?.onHand??0,reserved=stock?.reserved??0,unavailable=stock?.unavailable??0;
      if(![onHand,reserved,unavailable].every(v=>Number.isSafeInteger(v)&&v>=0)||onHand>=100000)return reply("庫存數量異常，請先核對",409);
-     entity.washingAt=now;entity.washingBy=actor;entity.stockedAt=now;entity.stockedBy=actor;
+     entity.washingAt=now;entity.washingBy=actor;entity.stockedAt=now;entity.stockedBy=actor;entity.stockedByName=actorName;
      const stockEntity={partitionKey:schoolId,rowKey:stockKey,onHand:onHand+1,reserved,unavailable};
      try{await inventory.submitTransaction([
       ["create",entity],
@@ -99,7 +100,7 @@ app.http("competitionUniformReturns",{
     const onHand=stock?.onHand??0,reserved=stock?.reserved??0,unavailable=stock?.unavailable??0;
     if(![onHand,reserved,unavailable].every(v=>Number.isSafeInteger(v)&&v>=0)||onHand>=100000)return reply("庫存數量異常，請先核對",409);
     next.washingAt=old.washingAt||now;next.washingBy=old.washingBy||actor;
-    next.stockedAt=now;next.stockedBy=actor;
+    next.stockedAt=now;next.stockedBy=actor;next.stockedByName=actorName;
     const entity={partitionKey:schoolId,rowKey:stockKey,onHand:onHand+1,reserved,unavailable};
     try{await inventory.submitTransaction([
      ["update",next,"Replace",{etag:old.etag}],
