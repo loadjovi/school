@@ -3,7 +3,7 @@ import {confirmedReceived,promotedClass} from "./competition-paper-receipts.js";
 
 const byId=id=>document.getElementById(id);
 const sizes={"男":["S","M","L","2L"],"女":["XS","S","M","L"]};
-const labels={RECEIVED:"已收回｜待送洗",WASHING:"送洗中｜待驗收",STOCKED:"驗收合格｜已入庫",REJECTED:"驗收不合格｜未入庫"};
+const labels={RECEIVED:"已收回｜待確認送洗",WASHING:"送洗中｜待確認入庫",STOCKED:"已送洗｜已入庫",REJECTED:"不合格｜未入庫"};
 const nameOf=student=>String(student.studentName||student.name||"").trim().normalize("NFC");
 const rosterByName=new Map(roster.map(row=>[row[1].normalize("NFC"),row]));
 let returns=[],issues=[],studentRows=new Map();
@@ -53,7 +53,7 @@ const date=value=>value?new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/T
 function render(){
  const root=byId("competitionReturnRecords");root.replaceChildren();
  const sorted=[...returns].sort((a,b)=>String(b.receivedAt).localeCompare(String(a.receivedAt)));
- byId("competitionReturnListStatus").textContent="共 "+sorted.length+" 筆；待送洗 "+sorted.filter(x=>x.status==="RECEIVED").length+" 筆、待驗收 "+sorted.filter(x=>x.status==="WASHING").length+" 筆、已入庫 "+sorted.filter(x=>x.status==="STOCKED").length+" 筆。";
+ byId("competitionReturnListStatus").textContent="共 "+sorted.length+" 筆；待確認送洗 "+sorted.filter(x=>x.status==="RECEIVED").length+" 筆、舊紀錄待入庫 "+sorted.filter(x=>x.status==="WASHING").length+" 筆、已入庫 "+sorted.filter(x=>x.status==="STOCKED").length+" 筆。";
  if(!sorted.length){root.textContent="目前沒有正式歸還紀錄。";return}
  for(const item of sorted){
   const card=document.createElement("article");card.className="competition-return-card";
@@ -63,7 +63,7 @@ function render(){
   card.append(heading,state,source);
   if(item.sourceNote){const evidence=document.createElement("p");evidence.textContent="核對依據："+item.sourceNote;card.append(evidence)}
   const actions=document.createElement("div");actions.className="return-actions";
-  const choices=item.status==="RECEIVED"?[["WASHING","確認送洗"],["REJECT","判定不合格"]]:item.status==="WASHING"?[["ACCEPT","驗收合格並入庫"],["REJECT","驗收不合格"]]:[];
+  const choices=["RECEIVED","WASHING"].includes(item.status)?[["ACCEPT","確認已完成送洗並入庫"],["REJECT","不合格，不入庫"]]:[];
   for(const [action,label] of choices){const button=document.createElement("button");button.type="button";button.textContent=label;button.addEventListener("click",()=>advance(item,action,button));actions.append(button)}
   card.append(actions);root.append(card);
  }
@@ -113,10 +113,10 @@ async function advance(item,action,button){
  let reason="";
  if(action==="REJECT"){reason=prompt("請填寫驗收不合格原因（不會入庫）","");if(reason===null)return}
  if(action==="REJECT"&&reason.trim().length<3){byId("competitionReturnMessage").textContent="請填寫至少 3 字的原因。";return}
- const label={WASHING:"確認已送洗？",ACCEPT:"確認這套比賽服已清洗且驗收合格，立即增加對應款式與尺寸的可用庫存 1 件？",REJECT:"確認標記驗收不合格？不會增加庫存。"}[action];
+ const label={ACCEPT:"確認此套比賽服已完成送洗、可再次發放？確認後將直接入庫，對應款式與尺寸的可用庫存增加 1 件。",REJECT:"確認標記為不合格？不會增加庫存。"}[action];
  if(!confirm(label))return;
  button.disabled=true;
- try{await call("uniform-events/competition-returns",{method:"POST",body:JSON.stringify({action,id:item.id,etag:item.etag,reason:reason.trim()})});byId("competitionReturnMessage").textContent=action==="ACCEPT"?"已驗收合格並入庫 1 件。":"歸還狀態已更新。";await reload();if(action==="ACCEPT")byId("reload")?.click()}
+ try{await call("uniform-events/competition-returns",{method:"POST",body:JSON.stringify({action,id:item.id,etag:item.etag,reason:reason.trim()})});byId("competitionReturnMessage").textContent=action==="ACCEPT"?"已確認完成送洗並入庫 1 件。":"歸還狀態已更新。";await reload();if(action==="ACCEPT")byId("reload")?.click()}
  catch(error){byId("competitionReturnMessage").textContent="操作結果未確認："+error.message;await reload()}
  finally{button.disabled=false}
 }
