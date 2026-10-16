@@ -7,7 +7,8 @@ async function call(path,options={}){
  if(!r.ok)throw Error(d.error||"HTTP "+r.status);
  return d;
 }
-function cell(tr,v){const td=document.createElement("td");td.textContent=String(v??"");tr.append(td)}
+function cell(tr,label,v){const td=document.createElement("td");td.dataset.label=label;td.textContent=String(v??"");tr.append(td)}
+function displayTime(value){if(!value)return "—";const date=new Date(value);return Number.isNaN(date.getTime())?String(value):new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(date)}
 function draw(){
  const student=$("tshirtParentStudent"),before=student.value,unique=new Map();
  for(const l of links){const key=String(l.studentId||"").trim();if(key&&!unique.has(key))unique.set(key,l)}
@@ -15,11 +16,12 @@ function draw(){
  for(const [id,l] of [...unique].sort((a,b)=>a[0].localeCompare(b[0])))student.add(new Option((names.get(id)||l.studentName||"姓名待補登")+"（"+id+"）",id));
  if([...student.options].some(o=>o.value===before))student.value=before;
  drawParents();
- const container=$("tshirtParentRecords"),table=document.createElement("table"),head=document.createElement("tr");
- for(const title of ["家長","關聯學生","角色","尺寸","狀態","領取時間","歸還時間"]){const th=document.createElement("th");th.textContent=title;head.append(th)}
- table.append(head);
- for(const x of records){const tr=document.createElement("tr");for(const v of [x.parentName+"（"+x.parentEmail+"）",(names.get(x.studentId)||"姓名待補登")+"（"+x.studentId+"）",x.role==="CADRE"?"幹部":"志工",x.size,({ISSUED_LIFETIME:"終身已領取",BORROWED:"借用中",WASHING:"送洗中",RETURNED:"已洗淨歸還"})[x.status]||x.status,x.issuedAt||"",x.returnedAt||""])cell(tr,v);table.append(tr)}
- container.replaceChildren(table);
+ const container=$("tshirtParentRecords"),table=document.createElement("table"),head=document.createElement("tr"),thead=document.createElement("thead"),tbody=document.createElement("tbody");
+ const titles=["家長","關聯學生","角色","尺寸","目前狀態","領取時間","歸還時間"];
+ for(const title of titles){const th=document.createElement("th");th.textContent=title;head.append(th)}
+ thead.append(head);table.append(thead,tbody);
+ for(const x of records){const tr=document.createElement("tr"),values=[(x.parentName||"家長")+"\n"+x.parentEmail,(names.get(x.studentId)||"姓名待補登")+"（"+x.studentId+"）",x.role==="CADRE"?"幹部":"志工",x.size||"—",({ISSUED_LIFETIME:"已領取（終身一次）",BORROWED:"借用中",WASHING:"送洗中",RETURNED:"已歸還"})[x.status]||x.status,displayTime(x.issuedAt),displayTime(x.returnedAt)];values.forEach((v,i)=>cell(tr,titles[i],v));tbody.append(tr)}
+ container.replaceChildren(records.length?table:document.createTextNode("目前尚無家長領用或借還紀錄。"));
  $("tshirtParentListStatus").textContent="共 "+records.length+" 位家長有紀錄；同一家長只會有一筆目前狀態。";
 }
 function drawParents(){
