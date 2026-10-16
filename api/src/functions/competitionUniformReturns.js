@@ -61,8 +61,21 @@ app.http("competitionUniformReturns",{
     student=await getStudentMaster(studentId,schoolId);if(!student)return reply("找不到學生主檔，請先核對學號",409);
     const key="return:"+(source==="FORMAL"?sourceRequestId:"legacy:"+studentId);
     if(await get(inventory,schoolId,key))return reply("此筆公費領用已登記歸還，請重新整理",409);
-    const entity={partitionKey:schoolId,rowKey:key,studentId,studentName:String(student.studentName||studentId),source,sourceRequestId,sourceNote,style,size,status:"RECEIVED",receivedAt:now,receivedBy:actor,updatedAt:now,updatedBy:actor};
-    try{await inventory.createEntity(entity)}catch(e){if(e.statusCode===409)return reply("此筆歸還已建立，請重新整理",409);throw e}
+    const stockNow=input.confirmWashedAndStock===true;
+    const entity={partitionKey:schoolId,rowKey:key,studentId,studentName:String(student.studentName||studentId),source,sourceRequestId,sourceNote,style,size,status:stockNow?"STOCKED":"RECEIVED",receivedAt:now,receivedBy:actor,updatedAt:now,updatedBy:actor};
+    if(stockNow){
+     const stockKey="competition:"+style+":"+size,stock=await get(inventory,schoolId,stockKey);
+     const onHand=stock?.onHand??0,reserved=stock?.reserved??0,unavailable=stock?.unavailable??0;
+     if(![onHand,reserved,unavailable].every(v=>Number.isSafeInteger(v)&&v>=0)||onHand>=100000)return reply("庫存數量異常，請先核對",409);
+     entity.washingAt=now;entity.washingBy=actor;entity.stockedAt=now;entity.stockedBy=actor;
+     const stockEntity={partitionKey:schoolId,rowKey:stockKey,onHand:onHand+1,reserved,unavailable};
+     try{await inventory.submitTransaction([
+      ["create",entity],
+      stock?["update",stockEntity,"Replace",{etag:stock.etag}]:["create",stockEntity]
+     ])}catch(e){if([409,412].includes(e.statusCode))return reply("歸還或庫存已變更，請重新整理核對",409);throw e}
+    }else{
+     try{await inventory.createEntity(entity)}catch(e){if(e.statusCode===409)return reply("此筆歸還已建立，請重新整理",409);throw e}
+    }
     return json({item:publicView(entity)});
    }
    if(typeof input.id!=="string"||!/^return:(?:[a-zA-Z0-9_-]{1,100}|legacy:[a-zA-Z0-9_-]{1,100})$/.test(input.id)||typeof input.etag!=="string")return reply("請重新載入歸還紀錄",400);
