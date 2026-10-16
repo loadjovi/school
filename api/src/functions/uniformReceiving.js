@@ -26,7 +26,7 @@ app.http("uniformReceiving",{methods:["GET","POST"],authLevel:"anonymous",route:
   if(request.method==="GET"){
    const items=[];
    for await(const row of inventory.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
-    if(String(row.rowKey).startsWith("received:"))items.push({requestId:row.requestId,quantity:row.quantity,receivedAt:row.receivedAt,receivedBy:row.receivedBy});
+    if(String(row.rowKey).startsWith("received:"))items.push({requestId:row.requestId,quantity:row.quantity,procurementQuantity:row.procurementQuantity||row.quantity,receivedAt:row.receivedAt,receivedBy:row.receivedBy});
    }
    return json({items});
   }
@@ -39,21 +39,23 @@ app.http("uniformReceiving",{methods:["GET","POST"],authLevel:"anonymous",route:
   const order=await get(orders,schoolId,input.id);if(!order)return fail("找不到申請",404);
   const before=JSON.parse(order.payload||"{}");
   if(!["regularUniform","competitionUniform"].includes(before.kind)||!["ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(before.status))return fail("僅可將已採購或舊有已到貨申請辦理入庫",409);
+  if(before.acquisition!=="PUBLIC"&&before.paymentStatus!=="VERIFIED")return fail("自費申請須先完成財務核帳，才可驗收到貨並入庫",409);
   const quantity=before.kind==="regularUniform"?before.quantity:1,key=stockKey(before);
-  if(!key||!Number.isSafeInteger(quantity)||quantity<1||quantity>20||input.quantity!==quantity)return fail("入庫件數須與此申請的款式、尺寸及件數一致",409);
+  const procurementQuantity=before.kind==="regularUniform"?(before.procurementQuantity??quantity):1;
+  if(!key||!Number.isSafeInteger(quantity)||quantity<1||quantity>20||!Number.isSafeInteger(procurementQuantity)||procurementQuantity<quantity||procurementQuantity>100||input.quantity!==quantity||input.procurementQuantity!==undefined&&input.procurementQuantity!==procurementQuantity)return fail("入庫件數與申請或採購紀錄不一致，請重新整理",409);
   const ledgerKey="received:"+input.id;
   let ledger=await get(inventory,schoolId,ledgerKey);
   if(!ledger){
    if(input.etag!==order.etag)return fail("申請資料已更新，請重新整理後再入庫",409);
    const stock=await get(inventory,schoolId,key);
    const onHand=stock?.onHand??0,reserved=stock?.reserved??0,unavailable=stock?.unavailable??0;
-   if(![onHand,reserved,unavailable].every(n=>Number.isSafeInteger(n)&&n>=0)||onHand+quantity>100000)return fail("庫存數量有誤，請先核對盤點資料",409);
-   if(input.useExistingStock===true&&onHand-reserved-unavailable<quantity)return fail("此款式尺寸的現有可用庫存不足，請先核對盤點數量",409);
+   if(![onHand,reserved,unavailable].every(n=>Number.isSafeInteger(n)&&n>=0)||onHand+(input.useExistingStock===true?0:procurementQuantity)>100000)return fail("庫存數量有誤，請先核對盤點資料",409);
+   if(input.useExistingStock===true&&onHand-reserved-unavailable<procurementQuantity)return fail("此款式尺寸的現有可用庫存不足，請先核對盤點數量",409);
    const stamp=new Date().toISOString();
    const receipt={partitionKey:schoolId,rowKey:ledgerKey,requestId:input.id,studentId:before.studentId,kind:before.kind,
-    style:before.style||"",size:before.size,quantity,receivedDate:input.receivedDate,receivedAt:stamp,
+    style:before.style||"",size:before.size,quantity,procurementQuantity,receivedDate:input.receivedDate,receivedAt:stamp,
     receivedBy:String(ctx.access.email||"admin"),note:input.note.trim(),source:input.useExistingStock===true?"existing_stock":"new_arrival"};
-   const nextStock={partitionKey:schoolId,rowKey:key,onHand:onHand+quantity,reserved,unavailable};
+   const nextStock={partitionKey:schoolId,rowKey:key,onHand:onHand+procurementQuantity,reserved,unavailable};
    try{
     await inventory.submitTransaction(input.useExistingStock===true
      ?[["create",receipt]]
@@ -64,7 +66,7 @@ app.http("uniformReceiving",{methods:["GET","POST"],authLevel:"anonymous",route:
    }
    ledger=ledger||await get(inventory,schoolId,ledgerKey);
   }
-  if(!ledger||ledger.requestId!==input.id||ledger.quantity!==quantity)return fail("入庫紀錄與申請不一致，請人工核對",409);
+  if(!ledger||ledger.requestId!==input.id||ledger.quantity!==quantity||(ledger.procurementQuantity||ledger.quantity)!==procurementQuantity)return fail("入庫紀錄與申請或採購件數不一致，請人工核對",409);
   if(before.status==="ORDERED"||!before.stockReceivedAt){
    const stamp=new Date().toISOString();
    const next={...before,status:before.status==="ORDERED"?"ARRIVED":before.status,stockReceivedAt:ledger.receivedAt,stockReceivedDate:ledger.receivedDate,updatedAt:stamp};
@@ -82,8 +84,8 @@ app.http("uniformReceiving",{methods:["GET","POST"],authLevel:"anonymous",route:
     const result=await sendUniformRequestStatusEmail({recipients:[...recipients],studentName:student?.studentName||"學生",kind:next.kind,status:"ARRIVED",size:next.size,quantity:next.quantity});
     notificationStatus=result.status;
    }catch(error){notificationStatus="failed";console.error("uniform receiving notification",error)}
-   return json({item:{...next,id:input.id},quantity,notificationStatus});
+   return json({item:{...next,id:input.id},quantity,procurementQuantity,notificationStatus});
   }
-  return json({item:{...before,id:input.id},quantity,alreadyReceived:true});
+  return json({item:{...before,id:input.id},quantity,procurementQuantity,alreadyReceived:true});
  }catch(error){console.error("uniformReceiving",error);return fail("入庫結果未確認，請重新整理核對申請與庫存，再重試（不會重複入庫）",500)}
 }});
