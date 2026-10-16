@@ -48,7 +48,7 @@ async function refreshFinancePending(){
   showFinancePending(uniform.items||[],family.items||[]);
  }catch(error){el("inlineFinanceReview").querySelector("summary").textContent="💰 財務核帳｜待辦讀取失敗，點此重新查詢"}
 }
-let visibleModuleRequests=[];
+let visibleModuleRequests=[],moduleRequestsAll=[],showRequestHistory=false;
 const pendingRequestIds=new Set();
 const issueErrors=new Map();
 let uniformStudentNames=new Map();
@@ -103,9 +103,13 @@ function renderModuleRequests(){
   const kind=String(x.kind||x.type||"");
   return activeAdminTab==="regularUniform"?/regular|tshirt|t-shirt/i.test(kind):/competition/i.test(kind);
  }).sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
- visibleModuleRequests=rows;
+ moduleRequestsAll=rows;
  const activeRows=rows.filter(x=>["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(x.status));
- el("requestsStatus").textContent="目前處理中 "+activeRows.length+" 筆"+(activeAdminTab==="competitionUniform"?" A 團比賽服":"團 T")+"申請；下方清單含已完成及已取消的歷史紀錄。";
+ const displayRows=showRequestHistory?rows:activeRows;
+ visibleModuleRequests=displayRows;
+ const historyCount=rows.length-activeRows.length;
+ el("requestsStatus").textContent="目前處理中 "+activeRows.length+" 筆"+(activeAdminTab==="competitionUniform"?" A 團比賽服":"團 T")+"申請；"+(showRequestHistory?"下方同時顯示 "+historyCount+" 筆歷史申請。":"歷史申請 "+historyCount+" 筆已收合。");
+ const toggle=el("requestHistoryToggle");toggle.hidden=historyCount===0;toggle.textContent=showRequestHistory?"收合歷史申請":"顯示歷史申請（"+historyCount+" 筆）";toggle.setAttribute("aria-expanded",String(showRequestHistory));
  const counts=rows.reduce((a,x)=>(a[x.status]=(a[x.status]||0)+1,a),{});
  const notOrdered=rows.filter(x=>["PENDING","APPROVED"].includes(x.status));
  const sizes=new Map();
@@ -160,7 +164,7 @@ function renderModuleRequests(){
   const actionable=rows.filter(x=>["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(x.status));
   el("competitionProcurementSummary").textContent="申請共 "+rows.length+" 筆；尚在處理 "+actionable.length+" 筆，已採購 "+(counts.ORDERED||0)+" 筆，已到貨 "+(counts.ARRIVED||0)+" 筆。請依款式與尺寸核對採購需求；取消或已領取申請不列入待處理數。";
  }
- table("requests",rows.map(x=>({...x,processing:pendingRequestIds.has(x.id),received:receivedRequestIds.has(x.id),studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",acquisitionLabel:x.kind==="competitionUniform"?({PUBLIC:"公費配發",PURCHASE:"自費買斷",RENTAL:"租借",PENDING:"取得方式待核對"})[x.acquisition]||"待核對":"自費加購",statusLabel:pendingRequestIds.has(x.id)?"更新處理中…":x.status==="APPROVED"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"已核准｜待財務核帳":["ARRIVED","READY_FOR_PICKUP"].includes(x.status)&&!receivedRequestIds.has(x.id)?"待補登入庫｜暫不可發放":x.status==="READY_FOR_PICKUP"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"待財務核帳｜暫不可領取":({PENDING:"待審核",APPROVED:"已核准｜可統一採購",ORDERED:"已採購｜待到貨",ARRIVED:"已到貨｜待安排領取",READY_FOR_PICKUP:"可以領取",FULFILLED:"已領取",CANCELLED:"已取消"})[x.status]||x.status,procurementLabel:["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(x.status)?((x.procurementQuantity??x.quantity??1)+" 件"+(x.kind==="regularUniform"?"｜"+(Array.isArray(x.procurementBreakdown)?x.procurementBreakdown.map(p=>p.size+" "+p.quantity).join("、"):(x.procurementQuantity??x.quantity)>x.quantity?"尺碼未分配":x.size+" "+x.quantity):"")):"—",issueDetail:x.status==="FULFILLED"?`${x.receivedBy||"領取人待核對"}｜${x.issuedAt?new Date(x.issuedAt).toLocaleDateString("zh-TW"):"日期待核對"}`:"—"})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["acquisitionLabel","取得方式"],["size","尺寸"],["quantity","家長申請"],["procurementLabel","向廠商採購"],["statusLabel","狀態"],["issueDetail","實際領取"],["createdAt","建立時間"]],true);
+ table("requests",displayRows.map(x=>({...x,processing:pendingRequestIds.has(x.id),received:receivedRequestIds.has(x.id),studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",acquisitionLabel:x.kind==="competitionUniform"?({PUBLIC:"公費配發",PURCHASE:"自費買斷",RENTAL:"租借",PENDING:"取得方式待核對"})[x.acquisition]||"待核對":"自費加購",statusLabel:pendingRequestIds.has(x.id)?"更新處理中…":x.status==="APPROVED"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"已核准｜待財務核帳":["ARRIVED","READY_FOR_PICKUP"].includes(x.status)&&!receivedRequestIds.has(x.id)?"待補登入庫｜暫不可發放":x.status==="READY_FOR_PICKUP"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"待財務核帳｜暫不可領取":({PENDING:"待審核",APPROVED:"已核准｜可統一採購",ORDERED:"已採購｜待到貨",ARRIVED:"已到貨｜待安排領取",READY_FOR_PICKUP:"可以領取",FULFILLED:"已領取",CANCELLED:"已取消"})[x.status]||x.status,procurementLabel:["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(x.status)?((x.procurementQuantity??x.quantity??1)+" 件"+(x.kind==="regularUniform"?"｜"+(Array.isArray(x.procurementBreakdown)?x.procurementBreakdown.map(p=>p.size+" "+p.quantity).join("、"):(x.procurementQuantity??x.quantity)>x.quantity?"尺碼未分配":x.size+" "+x.quantity):"")):"—",issueDetail:x.status==="FULFILLED"?`${x.receivedBy||"領取人待核對"}｜${x.issuedAt?new Date(x.issuedAt).toLocaleDateString("zh-TW"):"日期待核對"}`:"—"})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["acquisitionLabel","取得方式"],["size","尺寸"],["quantity","家長申請"],["procurementLabel","向廠商採購"],["statusLabel","狀態"],["issueDetail","實際領取"],["createdAt","建立時間"]],true);
 }
 
 function renderModuleStock(){
@@ -792,14 +796,23 @@ function openProcurementForm(row,cell,trigger,correction){
  const grid=document.createElement("div");grid.className="procurement-size-grid";
  const previous=new Map((row.procurementBreakdown||[{size:row.size,quantity:row.quantity}]).map(p=>[p.size,p.quantity]));
  const fields=new Map();
- for(const size of tshirtSizes){
-  const label=document.createElement("label"),input=document.createElement("input");input.type="number";input.min=size===row.size?String(row.quantity):"0";input.max="100";input.step="1";input.value=String(previous.get(size)||0);input.required=true;input.inputMode="numeric";
-  label.textContent=size+(size===row.size?"（家長尺碼）":"");label.append(input);grid.append(label);fields.set(size,input);
- }
- form.append(grid);
+ const addWrap=document.createElement("div");addWrap.className="procurement-add-size";
+ const addSelect=document.createElement("select"),addButton=document.createElement("button");addButton.type="button";addButton.textContent="＋新增尺碼";
+ const refreshOptions=()=>{const selected=addSelect.value;addSelect.replaceChildren(new Option("選擇要新增的尺碼",""));for(const size of tshirtSizes)if(!fields.has(size))addSelect.add(new Option(size,size));if([...addSelect.options].some(x=>x.value===selected))addSelect.value=selected;addButton.disabled=fields.size===tshirtSizes.length};
+ const addSize=(size,value)=>{
+  const wrap=document.createElement("div");wrap.className="procurement-size-item";
+  const label=document.createElement("label"),input=document.createElement("input");input.type="number";input.min=size===row.size?String(row.quantity):"0";input.max="100";input.step="1";input.value=String(value);input.required=true;input.inputMode="numeric";
+  label.textContent=size+(size===row.size?"（家長尺碼，至少 "+row.quantity+" 件）":"");label.append(input);wrap.append(label);
+  if(size!==row.size){const remove=document.createElement("button");remove.type="button";remove.textContent="移除";remove.setAttribute("aria-label","移除 "+size+" 尺碼");remove.addEventListener("click",()=>{fields.delete(size);wrap.remove();refreshOptions();updateTotal()});wrap.append(remove)}
+  grid.append(wrap);fields.set(size,input);refreshOptions();updateTotal();
+ };
  const total=document.createElement("p");total.className="procurement-note";
  const updateTotal=()=>{const n=[...fields.values()].reduce((sum,input)=>sum+(Number(input.value)||0),0);total.textContent="採購合計 "+n+" 件；家長申請 "+row.quantity+" 件；其餘 "+Math.max(0,n-row.quantity)+" 件為備貨。"};
- grid.addEventListener("input",updateTotal);updateTotal();form.append(total);
+ addButton.addEventListener("click",()=>{if(!addSelect.value)return;addSize(addSelect.value,0);addSelect.value=""});
+ addWrap.append(addSelect,addButton);form.append(grid,addWrap,total);
+ grid.addEventListener("input",updateTotal);
+ addSize(row.size,previous.get(row.size)||row.quantity);
+ for(const size of tshirtSizes)if(size!==row.size&&previous.get(size)>0)addSize(size,previous.get(size));
  let reason;
  if(correction){reason=document.createElement("textarea");reason.required=true;reason.maxLength=300;reason.rows=2;reason.placeholder="請填寫更正原因，例如依廠商採購單重新分配尺碼";const label=document.createElement("label");label.textContent="更正原因";label.append(reason);form.append(label)}
  const submit=document.createElement("button");submit.type="submit";submit.textContent=correction?"確認更正採購尺碼":"登錄廠商採購";
@@ -911,7 +924,8 @@ el("inventoryForm").onsubmit=async e=>{
  try{await api("uniform-events/inventory",{method:"POST",body:JSON.stringify(data)});await load();el("status").textContent="庫存已更新"}
  catch(err){el("status").textContent="庫存更新失敗："+err.message}
 };
-el("exportRequests").onclick=()=>csv("uniform-event-requests.csv",visibleModuleRequests,["id","kind","studentId","activityId","style","size","quantity","procurementQuantity","acquisition","freeEligibility","status","createdAt","updatedAt"]);
+el("exportRequests").onclick=()=>csv("uniform-event-requests.csv",moduleRequestsAll.map(x=>({...x,procurementBreakdown:(x.procurementBreakdown||[]).map(p=>p.size+":"+p.quantity).join("; ")})),["id","kind","studentId","activityId","style","size","quantity","procurementQuantity","procurementBreakdown","acquisition","freeEligibility","status","createdAt","updatedAt"]);
+el("requestHistoryToggle").addEventListener("click",()=>{showRequestHistory=!showRequestHistory;renderModuleRequests()});
 el("exportStock").onclick=()=>csv("uniform-inventory.csv",cachedStock,["key","onHand","reserved","unavailable"]);
 
 function parseCsv(text){
