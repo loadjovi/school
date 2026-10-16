@@ -366,9 +366,10 @@ function table(id,rows,columns,actions=false){
    const existingStock=!r.received&&stock&&Number(stock.onHand)-Number(stock.reserved||0)-Number(stock.unavailable||0)>=needed;
    const issue=r.status==="READY_FOR_PICKUP"&&mayCollect&&(r.received||existingStock)?"<button type='button' data-issue='"+i+"'>"+(r.received?"確認實際發放":"以現有庫存發放")+"</button>":"";
    const needsReceipt=r.status==="ORDERED"||(r.status==="ARRIVED"||r.status==="READY_FOR_PICKUP")&&!r.received;
-   const receive=needsReceipt?"<button type='button' data-receive='"+i+"'>"+(r.received?"同步已入庫狀態":r.status==="ORDERED"?"驗收到貨並入庫":"補登驗收入庫")+"</button>":"";
+   const directIssue=r.kind==="A 團比賽服"&&r.status==="ORDERED"&&!r.received&&mayCollect?"<button type='button' data-direct-issue='"+i+"'>驗收到貨並直接交付</button>":"";
+   const receive=needsReceipt?"<button type='button' data-receive='"+i+"'>"+(r.received?"同步已入庫狀態":r.status==="ORDERED"?r.kind==="A 團比賽服"?"到貨後入庫（暫不交付）":"驗收到貨並入庫":"補登驗收入庫")+"</button>":"";
    const progress=r.status==="ORDERED"?"<button type='button' data-cancel='"+i+"'>取消申請</button>":next.length?"<select data-index='"+i+"'><option value=''>選擇下一步</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>選擇後執行</button>"+(r.status==="ARRIVED"&&mayCollect&&r.received?"<p class='hint'>選擇「開放領取」後，家長畫面會顯示可以領取，並寄送通知信；實際交付時再按「確認實際發放」。</p>":""):issue||"<span>"+esc(r.statusLabel||r.status)+"</span>";
-   controls="<td data-label='狀態管理'>"+receive+(r.status==="APPROVED"&&!mayOrder?"<p class='hint'>待財務確認入帳後，才能更新為已統一採購。</p>":"")+progress+procurementAdjust+amount+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
+   controls="<td data-label='狀態管理'>"+directIssue+receive+(r.status==="APPROVED"&&!mayOrder?"<p class='hint'>待財務確認入帳後，才能更新為已統一採購。</p>":"")+progress+procurementAdjust+amount+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
   }
   return "<tr>"+cells+controls+"</tr>";
@@ -851,6 +852,28 @@ el("requests").addEventListener("change",e=>{
  button.textContent=select.value==="READY_FOR_PICKUP"?"開放領取並通知家長":select.value==="CANCELLED"?"取消申請並通知家長":select.value?"確認更新並通知家長":"選擇後執行";
 });
 el("requests").addEventListener("click",async e=>{
+ if(e.target.dataset.directIssue!==undefined){
+  const row=visibleModuleRequests[Number(e.target.dataset.directIssue)];if(!row||row.kind!=="competitionUniform"||row.status!=="ORDERED"||pendingRequestIds.has(row.id))return;
+  const cell=e.target.closest("td"),button=e.target;if(cell.querySelector("form"))return;
+  const form=document.createElement("form"),date=document.createElement("input"),recipient=document.createElement("input"),note=document.createElement("textarea"),save=document.createElement("button"),message=document.createElement("p");
+  form.className="receiving-form";
+  date.type="date";date.required=true;date.value=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+  recipient.type="text";recipient.required=true;recipient.maxLength=100;recipient.value=uniformStudentNames.get(String(row.studentId))||"";
+  note.required=true;note.maxLength=300;note.rows=2;note.placeholder="例：核對女款 M 號一套，已交由學生本人領取";
+  for(const [label,input] of [["實際到貨日期",date],["實際領取人（學生或家長）",recipient],["驗收及交付備註",note]]){const wrap=document.createElement("label");wrap.textContent=label;wrap.append(input);form.append(wrap)}
+  const hint=document.createElement("p");hint.textContent="此件到貨後直接交付，不會增加或扣減庫存；確認後會留下到貨與發放紀錄。";form.prepend(hint);
+  save.type="submit";save.textContent="確認到貨並已交付";message.setAttribute("role","status");form.append(save,message);cell.append(form);button.hidden=true;
+  form.addEventListener("submit",async event=>{
+   event.preventDefault();
+   if(!recipient.value.trim()||!note.value.trim()){message.textContent="請填寫實際領取人及交付備註。";return}
+   if(!confirm("確認 A 團比賽服 "+row.style+"款 "+row.size+" 已到貨，並已實際交給 "+recipient.value.trim()+"？此操作會直接完成申請與發放紀錄，不會異動庫存。"))return;
+   save.disabled=true;message.textContent="正在登記到貨與發放…";pendingRequestIds.add(row.id);
+   try{await api("uniform-events/competition-direct-issue",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,receivedDate:date.value,receivedBy:recipient.value.trim(),note:note.value.trim()})});el("status").textContent="已確認到貨並交付，沒有異動庫存";await load()}
+   catch(error){message.textContent="交付結果待核對："+error.message+"。請先重新整理確認紀錄，勿直接重複提交。";await load()}
+   finally{pendingRequestIds.delete(row.id)}
+  });
+  return;
+ }
  if(e.target.dataset.receive!==undefined){
   const row=visibleModuleRequests[Number(e.target.dataset.receive)];if(!row||pendingRequestIds.has(row.id))return;
   const cell=e.target.closest("td"),button=e.target;
