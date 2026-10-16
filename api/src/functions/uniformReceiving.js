@@ -67,9 +67,10 @@ app.http("uniformReceiving",{methods:["GET","POST"],authLevel:"anonymous",route:
    if(!sameBreakdown(input.receivedBreakdown,breakdown))return fail("實際到貨的各尺碼件數須與採購明細一致；若有差異，請先更正採購尺碼再驗收",409);
    if(input.etag!==order.etag)return fail("申請資料已更新，請重新整理後再入庫",409);
    const changes=[];
-   for(const part of breakdown){
+   const stocks=await Promise.all(breakdown.map(part=>get(inventory,schoolId,before.kind==="regularUniform"?"regular:"+part.size:key)));
+   for(const [index,part] of breakdown.entries()){
     const sizeKey=before.kind==="regularUniform"?"regular:"+part.size:key;
-    const stock=await get(inventory,schoolId,sizeKey);
+    const stock=stocks[index];
     const onHand=stock?.onHand??0,reserved=stock?.reserved??0,unavailable=stock?.unavailable??0;
     if(![onHand,reserved,unavailable].every(n=>Number.isSafeInteger(n)&&n>=0)||onHand+(input.useExistingStock===true?0:part.quantity)>100000)return fail("庫存數量有誤，請先核對盤點資料",409);
     if(input.useExistingStock===true&&onHand-reserved-unavailable<part.quantity)return fail("部分尺碼的現有可用庫存不足，請先核對盤點數量",409);
