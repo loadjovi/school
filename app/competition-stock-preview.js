@@ -26,16 +26,15 @@ if(Array.isArray(window.uniformInventoryItems))renderStock(window.uniformInvento
 const styleEl=document.getElementById("competitionReturnStyle"),sizeEl=document.getElementById("competitionReturnSize");
 function syncSizes(){sizeEl.replaceChildren(...sizes[styleEl.value].map(x=>new Option(x,x)))}
 styleEl.addEventListener("change",syncSizes);syncSizes();
-const records=[];
+const preview=document.getElementById("competitionReturnPreview");
+for(const id of ["competitionReturnStudent","competitionReturnStyle","competitionReturnSize","competitionReturnStatus"]){
+ document.getElementById(id).addEventListener("change",()=>preview.replaceChildren());
+}
 document.getElementById("competitionReturnPreviewAdd").addEventListener("click",()=>{
  const student=document.getElementById("competitionReturnStudent").value.trim();
- if(!student){alert("請填寫學生姓名");return}
- records.push({student,style:styleEl.value,size:sizeEl.value,status:document.getElementById("competitionReturnStatus").value,at:new Date().toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false})});
- const root=document.getElementById("competitionReturnPreview");
- root.replaceChildren();
- const heading=document.createElement("p");heading.textContent="本頁歸還紀錄（重新整理即消失，尚未入庫）";root.appendChild(heading);
- const t=document.createElement("table");t.innerHTML="<thead><tr><th>學生</th><th>款式</th><th>尺寸</th><th>處理狀態</th><th>記錄時間</th></tr></thead>";
- const tb=document.createElement("tbody");
- for(const r of records){const tr=document.createElement("tr");for(const value of [r.student,r.style,r.size,r.status,r.at]){const td=document.createElement("td");td.textContent=value;tr.appendChild(td)}tb.appendChild(tr)}
- t.appendChild(tb);root.appendChild(t);
+ if(!student){preview.textContent="請先選擇 A 團學生。";return}
+ const heading=document.createElement("strong");heading.textContent="歸還流程預覽（未儲存）";
+ const detail=document.createElement("p");detail.textContent=student+"｜"+styleEl.value+"款 "+sizeEl.value+"｜"+document.getElementById("competitionReturnStatus").selectedOptions[0].textContent;
+ const note=document.createElement("p");note.textContent="僅供核對流程；不會新增歸還紀錄、變更庫存或發送通知。";
+ preview.replaceChildren(heading,detail,note);
 });
