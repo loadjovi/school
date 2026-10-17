@@ -133,7 +133,7 @@
   }
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261017-integrated-uniform",()=>{
+    appendScript("/app-v3.js?v=20261017-group-filter",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
