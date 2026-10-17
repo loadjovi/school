@@ -75,6 +75,16 @@ export async function syncActivityCalendar(schoolId,access,data){
   return eventView(entity,true);
 }
 
+export async function deleteActivityCalendar(schoolId,access,data){
+  await ensureTenantTables();
+  const sid=tenantSchoolPartition(schoolId),client=table("tenantCalendarEvent"),eventId=activityCalendarId(data.module,data.id);
+  let old;try{old=await client.getEntity(sid,eventId)}catch(e){if(e.statusCode===404)return;throw e}
+  if(old.sourceModule!==data.module||old.sourceActivityId!==data.id)throw Error("Linked calendar source mismatch");
+  if(await hasTrainingAttendance(schoolId,eventId))throw Error("Linked calendar has attendance records");
+  await auditSaved(schoolId,access.email,"calendar_event_delete",{eventId,title:String(old.title||""),before:eventView(old,true)});
+  await client.deleteEntity(sid,eventId,{etag:old.etag});
+}
+
 export async function calendarEventsForStudent(schoolId,startDate,endDate,student){
   const group=String(student?.groupName||"");
   const rows=await listCalendarEvents(schoolId,startDate,endDate,group,false);

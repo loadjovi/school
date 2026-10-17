@@ -261,7 +261,8 @@ function renderConfigSummary(items){
    (x.closeAt&&Date.parse(x.closeAt)<Date.now()&&((x.module==="yearEndDinner"&&x.paymentOpen)||(x.module==="fieldTrip"&&x.collectionOpen))?"<p class='warn'>報名已截止，收款仍開放：僅已報名家庭可回報匯款。若要接受新報名，請延長上方「報名結束」時間並儲存。</p>":"")+
    "<p>學生："+money(x.studentFee)+"｜首位陪同者："+money(x.firstAdultFee)+"｜其他陪同者："+money(x.extraAdultFee)+"｜6 歲以下兒童（非團員）："+money(x.extraChildFee)+"</p>"):"<p>團服模組設定，非活動報名。</p>")+
    (activityTypes.has(x.module)?renderActivityRegistrationStats(x):"")+(calendarOnly?"<p style='color:#98620b'>啟用後將依團別顯示在家長行事曆；仍請在群組公告重要異動。</p>":"<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>")+
-   "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>"+(activity?"編輯此活動":"檢視團服設定")+"</button></article>";
+   "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>"+(activity?"編輯此活動":"檢視團服設定")+"</button>"+
+   (!x.enabled&&["fieldTrip","yearEndDinner"].includes(x.module)?" <button type='button' data-delete-module='"+esc(x.module)+"' data-delete-id='"+esc(x.id)+"'>刪除未使用活動</button>":"")+"</article>";
  };
  const enabled=items.filter(x=>x.enabled===true),disabled=items.filter(x=>x.enabled!==true);
  target.innerHTML="<h3>已建立活動（"+items.length+" 筆）</h3><p>已顯示與暫不顯示的活動分開列出；修改活動時請確認對象團別與日期。</p>"+
@@ -340,7 +341,17 @@ el("familyRows").addEventListener("click",event=>{
   csv(name+"_報名明細.csv",rows.map(r=>({activityName:activity.title||activity.id,studentNames:registrationStudentNames(r),parentEmail:r.parentEmail||"",studentIds:(r.studentIds||[]).join(";"),students:(r.studentIds||[]).length,adults:Number(r.adults||0),extraChildren:Number(r.extraChildren||0),total:(r.studentIds||[]).length+Number(r.adults||0)+Number(r.extraChildren||0),paymentStatus:paymentStatusLabel(r.paymentStatus,activity),transferAmount:r.transferReport?.amount??"",transferLastFive:r.transferReport?.lastFive||"",transferDate:r.transferReport?.transferDate||""})),["activityName","studentNames","parentEmail","studentIds","students","adults","extraChildren","total","paymentStatus","transferAmount","transferLastFive","transferDate"]);
  }
 });
-el("settings").addEventListener("click",e=>{
+el("settings").addEventListener("click",async e=>{
+ const remove=e.target.closest("button[data-delete-id]");
+ if(remove){
+  const item=savedConfigs.find(x=>x.module===remove.dataset.deleteModule&&x.id===remove.dataset.deleteId);if(!item)return;
+  if(!confirm("刪除「"+item.title+"」？\n僅可刪除無報名紀錄的活動，連動行事曆與本活動帳戶綁定會一併移除；共用匯款帳戶會保留。"))return;
+  remove.disabled=true;
+  try{await api("uniform-events/config",{method:"DELETE",body:JSON.stringify({module:item.module,id:item.id})});await load();el("status").textContent="已刪除活動："+item.title}
+  catch(error){alert("刪除失敗："+error.message);remove.disabled=false}
+  return;
+ }
+
  const button=e.target.closest("button[data-edit-id]");if(!button)return;
  el("configModule").value=button.dataset.editModule;syncConfig();
  if(configActivityTypes.has(button.dataset.editModule)){el("existingActivity").value=button.dataset.editId;el("existingActivity").dispatchEvent(new Event("change"))}

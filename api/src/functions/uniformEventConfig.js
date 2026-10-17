@@ -2,7 +2,7 @@ import { app } from "@azure/functions";
 import { TableClient } from "@azure/data-tables";
 import { randomUUID } from "node:crypto";
 import { getTenantContext, json } from "../lib/auth.js";
-import { syncActivityCalendar } from "./calendarEvents.js";
+import { syncActivityCalendar, deleteActivityCalendar } from "./calendarEvents.js";
 
 // Phase 2: tenant-scoped administrative configuration. No automatic activation.
 const tableName=()=>process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig";
@@ -44,7 +44,7 @@ function publicValue(row){
   return {...payload,enabled:fixedUniformModules.has(payload.module)?true:payload.enabled,id:row.rowKey.split(":").slice(1).join(":"),updatedAt:row.updatedAt};
 }
 app.http("uniformEventConfig",{
-  methods:["GET","POST"],authLevel:"anonymous",route:"uniform-events/config",
+  methods:["GET","POST","DELETE"],authLevel:"anonymous",route:"uniform-events/config",
   handler:async request=>{
     const ctx=await getTenantContext(request);if(ctx.error)return ctx.error;
     const {schoolId,access}=ctx;
@@ -63,6 +63,30 @@ app.http("uniformEventConfig",{
       if(access.role!=="admin")return json({error:"Admin only"},403);
       const data=await request.json();
       if(!safeId(data.id))return json({error:"Invalid id"},400);
+      if(request.method==="DELETE"){
+        if(!["fieldTrip","yearEndDinner"].includes(data.module))return json({error:"只可刪除未使用的報名活動。"},400);
+        const key=rowKey(data.module,data.id);
+        let before;try{before=await client.getEntity(schoolId,key)}catch(e){if(e.statusCode===404)return json({error:"活動已不存在，請重新整理。"},404);throw e}
+        const config=JSON.parse(before.payload||"{}");
+        if(config.enabled!==false)return json({error:"請先將活動設為暫不顯示，才可刪除。"},409);
+        for(const name of ["TenantFamilyEventRegistration","TenantUniformEventRequest"]){
+          const registrations=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,name);
+          try{
+            for await(const row of registrations.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replace(/'/g,"''")}'`}})){
+              const value=JSON.parse(row.payload||"{}");
+              if(value.kind===data.module&&value.activityId===data.id)return json({error:"此活動已有報名或繳款歷史，不能刪除。"},409);
+            }
+          }catch(e){if(e.statusCode!==404)throw e}
+        }
+        const audit=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantUniformEventAudit");
+        await audit.createTable().catch(e=>{if(e.statusCode!==409)throw e});
+        await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"config.delete",subjectId:key,actor:String(access.email||"admin").slice(0,200),at:new Date().toISOString(),details:JSON.stringify({before:config,reason:"管理員刪除無報名的未顯示活動"}).slice(0,20000)});
+        if(data.module==="fieldTrip")await deleteActivityCalendar(schoolId,access,data);
+        const accounts=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantEventPaymentAccounts");
+        try{await accounts.deleteEntity(schoolId,key)}catch(e){if(e.statusCode!==404)throw e}
+        await client.deleteEntity(schoolId,key,{etag:before.etag});
+        return json({ok:true,deleted:true,id:data.id});
+      }
       validate(data);
       if(fixedUniformModules.has(data.module)&&data.enabled!==true)return json({error:"團 T 與 A 團比賽服固定啟用，無法關閉。"},400);
       if(data.module==="yearEndDinner"&&(data.paymentOpen!==data.enabled||data.feeStatus!==(data.enabled?"PUBLISHED":"DRAFT")))return json({error:"期末聚餐的收款與費率狀態須和家長端顯示同步。"},400);
