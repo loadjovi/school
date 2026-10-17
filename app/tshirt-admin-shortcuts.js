@@ -35,7 +35,7 @@ function renderRoster(){
  const data=students.filter(s=>filter==="ALL"||normalizedGroup(s.groupName||s.group)===filter);
  const table=document.createElement("table"),head=document.createElement("thead");
  table.className="tshirt-roster-table";
- head.innerHTML="<tr><th>團員</th><th>首次團 T</th><th>目前尺寸</th><th>家長下一步</th></tr>";table.appendChild(head);
+ head.innerHTML="<tr><th>學生</th><th>首次領用</th><th>尺寸</th><th>家長處理</th></tr>";table.appendChild(head);
  const tbody=document.createElement("tbody");
  for(const s of data){
   const name=String(s.name||s.studentName||""),group=normalizedGroup(s.groupName||s.group),unissued=group==="C"||name==="李沛臻";
@@ -52,11 +52,11 @@ function renderRoster(){
    if(detail){const small=document.createElement("small");small.textContent=detail;td.append(small)}
    tr.append(td);return td;
   };
-  const person=addCell("團員",name),badge=document.createElement("span");
-  badge.className="tshirt-roster-group";badge.textContent=group==="C"?"儲備團":group+" 團";person.append(badge);
-  addCell("首次團 T",unissued?"尚未領取":"已領取",unissued?"保留首次免費資格":issuedGrade==="年級待確認"?"領取年級待核對":issuedGrade+"領取");
-  addCell("目前尺寸",unissued?"尚未選擇":size||"待補登");
-  const action=addCell("家長下一步",unissued?"申請首次免費領用":size?"尺寸已登錄":"補登歷史尺寸");
+  const person=addCell("學生",name),badge=document.createElement("span");
+  badge.className="tshirt-roster-group";badge.textContent=group==="C"?"儲備":group+"團";person.append(badge);
+  addCell("首次領用",unissued?"尚未領取":"已領取",unissued?"保留免費資格":issuedGrade==="年級待確認"?"年級待核對":issuedGrade+"領取");
+  addCell("尺寸",unissued?"待選擇":size||"待補登");
+  const action=addCell("家長處理",unissued?"免費申請":size?"已登錄":"補登尺寸");
   action.className="tshirt-roster-action";
   tbody.appendChild(tr);
  }
