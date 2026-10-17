@@ -1,6 +1,6 @@
 import {confirmedReceived} from "./competition-paper-receipts.js";
 import "./parent-activity-notice.js";
-import {buildUniformGrowth} from "./uniform-growth.js?v=20261017-size-survey";
+import {buildUniformGrowth} from "./uniform-growth.js?v=20261017-first-public";
 import {roster as competitionRoster} from "./competition-roster-data.js";
 const competitionByName=new Map(competitionRoster.map(row=>[row[1],{style:row[2],size:row[3]}]));
 const buttons=[...document.querySelectorAll("[data-view]")];const panels=[...document.querySelectorAll("[data-panel]")];function select(name){for(const b of buttons){const active=b.dataset.view===name;b.setAttribute("aria-selected",String(active));b.tabIndex=active?0:-1}for(const p of panels)p.hidden=p.dataset.panel!==name;document.getElementById("uniformRequestProgress").hidden=!["uniform","history"].includes(name)}buttons.forEach((b,i)=>{b.addEventListener("click",()=>select(b.dataset.view));b.addEventListener("keydown",e=>{if(!["ArrowRight","ArrowLeft","Home","End"].includes(e.key))return;e.preventDefault();const index=e.key==="Home"?0:e.key==="End"?buttons.length-1:(i+(e.key==="ArrowRight"?1:-1)+buttons.length)%buttons.length;select(buttons[index].dataset.view);buttons[index].focus()})});select("uniform");function mix(a,b,t){const x=parseInt(a.slice(1),16),y=parseInt(b.slice(1),16);return "#"+[16,8,0].map(n=>Math.round(((x>>n)&255)*(1-t)+((y>>n)&255)*t).toString(16).padStart(2,"0")).join("")}function luminance(c){const n=parseInt(c.slice(1),16),v=[16,8,0].map(k=>((n>>k)&255)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return .2126*v[0]+.7152*v[1]+.0722*v[2]}async function theme(){try{const schoolId=sessionStorage.getItem("school_context_id")||"";const q=new URLSearchParams();if(schoolId)q.set("schoolId",schoolId);const r=await fetch("/api/branding?"+q,{credentials:"same-origin"});if(!r.ok)return;const data=await r.json();let c=String(data.primaryColor||"");if(!/^#[0-9a-f]{6}$/i.test(c))return;for(let i=0;i<16&&1.05/(luminance(c)+.05)<4.5;i++)c=mix(c,"#000000",.13);document.documentElement.style.setProperty("--main",c);document.documentElement.style.setProperty("--soft",mix(c,"#ffffff",.91));document.documentElement.style.setProperty("--ink",mix(c,"#000000",.55))}catch(e){console.warn("Branding fallback",e)}}theme();
@@ -104,7 +104,7 @@ async function loadInlineSizes(){
    const line=document.createElement("p");line.textContent=(item.studentName||item.studentId)+"｜團 T："+(item.size||"待填寫")+"｜"+(issued?"已領取 1 件｜"+gradeLabel:"尚未領取")+"｜"+(item.size?"尺寸已登錄":"尺寸待填寫");summary.append(line);
    const box=document.createElement("div");box.className="size-row";
    const title=document.createElement("strong");title.textContent=(item.studentName||item.studentId)+"｜"+(issued?"已領取 1 件":"尚未領取，先登錄尺寸");
-   const label=document.createElement("label");label.textContent=issued?"已領取團 T 尺寸":"預計購買團 T 尺寸";
+   const label=document.createElement("label");label.textContent=issued?"已領取團 T 尺寸":"預計首次公費領用團 T 尺寸";
    const sel=document.createElement("select");sel.setAttribute("aria-label",(item.studentName||item.studentId)+"的團 T 尺寸");
    sel.add(new Option("請選擇尺寸",""));for(const size of TSHIRT_SIZES)sel.add(new Option(size,size));
    sel.value=item.size||"";

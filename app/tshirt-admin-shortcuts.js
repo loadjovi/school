@@ -61,7 +61,7 @@ function renderRoster(){
   };
   const person=addCell("學生",name),badge=document.createElement("span");
   badge.className="tshirt-roster-group";badge.textContent=group==="C"?"儲備":group+"團";person.append(badge);
-  addCell("首次領用",unissued?"尚未領取":"已領取",unissued?"保留免費資格":issuedGrade==="年級待確認"?"年級待核對":issuedGrade+"領取");
+  addCell("首次領用",unissued?"尚未領取":"已領取",unissued?"保留首次公費資格":issuedGrade==="年級待確認"?"年級待核對":issuedGrade+"領取");
   addCell("尺寸",size||"待填寫");
   const action=addCell("家長處理",size?"尺寸已登錄":"待填寫尺寸",unissued?"尚未領取，保留首次免費資格":"");
   action.className="tshirt-roster-action";
