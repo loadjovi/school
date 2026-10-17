@@ -9,7 +9,7 @@ export function buildUniformGrowth(student,kind,tshirt,requests,paperClass,roste
   entries.push({type:"baseline",size:tshirt.size||"",title:"首次團 T 領用",detail:grade,received:true,confirmed:false});
  }
  if(kind==="regularUniform"&&tshirt?.historicalIssued===false&&tshirt.size){
-  entries.push({type:"sizeSurvey",size:tshirt.size,title:"預計購買團 T 尺寸",detail:"尚未領取；尺寸供後續採購統計使用。",received:false,confirmed:false});
+  entries.push({type:"sizeSurvey",size:tshirt.size,title:"首次公費領用預計尺寸",detail:"尚未領取；尺寸供校方配發與採購統計使用。",received:false,confirmed:false});
  }
  if(kind==="competitionUniform"&&rosterUniform){
   const received=Boolean(paperClass);
