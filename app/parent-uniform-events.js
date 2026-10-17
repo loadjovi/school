@@ -1,6 +1,6 @@
 import {confirmedReceived} from "./competition-paper-receipts.js";
 import "./parent-activity-notice.js";
-import {buildUniformGrowth} from "./uniform-growth.js";
+import {buildUniformGrowth} from "./uniform-growth.js?v=20261017-parent-copy";
 import {roster as competitionRoster} from "./competition-roster-data.js";
 const competitionByName=new Map(competitionRoster.map(row=>[row[1],{style:row[2],size:row[3]}]));
 const buttons=[...document.querySelectorAll("[data-view]")];const panels=[...document.querySelectorAll("[data-panel]")];function select(name){for(const b of buttons){const active=b.dataset.view===name;b.setAttribute("aria-selected",String(active));b.tabIndex=active?0:-1}for(const p of panels)p.hidden=p.dataset.panel!==name;document.getElementById("uniformRequestProgress").hidden=!["uniform","history"].includes(name)}buttons.forEach((b,i)=>{b.addEventListener("click",()=>select(b.dataset.view));b.addEventListener("keydown",e=>{if(!["ArrowRight","ArrowLeft","Home","End"].includes(e.key))return;e.preventDefault();const index=e.key==="Home"?0:e.key==="End"?buttons.length-1:(i+(e.key==="ArrowRight"?1:-1)+buttons.length)%buttons.length;select(buttons[index].dataset.view);buttons[index].focus()})});select("uniform");function mix(a,b,t){const x=parseInt(a.slice(1),16),y=parseInt(b.slice(1),16);return "#"+[16,8,0].map(n=>Math.round(((x>>n)&255)*(1-t)+((y>>n)&255)*t).toString(16).padStart(2,"0")).join("")}function luminance(c){const n=parseInt(c.slice(1),16),v=[16,8,0].map(k=>((n>>k)&255)/255).map(x=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4);return .2126*v[0]+.7152*v[1]+.0722*v[2]}async function theme(){try{const schoolId=sessionStorage.getItem("school_context_id")||"";const q=new URLSearchParams();if(schoolId)q.set("schoolId",schoolId);const r=await fetch("/api/branding?"+q,{credentials:"same-origin"});if(!r.ok)return;const data=await r.json();let c=String(data.primaryColor||"");if(!/^#[0-9a-f]{6}$/i.test(c))return;for(let i=0;i<16&&1.05/(luminance(c)+.05)<4.5;i++)c=mix(c,"#000000",.13);document.documentElement.style.setProperty("--main",c);document.documentElement.style.setProperty("--soft",mix(c,"#ffffff",.91));document.documentElement.style.setProperty("--ink",mix(c,"#000000",.55))}catch(e){console.warn("Branding fallback",e)}}theme();
@@ -69,10 +69,10 @@ async function eligibleUniforms(){
     const grade=paperClass?paperClass.slice(0,1):"";
     const registered=competitionByName.get(name);
     const size=registered?registered.style+"款 "+registered.size:(st.competitionSize||st.uniformSize||"名單尚無尺寸");
-    const receipt=paperClass?"已領用 1 套（紙本確認）｜"+grade+" 年級領取（紙本 "+paperClass+"）":"領用待核對｜領取年級待確認";
+    const receipt=paperClass?"已領用 1 套｜"+grade+" 年級領取（"+paperClass+"）":"領用待核對｜領取年級待確認";
     const p=document.createElement("p");p.textContent=name+"（"+st.studentId+"）｜A 團｜"+size+"｜"+receipt;info.append(p);
     if(["李旭恩","蘇聖翔","蔡昀潔"].includes(name)){
-     const detail=document.createElement("p");detail.className="hint";detail.textContent="這位學生尚無本張紙本領用佐證；取得方式與領用狀態請由學校確認。";info.append(detail);
+     const detail=document.createElement("p");detail.className="hint";detail.textContent="這位學生目前沒有已領用紀錄；取得方式與領用狀態請由學校確認。";info.append(detail);
     }
    }
    if(!competition.hidden)renderCompetitionPurchase(aStudents);
