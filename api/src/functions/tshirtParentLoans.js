@@ -4,7 +4,7 @@ import {randomUUID} from "node:crypto";
 import {getTenantContext,json} from "../lib/auth.js";
 import {getStudentMaster,ensureTenantTables,table as tenantTable,tenantParentPartition} from "../lib/storage.js";
 
-const sizes=new Set(["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"]);
+const sizes=new Set(["8","10","12","XS","S","M","L","XL","2L","3L","5L"]);
 const actions=new Set(["ISSUE_CADRE","BORROW_VOLUNTEER","MARK_WASHING","RETURN"]);
 let client,audit;
 async function tables(){

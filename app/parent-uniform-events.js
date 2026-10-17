@@ -85,7 +85,7 @@ eligibleUniforms();
 
 let currentUniformPrices=null;
 const uniformPricePromise=parentApi("uniform-events/prices").then(data=>{currentUniformPrices=data.items||{};return currentUniformPrices});
-const TSHIRT_SIZES=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"];
+const TSHIRT_SIZES=["8","10","12","XS","S","M","L","XL","2L","3L","5L"];
 async function loadInlineSizes(){
  const host=document.getElementById("inlineTshirtSizes"),status=document.getElementById("inlineTshirtStatus");
  host.replaceChildren();status.textContent="";

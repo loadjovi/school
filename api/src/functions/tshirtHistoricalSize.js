@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { getTenantContext, ensureStudentAccess, json } from "../lib/auth.js";
 import { getStudentMaster } from "../lib/storage.js";
 
-const SIZES=new Set(["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"]);
+const SIZES=new Set(["8","10","12","XS","S","M","L","XL","2L","3L","5L"]);
 const validId=s=>typeof s==="string"&&/^[a-zA-Z0-9_-]{1,100}$/.test(s);
 const clients=new Map();
 async function table(name){

@@ -12,7 +12,7 @@ async function clients(){
   if(!audit){audit=TableClient.fromConnectionString(conn,auditName);await audit.createTable().catch(e=>{if(e.statusCode!==409)throw e})}
   return {inventory,audit};
 }
-const sizes=new Set(["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"]);
+const sizes=new Set(["8","10","12","XS","S","M","L","XL","2L","3L","5L"]);
 const validNum=n=>Number.isSafeInteger(n)&&n>=0&&n<=100000;
 function key(type,style,size){
   if(type==="regularUniform"&&sizes.has(size))return "regular:"+size;

@@ -1,5 +1,5 @@
 // 僅呈現 Azure 庫存資料；不使用歷史盤點草稿作為正式庫存。
-const sizes=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"];
+const sizes=["8","10","12","XS","S","M","L","XL","2L","3L","5L"];
 const root=document.getElementById("tshirtStockPreview");
 let loaded=false;
 let inventoryItems=[];
