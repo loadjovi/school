@@ -86,7 +86,7 @@
       "/practice-timer.js?v=20261004-manual4h",
       "/private-lesson-confirmation.js?v=20260929-late10",
       "/parent-semester-attendance.js?v=20261003-practice20",
-      "/parent-home-summary.js?v=20261016-new-activity-alert",
+      "/parent-home-summary.js?v=20261017-integrated-uniform",
       "/parent-practice-history.js?v=20261003-practice-history-toggle"
     ];
     if(role==="globalAdmin")return [
@@ -119,7 +119,7 @@
   async function loadRoleModules(){
     await waitForProfileReady();
     if(typeof state==="undefined"||!state.me)return;
-    const list=[...roleModules(),"/desktop-ui.js?v=20261002-teacher-types"];
+    const list=[...roleModules(),"/desktop-ui.js?v=20261017-integrated-uniform"];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");
@@ -133,7 +133,7 @@
   }
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261017-compact-student-master",()=>{
+    appendScript("/app-v3.js?v=20261017-integrated-uniform",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
