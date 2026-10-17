@@ -56,8 +56,8 @@
       "/admin-operations.js?v=20261002-student-alerts",
       "/admin-followup-summary-fix.js?v=20260917-1320",
       "/system-backup.js?v=20261003-practice20",
-      "/school-access.js?v=20261008-select-student",
-      "/school-access-audit-admin.js?v=20260918-0005",
+      "/school-access.js?v=20261017-simple-accounts",
+      "/school-access-audit-admin.js?v=20261017-simple-records",
       "/school-admin-activity.js?v=20261008-activity2",
       "/school-access-refresh-fix.js?v=20261015-finance-role",
       "/training-attendance.js?v=20261002-save-confirm"
@@ -77,10 +77,10 @@
       "/private-lesson-confirmation.js?v=20260929-late10"
     ];
     if(["unassigned","contextDenied"].includes(role))return [
-      "/school-access.js?v=20261008-select-student",
+      "/school-access.js?v=20261017-simple-accounts",
       "/school-access-refresh-fix.js?v=20261015-finance-role"
     ];
-    if(role==="school")return ["/school-access.js?v=20261008-select-student"];
+    if(role==="school")return ["/school-access.js?v=20261017-simple-accounts"];
     if(role==="parent")return [
       "/parent-activity-notice.js?v=20261016-new-activity-alert",
       "/practice-timer.js?v=20261004-manual4h",
@@ -90,8 +90,8 @@
       "/parent-practice-history.js?v=20261003-practice-history-toggle"
     ];
     if(role==="globalAdmin")return [
-      "/school-access.js?v=20261008-select-student",
-      "/school-access-audit-admin.js?v=20260918-0005",
+      "/school-access.js?v=20261017-simple-accounts",
+      "/school-access-audit-admin.js?v=20261017-simple-records",
       "/school-access-refresh-fix.js?v=20261015-finance-role"
     ];
     return [];
@@ -119,7 +119,7 @@
   async function loadRoleModules(){
     await waitForProfileReady();
     if(typeof state==="undefined"||!state.me)return;
-    const list=[...roleModules(),"/desktop-ui.js?v=20261017-integrated-uniform"];
+    const list=[...roleModules(),"/desktop-ui.js?v=20261017-admin-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261017-workspace1"]:[])];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");

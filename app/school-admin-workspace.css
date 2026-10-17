@@ -1,0 +1,52 @@
+/* School admin only: one navigation language on desktop and mobile. */
+.desktop-shell[data-role="admin"]{--aw-ink:#243652;--aw-muted:#607087;--aw-line:#dce3ee;--aw-bg:#f5f7fb}
+.desktop-shell[data-role="admin"] .main{background:var(--aw-bg);min-width:0}
+.desktop-shell[data-role="admin"] .card{border:1px solid var(--aw-line);border-radius:16px;box-shadow:none;padding:20px;margin-bottom:16px;overflow-wrap:anywhere}
+.desktop-shell[data-role="admin"] h2{font-size:20px;line-height:1.4;margin-top:0}
+.desktop-shell[data-role="admin"] .notice{font-size:14px;line-height:1.7;border-radius:10px;padding:12px;color:var(--aw-muted)}
+.desktop-shell[data-role="admin"] input,.desktop-shell[data-role="admin"] select,.desktop-shell[data-role="admin"] textarea{font-size:16px;border-radius:10px;box-sizing:border-box;max-width:100%}
+.desktop-shell[data-role="admin"] button{font-size:15px;min-height:44px;border-radius:10px;white-space:normal}
+.school-admin-workspace [hidden]{display:none!important}
+.school-admin-workspace [data-admin-group="legacy"]{display:none!important}
+.admin-workspace-header{margin:0 0 20px;color:var(--aw-ink)}
+.aw-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:18px}
+.aw-heading small{font-size:13px;color:var(--aw-muted)}
+.aw-heading h1{font-size:28px;line-height:1.3;margin:4px 0 8px}
+.aw-heading p{font-size:15px;line-height:1.6;color:var(--aw-muted);margin:0}
+.aw-heading button{flex-shrink:0;background:white;border:1px solid var(--aw-line);color:var(--primary);padding:8px 14px;margin:0}
+.aw-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--aw-line);padding-bottom:14px;margin-bottom:20px}
+.aw-tabs button{width:auto!important;margin:0!important;padding:9px 14px;background:white;border:1px solid var(--aw-line);color:var(--aw-muted);font-weight:700}
+.aw-tabs button.is-active{background:var(--primary);border-color:var(--primary);color:white}
+.aw-stats{display:flex;gap:12px;flex-wrap:wrap;margin:0 0 22px}
+.aw-stats span{background:white;border:1px solid var(--aw-line);border-radius:10px;padding:10px 15px;font-size:14px;color:var(--aw-muted)}
+.aw-stats b{color:var(--aw-ink);font-size:20px;margin:0 5px}
+.aw-home>h2{font-size:18px!important;margin-bottom:12px}
+.aw-shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.aw-shortcuts button{display:flex;align-items:center;gap:12px;width:100%;margin:0!important;padding:18px!important;background:white;text-align:left;border:1px solid var(--aw-line);color:var(--aw-ink);box-shadow:none}
+.aw-shortcuts button:hover{border-color:var(--primary);background:#f0f4ff}
+.aw-shortcuts button>span:nth-child(2){flex:1;min-width:0}
+.aw-shortcuts b{display:block;font-size:17px;line-height:1.4}
+.aw-shortcuts small{display:block;font-weight:400;font-size:13px;line-height:1.6;color:var(--aw-muted);margin-top:4px}
+.aw-icon{width:42px;height:42px;display:grid;place-items:center;background:#eff3fa;border-radius:12px;font-size:23px;flex-shrink:0}
+.aw-tip{margin-top:18px;color:var(--aw-muted);font-size:14px;line-height:1.8}
+.aw-tip button{display:inline;padding:0 6px;background:none;border:0;color:var(--primary);font-size:14px;width:auto;margin:0}
+.aw-account-links,.aw-attendance-links{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.aw-account-links button,.aw-attendance-links button{width:auto;margin:0;padding:10px 16px;background:var(--primary);color:white;border:0}
+.desktop-shell[data-role="admin"] .desktop-sidebar{overflow-y:auto}
+@media(min-width:1000px){.desktop-shell[data-role="admin"] .aw-tabs{display:none}}
+@media(max-width:600px){
+ .desktop-shell[data-role="admin"] .main{padding:16px 12px 100px}
+ .desktop-shell[data-role="admin"] .card{padding:16px;border-radius:12px}
+ .aw-heading h1{font-size:24px}.aw-heading button{padding:7px 10px;font-size:13px}
+ .aw-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+ .aw-tabs button{font-size:13px!important;padding:8px 4px}
+ .aw-shortcuts{gap:9px}.aw-shortcuts button{flex-wrap:wrap;gap:8px;padding:13px!important;align-content:flex-start}
+ .aw-shortcuts button>span:nth-child(2){flex-basis:100%;order:2}
+ .aw-shortcuts button>span:last-child{margin-left:auto}
+ .aw-shortcuts b{font-size:16px}.aw-shortcuts small{font-size:12px}
+ .aw-icon{width:32px;height:32px;border-radius:9px;font-size:20px}
+ .aw-stats{gap:8px}.aw-stats span{font-size:12px;padding:9px 10px;flex:1}.aw-stats b{font-size:18px}
+ .desktop-shell[data-role="admin"] .row2{grid-template-columns:1fr}
+}
+
+.school-admin-workspace .desktop-content[data-page="admin"]{display:block}

@@ -29,9 +29,9 @@
 
   function adminSchoolAccessHtml(){
     const s=state.schoolAccessAdmin;
-    if(s.error)return `<div class="card"><h2>🏫 校方查詢權限</h2><div class="error">讀取失敗：${esc(s.error)}</div><button class="secondary" style="width:100%;margin-top:10px" onclick="retrySchoolAccessAdmin()">🔄 重新讀取</button></div>`;
-    if(!s.loaded)return `<div class="card"><h2>🏫 校方查詢權限</h2><div class="notice">${s.loading?"正在讀取校方帳號…":"準備讀取校方帳號…"}</div></div>`;
-    return `<div class="card"><h2>🏫 校方查詢權限</h2><div class="notice">提供學校行政端使用的<b>唯讀出缺勤查詢權限</b>。此帳號不能修改點名；過去分部課點名由學校管理員在後台查證並修正。<br><br>每行輸入一組 Google Gmail，可設定一組或多組帳號。</div><label>校方 Gmail</label><textarea id="schoolAccessEmails" rows="4" placeholder="例如：school@example.com">${esc((s.emails||[]).join("\n"))}</textarea><button class="primary" onclick="saveSchoolAccess()">儲存校方查詢帳號</button></div>`;
+    if(s.error)return `<div class="card"><h2>🏫 校方查詢帳號</h2><div class="error">讀取失敗：${esc(s.error)}</div><button class="secondary" style="width:100%;margin-top:10px" onclick="retrySchoolAccessAdmin()">🔄 重新讀取</button></div>`;
+    if(!s.loaded)return `<div class="card"><h2>🏫 校方查詢帳號</h2><div class="notice">${s.loading?"正在讀取校方帳號…":"準備讀取校方帳號…"}</div></div>`;
+    return `<div class="card"><h2>🏫 校方查詢帳號</h2><div class="notice">讓校方人員查閱出缺勤，不能修改點名。每行填寫一個 Gmail，完成後按「儲存查詢帳號」。</div><label>校方 Gmail</label><textarea id="schoolAccessEmails" rows="4" placeholder="例如：school@example.com">${esc((s.emails||[]).join("\n"))}</textarea><button class="primary" onclick="saveSchoolAccess()">儲存查詢帳號</button></div>`;
   }
 
   function mountAdminSchoolAccess(){
