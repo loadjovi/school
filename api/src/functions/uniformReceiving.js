@@ -6,7 +6,7 @@ import {sendUniformRequestStatusEmail} from "../lib/email.js";
 
 const fail=(error,status=400)=>json({error},status);
 const validId=value=>typeof value==="string"&&/^[a-zA-Z0-9_-]{1,100}$/.test(value);
-const regularSizes=new Set(["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"]);
+const regularSizes=new Set(["8","10","12","XS","S","M","L","XL","2L","3L","5L"]);
 function validBreakdown(parts,order,total){
  if(!Array.isArray(parts)||!parts.length||parts.length>regularSizes.size)return false;
  const seen=new Set();let sum=0,parent=0;
@@ -24,7 +24,7 @@ function sameBreakdown(left,right){
 }
 async function get(table,schoolId,id){try{return await table.getEntity(schoolId,id)}catch(error){if(error.statusCode===404)return null;throw error}}
 function stockKey(order){
- if(order.kind==="regularUniform"&&["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"].includes(order.size))return "regular:"+order.size;
+ if(order.kind==="regularUniform"&&["8","10","12","XS","S","M","L","XL","2L","3L","5L"].includes(order.size))return "regular:"+order.size;
  if(order.kind==="competitionUniform"&&((order.style==="男"&&["S","M","L","2L"].includes(order.size))||(order.style==="女"&&["XS","S","M","L"].includes(order.size))))return "competition:"+order.style+":"+order.size;
  return null;
 }

@@ -181,7 +181,7 @@ function renderModuleStock(){
  el("stockStatus").textContent="目前顯示 "+visibleStock.length+" 筆"+(activeAdminTab==="competitionUniform"?" A 團比賽服":"團 T")+"庫存紀錄";
  if(activeAdminTab==="regularUniform"){
   const byKey=new Map(cachedStock.map(x=>[x.key,x]));
-  const rows=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"].map(size=>{
+  const rows=["8","10","12","XS","S","M","L","XL","2L","3L","5L"].map(size=>{
    const item=byKey.get("regular:"+size);
    return {size,quantity:item?item.onHand+" 件":"—",state:item?"已建檔":"待盤點／未建檔"};
   });
@@ -382,7 +382,7 @@ function csv(name,rows,keys){
  const blob=new Blob([content],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
  a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),500);
 }
-const sizeOptions={regularUniform:["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"],"男":["S","M","L","2L"],"女":["XS","S","M","L"]};
+const sizeOptions={regularUniform:["8","10","12","XS","S","M","L","XL","2L","3L","5L"],"男":["S","M","L","2L"],"女":["XS","S","M","L"]};
 function syncSizes(){
  const type=el("inventoryType").value,style=el("inventoryStyle"),size=el("inventorySize");
  style.disabled=type==="regularUniform";
@@ -800,7 +800,7 @@ el("uniformPriceForm").addEventListener("submit",async e=>{
  catch(error){message.textContent="價格更新失敗："+error.message}
 });
 loadUniformPrices();
-const tshirtSizes=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"];
+const tshirtSizes=["8","10","12","XS","S","M","L","XL","2L","3L","5L"];
 function openProcurementForm(row,cell,trigger,correction){
  if(cell.querySelector("form"))return;
  const form=document.createElement("form");form.className="receiving-form procurement-size-form";

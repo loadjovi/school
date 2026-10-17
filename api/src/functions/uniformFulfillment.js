@@ -9,7 +9,7 @@ const get=async(table,schoolId,id)=>{
  catch(error){if(error.statusCode===404)return null;throw error}
 };
 const stockKey=request=>{
- if(request.kind==="regularUniform"&&["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"].includes(request.size))return "regular:"+request.size;
+ if(request.kind==="regularUniform"&&["8","10","12","XS","S","M","L","XL","2L","3L","5L"].includes(request.size))return "regular:"+request.size;
  if(request.kind==="competitionUniform"&&
    ((request.style==="男"&&["S","M","L","2L"].includes(request.size))||
     (request.style==="女"&&["XS","S","M","L"].includes(request.size))))

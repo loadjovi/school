@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-const sizes=["8","10","12","14","XS","S","M","L","XL","2L","3L","5L"];
+const sizes=["8","10","12","XS","S","M","L","XL","2L","3L","5L"];
 function headers(){const token=sessionStorage.getItem("google_id_token")||"";const school=sessionStorage.getItem("school_context_id")||"";const role=sessionStorage.getItem("role_context")||"";return {"Content-Type":"application/json",...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(school?{"X-School-Id":school}:{}),...(role?{"X-Role-Context":role}:{})}}
 async function api(method,body){const r=await fetch("/api/uniform-events/tshirt-historical-size",{method,credentials:"same-origin",cache:"no-store",headers:headers(),...(body?{body:JSON.stringify(body)}:{})});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||"HTTP "+r.status);return d}
 async function load(){
