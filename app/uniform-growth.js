@@ -8,6 +8,9 @@ export function buildUniformGrowth(student,kind,tshirt,requests,paperClass,roste
   const grade=tshirt.receivedGrade?`${tshirt.receivedGrade} 年級領用`:"領取年級待核對";
   entries.push({type:"baseline",size:tshirt.size||"",title:"首次團 T 領用",detail:grade,received:true,confirmed:false});
  }
+ if(kind==="regularUniform"&&tshirt?.historicalIssued===false&&tshirt.size){
+  entries.push({type:"sizeSurvey",size:tshirt.size,title:"預計購買團 T 尺寸",detail:"尚未領取；尺寸供後續採購統計使用。",received:false,confirmed:false});
+ }
  if(kind==="competitionUniform"&&rosterUniform){
   const received=Boolean(paperClass);
   entries.push({type:"baseline",size:rosterUniform.size,style:rosterUniform.style,title:received?"已領用比賽服":"目前名單登記尺寸",detail:received?`${paperClass.slice(0,1)} 年級領取（${paperClass}）｜${rosterUniform.style}款 ${rosterUniform.size}`:`${rosterUniform.style}款 ${rosterUniform.size}｜領用紀錄待學校確認`,received,confirmed:received});
