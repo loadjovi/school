@@ -19,27 +19,23 @@ if(root){
   const hint=document.createElement("p");hint.className="competition-roster-order";
   hint.textContent="依今年班級由低至高排序，同班依姓名排序。已入庫者的款式與尺寸僅供查閱原領用紀錄。";
   root.appendChild(hint);
-  const container=document.createElement("div");container.className="competition-roster-groups";
-  let grade="";
+  const container=document.createElement("div");container.className="competition-roster-table-wrap";
+  const table=document.createElement("table");table.className="competition-roster-table";
+  table.innerHTML='<thead><tr><th scope="col">學生</th><th scope="col">款式／尺寸</th><th scope="col">取得方式</th><th scope="col">領用狀態</th></tr></thead>';
+  const body=document.createElement("tbody");
   for(const row of list){
    const klass=currentClass(row),returnRecord=returned.get(normalize(row[1]));
-   const nextGrade=/^([1-6])/.exec(klass)?.[1]||"其他";
-   if(nextGrade!==grade){
-    grade=nextGrade;
-    const heading=document.createElement("h3");heading.className="competition-roster-group-title";
-    heading.textContent=(grade==="其他"?"其他班級":grade+" 年級");container.appendChild(heading);
-   }
    const received=confirmedReceived.has(row[1]);
-   const details=document.createElement("details");details.className="competition-roster-row";
-   details.innerHTML="<summary><span class=\"roster-identity\"><span class=\"roster-class\">"+safe(klass)+"</span><strong>"+safe(row[1])+"</strong></span>"+
-    "<span class=\"roster-size\">"+safe(row[2])+"款 · "+safe(row[3])+" · "+safe(returnRecord?"原領用尺寸 · 目前無比賽服":row[4])+"</span>"+
-    "<span class=\"roster-status"+(returnRecord||!received?" is-pending":"")+"\">"+(returnRecord?"已歸還入庫":received?"已確認領用":"領用待核對")+"</span>"+
-    "<span class=\"roster-expand\" aria-hidden=\"true\">⌄</span></summary>"+
-    "<div class=\"roster-row-extra\"><span>取得方式：<strong>"+safe(row[4])+"</strong></span><span>樂器："+safe(row[5])+"</span>"+
-    "<span>去年班級："+safe(confirmedReceived.get(row[1])||"待核對")+"</span>"+
-    (returnRecord?"<span>目前持有：無（已歸還入庫"+(date(returnRecord.stockedAt)?"，"+safe(date(returnRecord.stockedAt)):"")+"）</span>":"")+"</div>";
-   container.appendChild(details);
+   const tr=document.createElement("tr");
+   tr.innerHTML='<td><strong>'+safe(row[1])+'</strong><small class="competition-class">'+safe(klass)+'</small></td>'+
+    '<td><strong>'+safe(row[2])+'款 · '+safe(row[3])+'</strong>'+(returnRecord?'<small>原領用</small>':'')+'</td>'+
+    '<td>'+safe(row[4])+'</td>'+
+    '<td><details class="competition-roster-detail"><summary class="roster-status'+(returnRecord||!received?' is-pending':'')+'">'+
+    (returnRecord?'已歸還入庫':received?'已確認領用':'領用待核對')+'</summary><div>樂器：'+safe(row[5])+'<br>去年班級：'+safe(confirmedReceived.get(row[1])||'待核對')+
+    (returnRecord?'<br>目前持有：無'+(date(returnRecord.stockedAt)?'<br>入庫日期：'+safe(date(returnRecord.stockedAt)):''):'')+'</div></details></td>';
+   body.appendChild(tr);
   }
+  table.appendChild(body);container.appendChild(table);
   root.appendChild(container);
   const details=document.createElement("details");details.className="competition-roster-notes";
   details.innerHTML="<summary>名單來源及尺寸統計</summary><p>款式與尺寸保留原登記資料；歸還入庫以正式紀錄更新目前持有狀態。其他學生仍依既有領用核對名單顯示，尚未逐筆連結所有歷史發放紀錄。</p>";

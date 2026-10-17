@@ -1,0 +1,19 @@
+#competitionRosterPreview .competition-roster-table-wrap{width:100%;overflow-x:auto}
+#competitionRosterPreview .competition-roster-table{table-layout:fixed;width:100%;border-collapse:collapse;color:#233957}
+#competitionRosterPreview .competition-roster-table th{padding:9px 8px;border-bottom:2px solid #dbe3ef;text-align:left;white-space:nowrap;font-size:13px}
+#competitionRosterPreview .competition-roster-table td{padding:9px 8px;border-bottom:1px solid #e5eaf1;vertical-align:middle;line-height:1.35;font-size:14px}
+#competitionRosterPreview .competition-roster-table tbody tr:nth-child(even){background:#f8fafc}
+#competitionRosterPreview .competition-roster-table th:nth-child(1){width:24%}
+#competitionRosterPreview .competition-roster-table th:nth-child(2){width:24%}
+#competitionRosterPreview .competition-roster-table th:nth-child(3){width:22%}
+#competitionRosterPreview .competition-roster-table th:nth-child(4){width:30%}
+#competitionRosterPreview .competition-roster-table td strong{display:block;font-weight:600}
+#competitionRosterPreview .competition-roster-table td small{display:block;margin-top:2px;color:#64738a;font-size:12px}
+#competitionRosterPreview .competition-class{display:inline-block!important;padding:1px 6px;border-radius:999px;background:#edf2fa;color:#395793!important;white-space:nowrap}
+#competitionRosterPreview .competition-roster-detail summary{cursor:pointer;list-style:none;font-weight:600;color:#285e47}
+#competitionRosterPreview .competition-roster-detail summary::-webkit-details-marker{display:none}
+#competitionRosterPreview .competition-roster-detail summary::after{content:' ▾';font-size:12px}
+#competitionRosterPreview .competition-roster-detail[open] summary::after{content:' ▴'}
+#competitionRosterPreview .competition-roster-detail summary.is-pending{color:#95611d}
+#competitionRosterPreview .competition-roster-detail>div{margin-top:6px;color:#52617a;font-size:12px;line-height:1.5}
+@media(max-width:700px){#competitionRosterPreview .competition-roster-table th{padding:7px 4px;font-size:11px}#competitionRosterPreview .competition-roster-table td{padding:7px 4px;font-size:12px;overflow-wrap:anywhere}#competitionRosterPreview .competition-roster-table td:first-child strong{white-space:nowrap}#competitionRosterPreview .competition-roster-table td small{font-size:10px}#competitionRosterPreview .competition-roster-table th:nth-child(1){width:22%}#competitionRosterPreview .competition-roster-table th:nth-child(2){width:23%}#competitionRosterPreview .competition-roster-table th:nth-child(3){width:22%}#competitionRosterPreview .competition-roster-table th:nth-child(4){width:33%}}
