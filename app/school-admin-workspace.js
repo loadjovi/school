@@ -5,7 +5,7 @@
  const rootGroups={schoolAccessAdmin:'accounts',parentBindingStats:'accounts',parentBindingCorrection:'accounts',adminAttendanceAssistRoot:'attendance',adminSchoolCorrection:'attendance',schoolAccessAudit:'records',schoolAdminActivity:'records',brandingAdminPanel:'settings'};
  const shortcuts=[
   ['attendance','📋','出勤處理','今日出勤、未到追蹤、歷史修正'],
-  ['students','👥','學生主檔','新增、退團、團別與尺寸資料'],
+  ['students','👥','學生主檔','新增、退團、團別與班級資料'],
   ['schoolSchedule','📅','課表與停課','學期課表匯入、改期與臨時停課'],
   ['uniformAdmin','🎽','團服與活動','團服申請、活動報名與財務核帳'],
   ['accounts','🔑','帳號與綁定','老師啟用、家長綁定、校方查詢'],
