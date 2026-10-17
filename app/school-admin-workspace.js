@@ -16,8 +16,10 @@
  const inScope=()=>typeof state!=='undefined'&&state.me?.role==='admin'&&state.page==='admin'&&!state.teacherAdminOpen;
  window.openSchoolAdminWorkspace=async function(group='home'){
   if(state.me?.role!=='admin')return;
+  const alreadyWorkspace=inScope();
   state.adminWorkspaceSection=groups[group]?group:'home';state.teacherAdminOpen=false;
-  if(state.page!=='admin'){await go('admin');state.adminWorkspaceSection=groups[group]?group:'home';render()}else render();
+  if(alreadyWorkspace)organize();
+  else if(state.page!=='admin'){await go('admin');state.adminWorkspaceSection=groups[group]?group:'home';render()}else render();
   requestAnimationFrame(()=>{organize();document.querySelector('#schoolAdminWorkspace')?.scrollIntoView({block:'start'})});
  };
  const setGroup=(node,group)=>{if(node.dataset.adminGroup!==group)node.dataset.adminGroup=group};
