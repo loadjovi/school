@@ -79,7 +79,7 @@ async function eligibleUniforms(){
   }
   status.textContent=students.length?"已找到 "+students.length+" 位孩子的資料。請先核對尺寸與領用紀錄，再提出申請。":"目前沒有已綁定的孩子，請先完成家長與學生綁定。";
   if(!students.length){regular.hidden=true;competition.hidden=true}
- }catch(e){console.warn("家長團服資格查詢失敗",e);status.textContent="資格查詢失敗（"+e.message+"）。請確認預覽環境登入及 API 設定；暫不開放申請。"}
+ }catch(e){console.warn("家長團服資格查詢失敗",e);status.textContent="資格查詢失敗（"+e.message+"）。請重新登入後再試；若持續失敗，請聯絡學校管理員。"}
 }
 eligibleUniforms();
 
