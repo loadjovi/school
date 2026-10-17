@@ -20,7 +20,7 @@
   state.adminWorkspaceSection=groups[group]?group:'home';state.teacherAdminOpen=false;
   if(alreadyWorkspace)organize();
   else if(state.page!=='admin'){await go('admin');state.adminWorkspaceSection=groups[group]?group:'home';render()}else render();
-  requestAnimationFrame(()=>{organize();document.querySelector('#schoolAdminWorkspace')?.scrollIntoView({block:'start'})});
+  requestAnimationFrame(()=>{organize();window.scrollTo(0,0)});
  };
  const setGroup=(node,group)=>{if(node.dataset.adminGroup!==group)node.dataset.adminGroup=group};
  function classify(main){
@@ -38,7 +38,19 @@
    else if(node.matches('.card,h2'))setGroup(node,'home');
   }
  }
+ function adaptTables(){
+  if(typeof state==='undefined'||state.me?.role!=='admin')return;
+  for(const table of document.querySelectorAll('.desktop-shell[data-role="admin"] .main table')){
+   if(table.closest('.aw-table-scroll'))continue;
+   const wrap=document.createElement('div');wrap.className='aw-table-scroll';
+   wrap.setAttribute('role','region');wrap.setAttribute('aria-label','資料表格，可左右滑動');wrap.tabIndex=0;
+   const columns=table.querySelector('tr')?.children.length||0;
+   if(columns>=6){wrap.dataset.wide='true';const hint=document.createElement('small');hint.className='aw-table-hint';hint.textContent='左右滑動查看完整表格';wrap.append(hint)}
+   table.before(wrap);wrap.append(table);
+  }
+ }
  function organize(){
+  adaptTables();
   if(!inScope())return;
   const main=document.querySelector('.main');if(!main)return;
   const group=groups[state.adminWorkspaceSection]?state.adminWorkspaceSection:'home';

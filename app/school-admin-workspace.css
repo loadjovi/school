@@ -1,5 +1,5 @@
 /* School admin only: one navigation language on desktop and mobile. */
-.desktop-shell[data-role="admin"]{--aw-ink:#243652;--aw-muted:#607087;--aw-line:#dce3ee;--aw-bg:#f5f7fb}
+.desktop-shell[data-role="admin"]{--primary:var(--green,#395cac);--aw-ink:#243652;--aw-muted:#607087;--aw-line:#dce3ee;--aw-bg:#f5f7fb}
 .desktop-shell[data-role="admin"] .main{background:var(--aw-bg);min-width:0}
 .desktop-shell[data-role="admin"] .card{border:1px solid var(--aw-line);border-radius:16px;box-shadow:none;padding:20px;margin-bottom:16px;overflow-wrap:anywhere}
 .desktop-shell[data-role="admin"] h2{font-size:20px;line-height:1.4;margin-top:0}
@@ -54,3 +54,51 @@
 .desktop-shell[data-role="admin"]>.top>.userrow button{min-height:36px;padding:6px 10px}
 @media(min-width:900px){.desktop-shell[data-role="admin"]>.top>.userrow{flex-direction:row!important;align-items:center!important;gap:14px!important;top:15px}.desktop-shell[data-role="admin"]>.top .brand{padding-right:280px}.desktop-shell[data-role="admin"]>.top>.sub{margin-right:280px!important}}
 @media(max-width:899px){.desktop-shell[data-role="admin"]>.top{min-height:128px}}
+
+/* Tables scroll within their own panel; the page itself remains viewport-wide. */
+.desktop-shell[data-role="admin"] .aw-table-scroll{max-width:100%;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-inline:contain}
+.desktop-shell[data-role="admin"] .aw-table-scroll:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+.aw-table-hint{display:none}
+@media(max-width:899px){
+ .desktop-shell[data-role="admin"]{width:100%;max-width:100%;min-width:0;border-radius:0;overflow:visible;padding-bottom:calc(86px + env(safe-area-inset-bottom,0px))}
+ .desktop-shell[data-role="admin"]>.top{display:grid;grid-template-columns:minmax(0,1fr);gap:5px;height:auto;min-height:0;padding:12px 14px;position:sticky;top:0}
+ .desktop-shell[data-role="admin"]>.top .brand{position:static;display:flex!important;align-items:center;gap:10px!important;padding:0!important;min-width:0;min-height:44px;font-size:18px;line-height:1.35}
+ .desktop-shell[data-role="admin"]>.top .brand>span:first-child{position:static!important;width:44px!important;height:44px!important;min-width:44px!important;flex-basis:44px!important;border-radius:9px!important}
+ .desktop-shell[data-role="admin"]>.top .brand>span:last-child{min-width:0;overflow-wrap:anywhere}
+ .desktop-shell[data-role="admin"]>.top>.sub{margin:0 0 2px 54px!important;min-height:0;font-size:12px}
+ .desktop-shell[data-role="admin"]>.top>.userrow{position:static!important;display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;margin:2px 0 0!important;min-width:0;width:100%}
+ .desktop-shell[data-role="admin"]>.top>.userrow>div:first-child{flex:1;min-width:0;flex-direction:row;align-items:center;gap:8px;flex-wrap:wrap}
+ .desktop-shell[data-role="admin"]>.top>.userrow small{max-width:100%;font-size:12px;overflow-wrap:anywhere;white-space:normal;text-align:left}
+ .desktop-shell[data-role="admin"]>.top>.userrow button{margin:0;min-height:40px;max-width:100%;font-size:12px}
+ .desktop-shell[data-role="admin"] .main{min-width:0;width:100%;padding:16px 12px 24px}
+ .desktop-shell[data-role="admin"] .main :is(.card,.desktop-content,.row2,.grid,.section-title,.item){min-width:0;max-width:100%}
+ .desktop-shell[data-role="admin"] .main :is(.row2,.grid,.section-title,.item)>*{min-width:0}
+ .desktop-shell[data-role="admin"] .section-title{flex-wrap:wrap;gap:10px}
+ .desktop-shell[data-role="admin"] :is(button,a,label,summary,.notice,.item,.kpi){overflow-wrap:anywhere}
+ .desktop-shell[data-role="admin"] :is(input,select,textarea){min-width:0;max-width:100%;font-size:16px}
+ .desktop-shell[data-role="admin"] input:is([type="date"],[type="datetime-local"],[type="month"]){min-inline-size:0;inline-size:100%}
+ .desktop-shell[data-role="admin"] .nav{width:100%;max-width:520px;grid-template-columns:repeat(4,minmax(0,1fr));padding-bottom:max(9px,env(safe-area-inset-bottom,0px))}
+ .desktop-shell[data-role="admin"] .nav button{min-width:0;font-size:12px;line-height:1.35;padding:7px 2px;min-height:52px}
+ .desktop-shell[data-role="admin"] .aw-heading{flex-wrap:wrap;gap:10px}
+ .desktop-shell[data-role="admin"] .aw-heading>div{min-width:0;flex:1 1 190px}
+ .desktop-shell[data-role="admin"] .aw-table-scroll[data-wide="true"] table{min-width:640px}
+ .desktop-shell[data-role="admin"] .aw-table-scroll[data-wide="true"] .aw-table-hint{display:block;padding:8px 0;color:var(--aw-muted);font-size:12px}
+ .desktop-shell[data-role="admin"] .aw-table-scroll :is(th,td){overflow-wrap:anywhere}
+}
+@media(max-width:600px){
+ .desktop-shell[data-role="admin"] .row2{grid-template-columns:minmax(0,1fr)}
+ .desktop-shell[data-role="admin"] .main [style*="grid-template-columns"]{grid-template-columns:minmax(0,1fr)!important}
+ .desktop-shell[data-role="admin"] .main [style*="white-space:nowrap"]{white-space:normal!important}
+ .desktop-shell[data-role="admin"] .item{flex-wrap:wrap;align-items:flex-start}
+ .desktop-shell[data-role="admin"] .item :is(b,small){white-space:normal;overflow-wrap:anywhere}
+ .desktop-shell[data-role="admin"] .aw-account-links>button,.desktop-shell[data-role="admin"] .aw-attendance-links>button{flex:1 1 180px}
+ .desktop-shell[data-role="admin"] .student-master-row>summary small{font-size:11px}
+}
+@media(max-width:359px){
+ .desktop-shell[data-role="admin"] .aw-shortcuts{grid-template-columns:minmax(0,1fr)}
+ .desktop-shell[data-role="admin"] .aw-shortcuts button{flex-wrap:nowrap;align-items:center}
+ .desktop-shell[data-role="admin"] .aw-shortcuts button>span:nth-child(2){flex-basis:auto;order:0}
+ .desktop-shell[data-role="admin"] .aw-stats{flex-direction:column}
+}
+
+@media(max-width:600px){.login-wrap{padding:16px}.login-card{min-width:0;max-width:100%;padding:18px}.login-card h1{overflow-wrap:anywhere}.login-card #googleBtn{width:100%;min-width:0;max-width:100%}}

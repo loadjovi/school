@@ -119,7 +119,7 @@
   async function loadRoleModules(){
     await waitForProfileReady();
     if(typeof state==="undefined"||!state.me)return;
-    const list=[...roleModules(),"/desktop-ui.js?v=20261017-admin-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261018-workspace2"]:[])];
+    const list=[...roleModules(),"/desktop-ui.js?v=20261017-admin-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261018-mobile3"]:[])];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");
@@ -133,7 +133,7 @@
   }
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261017-admin-workspace",()=>{
+    appendScript("/app-v3.js?v=20261018-mobile3",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
