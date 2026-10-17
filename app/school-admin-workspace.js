@@ -123,6 +123,7 @@
     const task={tshirt:'tshirt',competition:'competition',finance:'finance'}[b.dataset.adminTodo];if(task)location.href='/uniform-event-admin.html?task='+task;return;
    }
    const task=guideTasks[b.dataset.adminGuide];if(task){
+    try{localStorage.setItem(guideKey(),'done')}catch{}const intro=document.querySelector('.aw-onboarding');if(intro)intro.open=false;
     state.adminGuideTask=b.dataset.adminGuide;
     if(groups[task[1]])await window.openSchoolAdminWorkspace(task[1]);
     else if(task[1]==='uniformAdmin')location.href='/uniform-event-admin.html?task=guideUniform';
