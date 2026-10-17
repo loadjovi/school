@@ -102,3 +102,32 @@
 }
 
 @media(max-width:600px){.login-wrap{padding:16px}.login-card{min-width:0;max-width:100%;padding:18px}.login-card h1{overflow-wrap:anywhere}.login-card #googleBtn{width:100%;min-width:0;max-width:100%}}
+
+/* Task navigation: text identifies the job; one mobile navigation bar. */
+.desktop-shell[data-role="admin"] .nav.aw-bottom{grid-template-columns:repeat(3,minmax(0,1fr))}
+.aw-bottom button[aria-current="page"]{color:var(--green);font-weight:800;background:var(--mint)}
+.aw-choice-list{display:grid;gap:10px;margin:0 0 16px}
+.aw-choice-list button{display:block;width:100%;padding:16px;text-align:left;border:1px solid var(--aw-line);background:white;color:var(--aw-ink);margin:0}
+.aw-choice-list small{display:block;font-size:13px;line-height:1.6;color:var(--aw-muted);margin-top:5px}
+.aw-todos{margin:0 0 20px;padding:16px;background:white;border:1px solid var(--aw-line);border-radius:14px}
+.aw-todos .section-title{margin-bottom:10px}.aw-todos h2{margin:0;font-size:18px!important}
+.aw-todos [data-admin-todo-reload]{width:auto;padding:6px 10px;margin:0;border:1px solid var(--aw-line);background:white;color:var(--green);font-size:13px}
+.aw-todo{display:flex;align-items:center;gap:10px;width:100%;border:1px solid var(--aw-line);background:#f5f8fc;color:var(--aw-ink);padding:13px;margin:8px 0 0!important;text-align:left}
+.aw-todo span:first-child{flex:1}.aw-todo b{color:#9a4300}
+.aw-todos p{margin:8px 0 0;font-size:14px;line-height:1.6}
+.aw-onboarding{border:1px solid var(--aw-line);border-radius:12px;padding:14px;margin-bottom:20px;background:white}
+.aw-onboarding summary{font-weight:750;cursor:pointer;min-height:30px}
+.aw-onboarding p{font-size:14px;color:var(--aw-muted);line-height:1.6}
+.aw-guide-choices{display:grid;gap:6px}.aw-guide-choices button{width:100%;text-align:left;padding:10px;background:#f1f5fb;border:1px solid var(--aw-line);color:var(--aw-ink);margin:0}
+[data-admin-guide-skip]{margin-top:10px;background:white;border:1px solid var(--aw-line);color:var(--aw-muted);padding:8px 12px}
+.aw-task-guide{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:14px;margin-bottom:16px;background:#fff8e7;border:1px solid #e9c972;border-radius:12px;overflow-wrap:anywhere}
+.aw-task-guide p{font-size:14px;line-height:1.8;margin:6px 0 0}.aw-task-guide button{flex-shrink:0;font-size:12px!important;background:white;border:1px solid #cfb66e;padding:6px 8px}
+@media(max-width:899px){
+ .desktop-shell[data-role="admin"]>.top>.userrow>.logout{display:none}
+ .aw-shortcuts{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .aw-shortcuts button{padding:14px!important;min-height:108px}
+ .aw-shortcuts button>span:first-child{flex:1;min-width:0}
+ .aw-shortcuts button>span:nth-child(2){flex:0 0 auto;order:0}
+ .aw-task-guide{flex-wrap:wrap}
+}
+@media(max-width:359px){.aw-shortcuts{grid-template-columns:1fr}.aw-shortcuts button{min-height:80px}}

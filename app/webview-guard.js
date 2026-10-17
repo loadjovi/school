@@ -119,7 +119,7 @@
   async function loadRoleModules(){
     await waitForProfileReady();
     if(typeof state==="undefined"||!state.me)return;
-    const list=[...roleModules(),"/desktop-ui.js?v=20261017-admin-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261018-mobile3"]:[])];
+    const list=[...roleModules(),"/desktop-ui.js?v=20261017-admin-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261018-simple4"]:[])];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");

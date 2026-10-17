@@ -546,6 +546,17 @@ async function start(){
   const financeSettings=el("uniformFinanceSettings");if(financeSettings)financeSettings.hidden=!finance;
   el("inlineFinanceReview").hidden=!finance;
   await load();
+  const task=new URLSearchParams(location.search).get("task");
+  if(task==="finance"&&finance){el("inlineFinanceReview").open=true;el("inlineFinanceReview").scrollIntoView({block:"start"})}
+  if(["tshirt","competition"].includes(task)){
+   const module=task==="tshirt"?"regularUniform":"competitionUniform";document.querySelector('[data-admin-tab="'+module+'"]').click();
+   document.querySelector(task==="tshirt"?'[data-tshirt-view="requests"]':'[data-competition-view="requests"]')?.click();el("uniformRequestsPanel").scrollIntoView({block:"start"});
+  }
+  if(["activity","guideUniform"].includes(task)){
+   if(task==="activity")document.querySelector('[data-admin-tab="settings"]').click();
+   const guide=document.createElement("aside");guide.className="notice";guide.style.cssText="padding:14px;margin:12px 0;background:#fff8e7;border:1px solid #e9c972;border-radius:10px";
+   guide.textContent=task==="activity"?"建立活動：① 選活動類型 → ② 填日期、團別與費用 → ③ 核對收款帳戶及家長顯示設定，再儲存。":"團服申請：① 選團 T 或比賽服 → ② 選家長申請 → ③ 核對取得方式、付款與領取進度。";document.querySelector('nav.admin-tabs').after(guide);
+  }
   if(finance&&el("inlineFinanceReview").open)await loadInlineFinance();
  }catch(e){setAuthGate("管理員驗證未完成："+(e.message||String(e))+"。請重新檢查登入。")}
 }
