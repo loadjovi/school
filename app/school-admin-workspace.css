@@ -50,3 +50,7 @@
 }
 
 .school-admin-workspace .desktop-content[data-page="admin"]{display:block}
+
+.desktop-shell[data-role="admin"]>.top>.userrow button{min-height:36px;padding:6px 10px}
+@media(min-width:900px){.desktop-shell[data-role="admin"]>.top>.userrow{flex-direction:row!important;align-items:center!important;gap:14px!important;top:15px}.desktop-shell[data-role="admin"]>.top .brand{padding-right:280px}.desktop-shell[data-role="admin"]>.top>.sub{margin-right:280px!important}}
+@media(max-width:899px){.desktop-shell[data-role="admin"]>.top{min-height:128px}}
