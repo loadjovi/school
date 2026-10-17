@@ -38,7 +38,7 @@
       ...(c.section?[item("teacherEvaluation","📊","期末評量")]:[]),
       item("teacherSettings","⚙️","我的教學"),item("help","ℹ️","操作說明")
     ];
-    if(role==="parent")return [item("home","🏠","首頁"),item("practice","⏱️","自主練習"),item("record","📊","學習紀錄"),item("register","➕","綁定孩子"),item("help","ℹ️","操作說明")];
+    if(role==="parent")return [item("home","🏠","首頁"),item("practice","⏱️","自主練習"),item("record","📊","學習紀錄"),item("uniformEvents","🎻","活動與團服"),item("help","ℹ️","操作說明")];
     if(role==="school")return [item("school","🏫","校方出缺勤"),item("help","ℹ️","操作說明")];
     return [item("home","🏠","首頁"),item("help","ℹ️","操作說明")];
   }
