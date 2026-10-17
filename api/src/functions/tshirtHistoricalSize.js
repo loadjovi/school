@@ -83,6 +83,20 @@ app.http("tshirtHistoricalSize",{
     return json({item:{...payload,studentId:body.studentId}},201);
    }
    if(!ensureStudentAccess(access,body.studentId)&&access.role!=="admin")return fail("Forbidden",403);
+   if(body.action==="RESET_SIZE"){
+    if(access.role!=="admin")return fail("Admin only",403);
+    const row=await get(t,schoolId,body.studentId);
+    if(!row)return fail("Size record not found",404);
+    if(body.etag!==row.etag)return fail("Record changed, refresh and retry",409);
+    const previous=parse(row);
+    if(!previous.size)return fail("Size is already pending",409);
+    const now=new Date().toISOString();
+    const next={...JSON.parse(row.payload),size:null,sizeStatus:"PENDING_PARENT",sizeUpdatedBy:access.email,sizeUpdatedAt:now,updatedAt:now};
+    try{await t.updateEntity({partitionKey:schoolId,rowKey:body.studentId,payload:JSON.stringify(next),updatedAt:now},"Replace",{etag:row.etag})}
+    catch(e){if(e.statusCode===412)return fail("Record changed, refresh and retry",409);throw e}
+    await audit(schoolId,access.email,"tshirt.history.size.reset",body.studentId,{previousSize:previous.size,newSize:null});
+    return json({item:{...next,studentId:body.studentId}});
+   }
    if(!SIZES.has(body.size))return fail("Invalid shirt size");
    let row=await get(t,schoolId,body.studentId);
    if(!row){

@@ -65,6 +65,24 @@ function renderRoster(){
   addCell("尺寸",size||"待填寫");
   const action=addCell("家長處理",size?"尺寸已登錄":"待填寫尺寸",unissued?"尚未領取，保留首次免費資格":"");
   action.className="tshirt-roster-action";
+  if(size){
+   const reset=document.createElement("button");
+   reset.type="button";reset.textContent="退回待填寫";
+   reset.title="保留領用紀錄，讓家長重新填寫團 T 尺寸";
+   reset.addEventListener("click",async()=>{
+    if(!confirm(`將 ${name} 的團 T 尺寸 ${size} 退回待填寫？已領取紀錄會保留。`))return;
+    reset.disabled=true;
+    try{
+     const headers=typeof window.uniformEventAuthHeaders==="function"?window.uniformEventAuthHeaders():{};
+     const response=await fetch("/api/uniform-events/tshirt-historical-size",{method:"PATCH",credentials:"same-origin",headers:{...headers,"Content-Type":"application/json"},body:JSON.stringify({studentId,action:"RESET_SIZE",etag:history.etag})});
+     const result=await response.json().catch(()=>({}));
+     if(!response.ok)throw Error(result.error||`HTTP ${response.status}`);
+     await loadRoster();
+     byId("tshirtRosterStatus").textContent=`${name} 的團 T 尺寸已退回待填寫；原有領用紀錄保留。`;
+    }catch(error){alert(`重設失敗：${error.message}`);reset.disabled=false}
+   });
+   action.append(reset);
+  }
   tbody.appendChild(tr);
  }
  table.appendChild(tbody);body.replaceChildren(table);
