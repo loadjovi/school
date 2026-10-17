@@ -1,0 +1,29 @@
+#tshirtRosterStatus{margin:12px 0 18px;line-height:1.55;color:#42516a}
+#tshirtRosterTable{max-width:100%;overflow-x:auto}
+.tshirt-roster-table{width:100%;border-collapse:collapse;table-layout:fixed;color:#233957}
+.tshirt-roster-table th{padding:12px;text-align:left;border-bottom:2px solid #dbe3ef;white-space:nowrap;font-size:14px}
+.tshirt-roster-table td{padding:13px 12px;vertical-align:middle;border-bottom:1px solid #e5eaf1;overflow-wrap:anywhere;line-height:1.4}
+.tshirt-roster-table th:nth-child(1){width:23%}
+.tshirt-roster-table th:nth-child(2){width:28%}
+.tshirt-roster-table th:nth-child(3){width:20%}
+.tshirt-roster-table th:nth-child(4){width:29%}
+.tshirt-roster-table td strong{display:block;font-weight:600}
+.tshirt-roster-table td small{display:block;margin-top:3px;color:#64738a;font-size:12px}
+.tshirt-roster-group{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:999px;background:#edf2fa;color:#395793;font-size:12px;white-space:nowrap}
+.tshirt-roster-label{display:none}
+.tshirt-roster-action strong{color:#385698}
+@media(max-width:700px){
+ #tshirtRosterTable{overflow:visible}
+ .tshirt-roster-table,.tshirt-roster-table tbody{display:block;width:100%}
+ .tshirt-roster-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+ .tshirt-roster-table tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;margin:0 0 10px;padding:14px;border:1px solid #dbe3ef;border-radius:12px;background:#fff;box-shadow:0 1px 3px #1627470d}
+ .tshirt-roster-table td{display:block;min-width:0;padding:0;border:0;font-size:15px}
+ .tshirt-roster-table td:first-child,.tshirt-roster-table td:last-child{grid-column:1/-1}
+ .tshirt-roster-table td:first-child{display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:1px solid #e5eaf1}
+ .tshirt-roster-table td:first-child strong{font-size:17px}
+ .tshirt-roster-table td:last-child{padding-top:9px;border-top:1px solid #e5eaf1}
+ .tshirt-roster-table td:last-child strong{font-size:14px}
+ .tshirt-roster-group{margin:0}
+ .tshirt-roster-label{display:block;margin-bottom:3px;color:#64738a;font-size:12px}
+ .tshirt-roster-table td:first-child .tshirt-roster-label{display:none}
+}

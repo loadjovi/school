@@ -34,7 +34,8 @@ function renderRoster(){
  const filter=byId("tshirtGroupFilter").value,body=byId("tshirtRosterTable");
  const data=students.filter(s=>filter==="ALL"||normalizedGroup(s.groupName||s.group)===filter);
  const table=document.createElement("table"),head=document.createElement("thead");
- head.innerHTML="<tr><th>學生</th><th>團別</th><th>首次團 T</th><th>領取年級</th><th>尺寸</th><th>家長操作</th></tr>";table.appendChild(head);
+ table.className="tshirt-roster-table";
+ head.innerHTML="<tr><th>團員</th><th>首次團 T</th><th>目前尺寸</th><th>家長下一步</th></tr>";table.appendChild(head);
  const tbody=document.createElement("tbody");
  for(const s of data){
   const name=String(s.name||s.studentName||""),group=normalizedGroup(s.groupName||s.group),unissued=group==="C"||name==="李沛臻";
@@ -44,13 +45,23 @@ function renderRoster(){
   const studentId=String(s.studentId||s.id||"");
   const history=historicalSizes.get(studentId);
   const size=history&&history.historicalIssued===true&&history.size?String(history.size):"";
-  for(const value of [name,group==="C"?"儲備團":group+" 團",unissued?"尚未領取（免費資格保留）":"已領取",issuedGrade,unissued?"待申請填寫":size||"未知／待補登",unissued?"首次免費申請":size?"尺寸已登錄":"歷史尺寸補登"]){
-   const td=document.createElement("td");td.textContent=value;tr.appendChild(td);
-  }
+  const addCell=(label,primary,detail="")=>{
+   const td=document.createElement("td"),caption=document.createElement("span"),main=document.createElement("strong");
+   caption.className="tshirt-roster-label";caption.textContent=label;
+   main.textContent=primary;td.append(caption,main);
+   if(detail){const small=document.createElement("small");small.textContent=detail;td.append(small)}
+   tr.append(td);return td;
+  };
+  const person=addCell("團員",name),badge=document.createElement("span");
+  badge.className="tshirt-roster-group";badge.textContent=group==="C"?"儲備團":group+" 團";person.append(badge);
+  addCell("首次團 T",unissued?"尚未領取":"已領取",unissued?"保留首次免費資格":issuedGrade==="年級待確認"?"領取年級待核對":issuedGrade+"領取");
+  addCell("目前尺寸",unissued?"尚未選擇":size||"待補登");
+  const action=addCell("家長下一步",unissued?"申請首次免費領用":size?"尺寸已登錄":"補登歷史尺寸");
+  action.className="tshirt-roster-action";
   tbody.appendChild(tr);
  }
  table.appendChild(tbody);body.replaceChildren(table);
- byId("tshirtRosterStatus").textContent="學生主檔共 "+students.length+" 位符合 A、B、儲備團；目前顯示 "+data.length+" 位。尺寸依家長已儲存的歷史尺寸紀錄顯示；未補登者仍標示待補登。"+(historyLoadError?" 歷史尺寸讀取失敗："+historyLoadError:"");
+ byId("tshirtRosterStatus").textContent="顯示 "+data.length+" 位團員（主檔共 "+students.length+" 位）。尺寸依家長已儲存的紀錄顯示；待補登者請家長於平台填寫。"+(historyLoadError?" 歷史尺寸讀取失敗："+historyLoadError:"");
 }
 async function loadRoster(){
  rosterLoaded=true;
