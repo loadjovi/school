@@ -33,6 +33,13 @@ function currentGrade(student){
 function renderRoster(){
  const filter=byId("tshirtGroupFilter").value,body=byId("tshirtRosterTable");
  const data=students.filter(s=>filter==="ALL"||normalizedGroup(s.groupName||s.group)===filter);
+ const counts=new Map(),missing=[];
+ for(const s of data){
+  const size=historicalSizes.get(String(s.studentId||s.id||""))?.size;
+  if(size)counts.set(size,(counts.get(size)||0)+1);else missing.push(String(s.name||s.studentName||""));
+ }
+ const sizes=["8","10","12","XS","S","M","L","XL","2L","3L","5L"];
+ byId("tshirtRosterSizeSummary").textContent="目前尺寸統計（僅已登錄）："+(sizes.filter(size=>counts.has(size)).map(size=>size+"："+counts.get(size)+" 人").join("、")||"尚無")+"。待填寫 "+missing.length+" 人"+(missing.length?"："+missing.join("、"):"。")+" 此表僅供尺寸規劃，不代表已申請或已領取。";
  const table=document.createElement("table"),head=document.createElement("thead");
  table.className="tshirt-roster-table";
  head.innerHTML="<tr><th>學生</th><th>首次領用</th><th>尺寸</th><th>家長處理</th></tr>";table.appendChild(head);
@@ -44,7 +51,7 @@ function renderRoster(){
   const issuedGrade=unissued?"尚未領取":grade===null?"年級待確認":grade>1?(grade-1)+" 年級":"年級待確認";
   const studentId=String(s.studentId||s.id||"");
   const history=historicalSizes.get(studentId);
-  const size=history&&history.historicalIssued===true&&history.size?String(history.size):"";
+  const size=history?.size?String(history.size):"";
   const addCell=(label,primary,detail="")=>{
    const td=document.createElement("td"),caption=document.createElement("span"),main=document.createElement("strong");
    caption.className="tshirt-roster-label";caption.textContent=label;
@@ -55,8 +62,8 @@ function renderRoster(){
   const person=addCell("學生",name),badge=document.createElement("span");
   badge.className="tshirt-roster-group";badge.textContent=group==="C"?"儲備":group+"團";person.append(badge);
   addCell("首次領用",unissued?"尚未領取":"已領取",unissued?"保留免費資格":issuedGrade==="年級待確認"?"年級待核對":issuedGrade+"領取");
-  addCell("尺寸",unissued?"待選擇":size||"待補登");
-  const action=addCell("家長處理",unissued?"免費申請":size?"已登錄":"補登尺寸");
+  addCell("尺寸",size||"待填寫");
+  const action=addCell("家長處理",size?"尺寸已登錄":"待填寫尺寸",unissued?"尚未領取，保留首次免費資格":"");
   action.className="tshirt-roster-action";
   tbody.appendChild(tr);
  }
