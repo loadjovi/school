@@ -10,7 +10,7 @@ export function buildUniformGrowth(student,kind,tshirt,requests,paperClass,roste
  }
  if(kind==="competitionUniform"&&rosterUniform){
   const received=Boolean(paperClass);
-  entries.push({type:"baseline",size:rosterUniform.size,style:rosterUniform.style,title:received?"紙本確認已領比賽服":"目前名單登記尺寸",detail:received?`${paperClass.slice(0,1)} 年級領取（紙本 ${paperClass}）｜${rosterUniform.style}款 ${rosterUniform.size}`:`${rosterUniform.style}款 ${rosterUniform.size}｜領用紀錄待學校確認`,received,confirmed:received});
+  entries.push({type:"baseline",size:rosterUniform.size,style:rosterUniform.style,title:received?"已領用比賽服":"目前名單登記尺寸",detail:received?`${paperClass.slice(0,1)} 年級領取（${paperClass}）｜${rosterUniform.style}款 ${rosterUniform.size}`:`${rosterUniform.style}款 ${rosterUniform.size}｜領用紀錄待學校確認`,received,confirmed:received});
  }
  const relevant=requests.filter(r=>String(r.studentId)===id&&r.kind===kind&&r.status!=="CANCELLED")
   .sort((a,b)=>String(a.createdAt||"").localeCompare(String(b.createdAt||""))||String(a.id||"").localeCompare(String(b.id||"")));
