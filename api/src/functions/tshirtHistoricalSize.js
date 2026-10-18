@@ -3,6 +3,7 @@ import { TableClient } from "@azure/data-tables";
 import { randomUUID } from "node:crypto";
 import { getTenantContext, ensureStudentAccess, json } from "../lib/auth.js";
 import { getStudentMaster } from "../lib/storage.js";
+import { isFirstTshirtReceiptEligible, buildFirstReceiptPayload } from "../lib/tshirtReceiptRules.mjs";
 
 const SIZES=new Set(["8","10","12","XS","S","M","L","XL","2L","3L","5L"]);
 const validId=s=>typeof s==="string"&&/^[a-zA-Z0-9_-]{1,100}$/.test(s);
@@ -91,13 +92,11 @@ app.http("tshirtHistoricalSize",{
     if(!row)return fail("請先儲存團 T 尺寸，再確認實際領取",409);
     const previous=parse(row);
     if(previous.historicalIssued===true)return fail("此學生已有首次領取紀錄，請勿重複確認",409);
-    if(previous.source!=="PARENT_SIZE_SURVEY"||!previous.size||!SIZES.has(previous.size))return fail("請先由家長完成首次團 T 尺寸登記",409);
+    if(!isFirstTshirtReceiptEligible(previous))return fail("請先由家長完成首次團 T 尺寸登記",409);
     if(body.etag!==row.etag)return fail("資料已更新，請重新整理後再確認",409);
     if(body.confirmedReceived!==true||body.receivedSize!==previous.size)return fail("請確認學生已實際領取並核對尺寸",400);
     const now=new Date().toISOString();
-    const next={...JSON.parse(row.payload),historicalIssued:true,issuedQuantity:1,received:true,
-     receivedSize:previous.size,receivedAt:now,receivedBy:access.email,
-     source:"PARENT_CONFIRMED_FIRST_PUBLIC",updatedAt:now};
+    const next=buildFirstReceiptPayload(JSON.parse(row.payload),access.email,now);
     try{await t.updateEntity({partitionKey:schoolId,rowKey:body.studentId,payload:JSON.stringify(next),updatedAt:now},"Replace",{etag:row.etag})}
     catch(e){if(e.statusCode===412)return fail("資料已更新，請重新整理後再確認",409);throw e}
     await audit(schoolId,access.email,"tshirt.first.public.parent.received",body.studentId,
