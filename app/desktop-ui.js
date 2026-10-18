@@ -18,11 +18,16 @@
       item("globalSettings","⚙️","進階設定","#globalSettings")
     ];
     if(role==="admin")return [
-      item("admin","🏠","工作首頁","workspace:home"),item("adminAttendance","📋","出勤處理","workspace:attendance"),
-      item("students","👥","學生主檔"),item("scores","🧮","學期考核"),
-      item("teacherAdmin","👩‍🏫","老師帳號"),item("schoolSchedule","📅","課程管理"),
-      item("specialCalendar","🗓️","行事曆與加練"),item("uniformAdmin","🎽","團服與活動"),
-      item("adminAccounts","🔑","帳號與綁定","workspace:accounts"),item("adminRecords","🧾","紀錄查詢","workspace:records"),item("adminSettings","⚙️","平台設定","workspace:settings"),item("help","ℹ️","操作說明")
+      item("admin","🏠","工作首頁","workspace:home"),
+      item("adminAttendance","📋","出勤與請假","workspace:attendance"),
+      item("students","👥","學生管理"),
+      item("adminCourses","📅","課表與行事曆","workspace:courses"),
+      item("adminUniform","🎽","團服與活動","workspace:uniformAdmin"),
+      item("adminAccounts","🔑","帳號管理","workspace:accounts"),
+      item("adminLearning","📚","學習與成績","workspace:learning"),
+      item("adminRecords","🧾","操作紀錄","workspace:records"),
+      item("adminSettings","⚙️","平台設定","workspace:settings"),
+      item("help","ℹ️","操作說明")
     ];
     if(isTeacher()&&c.privateOnly)return [
       item("teacherHome","🎓","今日教學"),item("private","👤","個別課"),
@@ -59,7 +64,7 @@
   window.desktopNavigate=async function(action){
     const target=String(action||"");
     if(state.me?.role==="admin"&&target.startsWith("workspace:")&&typeof window.openSchoolAdminWorkspace==="function"){await window.openSchoolAdminWorkspace(target.slice(10));return}
-    if(state.me?.role==="admin"&&target==="uniformAdmin"){location.href="/uniform-event-admin.html";return}
+
     if(target.startsWith("#")){
       state.desktopSection=target.slice(1);
       document.querySelectorAll(".desktop-menu-item").forEach(b=>{const selected=b.dataset.desktopAction===target;b.classList.toggle("is-active",selected);if(selected)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
