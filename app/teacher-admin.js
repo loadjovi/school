@@ -80,7 +80,7 @@
   const baseAdminPage=adminPage;
   adminPage=function(){
     if(state.teacherAdminOpen)return `<main class="main">${managementPage()}</main>`;
-    return baseAdminPage()+dashboardCard();
+    return baseAdminPage();
   };
 
   if(state.me?.role==="admin"){loadAdmin().then(()=>render()).catch(()=>{})}

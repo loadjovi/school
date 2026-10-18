@@ -91,7 +91,7 @@
    <div class="aw-more"><div class="aw-choice-list"><button type="button" data-workspace-group="records">操作紀錄 ›</button><button type="button" data-workspace-group="settings">平台設定 ›</button><button type="button" data-workspace-action="help">使用說明 ›</button><button type="button" data-admin-guide-reopen>重新查看入門引導 ›</button><button type="button" data-admin-logout>登出</button></div></div>
    <div class="aw-courses aw-choice-list"><button type="button" data-workspace-action="schoolSchedule"><b>課表與停課</b><small>學期課表匯入、指定日期課程、臨時停課</small></button><button type="button" data-workspace-action="specialCalendar"><b>行事曆與加練</b><small>加練點名、演出及特殊活動公告</small></button></div>
    <section class="aw-uniform" hidden><div class="aw-uniform-frame-wrap"><iframe id="awUniformFrame" title="團服與活動管理" loading="lazy" src="about:blank"></iframe></div></section><div class="aw-learning aw-choice-list"><button type="button" data-workspace-action="practiceProgress">自主練習月報 ›</button><button type="button" data-workspace-action="scores">學期考核 ›</button></div>
-   <div class="aw-account-pending"></div><div class="aw-account-links"><button type="button" data-workspace-action="parentCorrection">修正家長綁定</button></div><div class="aw-attendance-links"><button type="button" data-workspace-action="attendanceTable">開啟出勤工作台</button></div>`;
+   <div class="aw-account-panels"><div class="aw-account-school"></div><section id="awTeacherAccountCard" class="card" data-admin-group="accounts"><h2>👩‍🏫 藝享老師帳號</h2><div class="notice" id="awTeacherCount"></div><button type="button" class="secondary" data-open-teacher-admin>管理老師 →</button></section><div class="aw-account-family"></div></div><div class="aw-account-pending"></div><div class="aw-account-links"><button type="button" data-workspace-action="parentCorrection">修正家長綁定</button></div><div class="aw-attendance-links"><button type="button" data-workspace-action="attendanceTable">開啟出勤工作台</button></div>`;
    main.prepend(root);root.querySelector('.aw-heading').after(root.querySelector('.aw-todos'));
   }
   const guide=document.getElementById('adminTaskGuide');if(guide){if(guide.nextElementSibling!==root)guide.after(root)}else if(main.firstElementChild!==root)main.prepend(root);
@@ -105,16 +105,20 @@
   const uniformFrame=root.querySelector('#awUniformFrame');if(group==='uniformAdmin'&&uniformFrame&&uniformFrame.getAttribute('src')==='about:blank')uniformFrame.src='/uniform-event-admin.html?embedded=school';
   root.querySelector('.aw-home').hidden=group!=='home';root.querySelector('.aw-account-links').hidden=group!=='accounts';root.querySelector('.aw-attendance-links').hidden=group!=='attendance';
   for(const b of document.querySelectorAll('.aw-bottom [data-workspace-group]')){const active=b.dataset.workspaceGroup===group;b.classList.toggle('is-active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')}
-  // Move the existing teacher account card into the account section,
-  // directly before the parent binding card; keep its original action handlers.
-  const teacherCard=main.querySelector('#teacherAdmin');
-  const familyCard=main.querySelector('#parentBindingStats');
+  // Keep all account management cards together in a stable, explicit order.
+  const accountPanels=root.querySelector('.aw-account-panels');
   const schoolCard=main.querySelector('#schoolAccessAdmin');
-  if(teacherCard&&familyCard&&teacherCard!==familyCard.previousElementSibling){
-   familyCard.before(teacherCard);
-  }else if(teacherCard&&!familyCard&&schoolCard&&schoolCard.nextElementSibling!==teacherCard){
-   schoolCard.after(teacherCard);
-  }
+  const familyCard=main.querySelector('#parentBindingStats');
+  const schoolSlot=accountPanels.querySelector('.aw-account-school');
+  const familySlot=accountPanels.querySelector('.aw-account-family');
+  if(schoolCard&&schoolCard.parentElement!==schoolSlot)schoolSlot.append(schoolCard);
+  if(familyCard&&familyCard.parentElement!==familySlot)familySlot.append(familyCard);
+  const teacherCount=root.querySelector('#awTeacherCount');
+  const teachers=Array.isArray(state.teachers)?state.teachers:[];
+  const active=teachers.filter(t=>t.status!=='inactive').length;
+  const countLabel='啟用 '+active+' 人　停用 '+(teachers.length-active)+' 人';
+  if(teacherCount.textContent!==countLabel)teacherCount.textContent=countLabel;
+  accountPanels.hidden=group!=='accounts';
   classify(main);
   for(const node of main.querySelectorAll('[data-admin-group]'))node.hidden=node.dataset.adminGroup!==group;
   for(const b of document.querySelectorAll('.desktop-menu-item[data-desktop-action]')){
@@ -144,9 +148,10 @@
   }catch(error){toast('操作未完成：'+(error?.message||error))}
  });
  document.addEventListener('click',async e=>{
-  const button=e.target.closest?.('[data-workspace-group],[data-workspace-action]');if(!button)return;
+  const button=e.target.closest?.('[data-workspace-group],[data-workspace-action],[data-open-teacher-admin]');if(!button)return;
   e.preventDefault();
   try{
+   if(button.hasAttribute('data-open-teacher-admin')){if(typeof window.openTeacherAdmin==='function')window.openTeacherAdmin();return}
    if(button.dataset.workspaceGroup)return await window.openSchoolAdminWorkspace(button.dataset.workspaceGroup);
    const key=button.dataset.workspaceAction;
    if(groups[key])return await window.openSchoolAdminWorkspace(key);
