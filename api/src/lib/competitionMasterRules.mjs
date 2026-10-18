@@ -16,7 +16,7 @@ export const originalCompetitionRoster=[
  ["6D","李宥蓁","女","L","PUBLIC","大提琴"]
 ];
 const paperReceived=new Set(["李婇寧","張介輔","林心澄","黃禹閎","游宜橙","陳祉瑄","賴昺旭","陳奕亘","張安侖","李宥蓁","吳定廩","楊力萓"]);
-const nameKey=name=>String(name||"").trim().normalize("NFC").replace(/\s+/g,"");
+export const nameKey=name=>String(name||"").trim().normalize("NFC").replace(/\s+/g,"");
 const bases=new Map(originalCompetitionRoster.map(row=>[nameKey(row[1]),row]));
 
 export function baseForStudent(student){
