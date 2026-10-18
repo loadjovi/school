@@ -290,13 +290,6 @@
   window.changePracticeProgressSearch=function(v){state.practiceProgressSearch=String(v||'');render()};
   window.togglePracticeProgressDetail=function(id){state.practiceProgressSelected=state.practiceProgressSelected===String(id)?'':String(id);render()};
 
-  if(typeof adminPage==="function"){
-    const baseAdminPage=adminPage;
-    adminPage=function(){
-      return baseAdminPage()+`<div class="card"><h2>📚 自主練習月報</h2><div class="notice">查看全團學生每月自主練習天數、分鐘與練習明細，協助了解練習習慣與提供適度提醒；相關資料仍可供後續 10% 成績統計使用。</div><button class="primary" onclick="go('practiceProgress')">查看自主練習月報</button></div>`;
-    };
-  }
-
   window.openTeacherPracticeProgress=async function(){
     if(!canView())return;
     state.practiceProgressStatus='全部';
