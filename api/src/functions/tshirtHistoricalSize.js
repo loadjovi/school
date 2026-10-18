@@ -83,12 +83,34 @@ app.http("tshirtHistoricalSize",{
     return json({item:{...payload,studentId:body.studentId}},201);
    }
    if(!ensureStudentAccess(access,body.studentId)&&access.role!=="admin")return fail("Forbidden",403);
+   // Parents confirm only a physical first-time handover after saving the size.
+   // This changes the canonical eligibility record; it does not fabricate inventory movements.
+   if(body.action==="CONFIRM_FIRST_RECEIPT"){
+    if(access.role!=="parent"||!ensureStudentAccess(access,body.studentId)||!activeStudent(student))return fail("Parent access required",403);
+    const row=await get(t,schoolId,body.studentId);
+    if(!row)return fail("請先儲存團 T 尺寸，再確認實際領取",409);
+    const previous=parse(row);
+    if(previous.historicalIssued===true)return fail("此學生已有首次領取紀錄，請勿重複確認",409);
+    if(previous.source!=="PARENT_SIZE_SURVEY"||!previous.size||!SIZES.has(previous.size))return fail("請先由家長完成首次團 T 尺寸登記",409);
+    if(body.etag!==row.etag)return fail("資料已更新，請重新整理後再確認",409);
+    if(body.confirmedReceived!==true||body.receivedSize!==previous.size)return fail("請確認學生已實際領取並核對尺寸",400);
+    const now=new Date().toISOString();
+    const next={...JSON.parse(row.payload),historicalIssued:true,issuedQuantity:1,received:true,
+     receivedSize:previous.size,receivedAt:now,receivedBy:access.email,
+     source:"PARENT_CONFIRMED_FIRST_PUBLIC",updatedAt:now};
+    try{await t.updateEntity({partitionKey:schoolId,rowKey:body.studentId,payload:JSON.stringify(next),updatedAt:now},"Replace",{etag:row.etag})}
+    catch(e){if(e.statusCode===412)return fail("資料已更新，請重新整理後再確認",409);throw e}
+    await audit(schoolId,access.email,"tshirt.first.public.parent.received",body.studentId,
+     {size:previous.size,quantity:1,receivedAt:now,previousSource:previous.source});
+    return json({item:{...next,studentId:body.studentId}});
+   }
    if(body.action==="RESET_SIZE"){
     if(access.role!=="admin")return fail("Admin only",403);
     const row=await get(t,schoolId,body.studentId);
     if(!row)return fail("Size record not found",404);
     if(body.etag!==row.etag)return fail("Record changed, refresh and retry",409);
     const previous=parse(row);
+    if(previous.source==="PARENT_CONFIRMED_FIRST_PUBLIC")return fail("已確認領取的團 T 尺寸不能退回待填寫，請先由校方核對",409);
     if(!previous.size)return fail("Size is already pending",409);
     const now=new Date().toISOString();
     const next={...JSON.parse(row.payload),size:null,sizeStatus:"PENDING_PARENT",sizeUpdatedBy:access.email,sizeUpdatedAt:now,updatedAt:now};
@@ -111,6 +133,7 @@ app.http("tshirtHistoricalSize",{
     return json({item:{...initial,studentId:body.studentId}},201);
    }
    const old=parse(row);
+   if(old.source==="PARENT_CONFIRMED_FIRST_PUBLIC")return fail("已完成首次領取確認，尺寸異動請聯絡學校",409);
    if(!["ADMIN_VERIFIED_HISTORICAL","PARENT_BACKFILL_2026","PARENT_SIZE_SURVEY"].includes(old.source))return fail("Unverified size record",409);
    if(body.etag!==row.etag)return fail("Record changed, refresh and retry",409);
    const now=new Date().toISOString();
