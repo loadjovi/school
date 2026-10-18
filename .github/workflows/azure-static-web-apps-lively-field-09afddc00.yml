@@ -36,6 +36,8 @@ jobs:
         run: node --test tests/tshirt-first-receipt.test.mjs
       - name: First-issue T-shirt parent progress regression tests
         run: node --test tests/tshirt-progress-first-issue.test.mjs
+      - name: Functional UAT isolation and parity tests
+        run: python3 -m unittest discover -s tests -p 'test_functional_lab_isolation.py' -v
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
