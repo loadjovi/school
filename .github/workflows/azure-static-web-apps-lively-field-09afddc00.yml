@@ -10,7 +10,8 @@ on:
       - main
 
 concurrency:
-  group: azure-static-web-apps-main
+  # Keep production pushes separate from PR preview/close jobs.
+  group: azure-static-web-apps-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
