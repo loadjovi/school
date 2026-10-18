@@ -1,9 +1,10 @@
 // 團T資格核對：匯出已取得的申請學生，不推斷未申請者；匯入只預覽，不寫入資料庫。
 const $=id=>document.getElementById(id);
 const headers=["studentId","studentName","group","firstFreeEligible","firstIssued","issuedAt","size","notes"];
+const exportHeaders=[...headers,"schoolHandoffStatus","schoolIssuedAt","handoffTo","parentReceivedAt"];
 const statuses=new Set(["YES","NO","UNKNOWN"]);
 function download(rows){
- const csv="\uFEFF"+[headers,...rows].map(row=>row.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(",")).join("\r\n");
+ const csv="\uFEFF"+[exportHeaders,...rows].map(row=>row.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(",")).join("\r\n");
  const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
  const a=document.createElement("a");a.href=url;a.download="團T_首次免費資格核對.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
@@ -31,18 +32,18 @@ $("exportTshirtEligibility").addEventListener("click",async()=>{
    const exception=name==="李沛臻";
    const item=historical.get(id);
    const issued=item?item.historicalIssued===true:(group==="A"||group==="B")&&!exception;
-   const eligible=!issued;
+   const eligible=!issued&&!item?.schoolIssuedAt; // a handed-over item is reserved, not available for another free issue
    const receivedDate=item?.receivedAt||item?.verifiedAt||"";
-   const note=item?.source==="PARENT_CONFIRMED_FIRST_PUBLIC"
-     ?"家長已確認實際領取團 T 1 件；已使用首次公費資格"
-     :issued?"歷史首次領取紀錄，需依主檔核對實際領用時間"
-     :item?.size?"尺寸已登記，尚未領取，保留首次公費資格"
-     :"尚未首次領取，保留首次公費資格";
-   map.set(id,[id,name,group,eligible?"YES":"NO",issued?"YES":"NO",issued?(receivedDate||"UNKNOWN"):"",item?.size||"",note]);
+   const status=item?.source==="PARENT_CONFIRMED_FIRST_PUBLIC"?"雙方確認完成"
+     :item?.schoolIssuedAt?"學校已發放，待家長確認"
+     :issued?"歷史已領取"
+     :item?.size?"待學校發放":"待家長登記尺寸";
+   const note=issued?"已領取，首次公費資格已使用":item?.schoolIssuedAt?"學校已交付 1 件，等待家長確認；避免重複免費領取":item?.size?"尺寸已登記，尚待學校發放":"尚未首次領取，保留首次公費資格";
+   map.set(id,[id,name,group,eligible?"YES":"NO",issued?"YES":"NO",issued?(receivedDate||"UNKNOWN"):"",item?.size||"",note,status,item?.schoolIssuedAt||"",item?.schoolHandoffTo||"",item?.receivedAt||""]);
   }
   if(!map.size)throw Error("學生主檔沒有可辨識的 A、B 或儲備團資料；請確認學生主檔團別及學校身分，未產生空白檔。");
   download([...map.values()]);
-  $("tshirtEligibilityPreview").textContent="已依學生主檔與團 T 領用紀錄匯出 "+map.size+" 位學生；家長已確認領取的儲備團會顯示首次已領取，未確認的仍保有首次公費資格。"+(unclassified.length?"另有 "+unclassified.length+" 位團別無法辨識，未列入；請檢查學生主檔團別。":"")+" 僅供核對，不會寫入資料庫或扣除庫存。";
+  $("tshirtEligibilityPreview").textContent="已依學生主檔與團 T 領用紀錄匯出 "+map.size+" 位學生；已補上學校交付狀態、交付時間與家長確認時間；學校已發放但家長未確認者，會暫停再次領取免費資格。"+(unclassified.length?"另有 "+unclassified.length+" 位團別無法辨識，未列入；請檢查學生主檔團別。":"")+" 僅供核對，不會寫入資料庫或扣除庫存。";
  }catch(e){$("tshirtEligibilityPreview").textContent="匯出失敗："+e.message}
 });
 function parseCsv(src){
@@ -65,12 +66,13 @@ $("importTshirtEligibility").addEventListener("change",async e=>{
  try{
   if(file.size>1024*1024)throw Error("檔案不得超過 1MB");
   const rows=parseCsv(await file.text()),head=rows.shift();
-  if(!head||headers.some((h,i)=>head[i]!==h)||head.length!==headers.length)throw Error("CSV 欄位需依原範本順序："+headers.join("、"));
+  const validHeader=Array.isArray(head)&&[headers,exportHeaders].some(allowed=>head.length===allowed.length&&allowed.every((h,i)=>head[i]===h));
+  if(!validHeader)throw Error("CSV 欄位需符合舊版或新版匯出範本："+headers.join("、"));
   const ids=new Set(),errors=[],data=[];
   for(const [i,row] of rows.entries()){
    if(!row.some(v=>v.trim()))continue;
    const [id,name,group,eligible,issued,date,size,notes]=row;
-   if(row.length!==headers.length)errors.push("第 "+(i+2)+" 行：欄位數量不符");
+   if(row.length!==head.length)errors.push("第 "+(i+2)+" 行：欄位數量不符");
    if(!/^[a-zA-Z0-9_-]{1,100}$/.test(id||""))errors.push("第 "+(i+2)+" 行：學生 ID 格式錯誤");
    if(ids.has(id))errors.push("第 "+(i+2)+" 行：重複學生 ID");
    ids.add(id);
