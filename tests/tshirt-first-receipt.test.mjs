@@ -1,22 +1,35 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {isFirstTshirtReceiptEligible,buildFirstReceiptPayload} from "../api/src/lib/tshirtReceiptRules.mjs";
+import {isFirstTshirtHandoffEligible,buildSchoolHandoffPayload,isFirstTshirtReceiptEligible,buildFirstReceiptPayload} from "../api/src/lib/tshirtReceiptRules.mjs";
 const record={historicalIssued:false,issuedQuantity:0,source:"PARENT_SIZE_SURVEY",size:"8",sizeStatus:"PARENT_RECORDED"};
-test("size-only reserve student is eligible only after size is registered",()=>{
- assert.equal(isFirstTshirtReceiptEligible(record),true);
- assert.equal(isFirstTshirtReceiptEligible({...record,size:null}),false);
- assert.equal(isFirstTshirtReceiptEligible({...record,size:"unknown"}),false);
+test("size-only reserve student can be handed over but cannot claim parent receipt yet",()=>{
+ assert.equal(isFirstTshirtHandoffEligible(record),true);
+ assert.equal(isFirstTshirtReceiptEligible(record),false);
+ assert.equal(isFirstTshirtHandoffEligible({...record,size:null}),false);
+ assert.equal(isFirstTshirtHandoffEligible({...record,size:"unknown"}),false);
+});
+const handed=buildSchoolHandoffPayload(record,"admin@example.invalid","2026-10-18T06:00:00Z","學生本人");
+test("school handoff persists teacher, recipient, size, timestamp and one piece",()=>{
+ assert.equal(handed.schoolIssuedBy,"admin@example.invalid");
+ assert.equal(handed.schoolHandoffTo,"學生本人");
+ assert.equal(handed.schoolIssuedSize,"8");
+ assert.equal(handed.schoolIssuedQuantity,1);
+ assert.equal(handed.historicalIssued,false);
+ assert.equal(isFirstTshirtHandoffEligible(handed),false);
+ assert.equal(isFirstTshirtReceiptEligible(handed),true);
+ assert.throws(()=>buildSchoolHandoffPayload(handed,"x","now","學生本人"));
+ assert.throws(()=>buildSchoolHandoffPayload(record,"x","now"," "));
 });
 test("existing first issue cannot be reconfirmed",()=>{
- assert.equal(isFirstTshirtReceiptEligible({...record,historicalIssued:true}),false);
- assert.equal(isFirstTshirtReceiptEligible({...record,received:true}),false);
- assert.equal(isFirstTshirtReceiptEligible({...record,issuedQuantity:1}),false);
- assert.equal(isFirstTshirtReceiptEligible({...record,source:"PARENT_CONFIRMED_FIRST_PUBLIC"}),false);
+ assert.equal(isFirstTshirtReceiptEligible({...handed,historicalIssued:true}),false);
+ assert.equal(isFirstTshirtReceiptEligible({...handed,received:true}),false);
+ assert.equal(isFirstTshirtReceiptEligible({...handed,issuedQuantity:1}),false);
+ assert.equal(isFirstTshirtReceiptEligible({...handed,source:"PARENT_CONFIRMED_FIRST_PUBLIC"}),false);
 });
 test("parent confirmation persists one physical receipt and an actor/date",()=>{
  const now="2026-10-18T06:30:00.000Z";
- const result=buildFirstReceiptPayload(record,"parent@example.invalid",now);
+ const result=buildFirstReceiptPayload(handed,"parent@example.invalid",now);
  assert.equal(result.historicalIssued,true);
  assert.equal(result.issuedQuantity,1);
  assert.equal(result.received,true);
@@ -28,7 +41,8 @@ test("parent confirmation persists one physical receipt and an actor/date",()=>{
  assert.equal(record.historicalIssued,false);
 });
 test("attempt to apply another receipt throws",()=>{
- assert.throws(()=>buildFirstReceiptPayload({...record,historicalIssued:true},"x","now"));
+ assert.throws(()=>buildFirstReceiptPayload({...handed,historicalIssued:true},"x","now"));
+ assert.throws(()=>buildFirstReceiptPayload(record,"x","now"));
 });
 test("backend verifies parent authorization and etag and stores audit",()=>{
  const s=readFileSync(new URL("../api/src/functions/tshirtHistoricalSize.js",import.meta.url),"utf8");
@@ -40,6 +54,9 @@ test("backend verifies parent authorization and etag and stores audit",()=>{
  assert.match(s,/body\.receivedSize!==previous\.size/);
  assert.match(s,/tshirt\.first\.public\.parent\.received/);
  assert.match(s,/previous\.source==="PARENT_CONFIRMED_FIRST_PUBLIC"/);
+ assert.match(s,/body\.action==="SCHOOL_CONFIRM_HANDOFF"/);
+ assert.match(s,/access\.role!=="admin"/);
+ assert.match(s,/tshirt\.first\.public\.school\.handoff/);
 });
 test("parent inline and standalone views expose actual handover action",()=>{
  for(const p of ["parent-uniform-events.js","tshirt-historical-size.js"]){
@@ -59,4 +76,25 @@ test("school CSV includes parent confirmed issue and uses same ledger",()=>{
  assert.match(s,/historical\.get\(id\)/);
  assert.match(s,/item\?item\.historicalIssued===true/);
  assert.match(s,/item\?\.receivedAt/);
+});
+
+test("school roster must allow authorized handoff and show pending parent acknowledgement",()=>{
+ const s=readFileSync(new URL("../app/tshirt-admin-shortcuts.js",import.meta.url),"utf8");
+ assert.match(s,/SCHOOL_CONFIRM_HANDOFF/);
+ assert.match(s,/schoolIssuedAt/);
+ assert.match(s,/學校已發放，待家長確認/);
+ assert.match(s,/雙方確認完成/);
+});
+test("parent interfaces hide receipt action until school handoff",()=>{
+ for(const name of ["parent-uniform-events.js","tshirt-historical-size.js"]){
+  const s=readFileSync(new URL("../app/"+name,import.meta.url),"utf8");
+  assert.match(s,/item\.schoolIssuedAt/);
+ }
+});
+test("CSV includes school handoff and parent receipt times without breaking legacy import preview",()=>{
+ const s=readFileSync(new URL("../app/tshirt-eligibility-csv.js",import.meta.url),"utf8");
+ assert.match(s,/schoolHandoffStatus/);
+ assert.match(s,/schoolIssuedAt/);
+ assert.match(s,/parentReceivedAt/);
+ assert.match(s,/\[headers,exportHeaders\]/);
 });

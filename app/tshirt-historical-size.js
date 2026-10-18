@@ -10,13 +10,14 @@ async function load(){
   heading.textContent=(item.studentName||"已綁定學生")+"｜"+(item.historicalIssued===true?"已配發團 T 1 件":"尚未領取團 T，先登錄尺寸");
   label.textContent=item.historicalIssued===true?"已領取團 T 尺寸：":"預計首次公費領用團 T 尺寸：";for(const size of sizes){const o=document.createElement("option");o.value=size;o.textContent=size;select.append(o)}
   if(item.size)select.value=item.size;else{const o=document.createElement("option");o.value="";o.textContent="請選擇尺寸";o.selected=true;o.disabled=true;select.prepend(o)}
-  button.textContent="儲存尺寸";button.type="button";info.textContent=item.size?"已登錄："+item.size:"尺寸待補登";
+  button.textContent="儲存尺寸";button.type="button";info.textContent=item.schoolIssuedAt?"學校已交付，尺寸已鎖定":item.size?"已登錄："+item.size:"尺寸待補登";
+  if(item.schoolIssuedAt||item.source==="PARENT_CONFIRMED_FIRST_PUBLIC"){select.disabled=true;button.disabled=true;button.hidden=true}
   button.addEventListener("click",async()=>{if(!select.value)return;button.disabled=true;try{await api("PATCH",{studentId:item.studentId,size:select.value,etag:item.etag});$("status").textContent="尺寸已儲存";await load()}catch(e){$("status").textContent="儲存失敗："+e.message}finally{button.disabled=false}});
   label.append(select);article.append(heading,label,button,info);
   if(item.historicalIssued!==true){
-   const status=document.createElement("p");status.className="hint";status.textContent=item.size?"尚未領取；請在學生實際收到團 T 後確認。":"請先儲存尺寸，再進行領取確認。";
+   const status=document.createElement("p");status.className="hint";status.textContent=!item.size?"請先儲存尺寸，再等待學校發放。":item.schoolIssuedAt?"學校已確認發放，請在學生實際收到團 T 後確認。":"尺寸已登錄，待學校確認交付後才能完成領取。";
    article.append(status);
-   if(item.size){
+   if(item.size&&item.schoolIssuedAt){
     const confirmButton=document.createElement("button");confirmButton.type="button";confirmButton.textContent="我已收到團 T｜確認領取 1 件";
     confirmButton.addEventListener("click",async()=>{
      if(!confirm("請核對學生已實際收到團 T 1 件，尺寸 "+item.size+"。確認後將登記首次公費領取，確定嗎？"))return;

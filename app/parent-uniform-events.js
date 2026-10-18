@@ -124,15 +124,17 @@ async function loadInlineSizes(){
    const editor=document.createElement("div");editor.append(label,save,state);
    if(item.size){
     editor.hidden=true;
-    const edit=document.createElement("button");edit.type="button";edit.textContent="修改尺寸";edit.addEventListener("click",()=>{editor.hidden=false;edit.hidden=true;sel.focus()});
-    box.append(edit,editor);
+    if(!item.schoolIssuedAt&&!issued){const edit=document.createElement("button");edit.type="button";edit.textContent="修改尺寸";edit.addEventListener("click",()=>{editor.hidden=false;edit.hidden=true;sel.focus()});box.append(edit)}
+    box.append(editor);
    }else box.append(editor);
    if(!issued){
     const receipt=document.createElement("div");receipt.className="tshirt-receipt-confirm";
     if(!item.size){
      const tip=document.createElement("p");tip.className="hint";tip.textContent="請先儲存預計領取的尺寸；實際拿到團 T 後，這裡才會出現領取確認。";receipt.append(tip);
+    }else if(!item.schoolIssuedAt){
+     const tip=document.createElement("p");tip.className="hint";tip.textContent="✅ 尺寸已登錄（"+item.size+"）。等待學校實際發放並完成後台交付紀錄後，才會開放家長確認領取。";receipt.append(tip);
     }else{
-     const tip=document.createElement("p");tip.className="hint";tip.textContent="目前僅已登錄尺寸，尚未領取。請在孩子實際收到團 T（"+item.size+"）後再按下方按鈕。";
+     const tip=document.createElement("p");tip.className="hint";tip.textContent="學校已登記發放（"+new Date(item.schoolIssuedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"})+"），交付尺寸 "+item.schoolIssuedSize+"。請確認孩子實際收到後再按下方按鈕。";
      const confirmButton=document.createElement("button");confirmButton.type="button";confirmButton.textContent="我已收到團 T｜確認領取 1 件";
      const feedback=document.createElement("span");feedback.className="hint";feedback.setAttribute("role","status");
      confirmButton.addEventListener("click",async()=>{
