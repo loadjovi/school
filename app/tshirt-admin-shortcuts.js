@@ -45,12 +45,14 @@ function renderRoster(){
  head.innerHTML="<tr><th>學生</th><th>首次領用</th><th>尺寸</th><th>家長處理</th></tr>";table.appendChild(head);
  const tbody=document.createElement("tbody");
  for(const s of data){
-  const name=String(s.name||s.studentName||""),group=normalizedGroup(s.groupName||s.group),unissued=group==="C"||name==="李沛臻";
+  const name=String(s.name||s.studentName||""),group=normalizedGroup(s.groupName||s.group);
   const tr=document.createElement("tr");
   const grade=currentGrade(s);
-  const issuedGrade=unissued?"尚未領取":grade===null?"年級待確認":grade>1?(grade-1)+" 年級":"年級待確認";
   const studentId=String(s.studentId||s.id||"");
   const history=historicalSizes.get(studentId);
+  // Stored receipt confirmation wins over any assumption based on the current group.
+  const unissued=history?history.historicalIssued!==true:(group==="C"||name==="李沛臻");
+  const issuedGrade=unissued?"尚未領取":history?.receivedAt?"家長確認："+new Date(history.receivedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"}):grade===null?"年級待確認":grade>1?(grade-1)+" 年級":"年級待確認";
   const size=history?.size?String(history.size):"";
   const addCell=(label,primary,detail="")=>{
    const td=document.createElement("td"),caption=document.createElement("span"),main=document.createElement("strong");
@@ -63,9 +65,9 @@ function renderRoster(){
   badge.className="tshirt-roster-group";badge.textContent=group==="C"?"儲備":group+"團";person.append(badge);
   addCell("首次領用",unissued?"尚未領取":"已領取",unissued?"保留首次公費資格":issuedGrade==="年級待確認"?"年級待核對":issuedGrade+"領取");
   addCell("尺寸",size||"待填寫");
-  const action=addCell("家長處理",size?"尺寸已登錄":"待填寫尺寸",unissued?"尚未領取，保留首次免費資格":"");
+  const action=addCell("家長處理",history?.source==="PARENT_CONFIRMED_FIRST_PUBLIC"?"已由家長確認領取":size?"尺寸已登錄":"待填寫尺寸",unissued?"尚未領取，保留首次免費資格":history?.receivedAt?"領取確認："+new Date(history.receivedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"}):"");
   action.className="tshirt-roster-action";
-  if(size){
+  if(size&&history?.source!=="PARENT_CONFIRMED_FIRST_PUBLIC"){
    const reset=document.createElement("button");
    reset.type="button";reset.textContent="退回待填寫";
    reset.title="保留領用紀錄，讓家長重新填寫團 T 尺寸";
