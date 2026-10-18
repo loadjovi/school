@@ -14,9 +14,9 @@ async function load(){
   button.addEventListener("click",async()=>{if(!select.value)return;button.disabled=true;try{await api("PATCH",{studentId:item.studentId,size:select.value,etag:item.etag});$("status").textContent="尺寸已儲存";await load()}catch(e){$("status").textContent="儲存失敗："+e.message}finally{button.disabled=false}});
   label.append(select);article.append(heading,label,button,info);
   if(item.historicalIssued!==true){
-   const status=document.createElement("p");status.className="hint";status.textContent=item.size?"尚未領取；請在學生實際收到團 T 後確認。":"請先儲存尺寸，再進行領取確認。";
+   const status=document.createElement("p");status.className="hint";status.textContent=!item.size?"請先儲存尺寸，再等待學校發放。":item.schoolIssuedAt?"學校已確認發放，請在學生實際收到團 T 後確認。":"尺寸已登錄，待學校確認交付後才能完成領取。";
    article.append(status);
-   if(item.size){
+   if(item.size&&item.schoolIssuedAt){
     const confirmButton=document.createElement("button");confirmButton.type="button";confirmButton.textContent="我已收到團 T｜確認領取 1 件";
     confirmButton.addEventListener("click",async()=>{
      if(!confirm("請核對學生已實際收到團 T 1 件，尺寸 "+item.size+"。確認後將登記首次公費領取，確定嗎？"))return;
