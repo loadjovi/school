@@ -3,7 +3,7 @@ import {randomUUID} from "node:crypto";
 
 // One current, authoritative row per school and student. Original paper values
 // are one-time migration seeds, never a second export source.
-import {originalCompetitionRoster,baseForStudent,latestCompetitionRequest,overlayMaster,comparable} from "./competitionMasterRules.mjs";
+import {originalCompetitionRoster,baseForStudent,latestCompetitionRequest,overlayMaster,comparable,nameKey} from "./competitionMasterRules.mjs";
 export {originalCompetitionRoster,baseForStudent,latestCompetitionRequest,overlayMaster};
 const connection=()=>process.env.STORAGE_CONNECTION_STRING;
 let masterClient,auditClient;
