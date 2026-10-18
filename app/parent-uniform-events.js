@@ -101,7 +101,7 @@ async function loadInlineSizes(){
    const grade=String(item.receivedGrade||"");
    const issued=item.historicalIssued===true&&item.received!==false;
    const gradeLabel=grade?grade+"年級領取":"領取年級待確認";
-   const line=document.createElement("p");line.textContent=(item.studentName||item.studentId)+"｜團 T："+(item.size||"待填寫")+"｜"+(issued?"已領取 1 件｜"+gradeLabel:"尚未領取")+"｜"+(item.size?"尺寸已登錄":"尺寸待填寫");summary.append(line);
+   const line=document.createElement("p");line.textContent=(item.studentName||item.studentId)+"｜團 T："+(item.size||"待填寫")+"｜"+(issued?"已領取 1 件｜"+(item.receivedAt?"家長確認："+new Date(item.receivedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"}):gradeLabel):"尚未領取")+"｜"+(item.size?"尺寸已登錄":"尺寸待填寫");summary.append(line);
    const box=document.createElement("div");box.className="size-row";
    const title=document.createElement("strong");title.textContent=(item.studentName||item.studentId)+"｜"+(issued?"已領取 1 件":"尚未領取，先登錄尺寸");
    const label=document.createElement("label");label.textContent=issued?"已領取團 T 尺寸":"預計首次公費領用團 T 尺寸";
@@ -127,6 +127,34 @@ async function loadInlineSizes(){
     const edit=document.createElement("button");edit.type="button";edit.textContent="修改尺寸";edit.addEventListener("click",()=>{editor.hidden=false;edit.hidden=true;sel.focus()});
     box.append(edit,editor);
    }else box.append(editor);
+   if(!issued){
+    const receipt=document.createElement("div");receipt.className="tshirt-receipt-confirm";
+    if(!item.size){
+     const tip=document.createElement("p");tip.className="hint";tip.textContent="請先儲存預計領取的尺寸；實際拿到團 T 後，這裡才會出現領取確認。";receipt.append(tip);
+    }else{
+     const tip=document.createElement("p");tip.className="hint";tip.textContent="目前僅已登錄尺寸，尚未領取。請在孩子實際收到團 T（"+item.size+"）後再按下方按鈕。";
+     const confirmButton=document.createElement("button");confirmButton.type="button";confirmButton.textContent="我已收到團 T｜確認領取 1 件";
+     const feedback=document.createElement("span");feedback.className="hint";feedback.setAttribute("role","status");
+     confirmButton.addEventListener("click",async()=>{
+      if(!window.confirm("請確認："+(item.studentName||"此學生")+" 已實際收到團 T 1 件，尺寸為 "+item.size+"。\\n確認後會列入正式首次公費領取紀錄，不能重複領取。確定嗎？"))return;
+      confirmButton.disabled=true;feedback.textContent="正在儲存領取確認…";
+      try{
+       const response=await fetch("/api/uniform-events/tshirt-historical-size",{method:"PATCH",credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...parentAuthHeaders()},body:JSON.stringify({studentId:item.studentId,action:"CONFIRM_FIRST_RECEIPT",receivedSize:item.size,confirmedReceived:true,etag:item.etag})});
+       const result=await response.json().catch(()=>({}));
+       if(!response.ok)throw Error(result.error||"HTTP "+response.status);
+       feedback.textContent="已確認領取；首次公費資格已更新。";
+       window.parent.postMessage({type:"parent-tshirt-size-saved"},location.origin);
+       await loadInlineSizes();
+      }catch(error){feedback.textContent="確認失敗："+error.message+"（若紀錄已更新，請重新整理）";confirmButton.disabled=false}
+     });
+     receipt.append(tip,confirmButton,feedback);
+    }
+    box.append(receipt);
+   }else{
+    const confirmed=document.createElement("p");confirmed.className="hint";
+    confirmed.textContent="✅ 已確認實際領取團 T 1 件"+(item.receivedAt?"｜日期："+new Date(item.receivedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"}):"")+"，無須再次確認。";
+    box.append(confirmed);
+   }
    host.append(box);
   }
   renderTshirtPurchase(data.items.filter(item=>item.historicalIssued===true));

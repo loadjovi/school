@@ -16,6 +16,11 @@ $("exportTshirtEligibility").addEventListener("click",async()=>{
   if(!r.ok)throw Error("無法取得學生主檔（HTTP "+r.status+"）");
   const payload=await r.json();
   const students=Array.isArray(payload)?payload:(payload.items||[]);
+  const historyResponse=await fetch("/api/uniform-events/tshirt-historical-size",{credentials:"same-origin",cache:"no-store",headers});
+  if(!historyResponse.ok)throw Error("無法讀取最新團 T 領取紀錄，已停止匯出，請稍後重試（HTTP "+historyResponse.status+"）");
+  const historyData=await historyResponse.json().catch(()=>({}));
+  if(!Array.isArray(historyData.items))throw Error("團 T 領用紀錄格式不正確，已停止匯出");
+  const historical=new Map(historyData.items.map(item=>[String(item.studentId||""),item]));
   const map=new Map(),unclassified=[];
   for(const student of students){
    const id=String(student.studentId||"").trim(),name=String(student.name||student.studentName||"").trim();
@@ -24,13 +29,20 @@ $("exportTshirtEligibility").addEventListener("click",async()=>{
    if(!id)continue;
    if(!group){unclassified.push(name||id);continue}
    const exception=name==="李沛臻";
-   const issued=(group==="A"||group==="B")&&!exception;
+   const item=historical.get(id);
+   const issued=item?item.historicalIssued===true:(group==="A"||group==="B")&&!exception;
    const eligible=!issued;
-   map.set(id,[id,name,group,eligible?"YES":"NO",issued?"YES":"NO",issued?"UNKNOWN":"", "",issued?"115學年度首次已領取；尺寸未知，待家長補登；歷史資料未寫入正式領用庫存":exception?"李沛臻例外：尚未首次領取，保留免費申請資格":"115學年度儲備團：尚未首次領取，保留免費申請資格"]);
+   const receivedDate=item?.receivedAt||item?.verifiedAt||"";
+   const note=item?.source==="PARENT_CONFIRMED_FIRST_PUBLIC"
+     ?"家長已確認實際領取團 T 1 件；已使用首次公費資格"
+     :issued?"歷史首次領取紀錄，需依主檔核對實際領用時間"
+     :item?.size?"尺寸已登記，尚未領取，保留首次公費資格"
+     :"尚未首次領取，保留首次公費資格";
+   map.set(id,[id,name,group,eligible?"YES":"NO",issued?"YES":"NO",issued?(receivedDate||"UNKNOWN"):"",item?.size||"",note]);
   }
   if(!map.size)throw Error("學生主檔沒有可辨識的 A、B 或儲備團資料；請確認學生主檔團別及學校身分，未產生空白檔。");
   download([...map.values()]);
-  $("tshirtEligibilityPreview").textContent="已由學生主檔匯出 "+map.size+" 位學生（A、B 團已領取但尺寸未知；李沛臻及儲備團未領取）。"+(unclassified.length?"另有 "+unclassified.length+" 位團別無法辨識，未列入；請檢查學生主檔團別。":"")+" 僅供核對，不會寫入資料庫或扣除庫存。";
+  $("tshirtEligibilityPreview").textContent="已依學生主檔與團 T 領用紀錄匯出 "+map.size+" 位學生；家長已確認領取的儲備團會顯示首次已領取，未確認的仍保有首次公費資格。"+(unclassified.length?"另有 "+unclassified.length+" 位團別無法辨識，未列入；請檢查學生主檔團別。":"")+" 僅供核對，不會寫入資料庫或扣除庫存。";
  }catch(e){$("tshirtEligibilityPreview").textContent="匯出失敗："+e.message}
 });
 function parseCsv(src){
