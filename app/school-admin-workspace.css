@@ -137,3 +137,9 @@
 .aw-uniform-frame-wrap{min-width:0;width:100%;overflow:hidden;background:transparent}
 #awUniformFrame{display:block;width:100%;height:1250px;border:0;background:transparent}
 @media(max-width:899px){.aw-uniform{margin-bottom:24px}#awUniformFrame{width:100%;min-width:0}}
+
+/* Assessment is a focused workspace page, never the legacy admin dashboard. */
+.aw-assessment-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0}
+.aw-assessment-metrics>div{border:1px solid var(--aw-line,#dce3ee);border-radius:12px;background:#f7f9fd;padding:14px}
+.aw-assessment-metrics b{display:block;font-size:24px;color:var(--aw-ink,#243652)}
+.aw-assessment-metrics small{color:var(--aw-muted,#607087);font-size:13px}
