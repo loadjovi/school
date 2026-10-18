@@ -65,7 +65,7 @@ function renderRoster(){
   badge.className="tshirt-roster-group";badge.textContent=group==="C"?"儲備":group+"團";person.append(badge);
   addCell("首次領用",unissued?(history?.schoolIssuedAt?"學校已交付":"尚未領取"):"已領取",unissued?(history?.schoolIssuedAt?"待家長確認收到；已預留首次公費資格":"保留首次公費資格"):issuedGrade==="年級待確認"?"年級待核對":issuedGrade+"領取");
   addCell("尺寸",size||"待填寫");
-  const action=addCell("家長處理",history?.source==="PARENT_CONFIRMED_FIRST_PUBLIC"?"雙方確認完成":history?.schoolIssuedAt?"學校已發放，待家長確認":size?"尺寸已登錄，待學校發放":"待家長填寫尺寸",history?.receivedAt?"家長確認："+new Date(history.receivedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"}):history?.schoolIssuedAt?"學校交付："+new Date(history.schoolIssuedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"})+"｜交付對象："+(history.schoolHandoffTo||"未記錄"):unissued?"尚未領取，保留首次免費資格":"");
+  const action=addCell("家長處理",history?.source==="PARENT_CONFIRMED_FIRST_PUBLIC"?"雙方確認完成":history?.schoolIssuedAt?"學校已發放，待家長確認":!unissued?(size?"已領取｜尺寸已登錄":"已領取｜尺寸待核對"):size?"待學校發放":"待家長填寫尺寸",history?.receivedAt?"家長確認："+new Date(history.receivedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"}):history?.schoolIssuedAt?"學校交付："+new Date(history.schoolIssuedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"})+"｜交付對象："+(history.schoolHandoffTo||"未記錄"):unissued?"尚未領取，保留首次免費資格":"歷史領用已確認，不需重新發放");
   action.className="tshirt-roster-action";
   if(history?.source==="PARENT_SIZE_SURVEY"&&history.historicalIssued!==true&&size&&!history.schoolIssuedAt){
    const details=document.createElement("details"),summary=document.createElement("summary");
