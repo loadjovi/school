@@ -24,7 +24,7 @@
       item("adminCourses","📅","課表與行事曆","workspace:courses"),
       item("adminUniform","🎽","團服與活動","workspace:uniformAdmin"),
       item("adminAccounts","🔑","帳號管理","workspace:accounts"),
-      item("adminLearning","📚","學習與成績","workspace:learning"),
+      item("practiceProgress","📚","自主練習月報","practiceProgress"),
       item("adminRecords","🧾","操作紀錄","workspace:records"),
       item("adminSettings","⚙️","平台設定","workspace:settings"),
       item("help","ℹ️","操作說明")
