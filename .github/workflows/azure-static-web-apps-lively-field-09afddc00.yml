@@ -34,6 +34,8 @@ jobs:
         run: node --test tests/competition-uniform-master.test.mjs
       - name: First-time T-shirt receipt regression tests
         run: node --test tests/tshirt-first-receipt.test.mjs
+      - name: First-issue T-shirt parent progress regression tests
+        run: node --test tests/tshirt-progress-first-issue.test.mjs
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
