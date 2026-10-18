@@ -1,0 +1,57 @@
+name: School Functional UAT LAB (manual, isolated)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: school-functional-uat-lab
+  cancel-in-progress: false
+
+jobs:
+  deploy_functional_uat_lab:
+    name: Deploy real functional UAT to separate SWA
+    runs-on: ubuntu-latest
+    environment: school-functional-uat
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Safety gate - separate deployment token required
+        shell: bash
+        env:
+          LAB_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_SCHOOL_FUNCTIONAL_LAB }}
+          PROD_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_LIVELY_FIELD_09AFDDC00 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$LAB_TOKEN" || -z "$PROD_TOKEN" ]]; then
+            echo "::error::Both dedicated LAB and Production deployment secrets must exist"
+            exit 1
+          fi
+          if [[ "$LAB_TOKEN" == "$PROD_TOKEN" ]]; then
+            echo "::error::LAB token equals Production deployment token. Refusing to deploy"
+            exit 1
+          fi
+          echo "Independent LAB token verified (values never logged)."
+
+      - name: Prepare full functional LAB from the current main revision
+        run: python3 scripts/prepare-functional-lab.py --output .functional-lab-build
+
+      - name: Verify LAB isolation, generated API, and frontend
+        run: |
+          python3 -m unittest discover -s tests -p 'test_functional_lab_isolation.py' -v
+          find .functional-lab-build/api/src -name '*.js' -print0 | xargs -0 -n1 node --check
+          find .functional-lab-build/api/src -name '*.mjs' -print0 | xargs -0 -n1 node --check
+          find .functional-lab-build/app -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Upload complete frontend and Azure Functions ONLY to independent LAB
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_SCHOOL_FUNCTIONAL_LAB }}
+          action: upload
+          app_location: .functional-lab-build/app
+          api_location: .functional-lab-build/api
+          output_location: "."
