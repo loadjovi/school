@@ -126,7 +126,7 @@
   teacherDetails.hidden=!inlineOpen;
   if(inlineOpen&&typeof window.teacherAdminManagementHtml==='function'){
    const html=window.teacherAdminManagementHtml();
-   if(teacherDetails.innerHTML!==html)teacherDetails.innerHTML=html;
+   if(teacherDetails._lastMarkup!==html){teacherDetails.innerHTML=html;teacherDetails._lastMarkup=html;}
   }
   classify(main);
   for(const node of main.querySelectorAll('[data-admin-group]'))node.hidden=node.dataset.adminGroup!==group;
