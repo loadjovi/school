@@ -51,7 +51,7 @@ export function baseForStudent(student){
 const eligible=request=>request?.kind==="competitionUniform"&&request.status!=="CANCELLED";
 export function latestCompetitionRequest(requests,id){
  return (requests||[]).filter(r=>eligible(r)&&String(r.studentId)===String(id))
- .sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||""))||String(b.id||"").localeCompare(String(a.id||"")))[0]||null;
+ .sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))||String(b.updatedAt||"").localeCompare(String(a.updatedAt||""))||String(b.id||"").localeCompare(String(a.id||"")))[0]||null;
 }
 export function overlayMaster(old,request,student){
  if(!request)return old;
@@ -83,7 +83,7 @@ export async function upsertCurrentCompetitionMaster(schoolId,student,request,ac
   // cancelling an unfulfilled request restores the genuine original state.
   const current=overlayMaster({...base,received:old.received===true||base.received},request,student);
   if(prev&&comparable(old)===comparable(current))return {...current,studentId:id};
-  const changed=prev&&comparable(old)!==comparable(current);
+  const changed=comparable(old)!==comparable(current);
   if(changed){
    await auditClient.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"competition.master.replace",
     subjectId:id,actor:String(actor).slice(0,200),at:new Date().toISOString(),
