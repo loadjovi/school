@@ -1,75 +1,89 @@
-import {roster} from "./competition-roster-data.js";
-import {confirmedReceived,promotedClass} from "./competition-paper-receipts.js";
-
-const safe=value=>String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const normalize=value=>String(value||"").trim().normalize("NFC");
-const count=(field,value)=>roster.filter(row=>row[field]===value).length;
-const currentClass=row=>confirmedReceived.has(row[1])?promotedClass(confirmedReceived.get(row[1])):row[0];
-const list=[...roster].sort((a,b)=>currentClass(a).localeCompare(currentClass(b),"en",{numeric:true})||a[1].localeCompare(b[1],"zh-Hant"));
+// The school roster and CSV must read the same authoritative DB master.
+// Do not export the old immutable paper roster or silently fall back on it.
+const safe=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const norm=value=>String(value||"").trim().normalize("NFC");
 const root=document.getElementById("competitionRosterPreview");
 if(root){
- let returned=new Map(),loaded=false;
- const date=value=>value?new Date(value).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"}):"";
+ let masterRows=[],returns=[],issues=[],unmatched=[],loaded=false,lastError="";
+ const sourceLabel={PUBLIC:"公費",PURCHASE:"買斷",RENTAL:"租借",PENDING:"待確認"};
+ const stepLabel={PENDING:"待審核",APPROVED:"已核准",ORDERED:"已採購",ARRIVED:"已到貨",READY_FOR_PICKUP:"待領取",FULFILLED:"已完成領用",CANCELLED:"已取消"};
+ const paymentLabel={AWAITING_TRANSFER:"待匯款",REPORTED_UNVERIFIED:"待核帳",VERIFIED:"已核帳",NOT_REQUIRED:"無須付款"};
+ const shownClass=x=>x.originalClass||x.grade||"—";
+ const date=x=>x?new Date(x).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"}):"";
+ const getReturned=row=>{
+  const stocked=returns.filter(x=>String(x.studentId)===String(row.studentId)&&x.status==="STOCKED")
+   .sort((a,b)=>String(b.stockedAt||"").localeCompare(String(a.stockedAt||"")));
+  if(!stocked.length)return null;
+  const record=stocked[0];
+  const newIssue=issues.some(issue=>String(issue.studentId)===String(row.studentId)&&String(issue.issuedAt||"")>String(record.stockedAt||""));
+  return newIssue?null:record;
+ };
+ const statusOf=row=>{
+  if(getReturned(row))return "已歸還入庫";
+  if(row.requestId&&row.requestStatus!=="FULFILLED")return row.received?"歷史已領用／新申請"+(stepLabel[row.requestStatus]||"處理中"):"新申請"+(stepLabel[row.requestStatus]||"處理中");
+  return row.received?"已確認領用":"領用待核對";
+ };
  function render(){
   root.replaceChildren();
+  if(lastError){const notice=document.createElement("p");notice.className="competition-roster-summary";notice.textContent="⚠️ "+lastError;root.append(notice);return}
+  if(!loaded){const p=document.createElement("p");p.textContent="正在讀取 A 團比賽服正式主檔…";root.append(p);return}
   const summary=document.createElement("p");summary.className="competition-roster-summary";
-  const returnedCount=list.filter(row=>returned.has(normalize(row[1]))).length;
-  summary.textContent="共 "+list.length+" 位｜目前無比賽服 "+returnedCount+" 位｜已確認領用 "+list.filter(row=>confirmedReceived.has(row[1])&&!returned.has(normalize(row[1]))).length+" 位｜領用待核對 "+list.filter(row=>!confirmedReceived.has(row[1])&&!returned.has(normalize(row[1]))).length+" 位｜取得方式待確認 "+count(4,"待確認")+" 位";
-  root.appendChild(summary);
+  const undecided=masterRows.filter(x=>x.acquisition==="PENDING").length;
+  summary.textContent="共 "+masterRows.length+" 位｜取得方式待選擇 "+undecided+" 位｜已確認領用 "+masterRows.filter(x=>statusOf(x)==="已確認領用").length+" 位｜領用或申請處理中 "+masterRows.filter(x=>statusOf(x)!=="已確認領用"&&statusOf(x)!=="已歸還入庫").length+" 位";
+  root.append(summary);
   const hint=document.createElement("p");hint.className="competition-roster-order";
-  hint.textContent="依今年班級由低至高排序，同班依姓名排序。已入庫者的款式與尺寸僅供查閱原領用紀錄。";
-  root.appendChild(hint);
+  hint.textContent="以學生學號對應正式主檔；家長有效新申請會更新取得方式、款式與尺寸。領用與歸還依實際核對紀錄顯示。";
+  root.append(hint);
+  if(unmatched.length){const notice=document.createElement("p");notice.className="competition-roster-summary";notice.textContent="⚠️ 有 "+unmatched.length+" 位原名單學生無法安全連結學號（"+unmatched.map(x=>x.name).join("、")+"），已停止 CSV 匯出。請先確認學生主檔。";root.append(notice)}
   const container=document.createElement("div");container.className="competition-roster-table-wrap";
   const table=document.createElement("table");table.className="competition-roster-table";
-  table.innerHTML='<thead><tr><th scope="col">學生</th><th scope="col">款式／尺寸</th><th scope="col">取得方式</th><th scope="col">領用狀態</th></tr></thead>';
+  table.innerHTML='<thead><tr><th scope="col">學生</th><th scope="col">款式／尺寸</th><th scope="col">取得方式</th><th scope="col">申請與領用</th></tr></thead>';
   const body=document.createElement("tbody");
-  for(const row of list){
-   const klass=currentClass(row),returnRecord=returned.get(normalize(row[1]));
-   const received=confirmedReceived.has(row[1]);
+  for(const row of masterRows){
    const tr=document.createElement("tr");
-   tr.innerHTML='<td><strong>'+safe(row[1])+'</strong><small class="competition-class">'+safe(klass)+'</small></td>'+
-    '<td><strong>'+safe(row[2])+'款 · '+safe(row[3])+'</strong>'+(returnRecord?'<small>原領用</small>':'')+'</td>'+
-    '<td>'+safe(row[4])+'</td>'+
-    '<td><details class="competition-roster-detail"><summary class="roster-status'+(returnRecord||!received?' is-pending':'')+'">'+
-    (returnRecord?'已歸還入庫':received?'已確認領用':'領用待核對')+'</summary><div>樂器：'+safe(row[5])+'<br>去年班級：'+safe(confirmedReceived.get(row[1])||'待核對')+
-    (returnRecord?'<br>目前持有：無'+(date(returnRecord.stockedAt)?'<br>入庫日期：'+safe(date(returnRecord.stockedAt)):''):'')+'</div></details></td>';
-   body.appendChild(tr);
+   const detail=row.requestId?"最新申請："+(stepLabel[row.requestStatus]||"待確認")+(row.paymentStatus?"｜"+(paymentLabel[row.paymentStatus]||row.paymentStatus):""):"尚無新申請（原登記）";
+   const received=statusOf(row),returned=getReturned(row);
+   tr.innerHTML='<td><strong>'+safe(row.studentName)+'</strong><small class="competition-class">'+safe(shownClass(row))+'</small></td>'+
+    '<td><strong>'+safe(row.style)+'款 · '+safe(row.size)+'</strong></td>'+
+    '<td>'+safe(sourceLabel[row.acquisition]||"待確認")+'<small>'+safe(row.source==="parent_request"?"已依家長申請更新":"原登記")+'</small></td>'+
+    '<td><details class="competition-roster-detail"><summary class="roster-status'+(returned||!row.received?' is-pending':'')+'">'+safe(received)+'</summary><div>'+
+    safe(detail)+'<br>樂器：'+safe(row.instrument||"—")+'<br>學號：'+safe(row.studentId)+
+    (returned?'<br>歸還入庫日期：'+safe(date(returned.stockedAt)):'')+'</div></details></td>';
+   body.append(tr);
   }
-  table.appendChild(body);container.appendChild(table);
-  root.appendChild(container);
-  const details=document.createElement("details");details.className="competition-roster-notes";
-  details.innerHTML="<summary>名單來源及尺寸統計</summary><p>款式與尺寸保留原登記資料；歸還入庫以正式紀錄更新目前持有狀態。其他學生仍依既有領用核對名單顯示，尚未逐筆連結所有歷史發放紀錄。</p>";
-  const grouped=new Map();for(const row of list){if(returned.has(normalize(row[1])))continue;const key=row[2]+"款 "+row[3];grouped.set(key,(grouped.get(key)||0)+1)}
-  const sizes=document.createElement("p");sizes.textContent="未歸還名單登記尺寸："+[...grouped].map(([key,value])=>key+" "+value+" 套").join("、");details.appendChild(sizes);
-  root.appendChild(details);
+  table.append(body);container.append(table);root.append(container);
+  const foot=document.createElement("p");foot.className="competition-roster-order";
+  foot.textContent="匯出只包含正式主檔的當前資料；新申請已覆蓋原始登記的取得方式／尺寸。每次覆蓋均留下稽核紀錄。";
+  root.append(foot);
  }
- function applyReturns(data){
-  const stocked=(data?.items||[]).filter(item=>item.status==="STOCKED").sort((a,b)=>String(a.stockedAt||"").localeCompare(String(b.stockedAt||"")));
-  const issues=data?.issues||[];
-  const names=new Map();for(const row of list){const name=normalize(row[1]);names.set(name,(names.get(name)||0)+1)}
-  returned=new Map();for(const item of stocked){
-   const name=normalize(item.studentName);
-   if(names.get(name)!==1)continue;
-   const newerIssue=issues.some(issue=>String(issue.studentId)===String(item.studentId)&&issue.issuedAt&&String(issue.issuedAt)>String(item.stockedAt||""));
-   if(!newerIssue)returned.set(name,item);
-  }
-  loaded=true;render();
+ async function fetchJson(path){
+  const response=await fetch("/api/"+path,{credentials:"same-origin",cache:"no-store",headers:window.uniformEventAuthHeaders?.()||{}});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(data.error||"HTTP "+response.status);
+  return data;
  }
+ let loading=false;
  async function reload(){
+  if(loading)return;
+  loading=true;lastError="";render();
   try{
-   const response=await fetch("/api/uniform-events/competition-returns",{credentials:"same-origin",cache:"no-store",headers:window.uniformEventAuthHeaders?.()||{}});
-   if(!response.ok)throw Error("HTTP "+response.status);
-   applyReturns(await response.json());
-  }catch(error){if(!loaded){const hint=root.querySelector(".competition-roster-order");if(hint)hint.textContent="歸還紀錄暫時無法讀取，請重新整理後再核對學生是否持有比賽服。"}}
+   const [master,returnData]=await Promise.all([fetchJson("uniform-events/competition-master"),fetchJson("uniform-events/competition-returns")]);
+   masterRows=(master.items||[]).slice().sort((a,b)=>shownClass(a).localeCompare(shownClass(b),"en",{numeric:true})||String(a.studentName).localeCompare(String(b.studentName),"zh-Hant"));
+   unmatched=master.unmatched||[];returns=returnData.items||[];issues=returnData.issues||[];
+   loaded=true;lastError="";
+  }catch(error){loaded=false;lastError="正式比賽服主檔讀取失敗："+error.message+"。請勿以舊名單匯出，稍後重新整理。"}
+  finally{loading=false;render()}
  }
- render();
  window.addEventListener("uniformAdminAuth",event=>{if(event.detail?.authenticated)reload()});
- window.addEventListener("competitionReturnsUpdated",event=>applyReturns(event.detail));
+ window.addEventListener("uniformRequestsLoaded",()=>reload());
+ window.addEventListener("competitionReturnsUpdated",()=>{if(!loading)reload()});
  document.getElementById("exportCompetitionRoster")?.addEventListener("click",()=>{
-  if(!loaded){alert("歸還紀錄尚未載入，請稍後再匯出，避免將已歸還學生列為仍持有。");return}
-  const rows=[["今年班級","學生姓名","款式（原登記）","尺寸（原登記）","取得方式","樂器","目前比賽服狀態","歸還入庫日期","去年班級"],...list.map(row=>{const item=returned.get(normalize(row[1]));return [currentClass(row),row[1],row[2],row[3],row[4],row[5],item?"已歸還入庫／目前無比賽服":confirmedReceived.has(row[1])?"已確認領用":"領用待核對",item?date(item.stockedAt):"",confirmedReceived.get(row[1])||""]})];
-  const csv="\uFEFF"+rows.map(values=>values.map(value=>'"'+String(value).replace(/"/g,'""')+'"').join(",")).join("\r\n");
+  if(!loaded||lastError||unmatched.length||masterRows.length!==15){alert("主檔尚未完整同步，已停止匯出以避免不正確資料。請先重新整理並確認 15 位學生及學號。");return}
+  const fields=["目前班級","學生姓名","學號","樂器","款式","尺寸","取得方式","最新申請狀態","付款狀態","實際領用／歸還狀態","歸還日期","資料來源","最新申請編號"];
+  const rows=[fields,...masterRows.map(row=>{const returned=getReturned(row);return [shownClass(row),row.studentName,row.studentId,row.instrument,row.style,row.size,sourceLabel[row.acquisition]||"待確認",row.requestId?stepLabel[row.requestStatus]||row.requestStatus:"未申請",paymentLabel[row.paymentStatus]||"",statusOf(row),returned?date(returned.stockedAt):"",row.source==="parent_request"?"家長正式申請":"歷史資料遷入",row.requestId||""]})];
+  const csv="\uFEFF"+rows.map(columns=>columns.map(value=>{let str=String(value??"");if(/^[=+@\-\t\r]/.test(str))str="'"+str;return '"'+str.replace(/"/g,'""')+'"'}).join(",")).join("\r\n");
   const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
-  const link=document.createElement("a");link.href=url;link.download="A團比賽服_學生尺寸核對.csv";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const a=document.createElement("a");a.href=url;a.download="A團比賽服_正式主檔.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  });
+ render();
 }
