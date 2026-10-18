@@ -505,6 +505,7 @@ async function load(){
   {path:"uniform-events/config",status:"status",render:data=>{savedConfigs=data.items||[];syncConfig();refreshFamilyStatistics()}},
   {path:"uniform-events/requests",status:"requestsStatus",render:data=>{
     cachedRequests=data.items||[];
+    window.dispatchEvent(new CustomEvent("uniformRequestsLoaded"));
     renderUniformRequestAlerts();
     if(["regularUniform","competitionUniform"].includes(activeAdminTab))renderModuleRequests();
   }},
