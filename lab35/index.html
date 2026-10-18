@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>LAB35｜聖心弦樂團幹部驗證教室</title>
+<style>
+:root{--blue:#40599e;--pale:#f3f6fc;--line:#dbe4f1;--ink:#1c3055;--muted:#657594;--green:#187b60}
+*{box-sizing:border-box}body{margin:0;background:var(--pale);color:var(--ink);font:16px/1.55 system-ui,"Microsoft JhengHei",sans-serif}
+header{background:var(--blue);color:#fff;padding:18px max(16px,calc((100vw - 1120px)/2));display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center}
+.brand strong{font-size:23px}.brand small{display:block;font-size:13px;opacity:.9}
+.pill{background:#fff;color:#264785;border-radius:16px;padding:5px 11px;font-size:13px;font-weight:800}
+main{max-width:1120px;margin:0 auto;padding:20px 16px 90px}.warning{background:#fff1d5;color:#6d470c;border:1px solid #efd297;padding:12px 16px;border-radius:14px;margin:0 0 16px}
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.controls select,.controls button{min-height:44px}.controls label{display:flex;align-items:center;gap:8px}
+nav{display:flex;gap:8px;overflow:auto;padding:4px 0 15px}.tab{white-space:nowrap;background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:10px 16px;cursor:pointer;font-weight:700}.tab.active,.primary{background:var(--blue)!important;color:#fff!important;border-color:var(--blue)!important}
+h1{font-size:27px;margin:8px 0}h2{font-size:21px;margin:2px 0 16px}h3{font-size:18px;margin:0 0 12px}p{margin:8px 0 12px}.hint,.muted{color:var(--muted);font-size:14px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.card{border:1px solid var(--line);background:#fff;border-radius:18px;padding:20px;margin:0 0 16px;box-shadow:0 2px 10px #24355008}
+.box{border:1px solid var(--line);border-radius:13px;padding:15px;background:#f8fafe;margin:8px 0}
+.stat{font-size:26px;font-weight:800}.badge{display:inline-block;padding:2px 9px;border-radius:22px;background:#edf1fb;color:#38549b;font-size:12px;font-weight:800}.badge.ok{background:#e6f6ee;color:#11774d}.badge.warn{background:#fff1d5;color:#996300}
+label{font-weight:700;font-size:14px;display:block;margin:11px 0 5px}select,input{border:1px solid #bdc9df;background:white;color:var(--ink);border-radius:11px;padding:10px 11px;font:inherit;width:100%;min-width:0}
+button{font:inherit;border-radius:11px;border:1px solid #c7d3e8;background:#fff;color:var(--blue);padding:10px 15px;cursor:pointer;font-weight:750}
+button:disabled{opacity:.42;cursor:not-allowed}button:hover:not(:disabled){filter:brightness(.96)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.table-scroll{width:100%;overflow:auto}table{border-collapse:collapse;width:100%;min-width:600px;font-size:14px}th,td{text-align:left;border-bottom:1px solid var(--line);padding:12px 9px;vertical-align:top}th{background:#f4f7fd}tr:nth-child(even){background:#f8faff}
+.notice{padding:12px 14px;background:#eff7f5;border-radius:12px;color:#275d54}
+ol{padding-left:24px}li{margin:7px 0}footer{color:var(--muted);font-size:13px;text-align:center;margin:30px auto}
+#toast{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:#20375b;color:#fff;border-radius:12px;padding:12px 18px;box-shadow:0 6px 26px #0003;display:none;z-index:10}
+@media(max-width:650px){header{padding:15px}main{padding:14px 12px 95px}.grid{grid-template-columns:1fr}.card{padding:15px}h1{font-size:24px}.controls{display:grid;grid-template-columns:1fr 1fr}.controls label{grid-column:1/-1}.brand strong{font-size:19px}button{min-height:43px}}
+</style></head><body>
+<header><div class="brand"><strong>🎻 聖心弦樂成長平台｜LAB35</strong><small>幹部驗證教室 · 團 T、A 團比賽服、活動報名</small></div><span class="pill">模擬專用 · 非正式平台</span></header>
+<main>
+<div class="warning"><strong>⚠️ 測試環境聲明</strong>：全部使用虛構學生、模擬訂單與本機瀏覽器資料。不需 Google 登入，不會讀取或修改正式 API、正式資料庫、付款或學生紀錄。不同裝置的測試資料不共用。</div>
+<div class="controls"><label>操作身分 <select id="role"><option value="parent">👨‍👩‍👧 模擬家長端</option><option value="admin">🏫 模擬學校後台</option></select></label><button id="reset">↻ 重設測試資料</button><button id="guide">📖 操作指引</button></div>
+<nav aria-label="LAB 驗證項目"><button class="tab active" data-view="home">工作首頁</button><button class="tab" data-view="uniform">團 T / 比賽服</button><button class="tab" data-view="event">活動報名</button><button class="tab" data-view="records">申請與領用</button><button class="tab" data-view="export">CSV 匯出</button></nav>
+<h1 id="title">工作首頁</h1><p id="subtitle" class="muted">選擇要操作的功能。</p><section id="panel" aria-live="polite"></section>
+<footer>聖心弦樂團 · LAB35 · 僅供幹部教學驗證，不代表真實報名或採購紀錄</footer></main><div id="toast" role="status"></div>
+<script>
+(function(){
+'use strict';
+const STORE='sacred_heart_lab35_20261018';
+const students=[
+{id:'LAB-A01',name:'測試學生甲',grade:'4A',group:'A',instrument:'小提琴',style:'女',size:'S'},
+{id:'LAB-A02',name:'測試學生乙',grade:'5A',group:'A',instrument:'中提琴',style:'男',size:'M'},
+{id:'LAB-B01',name:'測試學生丙',grade:'3B',group:'B',instrument:'小提琴',style:'女',size:'M'}];
+const eventDefs=[
+{id:'EVENT01',name:'弦樂團校外教學（示範）',date:'2027/01/24',fee:300},
+{id:'EVENT02',name:'學期末成果發表（示範）',date:'2027/01/17',fee:0}];
+function seed(){return {orders:[
+{id:'LAB-001',studentId:'LAB-A01',kind:'competition',acquisition:'PUBLIC',style:'女',size:'S',quantity:1,status:'PENDING',payment:'NONE',amount:0},
+{id:'LAB-002',studentId:'LAB-B01',kind:'tshirt',acquisition:'PURCHASE',style:'女',size:'M',quantity:1,status:'PENDING',payment:'NONE',amount:350}],events:[],next:3,log:['LAB 已建立預設模擬資料']}};
+let state;
+try{state=JSON.parse(localStorage.getItem(STORE))||seed()}catch(e){state=seed()}
+let role='parent',view='home',person='LAB-A02';let eventPerson='LAB-A02';
+const q=id=>document.getElementById(id),escape=s=>String(s===undefined?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const student=id=>students.find(x=>x.id===id)||students[0],n=x=>student(x.studentId).name;
+const kindLabel=x=>x.kind==='competition'?'A 團比賽服':'團 T';
+const acquire=x=>x.acquisition==='PUBLIC'?'公費':x.acquisition==='PURCHASE'?'買斷':'待確認';
+const status=x=>({PENDING:'待審核',APPROVED:'已核准',ORDERED:'已採購',READY:'待領取',FULFILLED:'已確認領用',CANCELLED:'已取消'})[x.status]||x.status;
+const pay=x=>({NONE:'未回報',REPORTED:'已回報匯款',VERIFIED:'已核帳'})[x.payment]||x.payment;
+function save(action){if(action)state.log.unshift(new Date().toLocaleString('zh-TW')+'｜'+action);localStorage.setItem(STORE,JSON.stringify(state));render()}
+function toast(msg){const t=q('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>t.style.display='none',2600)}
+function choices(list,selected){return list.map(x=>'<option value="'+escape(x.id)+'"'+(x.id===selected?' selected':'')+'>'+escape(x.name)+'（'+escape(x.grade)+' · '+x.group+' 團）</option>').join('')}
+function ordersHtml(list,admin){if(!list.length)return '<div class="notice">目前沒有符合條件的申請紀錄。</div>';
+return list.map(o=>'<div class="box"><div class="row"><strong>'+escape(kindLabel(o))+'｜'+escape(n(o))+'</strong><span class="badge '+(o.status==='FULFILLED'?'ok':'warn')+'">'+escape(status(o))+'</span></div><p class="hint">編號 '+escape(o.id)+'｜'+escape(o.style)+'款 '+escape(o.size)+'｜'+escape(acquire(o))+'｜'+o.quantity+' 件'+(o.acquisition==='PURCHASE'?'｜NT$ '+o.amount:'')+'</p><p class="muted">'+(o.acquisition==='PURCHASE'?'付款：'+pay(o):'公費不需匯款')+'</p>'+
+(admin?'<div class="actions"><button data-act="approve" data-id="'+o.id+'" '+(o.status!=='PENDING'?'disabled':'')+'>審核通過</button><button data-act="pay" data-id="'+o.id+'" '+(o.acquisition!=='PURCHASE'||o.payment!=='REPORTED'?'disabled':'')+'>財務確認入帳</button><button data-act="order" data-id="'+o.id+'" '+(o.status!=='APPROVED'||o.acquisition==='PURCHASE'&&o.payment!=='VERIFIED'?'disabled':'')+'>標記已採購</button><button data-act="ready" data-id="'+o.id+'" '+(o.status!=='ORDERED'?'disabled':'')+'>標記可領取</button><button data-act="fulfill" data-id="'+o.id+'" '+(o.status!=='READY'?'disabled':'')+'>確認已領用</button></div>':
+'<div class="actions">'+(o.acquisition==='PURCHASE'&&o.status!=='FULFILLED'?'<button data-act="report" data-id="'+o.id+'" '+(o.payment!=='NONE'?'disabled':'')+'>模擬回報匯款</button>':'')+'</div>')+'</div>').join('')}
+function homepage(){return '<div class="grid"><div class="card"><h2>👨‍👩‍👧 家長操作</h2><p>模擬團 T、比賽服公費或買斷選擇、活動報名、匯款回報。</p><button class="primary" data-go="uniform">開始家長申請 →</button></div><div class="card"><h2>🏫 學校後台</h2><p>模擬申請審核、付款確認、領用及活動清單匯出。</p><button class="primary" data-rolenav="admin">切換學校管理員 →</button></div></div><div class="card"><h2>目前情境</h2><div class="grid"><div class="box"><div class="stat">'+state.orders.length+'</div>模擬團服申請</div><div class="box"><div class="stat">'+state.events.length+'</div>模擬活動報名</div></div><p class="muted">預設資料包含 1 筆 A 團公費待審及 1 筆團 T 買斷待審，方便直接驗證。</p></div>'}
+function uniformPage(){
+if(role==='parent')return '<div class="card"><h2>🎽 家長｜團 T 與比賽服申請</h2><label for="student">選擇模擬學生</label><select id="student">'+choices(students,person)+'</select><div class="grid"><div><label for="item">申請品項</label><select id="item"><option value="competition">A 團比賽服</option><option value="tshirt">團 T</option></select></div><div><label for="acquisition">取得方式</label><select id="acquisition"><option value="PUBLIC">公費配發</option><option value="PURCHASE">自費買斷</option></select></div><div><label for="size">尺寸</label><select id="size"><option>XS</option><option>S</option><option>M</option><option>L</option><option>2L</option></select></div><div><label for="quantity">件數</label><input id="quantity" type="number" min="1" max="10" value="1"></div></div><p class="hint">A 團學生可選比賽服；非 A 團學生只示範團 T。金額是假資料，不提供任何真實匯款資訊。</p><button class="primary" id="submitUniform">送出模擬申請</button></div><div class="card"><h2>📦 我的申請進度</h2>'+ordersHtml(state.orders.filter(o=>o.studentId===person),false)+'</div>';
+return '<div class="card"><h2>🏫 學校後台｜團服申請審核</h2><p class="notice">只操作此 LAB 的模擬申請。審核與付款狀態變化會同步至此瀏覽器的家長畫面。</p>'+ordersHtml(state.orders,true)+'</div><div class="card"><h2>A 團比賽服｜學生與尺寸</h2>'+rosterHtml()+'</div>'}
+function rosterHtml(){
+let rows=students.filter(s=>s.group==='A').map(s=>{
+const o=state.orders.filter(o=>o.studentId===s.id&&o.kind==='competition'&&o.status!=='CANCELLED').at(-1);
+return '<tr><td>'+escape(s.name)+'<div class="hint">'+escape(s.id)+'</div></td><td>'+escape(o?o.style+'款 '+o.size:s.style+'款 '+s.size)+'</td><td>'+escape(o?acquire(o):'尚未申請')+'</td><td>'+escape(o?status(o):'待確認')+'</td></tr>'}).join('');
+return '<div class="table-scroll"><table><thead><tr><th>學生</th><th>款式與尺寸</th><th>取得方式</th><th>狀態</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="hint">與此 LAB 的 CSV 匯出使用同一份模擬資料。</p>'}
+function eventPage(){
+if(role==='parent')return '<div class="card"><h2>📅 家長｜活動報名</h2><label>模擬學生</label><select id="eventStudent">'+choices(students,eventPerson)+'</select><div class="grid">'+eventDefs.map(e=>'<div class="box"><h3>'+escape(e.name)+'</h3><p>活動日期：'+e.date+'</p><p>示範費用：NT$ '+e.fee+'</p><button class="primary" data-event="'+e.id+'">模擬報名</button></div>').join('')+'</div></div><div class="card"><h2>我的活動報名</h2>'+eventRows(false)+'</div>';
+return '<div class="card"><h2>🏫 學校後台｜活動報名管理</h2><p class="hint">可查看報名、將狀態改為已確認，並在 CSV 區匯出。</p>'+eventRows(true)+'</div>'}
+function eventRows(admin){const rows=state.events.filter(e=>admin||e.studentId===eventPerson);return rows.length?rows.map(e=>'<div class="box"><div class="row"><strong>'+escape(eventDefs.find(x=>x.id===e.eventId)?.name||e.eventId)+'｜'+escape(student(e.studentId).name)+'</strong><span class="badge '+(e.status==='CONFIRMED'?'ok':'warn')+'">'+(e.status==='CONFIRMED'?'已確認':'報名待確認')+'</span></div>'+(admin?'<button data-act="eventapprove" data-id="'+e.id+'" '+(e.status==='CONFIRMED'?'disabled':'')+'>確認報名</button>':'')+'</div>').join(''):'<div class="notice">尚無活動報名。</div>'}
+function recordsPage(){return '<div class="card"><h2>📦 '+(role==='admin'?'學校｜申請與領用紀錄':'家長｜申請進度')+'</h2>'+ordersHtml(role==='admin'?state.orders:state.orders.filter(x=>x.studentId===person),role==='admin')+'</div>'+'<div class="card"><h2>🗒️ 模擬異動紀錄</h2><ol>'+state.log.slice(0,12).map(x=>'<li>'+escape(x)+'</li>').join('')+'</ol></div>'}
+function exportPage(){if(role==='parent')return '<div class="card"><h2>CSV 匯出為後台功能</h2><p>請切換為「模擬學校後台」，演練匯出團 T、A 團比賽服和活動名單。</p><button data-rolenav="admin" class="primary">切換學校管理員 →</button></div>';
+return '<div class="card"><h2>📊 學校後台｜CSV 匯出</h2><p class="notice">檔案會以 LAB 模擬資料產生，不能當作正式申請、領用或收款明細。</p><div class="actions"><button class="primary" data-csv="tshirt">匯出團 T CSV</button><button class="primary" data-csv="competition">匯出 A 團比賽服 CSV</button><button class="primary" data-csv="event">匯出活動 CSV</button></div></div><div class="card"><h2>預覽：A 團比賽服</h2>'+rosterHtml()+'</div>'}
+function render(){q('role').value=role;document.querySelectorAll('[data-view]').forEach(b=>{b.classList.toggle('active',b.dataset.view===view);b.setAttribute('aria-current',b.dataset.view===view?'page':'false')});q('title').textContent=({home:'工作首頁',uniform:'團服與活動／團服申請',event:'活動報名',records:'申請與領用紀錄',export:'CSV 匯出'})[view];q('subtitle').textContent=role==='admin'?'目前身分：模擬學校管理員':'目前身分：模擬家長';
+q('panel').innerHTML=({home:homepage,uniform:uniformPage,event:eventPage,records:recordsPage,export:exportPage})[view]();
+const select=q('student');if(select){select.value=person;q('item').value=student(person).group==='A'?'competition':'tshirt';q('size').value=student(person).size;syncEligibility()}
+}
+function syncEligibility(){if(!q('item'))return;const isA=student(person).group==='A';if(!isA)q('item').value='tshirt';q('item').querySelector('option[value="competition"]').disabled=!isA;if(q('item').value==='tshirt')q('acquisition').value='PURCHASE';q('acquisition').querySelector('option[value="PUBLIC"]').disabled=q('item').value==='tshirt'}
+function csv(kind){
+let cols,rows;
+if(kind==='event'){cols=['報名編號','活動名稱','學生代號','模擬學生','狀態'];rows=state.events.map(e=>[e.id,eventDefs.find(x=>x.id===e.eventId)?.name||'',e.studentId,student(e.studentId).name,e.status==='CONFIRMED'?'已確認':'待確認'])}
+else{cols=['訂單編號','學生代號','學生姓名','團別','款式','尺寸','取得方式','申請狀態','付款狀態','金額','領用狀態'];rows=state.orders.filter(o=>o.kind===(kind==='tshirt'?'tshirt':'competition')).map(o=>[o.id,o.studentId,student(o.studentId).name,student(o.studentId).group,o.style,o.size,acquire(o),status(o),pay(o),o.amount,o.status==='FULFILLED'?'已領用':'尚未領用'])}
+const safeCell=v=>{let s=String(v??'');if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"'};
+const content='\uFEFF'+[cols,...rows].map(r=>r.map(safeCell).join(',')).join('\r\n');const href=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=href;a.download='LAB35_'+(kind==='event'?'活動報名':kind==='tshirt'?'團T':'A團比賽服')+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(href),1000);toast('已匯出 '+rows.length+' 筆 LAB 模擬資料')}
+document.addEventListener('change',e=>{if(e.target.id==='role'){role=e.target.value;render()}if(e.target.id==='student'){person=e.target.value;render()}if(e.target.id==='eventStudent'){eventPerson=e.target.value;render()}if(e.target.id==='item')syncEligibility()});
+document.addEventListener('click',e=>{
+const b=e.target.closest('button');if(!b)return;
+if(b.dataset.view){view=b.dataset.view;render();scrollTo(0,0);return}
+if(b.dataset.go){view=b.dataset.go;render();return}
+if(b.dataset.rolenav){role=b.dataset.rolenav;view='home';render();return}
+if(b.id==='reset'){if(confirm('重設本裝置的全部 LAB 模擬申請、活動與稽核紀錄？')){state=seed();save('重設 LAB 資料');toast('已還原情境資料')}return}
+if(b.id==='guide'){alert('LAB35 驗證流程：\n1. 家長端選學生送團 T 或比賽服申請\n2. 家長端模擬活動報名與匯款回報\n3. 切換學校後台，完成審核、核帳、採購、領用\n4. 至 CSV 匯出驗證同一筆資料\n5. 重設資料後再練習。');return}
+if(b.id==='submitUniform'){
+ const st=student(person),kind=q('item').value,ac=q('acquisition').value,qty=Number(q('quantity').value),size=q('size').value;
+ if(kind==='competition'&&st.group!=='A'){toast('只有 A 團學生可申請比賽服');return}
+ if(!Number.isInteger(qty)||qty<1||qty>10){toast('件數請填 1–10');return}
+ if(kind==='competition'&&ac==='PUBLIC'&&state.orders.some(o=>o.studentId===st.id&&o.kind===kind&&o.acquisition==='PUBLIC'&&o.status!=='CANCELLED')){toast('此模擬學生已有公費申請，請改選買斷或換學生');return}
+ const order={id:'LAB-'+String(state.next++).padStart(3,'0'),studentId:st.id,kind,acquisition:ac,style:st.style,size,quantity:qty,status:'PENDING',payment:'NONE',amount:ac==='PUBLIC'?0:kind==='tshirt'?qty*350:2500};
+ state.orders.push(order);save(st.name+' 新增 '+kindLabel(order)+' '+acquire(order)+'申請');toast('已建立 LAB 模擬申請');return}
+if(b.dataset.event){const def=eventDefs.find(x=>x.id===b.dataset.event);if(state.events.some(x=>x.studentId===eventPerson&&x.eventId===def.id)){toast('這名學生已經報名此活動');return}state.events.push({id:'LABE-'+String(state.next++).padStart(3,'0'),eventId:def.id,studentId:eventPerson,status:'PENDING'});save(student(eventPerson).name+' 報名 '+def.name);toast('LAB 報名成功');return}
+if(b.dataset.csv){csv(b.dataset.csv);return}
+if(b.dataset.act){const o=state.orders.find(x=>x.id===b.dataset.id);const ev=state.events.find(x=>x.id===b.dataset.id);let label='';
+switch(b.dataset.act){case 'approve':if(o?.status==='PENDING'){o.status='APPROVED';label='審核通過'}break;case 'report':if(o?.acquisition==='PURCHASE'&&o.payment==='NONE'){o.payment='REPORTED';label='家長已回報匯款'}break;case 'pay':if(o?.payment==='REPORTED'){o.payment='VERIFIED';label='學校已核帳'}break;case 'order':if(o?.status==='APPROVED'&&(o.acquisition==='PUBLIC'||o.payment==='VERIFIED')){o.status='ORDERED';label='已採購'}break;case 'ready':if(o?.status==='ORDERED'){o.status='READY';label='可領取'}break;case 'fulfill':if(o?.status==='READY'){o.status='FULFILLED';label='已確認領用'}break;case 'eventapprove':if(ev?.status==='PENDING'){ev.status='CONFIRMED';label='活動報名確認'}break}
+if(label){save((o?o.id:ev.id)+' '+label);toast('已模擬：'+label)}return}
+});
+render();
+})();
+</script></body></html>
