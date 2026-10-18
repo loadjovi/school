@@ -69,6 +69,8 @@
       <div class="card"><h2>老師清單（${state.teachers.length}）</h2>${state.teachers.length?state.teachers.map(teacherCard).join(""):'<div class="notice">目前尚未建立老師帳號。</div>'}</div>`;
   }
 
+  window.teacherAdminManagementHtml=function(){return managementPage().replace('onclick="closeTeacherAdmin()"','onclick="closeInlineTeacherAdmin()"').replace('← 返回後台首頁','← 返回帳號管理')};
+
   function selectedValues(id){const el=$(id);return el?[...el.selectedOptions].map(o=>o.value):[]}
   window.changeTeacherAccountType=function(k,value){const editor=$(`privateEditor_${k}`);if(editor)editor.style.display=value==="privateOnly"?"block":"none"};
   window.openTeacherAdmin=function(){state.teacherAdminOpen=true;render()};
