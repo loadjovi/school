@@ -65,9 +65,35 @@ function renderRoster(){
   badge.className="tshirt-roster-group";badge.textContent=group==="C"?"儲備":group+"團";person.append(badge);
   addCell("首次領用",unissued?"尚未領取":"已領取",unissued?"保留首次公費資格":issuedGrade==="年級待確認"?"年級待核對":issuedGrade+"領取");
   addCell("尺寸",size||"待填寫");
-  const action=addCell("家長處理",history?.source==="PARENT_CONFIRMED_FIRST_PUBLIC"?"已由家長確認領取":size?"尺寸已登錄":"待填寫尺寸",unissued?"尚未領取，保留首次免費資格":history?.receivedAt?"領取確認："+new Date(history.receivedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"}):"");
+  const action=addCell("家長處理",history?.source==="PARENT_CONFIRMED_FIRST_PUBLIC"?"雙方確認完成":history?.schoolIssuedAt?"學校已發放，待家長確認":size?"尺寸已登錄，待學校發放":"待家長填寫尺寸",history?.receivedAt?"家長確認："+new Date(history.receivedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"}):history?.schoolIssuedAt?"學校交付："+new Date(history.schoolIssuedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"})+"｜交付對象："+(history.schoolHandoffTo||"未記錄"):unissued?"尚未領取，保留首次免費資格":"");
   action.className="tshirt-roster-action";
-  if(size&&history?.source!=="PARENT_CONFIRMED_FIRST_PUBLIC"){
+  if(history?.source==="PARENT_SIZE_SURVEY"&&history.historicalIssued!==true&&size&&!history.schoolIssuedAt){
+   const details=document.createElement("details"),summary=document.createElement("summary");
+   summary.textContent="📦 確認學校已發放";details.append(summary);
+   const label=document.createElement("label");label.textContent="實際交付對象";
+   const recipient=document.createElement("input");recipient.type="text";recipient.maxLength=100;
+   recipient.placeholder="例如：學生本人／家長姓名";recipient.setAttribute("aria-label",name+" 的團 T 實際交付對象");
+   label.append(recipient);
+   const confirmButton=document.createElement("button");confirmButton.type="button";confirmButton.textContent="確認交付 1 件（"+size+"）";
+   const feedback=document.createElement("span");feedback.className="hint";feedback.setAttribute("role","status");
+   confirmButton.addEventListener("click",async()=>{
+    const to=recipient.value.trim();
+    if(!to){feedback.textContent="請填寫實際交付對象";recipient.focus();return}
+    if(!window.confirm("請核對："+name+" 已實際領到團 T "+size+" 尺寸 1 件，交付對象："+to+"。送出後將等待家長確認收到，確定嗎？"))return;
+    confirmButton.disabled=true;feedback.textContent="正在登記學校交付…";
+    try{
+     const headers=typeof window.uniformEventAuthHeaders==="function"?window.uniformEventAuthHeaders():{};
+     const response=await fetch("/api/uniform-events/tshirt-historical-size",{method:"PATCH",credentials:"same-origin",cache:"no-store",headers:{...headers,"Content-Type":"application/json"},
+      body:JSON.stringify({studentId,action:"SCHOOL_CONFIRM_HANDOFF",etag:history.etag,issuedSize:size,quantity:1,handoffTo:to,confirmedIssued:true})});
+     const result=await response.json().catch(()=>({}));
+     if(!response.ok)throw Error(result.error||("HTTP "+response.status));
+     await loadRoster();
+     byId("tshirtRosterStatus").textContent=name+" 已記錄學校交付團 T（"+size+"）1 件，待家長確認收到。";
+    }catch(error){feedback.textContent="發放確認失敗："+error.message;confirmButton.disabled=false}
+   });
+   details.append(label,confirmButton,feedback);action.append(details);
+  }
+  if(size&&!history?.schoolIssuedAt&&history?.source!=="PARENT_CONFIRMED_FIRST_PUBLIC"){
    const reset=document.createElement("button");
    reset.type="button";reset.textContent="退回待填寫";
    reset.title="保留領用紀錄，讓家長重新填寫團 T 尺寸";
