@@ -5,6 +5,7 @@ import { getTenantContext, ensureStudentAccess, getStudentAliasInfo, json } from
 import { getStudentMaster, listUserStudentMappings } from "../lib/storage.js";
 import { sendUniformRequestStatusEmail } from "../lib/email.js";
 import { getUniformPrice } from "../lib/uniformPricing.js";
+import {upsertCurrentCompetitionMaster,latestCompetitionRequest} from "../lib/competitionUniformMaster.js";
 
 const kinds=new Set(["regularUniform","competitionUniform","fieldTrip","yearEndDinner"]);
 // 已核對的歷史公費配發，依校別與學生 ID 登錄；不依姓名或尺寸推定資格。
@@ -122,7 +123,12 @@ app.http("uniformEventRequests",{
         // Audit before accepting mutation. If audit fails, request is not accepted.
         await audit(schoolId,access,"request.create",id,{kind:data.kind,studentId:data.studentId,acquisition:fields.acquisition||"",status:payload.status});
         await client.createEntity({partitionKey:schoolId,rowKey:id,payload:encode(payload),updatedAt:createdAt});
-        return json({item:{...payload,id}},201);
+        let masterSyncPending=false;
+        if(data.kind==="competitionUniform"){
+          try{await upsertCurrentCompetitionMaster(schoolId,student,{...payload,id},access.email||"parent")}
+          catch(error){masterSyncPending=true;console.error("competition master pending after request creation",id,error)}
+        }
+        return json({item:{...payload,id},masterSyncPending},201);
       }
       if(!validId(data.id)||!safe(data.etag,200))return err("Invalid update");
       const previous=await find(client,schoolId,data.id);
@@ -198,6 +204,19 @@ app.http("uniformEventRequests",{
       await audit(schoolId,access,action,data.id,auditDetail);
       try{await client.updateEntity({partitionKey:schoolId,rowKey:data.id,payload:encode(next),updatedAt:next.updatedAt},"Replace",{etag:previous.etag})}
       catch(e){if(e.statusCode===412)return err("Record changed, refresh and retry",409);throw e}
+      let masterSyncPending=false;
+      if(next.kind==="competitionUniform"){
+        try{
+          const student=await getStudentMaster(next.studentId,schoolId);
+          if(!student)throw Error("Student master not found");
+          const candidates=[];
+          for await(const row of client.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
+            const item=decode(row);
+            if(item.kind==="competitionUniform"&&String(item.studentId)===String(next.studentId))candidates.push(item);
+          }
+          await upsertCurrentCompetitionMaster(schoolId,student,latestCompetitionRequest(candidates,next.studentId),access.email||"admin");
+        }catch(error){masterSyncPending=true;console.error("competition master pending after request update",data.id,error)}
+      }
       let notificationStatus="not_attempted";
       if(shouldNotify){
         try{
@@ -213,7 +232,7 @@ app.http("uniformEventRequests",{
           if(result.status!=="sent")console.warn("uniform request email not fully sent",{requestId:data.id,status:result.status,recipientCount:result.recipientCount||0});
         }catch(e){notificationStatus="failed";console.error("uniform request email failed",{requestId:data.id,error:e?.message||String(e)})}
       }
-      return json({item:{...next,id:data.id},notificationStatus});
+      return json({item:{...next,id:data.id},notificationStatus,masterSyncPending});
     }catch(e){
       if(e instanceof SyntaxError||String(e.message||"").startsWith("Invalid")||String(e.message||"").startsWith("Only"))return err(e.message);
       console.error("uniformEventRequests",e);return err("Request processing failed",500);
