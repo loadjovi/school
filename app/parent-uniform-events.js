@@ -124,8 +124,8 @@ async function loadInlineSizes(){
    const editor=document.createElement("div");editor.append(label,save,state);
    if(item.size){
     editor.hidden=true;
-    const edit=document.createElement("button");edit.type="button";edit.textContent="修改尺寸";edit.addEventListener("click",()=>{editor.hidden=false;edit.hidden=true;sel.focus()});
-    box.append(edit,editor);
+    if(!item.schoolIssuedAt&&!issued){const edit=document.createElement("button");edit.type="button";edit.textContent="修改尺寸";edit.addEventListener("click",()=>{editor.hidden=false;edit.hidden=true;sel.focus()});box.append(edit)}
+    box.append(editor);
    }else box.append(editor);
    if(!issued){
     const receipt=document.createElement("div");receipt.className="tshirt-receipt-confirm";
