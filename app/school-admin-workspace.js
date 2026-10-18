@@ -91,7 +91,7 @@
    <div class="aw-more"><div class="aw-choice-list"><button type="button" data-workspace-group="records">操作紀錄 ›</button><button type="button" data-workspace-group="settings">平台設定 ›</button><button type="button" data-workspace-action="help">使用說明 ›</button><button type="button" data-admin-guide-reopen>重新查看入門引導 ›</button><button type="button" data-admin-logout>登出</button></div></div>
    <div class="aw-courses aw-choice-list"><button type="button" data-workspace-action="schoolSchedule"><b>課表與停課</b><small>學期課表匯入、指定日期課程、臨時停課</small></button><button type="button" data-workspace-action="specialCalendar"><b>行事曆與加練</b><small>加練點名、演出及特殊活動公告</small></button></div>
    <section class="aw-uniform" hidden><div class="aw-uniform-frame-wrap"><iframe id="awUniformFrame" title="團服與活動管理" loading="lazy" src="about:blank"></iframe></div></section><div class="aw-learning aw-choice-list"><button type="button" data-workspace-action="practiceProgress">自主練習月報 ›</button><button type="button" data-workspace-action="scores">學期考核 ›</button></div>
-   <div class="aw-account-panels"><div class="aw-account-school"></div><section id="awTeacherAccountCard" class="card" data-admin-group="accounts"><h2>👩‍🏫 藝享老師帳號</h2><div class="notice" id="awTeacherCount"></div><button type="button" class="secondary" data-open-teacher-admin>管理老師 →</button></section><div class="aw-account-family"></div></div><div class="aw-account-pending"></div><div class="aw-account-links"><button type="button" data-workspace-action="parentCorrection">修正家長綁定</button></div><div class="aw-attendance-links"><button type="button" data-workspace-action="attendanceTable">開啟出勤工作台</button></div>`;
+   <div class="aw-account-panels"><div class="aw-account-school"></div><section id="awTeacherAccountCard" class="card" data-admin-group="accounts"><h2>👩‍🏫 藝享老師帳號</h2><div class="notice" id="awTeacherCount"></div><button type="button" class="secondary" data-open-teacher-admin>管理老師 →</button></section><div id="awTeacherAccountDetails" class="aw-teacher-details" hidden></div><div class="aw-account-family"></div></div><div class="aw-account-pending"></div><div class="aw-account-links"><button type="button" data-workspace-action="parentCorrection">修正家長綁定</button></div><div class="aw-attendance-links"><button type="button" data-workspace-action="attendanceTable">開啟出勤工作台</button></div>`;
    main.prepend(root);root.querySelector('.aw-heading').after(root.querySelector('.aw-todos'));
   }
   const guide=document.getElementById('adminTaskGuide');if(guide){if(guide.nextElementSibling!==root)guide.after(root)}else if(main.firstElementChild!==root)main.prepend(root);
@@ -119,6 +119,15 @@
   const countLabel='啟用 '+active+' 人　停用 '+(teachers.length-active)+' 人';
   if(teacherCount.textContent!==countLabel)teacherCount.textContent=countLabel;
   accountPanels.hidden=group!=='accounts';
+  const teacherDetails=root.querySelector('#awTeacherAccountDetails');
+  const teacherSummary=root.querySelector('#awTeacherAccountCard');
+  const inlineOpen=group==='accounts'&&state.teacherAdminInlineOpen===true;
+  teacherSummary.hidden=inlineOpen;
+  teacherDetails.hidden=!inlineOpen;
+  if(inlineOpen&&typeof window.teacherAdminManagementHtml==='function'){
+   const html=window.teacherAdminManagementHtml();
+   if(teacherDetails.innerHTML!==html)teacherDetails.innerHTML=html;
+  }
   classify(main);
   for(const node of main.querySelectorAll('[data-admin-group]'))node.hidden=node.dataset.adminGroup!==group;
   for(const b of document.querySelectorAll('.desktop-menu-item[data-desktop-action]')){
@@ -151,7 +160,7 @@
   const button=e.target.closest?.('[data-workspace-group],[data-workspace-action],[data-open-teacher-admin]');if(!button)return;
   e.preventDefault();
   try{
-   if(button.hasAttribute('data-open-teacher-admin')){if(typeof window.openTeacherAdmin==='function')window.openTeacherAdmin();return}
+   if(button.hasAttribute('data-open-teacher-admin')){state.teacherAdminInlineOpen=true;organize();requestAnimationFrame(()=>document.getElementById('awTeacherAccountDetails')?.scrollIntoView({block:'start',behavior:'smooth'}));return}
    if(button.dataset.workspaceGroup)return await window.openSchoolAdminWorkspace(button.dataset.workspaceGroup);
    const key=button.dataset.workspaceAction;
    if(groups[key])return await window.openSchoolAdminWorkspace(key);
@@ -162,6 +171,7 @@
    await window.desktopNavigate(key);
   }catch(error){toast('操作未完成：'+(error?.message||error))}
  });
+ window.closeInlineTeacherAdmin=function(){state.teacherAdminInlineOpen=false;organize()};
  window.addEventListener('message',event=>{if(event.origin!==location.origin||event.source!==document.getElementById('awUniformFrame')?.contentWindow)return;if(event.data?.type==='school-uniform-height'){const frame=document.getElementById('awUniformFrame');const height=Number(event.data.height);if(frame&&Number.isFinite(height)&&height>=200&&height<=30000)frame.style.height=Math.ceil(height)+'px';}});
  let queued=false;
  new MutationObserver(()=>{if(!queued){queued=true;requestAnimationFrame(()=>{queued=false;organize()})}}).observe(document.getElementById('app'),{childList:true,subtree:true});
