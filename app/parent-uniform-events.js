@@ -101,15 +101,15 @@ async function loadInlineSizes(){
    const grade=String(item.receivedGrade||"");
    const issued=item.historicalIssued===true&&item.received!==false;
    const gradeLabel=grade?grade+"年級領取":"領取年級待確認";
-   const line=document.createElement("p");line.textContent=(item.studentName||item.studentId)+"｜團 T："+(item.size||"待填寫")+"｜"+(issued?"已領取 1 件｜"+(item.receivedAt?"家長確認："+new Date(item.receivedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"}):gradeLabel):"尚未領取")+"｜"+(item.size?"尺寸已登錄":"尺寸待填寫");summary.append(line);
+   const line=document.createElement("p");line.textContent=(item.studentName||item.studentId)+"｜團 T："+(item.size||"待填寫")+"｜"+(issued?"已領取 1 件｜"+(item.receivedAt?"家長確認："+new Date(item.receivedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"}):gradeLabel):item.schoolIssuedAt?"學校已發放，待家長確認":item.size?"待學校發放":"待填寫尺寸")+"｜"+(item.size?"尺寸已登錄":"尺寸待填寫");summary.append(line);
    const box=document.createElement("div");box.className="size-row";
-   const title=document.createElement("strong");title.textContent=(item.studentName||item.studentId)+"｜"+(issued?"已領取 1 件":"尚未領取，先登錄尺寸");
+   const title=document.createElement("strong");title.textContent=(item.studentName||item.studentId)+"｜"+(issued?"已領取 1 件｜僅核對尺寸":item.schoolIssuedAt?"學校已發放，待家長確認":item.size?"待學校發放":"尚未領取｜待填寫尺寸");
    const label=document.createElement("label");label.textContent=issued?"已領取團 T 尺寸":"預計首次公費領用團 T 尺寸";
    const sel=document.createElement("select");sel.setAttribute("aria-label",(item.studentName||item.studentId)+"的團 T 尺寸");
    sel.add(new Option("請選擇尺寸",""));for(const size of TSHIRT_SIZES)sel.add(new Option(size,size));
    sel.value=item.size||"";
-   const save=document.createElement("button");save.type="button";save.textContent="儲存尺寸";
-   const state=document.createElement("span");state.className="hint";state.style.marginLeft="8px";state.textContent=item.size?"已登錄 "+item.size:"待補登";
+   const save=document.createElement("button");save.type="button";save.textContent=issued?"確認已領取尺寸":"儲存預計領取尺寸";
+   const state=document.createElement("span");state.className="hint";state.style.marginLeft="8px";state.textContent=item.size?(issued?"已領取｜尺寸 "+item.size:"已登錄 "+item.size):issued?"待家長核對已領取尺寸":"待家長填寫尺寸";
    save.addEventListener("click",async()=>{
     if(!sel.value){state.textContent="請先選擇尺寸";return}
     save.disabled=true;state.textContent="儲存中…";
@@ -117,14 +117,14 @@ async function loadInlineSizes(){
      const resp=await fetch("/api/uniform-events/tshirt-historical-size",{method:"PATCH",credentials:"same-origin",headers:{"Content-Type":"application/json",...parentAuthHeaders()},body:JSON.stringify({studentId:item.studentId,size:sel.value,etag:item.etag})});
      const result=await resp.json().catch(()=>({}));
      if(!resp.ok)throw Error(result.error||"HTTP "+resp.status);
-     state.textContent="尺寸已儲存";window.parent.postMessage({type:"parent-tshirt-size-saved"},location.origin);await loadInlineSizes();
+     state.textContent="尺寸已儲存";window.parent.postMessage({type:"parent-tshirt-size-saved"},location.origin);await loadInlineSizes();await loadUniformRequestProgress();
     }catch(e){state.textContent="儲存失敗："+e.message}finally{save.disabled=false}
    });
    label.append(sel);
    const editor=document.createElement("div");editor.append(label,save,state);
    if(item.size){
     editor.hidden=true;
-    if(!item.schoolIssuedAt&&!issued){const edit=document.createElement("button");edit.type="button";edit.textContent="修改尺寸";edit.addEventListener("click",()=>{editor.hidden=false;edit.hidden=true;sel.focus()});box.append(edit)}
+    if(!item.schoolIssuedAt&&item.source!=="PARENT_CONFIRMED_FIRST_PUBLIC"){const edit=document.createElement("button");edit.type="button";edit.textContent=issued?"核對／更正已領取尺寸":"修改預計領取尺寸";edit.addEventListener("click",()=>{editor.hidden=false;edit.hidden=true;sel.focus()});box.append(edit)}
     box.append(editor);
    }else box.append(editor);
    if(!issued){
@@ -266,19 +266,46 @@ function requestStage(item){
  if(item.status==="READY_FOR_PICKUP"&&item.acquisition!=="PUBLIC"&&item.paymentStatus!=="VERIFIED")return {title:"待財務核帳，暫不可領取",next:"請等待學校確認入帳；核帳完成後再依學校通知領取。"};
  return uniformRequestStage[item.status]||{title:"狀態待確認",next:"請洽學校確認目前進度。"};
 }
+// Display first-time T-shirt records in the same "我的團服申請進度" area.
+// These are historical/first-free entitlements, NOT extra purchase orders.
+function firstTshirtProgress(record){
+ const issued=record?.historicalIssued===true&&record.received!==false;
+ if(issued)return {title:record?.size?"已領取｜尺寸已登錄":"已領取｜尺寸待核對",detail:"首次團 T 已領取，僅需核對／補登尺寸，不必重新申請或再次領取。"};
+ if(record?.schoolIssuedAt)return {title:"學校已發放，待家長確認",detail:"學校已記錄團 T 交付，請確認孩子實際收到後，再於下方團 T 區點選領取確認。"};
+ if(record?.size)return {title:"待學校發放",detail:"已完成尺寸登錄，學校尚未確認交付；首次公費資格暫時保留。"};
+ return {title:"待填寫尺寸",detail:"尚未領取團 T。請先在下方團 T 區選擇並儲存尺寸，再等待學校發放。"};
+}
+function renderFirstTshirtProgress(host,records){
+ for(const record of records){
+  const status=firstTshirtProgress(record),name=record.studentName||record.studentId;
+  const card=element("div",undefined,"card");card.style.margin="10px 0";
+  card.append(element("strong","🎽 首次團 T 領用｜"+name));
+  card.append(element("span",status.title,"status-pill"));
+  card.append(element("p",status.detail,"hint"));
+  card.append(element("p","尺寸："+(record.size||"待填寫")+"｜"+(record.historicalIssued===true?"歷史領取紀錄":"首次公費領用"),"muted"));
+  if(record.schoolIssuedAt)card.append(element("p","學校交付時間："+formatDate(record.schoolIssuedAt),"muted"));
+  if(record.receivedAt)card.append(element("p","家長確認時間："+formatDate(record.receivedAt),"muted"));
+  host.append(card);
+ }
+}
 async function loadUniformRequestProgress(){
  const summary=document.getElementById("uniformRequestSummary"),history=document.getElementById("uniformRequestHistory");
  if(!summary||!history)return;
  summary.replaceChildren(element("p","正在更新申請進度…","muted"));
  try{
-  const [result,me]=await Promise.all([parentApi("uniform-events/requests"),parentApi("me")]);
+  const [result,me,tshirtOutcome]=await Promise.all([parentApi("uniform-events/requests"),parentApi("me"),parentApi("uniform-events/tshirt-historical-size").then(data=>({items:data.items||[]})).catch(error=>({error:error.message,items:[]}))]);
   if(me.role!=="parent")throw Error("請切換至家長身分後重新載入");
   if(!growthStudents.length){growthStudents=me.students||[];renderUniformGrowth()}
   const names=new Map((me.students||[]).map(x=>[String(x.studentId),x.name||x.studentName||x.studentId]));
   const requests=(result.items||[]).filter(x=>["regularUniform","competitionUniform"].includes(x.kind)).sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||"")));
   growthRequests=requests;publicUsedStudentIds=new Set((result.publicUsedStudentIds||[]).map(String));historicalPublicStudentIds=new Set((result.historicalPublicStudentIds||[]).map(String));growthRequestsLoaded=true;syncCompetitionPublicEligibility();renderUniformGrowth();
   summary.replaceChildren();history.replaceChildren();
-  if(!requests.length){summary.append(element("p","目前沒有團服申請。送出後可在此查看學校審核與後續進度。","muted"));history.append(element("p","目前沒有團服申請紀錄。","muted"));return}
+  if(tshirtOutcome.error)summary.append(element("p","暫時無法讀取首次團 T 領用狀態："+tshirtOutcome.error+"。請按重新整理再試。","hint"));
+  else renderFirstTshirtProgress(summary,tshirtOutcome.items);
+  if(!requests.length){
+   if(!tshirtOutcome.items.length)summary.append(element("p","目前沒有團服申請。送出後可在此查看學校審核與後續進度。","muted"));
+   history.append(element("p","目前沒有新購／加購申請紀錄；首次團 T 領用狀態請查看上方。","muted"));return
+  }
   const approved=requests.filter(x=>x.status==="APPROVED").length;
   summary.append(element("p",`共 ${requests.length} 筆團服申請${approved?`，其中 ${approved} 筆已核准`:""}。`));
   for(const item of requests){
