@@ -1,0 +1,52 @@
+name: LAB35 Cadre Training Preview
+
+on:
+  push:
+    branches:
+      - lab35-cadre-training
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lab35-cadre-preview
+  cancel-in-progress: true
+
+jobs:
+  deploy_lab35:
+    if: github.ref == 'refs/heads/lab35-cadre-training'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate isolated LAB HTML and simulated-only execution
+        shell: bash
+        run: |
+          test -s lab35/index.html
+          python3 - <<'PY'
+          from pathlib import Path
+          html=Path('lab35/index.html').read_text(encoding='utf-8')
+          assert '<!doctype html>' in html.lower()
+          assert html.count('<script>')==1
+          assert html.count('</script>')==1
+          assert "LAB35" in html
+          assert all(word in html for word in ('團 T','比賽服','活動報名','CSV 匯出'))
+          banned=('/api/','fetch(', 'google_id_token','sessionStorage','XMLHttpRequest')
+          assert not any(word in html for word in banned), 'LAB must not call production APIs'
+          script=html.split('<script>',1)[1].split('</script>',1)[0]
+          Path('/tmp/lab35-validate.js').write_text(script,encoding='utf-8')
+          PY
+          node --check /tmp/lab35-validate.js
+      - name: Deploy named isolated Azure preview lab35
+        uses: Azure/static-web-apps-deploy@v1
+        id: deploy
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_LIVELY_FIELD_09AFDDC00 }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: lab35
+          api_location: ""
+          output_location: ""
+          skip_app_build: true
+          skip_api_build: true
+          deployment_environment: lab35
