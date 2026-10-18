@@ -7,29 +7,67 @@
  const guideTasks={parents:['核准家長帳號','accounts','① 找到待審申請 → ② 核對學生 → ③ 核准綁定'],students:['新增或調整學生','students','① 找到學生或新增資料 → ② 填寫異動內容 → ③ 儲存並核對'],cancel:['設定停課','schoolSchedule','① 選課程並按停課 → ② 選停課日期 → ③ 填寫原因並確認'],uniform:['處理團服申請','uniformAdmin','① 選團 T 或比賽服 → ② 進入家長申請 → ③ 依付款與領取進度處理'],event:['建立活動','activitySettings','① 選活動類型 → ② 填日期、團別與費用 → ③ 核對帳戶及家長顯示設定']};
  const scopeKey=()=>{let school=state.me?.schoolId||'';try{school=school||sessionStorage.getItem('school_context_id')||''}catch{}return String(state.me?.email||'')+'|'+String(school)};
  const guideKey=()=> 'school-admin-guide:'+scopeKey();
- let summary={key:'',loading:false,loadedAt:0,uniform:null,family:null,error:false};
+ // Treat the day as Asia/Taipei, regardless of the administrator's device timezone.
+ function taipeiClock(now=new Date()){
+  const values=Object.fromEntries(new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(now).map(part=>[part.type,part.value]));
+  return {date:[values.year,values.month,values.day].join('-'),minute:Number(values.hour)*60+Number(values.minute)};
+ }
+ // Counts are based on the existing daily-followup API, not synthetic alerts.
+ // A "followup" is an absent attendance entry, not proof of an uncontacted family:
+ // the current database has no separate followup-resolution field.
+ function attendanceTodoCounts(report,now=new Date()){
+  const clock=taipeiClock(now);
+  if(!report||report.date!==clock.date)return {absent:0,unmarked:0};
+  const groupTypes=new Set(['section','ensemble','comprehensive']);
+  const absent=(Array.isArray(report.items)?report.items:[]).filter(row=>row.status==='absent'&&groupTypes.has(row.classType)).length;
+  const unmarked=(Array.isArray(report.courseSummary)?report.courseSummary:[]).filter(course=>{
+   if(course.scheduleStatus!=='active'||!(Number(course.expected)>0)||Number(course.recorded)>=Number(course.expected))return false;
+   // A missing/unspecified lesson end time is not sufficient evidence of lateness.
+   const match=String(course.time||'').match(/[–—~～-]\s*(\d{1,2}):(\d{2})\s*$/);
+   if(!match)return false;
+   const end=Number(match[1])*60+Number(match[2]);
+   return Number(match[1])<24&&Number(match[2])<60&&clock.minute>=end;
+  }).length;
+  return {absent,unmarked};
+ }
+ const taskScopeKey=()=>scopeKey()+'|'+taipeiClock().date;
+ let summary={key:'',loading:false,loadedAt:0,uniform:null,family:null,attendance:null,error:false};
  function guideDismissed(){try{return localStorage.getItem(guideKey())==='done'}catch{return false}}
  async function loadTasks(force=false){
   if(state.me?.role!=='admin'||summary.loading)return;
-  const key=scopeKey();if(!force&&summary.key===key&&Date.now()-summary.loadedAt<60000)return;
-  summary={key,loading:true,loadedAt:0,uniform:null,family:null,error:false};organize();
-  const results=await Promise.allSettled([api('/api/uniform-events/requests'),...(state.me?.capabilities?.financeVerifier===true?[api('/api/uniform-events/family-registration')]:[])]);
-  if(state.me?.role!=='admin'||scopeKey()!==key){summary.loading=false;return}
-  summary.uniform=results[0].status==='fulfilled'?(results[0].value.items||[]):null;
-  summary.family=results[1]?.status==='fulfilled'?(results[1].value.items||[]):null;
-  summary.error=results.some(x=>x.status==='rejected');summary.loading=false;summary.loadedAt=Date.now();organize();
+  const key=taskScopeKey(),date=taipeiClock().date;
+  if(!force&&summary.key===key&&Date.now()-summary.loadedAt<60000)return;
+  summary={key,loading:true,loadedAt:0,uniform:null,family:null,attendance:null,error:false};organize();
+  const sources=[
+   ['uniform',api('/api/uniform-events/requests')],
+   ...(state.me?.capabilities?.financeVerifier===true?[['family',api('/api/uniform-events/family-registration')]]:[]),
+   ['attendance',api('/api/daily-followup?date='+encodeURIComponent(date))]
+  ];
+  const results=await Promise.allSettled(sources.map(([,request])=>request));
+  if(state.me?.role!=='admin'||taskScopeKey()!==key){summary.loading=false;return}
+  const values=Object.fromEntries(sources.map(([name],index)=>[name,results[index].status==='fulfilled'?results[index].value:null]));
+  summary.uniform=Array.isArray(values.uniform?.items)?values.uniform.items:null;
+  summary.family=Array.isArray(values.family?.items)?values.family.items:null;
+  summary.attendance=values.attendance?.date===date?values.attendance:null;
+  summary.error=results.some(result=>result.status==='rejected')||!summary.attendance||summary.uniform===null||(sources.some(([name])=>name==='family')&&summary.family===null);
+  summary.loading=false;summary.loadedAt=Date.now();organize();
  }
  function todoHtml(){
   const rows=[],pending=state.registrations?.length||0;
-  if(pending)rows.push(['parents','家長綁定待審',pending]);
+  if(pending)rows.push(['parents','家長綁定待審',pending,'筆']);
+  if(summary.attendance){
+   const counts=attendanceTodoCounts(summary.attendance);
+   if(counts.absent)rows.push(['absent','學生缺席待追蹤（今日）',counts.absent,'筆']);
+   if(counts.unmarked)rows.push(['unmarked','老師尚未完成點名（今日已下課）',counts.unmarked,'堂']);
+  }
   for(const [kind,label,key] of [['regularUniform','團 T 申請待審','tshirt'],['competitionUniform','比賽服申請待審','competition']]){
-   const count=summary.uniform?.filter(x=>x.kind===kind&&x.status==='PENDING').length||0;if(count)rows.push([key,label,count]);
+   const count=summary.uniform?.filter(x=>x.kind===kind&&x.status==='PENDING').length||0;if(count)rows.push([key,label,count,'筆']);
   }
   if(state.me?.capabilities?.financeVerifier===true&&summary.uniform!==null&&summary.family!==null){
    const count=(summary.uniform?.filter(x=>!['CANCELLED','FULFILLED'].includes(x.status)&&x.paymentStatus==='REPORTED_UNVERIFIED').length||0)+(summary.family?.filter(x=>x.registrationStatus==='REGISTERED'&&x.paymentStatus==='REPORTED_UNVERIFIED').length||0);
-   if(count)rows.push(['finance','匯款待核帳',count]);
+   if(count)rows.push(['finance','匯款待核帳',count,'筆']);
   }
-  return rows.map(([key,label,count])=>`<button type="button" class="aw-todo" data-admin-todo="${key}"><span>${label}</span><b>${count} 筆</b><span aria-hidden="true">›</span></button>`).join('')+(summary.loading?'<p role="status">正在讀取待辦…</p>':summary.error?'<p class="notice" role="status">部分待辦讀取失敗，請重新讀取；尚未確認的項目不列為 0 筆。</p>':summary.loadedAt&&!rows.length?'<p class="notice">目前沒有待審申請或待核帳款項。</p>':'');
+  return rows.map(([key,label,count,unit])=>`<button type="button" class="aw-todo" data-admin-todo="${key}"><span>${label}</span><b>${count} ${unit}</b><span aria-hidden="true">›</span></button>`).join('')+(summary.loading?'<p role="status">正在讀取待辦…</p>':summary.error?'<p class="notice" role="status">部分待辦讀取失敗，請重新讀取；尚未確認的項目不列為 0 筆。</p>':summary.loadedAt&&!rows.length?'<p class="notice">目前沒有待審申請或待核帳款項。</p>':'');
  }
  function mountGuide(main){
   const key=state.adminGuideTask,candidate=guideTasks[key],expected={parents:'admin',students:'students',cancel:'schoolSchedule'}[key],task=candidate&&state.page===expected&&(key!=='parents'||state.adminWorkspaceSection==='accounts')?candidate:null;let panel=document.getElementById('adminTaskGuide');
@@ -98,7 +136,7 @@
   text('h1',groups[group][0]);text('.aw-heading p',groups[group][1]);
   for(const [selector,visible] of [['.aw-todos',['home','tasks'].includes(group)],['.aw-more',group==='more'],['.aw-courses',group==='courses'],['.aw-uniform',group==='uniformAdmin']])root.querySelector(selector).hidden=!visible;
   const todos=todoHtml(),body=root.querySelector('[data-todo-body]');if(body.innerHTML!==todos)body.innerHTML=todos;
-  if(['home','tasks'].includes(group)&&!summary.loading&&(summary.key!==scopeKey()||!summary.loadedAt))setTimeout(()=>loadTasks(),0);
+  if(['home','tasks'].includes(group)&&!summary.loading&&(summary.key!==taskScopeKey()||!summary.loadedAt))setTimeout(()=>loadTasks(),0);
   root.querySelector('.aw-account-pending').hidden=group!=='accounts';
   for(const card of main.querySelectorAll('.desktop-content > .card'))if(card.querySelector('h2')?.textContent.includes('待審核'))root.querySelector('.aw-account-pending').append(card);
   const uniformFrame=root.querySelector('#awUniformFrame');if(group==='uniformAdmin'&&uniformFrame&&uniformFrame.getAttribute('src')==='about:blank')uniformFrame.src='/uniform-event-admin.html?embedded=school';
@@ -142,6 +180,13 @@
    if(b.hasAttribute('data-admin-guide-reopen')){await window.openSchoolAdminWorkspace('home');document.querySelector('.aw-onboarding').open=true;return}
    if(b.hasAttribute('data-admin-todo-reload')){await loadTasks(true);return}
    if(b.dataset.adminTodo){
+    if(['absent','unmarked'].includes(b.dataset.adminTodo)){
+     await window.openSchoolAdminWorkspace('attendance');
+     // The old attendance panel may still be looking at a historical day.
+     if(typeof window.todayAdminFollowup==='function')await window.todayAdminFollowup();
+     requestAnimationFrame(()=>{const panel=[...document.querySelectorAll('#adminOperations .card')].find(card=>card.querySelector('h2')?.textContent.includes('當日未到／請假追蹤'));panel?.scrollIntoView({block:'start',behavior:'smooth'});});
+     return;
+    }
     if(b.dataset.adminTodo==='parents'){await window.openSchoolAdminWorkspace('accounts');requestAnimationFrame(()=>[...document.querySelectorAll('.card')].find(x=>x.querySelector('h2')?.textContent.includes('待審核'))?.scrollIntoView({block:'center'}));return}
     const task={tshirt:'tshirt',competition:'competition',finance:'finance'}[b.dataset.adminTodo];if(task){await window.openSchoolAdminWorkspace('uniformAdmin');const frame=document.getElementById('awUniformFrame');if(frame)frame.src='/uniform-event-admin.html?embedded=school&task='+encodeURIComponent(task)}return;
    }
