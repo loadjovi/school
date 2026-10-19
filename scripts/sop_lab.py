@@ -70,7 +70,7 @@ a{color:#3154a0}a.link{display:inline-flex;padding:12px 16px;border-radius:10px;
 .check{display:flex;gap:10px;align-items:flex-start;padding:14px 0;border-top:1px solid #e6e9f1}
 .check input{height:21px;width:21px;flex:0 0 auto;margin-top:3px}
 .check b{display:block}.check small{display:block}
-button{cursor:pointer;padding:9px 13px;border:1px solid #748ab9;color:#1d315a;border-radius:9px;background:#fff;font:inherit}
+button,select{padding:9px 13px;border:1px solid #748ab9;color:#1d315a;border-radius:9px;background:#fff;font:inherit}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}
 .notice{background:#f7f8ee;border-radius:10px;padding:12px;border:1px solid #dddcb8}
 .meta{font-family:monospace;overflow-wrap:anywhere;font-size:13px}
 @media(max-width:500px){header h1{font-size:20px}.card{padding:13px}}
@@ -104,14 +104,26 @@ button{cursor:pointer;padding:9px 13px;border:1px solid #748ab9;color:#1d315a;bo
  <p class="muted">若你是在另一個分頁登入：請先<a href="/">於此分頁開啟 LAB 完整平台</a>登入並選擇學校管理員，然後點 LAB 右上方新增的「SOP LAB」捷徑返回；不需複製登入憑證。</p>
 </section>
 <section class="card">
- <h2>04｜SOP 驗證項目</h2>
+ <h2>04｜將目前帳號綁定為 LAB 測試家長</h2>
+ <p>要拍攝家長端警示／團 T 申請進度，必須先用家長身分綁定虛構學生。此功能只會在獨立 LAB 建立<strong>目前登入帳號</strong>與所選假學生的家長關聯，完全不會綁定其他人的 Gmail。</p>
+ <div class="notice">建議先選「測試戊同學（990105，未填尺寸）」驗證首頁黃色提醒；再選「測試甲同學（990101，學校已交付）」驗證家長確認領取。請使用專門的 LAB 測試帳號；即使在獨立 LAB 也不建議和真實家長資料混用。</div>
+ <div class="row">
+  <select id="lab-parent-student" aria-label="選擇虛構 LAB 學生"><option value="">請先讀取 LAB 學生</option></select>
+  <button type="button" id="lab-parent-refresh">讀取測試學生</button>
+  <button type="button" id="lab-parent-bind">綁定為測試家長</button>
+  <button type="button" id="lab-parent-switch" disabled>切換家長角色查看提醒 →</button>
+ </div>
+ <p class="muted" role="status" aria-live="polite" id="lab-parent-message">先以 LAB 學校管理員身分登入，讀取五位虛構學生。</p>
+</section>
+<section class="card">
+ <h2>05｜SOP 驗證項目</h2>
  <p>每個情境建議擷取：操作入口、輸入畫面、送出結果、對應角色畫面、CSV（若適用）。僅使用假學生資料。</p>
  <div id="scenarios"></div>
  <div class="row"><button id="export">匯出 SOP 驗收清單 JSON</button><button id="reset">清除本機核對勾選</button></div>
  <p class="muted">核對紀錄僅存於此瀏覽器，不會改動 LAB 或正式資料庫。</p>
 </section>
 <section class="card">
- <h2>05｜發現畫面不符合需求？</h2>
+ <h2>06｜發現畫面不符合需求？</h2>
  <p><strong>請不要單獨修改 SOP LAB 的 HTML。</strong> 從 GitHub 共用的 <code>app/</code> 修正，再部署該修正分支到 SOP LAB 驗證。畫面通過後才合併 <code>main</code>，使正式平台同步修正。</p>
  <p class="notice">提交問題前請移除學生姓名、信箱、Token、金鑰及任何正式資料。</p>
  <a class="link" rel="noopener noreferrer" target="_blank" href="https://github.com/loadjovi/school/issues/new?template=sop-screen-mismatch.yml">🛠️ 提報畫面差異</a>
@@ -201,6 +213,76 @@ q("create-fixtures").addEventListener("click",async()=>{
   message.textContent="✅ "+data.message+"；新增 "+data.created+" 筆／修補原始 LAB 團 T "+(data.repaired||0)+" 筆／保留既有 "+data.existing+" 筆。請從完整平台首頁重新整理查看。";
  }catch(error){message.textContent="⚠️ "+error.message}
  finally{button.disabled=false}
+});
+let labParentBindings=[],labBindingSchoolId="";
+const bindSelect=q("lab-parent-student");
+const parentStatus=q("lab-parent-message");
+const parentSwitch=q("lab-parent-switch");
+function selectedLabParent(){
+ return labParentBindings.find(item=>item.studentId===bindSelect.value);
+}
+function refreshSwitchState(){
+ parentSwitch.disabled=!selectedLabParent()?.bound;
+}
+async function labParentRequest(method="GET",payload){
+ const headers=schoolAdminHeaders();
+ const url="/api/sop-lab/parent-binding";
+ const response=await fetch(url,{method,credentials:"same-origin",cache:"no-store",headers,
+  ...(method==="POST"?{body:JSON.stringify(payload)}:{})});
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw Error(data.error||"LAB 家長綁定失敗（HTTP "+response.status+"）");
+ return data;
+}
+q("lab-parent-refresh").addEventListener("click",async()=>{
+ parentStatus.textContent="正在讀取 LAB 虛構學生…";
+ const prior=bindSelect.value;
+ try{
+  const data=await labParentRequest();
+  labParentBindings=data.items||[];
+  labBindingSchoolId=data.schoolId||"";
+  bindSelect.replaceChildren();
+  for(const item of labParentBindings){
+   const option=document.createElement("option");
+   option.value=item.studentId;
+   option.textContent=item.name+"（"+item.studentId+"）"+(item.bound?"｜目前帳號已綁定":"");
+   option.disabled=!item.available;
+   bindSelect.append(option);
+  }
+  if(labParentBindings.some(x=>x.studentId===prior&&x.available))bindSelect.value=prior;
+  else if(labParentBindings.some(x=>x.studentId==="990105"&&x.available))bindSelect.value="990105";
+  parentStatus.textContent="已取得虛構學生；選擇要測試的情境，綁定後切換家長角色。";
+  refreshSwitchState();
+ }catch(e){parentStatus.textContent="⚠️ "+e.message;parentSwitch.disabled=true}
+});
+bindSelect.addEventListener("change",refreshSwitchState);
+q("lab-parent-bind").addEventListener("click",async()=>{
+ const selected=selectedLabParent();
+ if(!selected?.available){parentStatus.textContent="⚠️ 請先讀取並選擇 LAB 虛構學生";return}
+ if(!confirm("只在 LAB，將目前登入帳號綁定為「"+selected.name+"」的測試家長？這是模擬關聯，不表示真實親子關係。"))return;
+ const button=q("lab-parent-bind");button.disabled=true;
+ parentStatus.textContent="正在新增 LAB 測試家長關聯…";
+ try{
+  const result=await labParentRequest("POST",{studentId:selected.studentId,confirmation:"BIND_MY_LAB_PARENT"});
+  selected.bound=true;
+  parentStatus.textContent="✅ "+(result.alreadyBound?"此帳號已綁定該虛構學生":"LAB 家長測試關聯已建立")+"。接著可切換家長角色。"+(result.auditSaved===false?"（異動稽核寫入異常，請檢查紀錄）":"");
+  refreshSwitchState();
+ }catch(e){parentStatus.textContent="⚠️ "+e.message}
+ finally{button.disabled=false}
+});
+parentSwitch.addEventListener("click",async()=>{
+ const selected=selectedLabParent();
+ if(!selected?.bound){parentStatus.textContent="請先綁定測試學生";return}
+ try{
+  const data=await labParentRequest();
+  const verified=(data.items||[]).find(item=>item.studentId===selected.studentId);
+  if(!verified?.bound||!verified.available)throw Error("測試家長關聯尚未生效，請重新讀取後確認");
+  const schoolId=data.schoolId||labBindingSchoolId;
+  if(!schoolId)throw Error("無法取得 LAB schoolId");
+  // Same-tab role switch mirrors selectIdentityContext in the real app.
+  sessionStorage.setItem("school_context_id",schoolId);
+  sessionStorage.setItem("role_context","parent");
+  location.assign("/");
+ }catch(e){parentStatus.textContent="⚠️ "+e.message}
 });
 q("reset").addEventListener("click",()=>{
  if(!confirm("清除這台瀏覽器的 SOP 核對勾選？此操作不會刪除資料庫資料。"))return;
