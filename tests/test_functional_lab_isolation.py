@@ -1,4 +1,6 @@
 import importlib.util
+import hashlib
+import json
 import os
 import subprocess
 import tempfile
@@ -63,6 +65,42 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         self.assertTrue((self.lab/"app/uniform-event-admin.html").is_file())
         self.assertTrue((self.lab/"api/src/functions/tshirtHistoricalSize.js").is_file())
         self.assertTrue((self.lab/"api/src/functions/uniformEventRequests.js").is_file())
+
+    def test_sop_lab_uses_identical_real_production_javascript_and_css(self):
+        for original in (ROOT/"app").rglob("*"):
+            if not original.is_file() or original.suffix.lower() not in (".js",".css"):
+                continue
+            actual=self.lab/"app"/original.relative_to(ROOT/"app")
+            self.assertEqual(actual.read_bytes(),original.read_bytes(),
+                             "SOP LAB must not repaint the production view: "+str(original))
+    def test_sop_lab_source_manifest_is_reproducible(self):
+        location=self.lab/"app/sop-lab/source-manifest.json"
+        manifest=json.loads(location.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["source_repository"],"loadjovi/school")
+        self.assertEqual(manifest["purpose"],"sop-lab")
+        for name,digest in manifest["source_file_hashes"].items():
+            self.assertEqual(hashlib.sha256((ROOT/"app"/name).read_bytes()).hexdigest(),digest)
+        for page in ("index.html","parent-uniform-events.html","uniform-event-admin.html"):
+            self.assertIn(page,manifest["source_file_hashes"])
+    def test_real_screen_shortcuts_never_rebuild_a_fake_school_ui(self):
+        hub=(self.lab/"app/sop-lab/index.html").read_text(encoding="utf-8")
+        self.assertIn('href="/"',hub)
+        self.assertIn('href="/parent-uniform-events.html"',hub)
+        self.assertIn('href="/uniform-event-admin.html"',hub)
+        self.assertNotIn("localStorage.setItem('google_id_token'",hub)
+        self.assertTrue((self.lab/"app/sop-lab/scenarios.json").is_file())
+        scenarios=json.loads((self.lab/"app/sop-lab/scenarios.json").read_text(encoding="utf-8"))
+        self.assertGreaterEqual(len(scenarios),6)
+    def test_manual_workflow_deploys_selected_branch_and_never_production_token(self):
+        flow=(ROOT/".github/workflows/school-functional-uat-lab.yml").read_text(encoding="utf-8")
+        self.assertIn("github.ref_name",flow)
+        self.assertNotIn("ref: main",flow)
+        self.assertIn('if [[ "$LAB_TOKEN" == "$PROD_TOKEN" ]]',flow)
+        self.assertIn("AZURE_STATIC_WEB_APPS_API_TOKEN_SCHOOL_FUNCTIONAL_LAB",flow)
+    def test_sop_hub_javascript_syntax(self):
+        result=subprocess.run(["node","--check",str(self.lab/"app/sop-lab/sop.js")],
+                              capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
 
 if __name__=="__main__":
     unittest.main()
