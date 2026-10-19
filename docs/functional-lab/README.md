@@ -61,3 +61,22 @@
 - 交接清單：LAB 網址、Azure Resource Group、獨立 Storage 名稱、Google OAuth Client 名稱、GitHub Actions Workflow、UAT 測試帳號保管方式、SOP Word／PDF、最近驗證結果。
 - 不要在 SOP 附上 Access Key、Deployment Token、OAuth Client Secret、Storage connection string。
 - 此文件是「準備版」，須在獨立 Azure 資源建好且用假資料實際操作截圖後，更新為「已驗收正式 SOP」。
+
+## 八、SOP LAB：與 Production 共用真實畫面，支援重複產生及截圖
+
+這不是另外畫的 LAB35 模擬界面。執行獨立 UAT Workflow 後，會將選定 GitHub 分支的完整 app 及 API 建置成真正的 SOP LAB；所有 JS、CSS 與原始介面程式碼保持相同。僅在 UAT 建置時增加環境標記（不修改 Production 畫面）。
+
+**入口：** UAT 網站的 /sop-lab/，內含原始頁面捷徑、角色／操作案例、勾選及匯出 JSON 清單，以及 GitHub Commit SHA、原始畫面檔案雜湊。管理員從真實平台首頁操作同一個「團服與活動」路徑，不使用舊版獨立導航畫面代替。
+
+**實際流程**：
+1. 從 /sop-lab/ 進入目前驗證的真實家長、老師或學校後台畫面。Google 登入、授權及 API 都仍然運作在 UAT，使用獨立的假學生資料；SOP LAB 不假冒任何帳號。
+2. 對照預期功能擷取「操作前 → 輸入 → 送出 → 後台結果 → CSV」畫面，記錄 UAT Commit SHA，勾選 SOP 清單。
+3. 如果畫面不符合需求，透過 /sop-lab/「提報畫面差異」建立 Issue：角色、路徑、目前顯示、預期畫面及驗收條件，截圖不得含真實學生資料或登入 Token。
+4. 從 main 建立 fix/sop-* 分支，**在共用的 app/ 或 api/ 原始碼直接修正**，而不是修改僅供 SOP 使用的展示頁。
+5. GitHub Actions → School Functional UAT LAB (manual, isolated) → Run workflow → **Use workflow from 選修正分支**，先將修正分支部署到獨立 UAT LAB，驗證畫面、權限與資料流程。
+6. 截圖確認及回歸測試通過後，再合併 PR 至 main，正式 Production CI/CD 才會跟著更新。
+7. 想用最新正式版再次製作 SOP，手動執行 Workflow 選 main 即可。不是每次都要建立新的 UAT Storage/SWA。
+
+**來源版本核對：** /sop-lab/source-manifest.json 保存 source_ref、source_commit 與原始 app/ HTML、JS、CSS SHA-256，供截圖紀錄及追查。各份 SOP 必須標示 GitHub Commit，避免舊截圖被誤認為新版。
+
+**限制與安全：** 正式資料與 UAT 資料完全分離，仍須獨立 Static Web App、Storage Account 及 UAT Google OAuth 設定。Lab 不寄通知信。已建立 rg-sh-orchestra-uat 與 shorchestrauat01，但尚未完成 UAT Static Web App 時，GitHub 程式準備成功不代表網站已開通。SOP 核對勾選只保存在本機瀏覽器，按重設不會刪除實際資料；若需清空 UAT Storage，必須另依安全審核執行。
