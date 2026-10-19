@@ -8,7 +8,9 @@ Static Web App with a different deployment token and storage account.
 from __future__ import annotations
 import argparse
 import shutil
+import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sop_lab import generate_sop_lab
 
 ROOT = Path(__file__).resolve().parents[1]
