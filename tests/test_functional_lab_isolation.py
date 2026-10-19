@@ -133,6 +133,26 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         self.assertIn('badge.style.pointerEvents="auto"',banner)
         self.assertIn('location.pathname.startsWith("/sop-lab/")',banner)
 
+    def test_tshirt_fixture_uses_operable_canonical_lifecycle_and_safe_repair(self):
+        src=(self.lab/"api/src/functions/sopLabFixtures.js").read_text(encoding="utf-8")
+        self.assertIn('source:complete?"PARENT_CONFIRMED_FIRST_PUBLIC":"PARENT_SIZE_SURVEY"',src)
+        self.assertIn('issuedQuantity:complete?1:0',src)
+        self.assertIn('base.schoolIssuedSize=s.size',src)
+        self.assertIn('base.schoolIssuedQuantity=1',src)
+        self.assertIn('base.schoolHandoffTo="SOP 虛構家長"',src)
+        self.assertIn('base.received=true',src)
+        self.assertIn('base.receivedAt="2026-10-15T11:00:00.000Z"',src)
+        self.assertIn('JSON.stringify(old)!==JSON.stringify(originalShirtFixture(s))',src)
+        self.assertIn('updateEntity({...item,updatedAt:new Date().toISOString()},"Replace",{etag:current.etag})',src)
+        self.assertIn('if(e.statusCode===412)return "existing"',src)
+        self.assertIn('for(const module of ["regularUniform","competitionUniform"])',src)
+        self.assertIn('await put(events,config)',src)
+        self.assertNotIn('upsertEntity(',src)
+        self.assertFalse((ROOT/"api/src/functions/sopLabFixtures.js").exists())
+        result=subprocess.run(["node","--check",str(self.lab/"api/src/functions/sopLabFixtures.js")],
+                             capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_sop_hub_javascript_syntax(self):
         result=subprocess.run(["node","--check",str(self.lab/"app/sop-lab/sop.js")],
                               capture_output=True,text=True)

@@ -32,14 +32,60 @@ function demoStudent(s,schoolId){
   classCode:s.classCode,semester:"1",status:"active",joinedAt:"2026-09-01",
   createdAt:at,updatedAt:at,updatedBy:"SOP_LAB_FIXTURE"};
 }
-function shirtEntity(s,schoolId){
- const base={kind:"regularUniform",historicalIssued:s.shirt==="RECEIVED",issuedQuantity:1,
+// The first fixture version stored "SOP_LAB_FIXTURE" as the source even for
+// parent-survey records. The real receipt APIs correctly reject that source.
+// Match ONLY the original untouched fixture exactly before repairing it.
+function originalShirtFixture(s){
+ const old={kind:"regularUniform",historicalIssued:s.shirt==="RECEIVED",issuedQuantity:1,
   size:s.size,sizeStatus:s.size?"RECORDED":"PENDING_PARENT",
   source:"SOP_LAB_FIXTURE",fixtureId:fixturePrefix+s.id};
  if(s.shirt==="RECEIVED"){
-  base.schoolIssuedAt="2026-10-15T10:00:00.000Z";base.parentConfirmedAt="2026-10-15T11:00:00.000Z";
+  old.schoolIssuedAt="2026-10-15T10:00:00.000Z";old.parentConfirmedAt="2026-10-15T11:00:00.000Z";
  }
- return {partitionKey:schoolId,rowKey:s.id,payload:JSON.stringify(base),updatedAt:new Date().toISOString()};
+ return old;
+}
+function shirtPayload(s){
+ const complete=s.shirt==="RECEIVED";
+ const base={kind:"regularUniform",historicalIssued:complete,issuedQuantity:complete?1:0,
+  size:s.size,sizeStatus:s.size?"PARENT_RECORDED":"PENDING_PARENT",
+  source:complete?"PARENT_CONFIRMED_FIRST_PUBLIC":"PARENT_SIZE_SURVEY",
+  fixtureId:fixturePrefix+s.id};
+ // All four real-world stages are represented in five fake students:
+ // size missing (990105), parent-sized/waiting school (990102,990104),
+ // school handoff/waiting parent (990101), completed receipt (990103).
+ if(s.id==="990101"||complete){
+  base.schoolIssuedAt="2026-10-15T10:00:00.000Z";
+  base.schoolIssuedBy="SOP_LAB_FIXTURE";
+  base.schoolIssuedSize=s.size;
+  base.schoolIssuedQuantity=1;
+  base.schoolHandoffTo="SOP 虛構家長";
+ }
+ if(complete){
+  base.received=true;
+  base.receivedSize=s.size;
+  base.receivedAt="2026-10-15T11:00:00.000Z";
+  base.receivedBy="SOP_LAB_FIXTURE";
+ }
+ return base;
+}
+function shirtEntity(s,schoolId){
+ return {partitionKey:schoolId,rowKey:s.id,payload:JSON.stringify(shirtPayload(s)),updatedAt:new Date().toISOString()};
+}
+async function createOrRepairOriginalShirt(client,item,s){
+ try{await client.createEntity(item);return "created"}
+ catch(e){if(e.statusCode!==409)throw e}
+ const current=await client.getEntity(item.partitionKey,item.rowKey);
+ let old;try{old=JSON.parse(current.payload||"{}")}catch{return "existing"}
+ // No broad upsert. A changed size/status, another fixture version or a real
+ // family/school action must never be replaced by a new sample template.
+ if(JSON.stringify(old)!==JSON.stringify(originalShirtFixture(s)))return "existing";
+ try{
+  await client.updateEntity({...item,updatedAt:new Date().toISOString()},"Replace",{etag:current.etag});
+  return "repaired";
+ }catch(e){
+  if(e.statusCode===412)return "existing"; // somebody edited it concurrently
+  throw e;
+ }
 }
 function competitionEntity(s,schoolId){
  const style=s.id==="990102"?"男":"女";
@@ -76,16 +122,26 @@ app.http("sopLabFixtures",{
   const shirts=await table("TenantTshirtHistoricalIssue");
   const uniforms=await table("TenantUniformEventRequest");
   const events=await table(process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig");
-  const result={created:0,existing:0,schoolId,students:scenarios.length};
+  const result={created:0,existing:0,repaired:0,schoolId,students:scenarios.length};
   async function put(client,item){result[(await addIfMissing(client,item))==="created"?"created":"existing"]++}
   try{
    for(const s of scenarios){
     await put(students,demoStudent(s,schoolId));
-    await put(shirts,shirtEntity(s,schoolId));
+    const shirtResult=await createOrRepairOriginalShirt(shirts,shirtEntity(s,schoolId),s);
+    result[shirtResult]++;
     if(s.uniform)await put(uniforms,competitionEntity(s,schoolId));
    }
    await put(events,eventEntity(schoolId));
-   return json({ok:true,...result,message:"僅新增不存在的 SOP 測試紀錄；未覆蓋原有資料"});
+   // Parent pages require an explicit enabled module configuration.
+   // Create only if absent. Never toggle an existing admin-defined setting.
+   for(const module of ["regularUniform","competitionUniform"]){
+    const config={partitionKey:schoolId,rowKey:module+":default",
+      payload:JSON.stringify({module,id:"default",enabled:true,
+        fixtureId:"sop_demo_"+module}),updatedAt:new Date().toISOString(),
+      updatedBy:"SOP_LAB_FIXTURE"};
+    await put(events,config);
+   }
+   return json({ok:true,...result,message:"新增缺少的 SOP 記錄，僅修補未經修改的第一版虛構團 T 資料；不覆蓋人工調整"});
   }catch(e){console.error("SOP fixture seed failed",e);return json({error:"建立部分失敗，請重新執行；已建立紀錄不會重複新增",...result},503)}
  }
 });
