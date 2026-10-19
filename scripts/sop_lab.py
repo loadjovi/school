@@ -110,6 +110,7 @@ button{cursor:pointer;padding:9px 13px;border:1px solid #748ab9;color:#1d315a;bo
 </section>
 </main>
 <script src="./sop.js" defer></script>
+<script defer src="/functional-lab-banner.js"></script>
 </body></html>
 """
 
