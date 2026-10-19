@@ -198,7 +198,7 @@ q("create-fixtures").addEventListener("click",async()=>{
     headers,body:JSON.stringify({confirmation:"CREATE_SOP_FIXTURES"})});
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw Error(data.error||"HTTP "+response.status);
-  message.textContent="✅ "+data.message+"；新增 "+data.created+" 筆／略過既有 "+data.existing+" 筆。請從完整平台首頁重新整理查看。";
+  message.textContent="✅ "+data.message+"；新增 "+data.created+" 筆／修補原始 LAB 團 T "+(data.repaired||0)+" 筆／保留既有 "+data.existing+" 筆。請從完整平台首頁重新整理查看。";
  }catch(error){message.textContent="⚠️ "+error.message}
  finally{button.disabled=false}
 });
