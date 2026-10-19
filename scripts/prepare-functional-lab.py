@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sop_lab import generate_sop_lab
 from sop_lab_seed import install as install_sop_fixtures
+from sop_lab_parent_bind import install as install_sop_parent_binding
 
 ROOT = Path(__file__).resolve().parents[1]
 ISOLATION = r'''
@@ -128,6 +129,7 @@ def prepare(output: Path) -> None:
     # SOP-only navigator: links to copied Production pages, never duplicates them.
     generate_sop_lab(ROOT/"app",app)
     install_sop_fixtures(api)
+    install_sop_parent_binding(api)
     # No real identities/records or copied secret settings in the release.
     for forbidden in (api/"local.settings.json",app/".env"):
         if forbidden.exists():raise RuntimeError("Unexpected runtime secret file in LAB bundle")
