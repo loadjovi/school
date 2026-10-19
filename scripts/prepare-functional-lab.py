@@ -59,8 +59,19 @@ const attach=()=>{
  document.body.append(badge);
  fetch("/api/lab-readiness",{cache:"no-store",credentials:"same-origin"})
   .then(res=>res.ok?res.json():Promise.reject(Error("readiness HTTP "+res.status)))
-  .then(info=>{if(!info.ready)throw Error("隔離設定未就緒");badge.style.background="#204f89";
-                badge.textContent="UAT 功能驗證 LAB｜獨立資料";})
+  .then(info=>{
+    if(!info.ready)throw Error("隔離設定未就緒");
+    badge.style.background="#204f89";
+    badge.textContent="UAT 功能驗證 LAB｜獨立資料";
+    // Same-tab navigation preserves the main app's sessionStorage Google
+    // credential plus the chosen schoolAdmin/tenant context. No token in URLs.
+    if(!location.pathname.startsWith("/sop-lab/")){
+      const link=document.createElement("a");
+      link.href="/sop-lab/";link.textContent="開啟 SOP LAB →";
+      link.style.cssText="display:block;color:#fff;font-size:12px;text-decoration:underline;margin-top:3px";
+      badge.append(link);badge.style.pointerEvents="auto";
+    }
+  })
   .catch(()=>{badge.style.background="#a12222";badge.textContent="LAB 隔離狀態未驗證｜請勿操作";});
 };
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",attach,{once:true});
