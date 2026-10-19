@@ -117,12 +117,29 @@
   }
 
   function mount(){
-    if(state.me?.role!=="admin"||state.page!=="attendance")return;
+    if(state.me?.role!=="admin")return;
+    const workspace=state.page==="admin"&&state.adminWorkspaceSection==="attendance";
+    if(state.page!=="attendance"&&!workspace)return;
     const main=document.querySelector(".main");if(!main)return;
+    const target=workspace?document.querySelector("#schoolAdminWorkspace .aw-attendance-links"):main;
+    if(!target)return;
     let root=document.getElementById("adminAttendanceAssistRoot");
-    if(!root){root=document.createElement("div");root.id="adminAttendanceAssistRoot";main.prepend(root)}
+    if(!root){root=document.createElement("div");root.id="adminAttendanceAssistRoot"}
+    if(root.parentElement!==target)target.prepend(root);
     root.innerHTML=cardHtml();
   }
+  // The simplified school workspace keeps state.page='admin', not 'attendance'.
+  // Expose the existing attendance editor there without duplicating data or APIs.
+  window.mountAdminAttendanceAssist=function(){
+    if(state.me?.role!=="admin")return;
+    const workspace=state.page==="admin"&&state.adminWorkspaceSection==="attendance";
+    if(!workspace)return;
+    const target=document.querySelector("#schoolAdminWorkspace .aw-attendance-links");
+    if(!target)return;
+    const existing=document.getElementById("adminAttendanceAssistRoot");
+    if(existing?.parentElement===target)return;
+    mount();
+  };
 
   const baseRender=render;
   render=function(){
