@@ -9,6 +9,6 @@ test("saved administrator attendance triggers fresh daily summary",()=>{
 });
 test("show current section completion separately from full ensemble-group summary",()=>{
  assert.match(src,/此分部已完成點名/);
- assert.match(src,/savedCount\/\$\{list\.length\}/);
+ assert.match(src,/const complete=list\.length>0&&savedCount>=list\.length/);
  assert.match(src,/今日全團統計仍須其他分部完成/);
 });
