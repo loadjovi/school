@@ -98,8 +98,10 @@ button{cursor:pointer;padding:9px 13px;border:1px solid #748ab9;color:#1d315a;bo
  <h2>03｜一鍵建立虛構測試資料</h2>
  <p>僅供 LAB 學校管理員使用。建立 A、B、儲備團 5 位虛構學生，搭配團 T 三種狀態、A 團比賽服公費／買斷及測試活動。不影響正式環境。</p>
  <div class="notice">重複點擊只會跳過已有的測試紀錄，不會覆蓋已修改的申請或領用狀態。必須先由 LAB 學校管理員登入完整平台。</div>
+ <p class="muted" id="fixture-session-hint">正在確認這個分頁的學校管理員登入狀態…</p>
  <button id="create-fixtures">建立 SOP 測試資料</button>
  <p id="fixture-message" role="status" aria-live="polite"></p>
+ <p class="muted">若你是在另一個分頁登入：請先<a href="/">於此分頁開啟 LAB 完整平台</a>登入並選擇學校管理員，然後點 LAB 右上方新增的「SOP LAB」捷徑返回；不需複製登入憑證。</p>
 </section>
 <section class="card">
  <h2>04｜SOP 驗證項目</h2>
@@ -158,17 +160,46 @@ Promise.all([
  q("readiness").textContent="⛔ LAB 環境尚未可用（"+err.message+"），禁止對正式資料執行 SOP 測試";
  q("version").textContent="版本尚待確認";fetch("./scenarios.json").then(r=>r.json()).then(data=>{scenarios=data;display()}).catch(()=>{});
 });
+// The real school app uses per-tab Google ID credentials and role/school context
+// in sessionStorage (app-v3.js). Ordinary cookies do not authenticate this API.
+// Read them only for the same-origin request. Never expose or persist the token.
+function schoolAdminHeaders(){
+ const token=sessionStorage.getItem("google_id_token")||"";
+ const schoolId=sessionStorage.getItem("school_context_id")||"";
+ const role=sessionStorage.getItem("role_context")||"";
+ if(!token)throw Error("這個 SOP LAB 分頁尚未登入。請由此分頁進入完整平台登入，再使用「SOP LAB」捷徑返回。");
+ if(role!=="schoolAdmin"||!schoolId)throw Error("目前尚未切換學校管理員情境。請在完整平台選擇「學校管理員」後，再使用「SOP LAB」捷徑返回。");
+ return {"Content-Type":"application/json","X-Google-ID-Token":token,
+         "X-School-Id":schoolId,"X-Role-Context":role};
+}
+function updateFixtureSessionHint(){
+ const hint=q("fixture-session-hint");
+ try{
+  schoolAdminHeaders();
+  hint.textContent="✅ 本分頁具有學校管理員登入資訊，可嘗試建立測試資料（伺服器仍會再次驗證）。";
+ }catch(e){hint.textContent="⚠️ "+e.message}
+}
+updateFixtureSessionHint();
+window.addEventListener("pageshow",updateFixtureSessionHint);
 q("create-fixtures").addEventListener("click",async()=>{
  const button=q("create-fixtures"),message=q("fixture-message");
+ let headers;
+ try{headers=schoolAdminHeaders()}catch(error){message.textContent="⚠️ "+error.message;return}
  if(!confirm("確認建立 5 位虛構學生與團服、比賽服、活動測試資料？資料只會新增至目前獨立 LAB 的學校。"))return;
- button.disabled=true;message.textContent="正在建立 LAB 測試資料…";
+ button.disabled=true;message.textContent="正在確認學校管理員權限…";
  try{
+  const check=await fetch("/api/me",{headers,cache:"no-store",credentials:"same-origin"});
+  const access=await check.json().catch(()=>({}));
+  if(check.status===401)throw Error("登入已失效，請重新登入 LAB 完整平台。");
+  if(!check.ok)throw Error(access.error||"管理員權限查詢失敗（HTTP "+check.status+"）");
+  if(access.role!=="admin")throw Error("目前不是學校管理員情境，請切換身分後重試。");
+  message.textContent="正在建立 LAB 測試資料…";
   const response=await fetch("/api/sop-lab/fixtures",{method:"POST",credentials:"same-origin",
-    headers:{"Content-Type":"application/json"},body:JSON.stringify({confirmation:"CREATE_SOP_FIXTURES"})});
-  const data=await response.json();
+    headers,body:JSON.stringify({confirmation:"CREATE_SOP_FIXTURES"})});
+  const data=await response.json().catch(()=>({}));
   if(!response.ok)throw Error(data.error||"HTTP "+response.status);
   message.textContent="✅ "+data.message+"；新增 "+data.created+" 筆／略過既有 "+data.existing+" 筆。請從完整平台首頁重新整理查看。";
- }catch(error){message.textContent="⚠️ "+error.message+"（請確認已在 LAB 以學校管理員登入）"}
+ }catch(error){message.textContent="⚠️ "+error.message}
  finally{button.disabled=false}
 });
 q("reset").addEventListener("click",()=>{
