@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sop_lab import generate_sop_lab
+from sop_lab_seed import install as install_sop_fixtures
 
 ROOT = Path(__file__).resolve().parents[1]
 ISOLATION = r'''
@@ -115,6 +116,7 @@ def prepare(output: Path) -> None:
     if count<3:raise RuntimeError("Unexpected UI layout: missing HTML entrypoints")
     # SOP-only navigator: links to copied Production pages, never duplicates them.
     generate_sop_lab(ROOT/"app",app)
+    install_sop_fixtures(api)
     # No real identities/records or copied secret settings in the release.
     for forbidden in (api/"local.settings.json",app/".env"):
         if forbidden.exists():raise RuntimeError("Unexpected runtime secret file in LAB bundle")
