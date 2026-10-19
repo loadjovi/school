@@ -114,6 +114,24 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         result=subprocess.run(["node","--check",str(api)],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
 
+    def test_sop_seed_uses_real_same_tab_authentication_not_cookie_only(self):
+        src=(self.lab/"app/sop-lab/sop.js").read_text(encoding="utf-8")
+        self.assertIn('sessionStorage.getItem("google_id_token")',src)
+        self.assertIn('sessionStorage.getItem("school_context_id")',src)
+        self.assertIn('sessionStorage.getItem("role_context")',src)
+        self.assertIn('"X-Google-ID-Token":token',src)
+        self.assertIn('"X-School-Id":schoolId',src)
+        self.assertIn('"X-Role-Context":role',src)
+        self.assertIn('fetch("/api/me",{headers',src)
+        self.assertIn('if(access.role!=="admin")',src)
+        self.assertIn('headers,body:JSON.stringify({confirmation:"CREATE_SOP_FIXTURES"})',src)
+        self.assertNotIn('localStorage.setItem("google_id_token"',src)
+        self.assertNotIn('token=',src)
+        banner=(self.lab/"app/functional-lab-banner.js").read_text(encoding="utf-8")
+        self.assertIn('link.href="/sop-lab/"',banner)
+        self.assertIn('badge.style.pointerEvents="auto"',banner)
+        self.assertIn('location.pathname.startsWith("/sop-lab/")',banner)
+
     def test_sop_hub_javascript_syntax(self):
         result=subprocess.run(["node","--check",str(self.lab/"app/sop-lab/sop.js")],
                               capture_output=True,text=True)
