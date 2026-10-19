@@ -17,8 +17,10 @@ jobs:
     environment: school-functional-uat
     steps:
       - uses: actions/checkout@v4
+        # The manually selected GitHub branch is the candidate UI to validate.
+        # Only merging an approved fix to main updates Production.
         with:
-          ref: main
+          ref: ${{ github.ref_name }}
 
       - name: Safety gate - separate deployment token required
         shell: bash
@@ -37,7 +39,7 @@ jobs:
           fi
           echo "Independent LAB token verified (values never logged)."
 
-      - name: Prepare full functional LAB from the current main revision
+      - name: Prepare SOP LAB from the selected code branch
         run: python3 scripts/prepare-functional-lab.py --output .functional-lab-build
 
       - name: Verify LAB isolation, generated API, and frontend
