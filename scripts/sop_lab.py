@@ -95,14 +95,21 @@ button{cursor:pointer;padding:9px 13px;border:1px solid #748ab9;color:#1d315a;bo
  <p class="muted">截圖應記錄本頁顯示的 Commit SHA、測試角色與日期。功能畫面使用的是目前選定 GitHub 分支，而不是另一套獨立 UI。</p>
 </section>
 <section class="card">
- <h2>03｜SOP 驗證項目</h2>
+ <h2>03｜一鍵建立虛構測試資料</h2>
+ <p>僅供 LAB 學校管理員使用。建立 A、B、儲備團 5 位虛構學生，搭配團 T 三種狀態、A 團比賽服公費／買斷及測試活動。不影響正式環境。</p>
+ <div class="notice">重複點擊只會跳過已有的測試紀錄，不會覆蓋已修改的申請或領用狀態。必須先由 LAB 學校管理員登入完整平台。</div>
+ <button id="create-fixtures">建立 SOP 測試資料</button>
+ <p id="fixture-message" role="status" aria-live="polite"></p>
+</section>
+<section class="card">
+ <h2>04｜SOP 驗證項目</h2>
  <p>每個情境建議擷取：操作入口、輸入畫面、送出結果、對應角色畫面、CSV（若適用）。僅使用假學生資料。</p>
  <div id="scenarios"></div>
  <div class="row"><button id="export">匯出 SOP 驗收清單 JSON</button><button id="reset">清除本機核對勾選</button></div>
  <p class="muted">核對紀錄僅存於此瀏覽器，不會改動 LAB 或正式資料庫。</p>
 </section>
 <section class="card">
- <h2>04｜發現畫面不符合需求？</h2>
+ <h2>05｜發現畫面不符合需求？</h2>
  <p><strong>請不要單獨修改 SOP LAB 的 HTML。</strong> 從 GitHub 共用的 <code>app/</code> 修正，再部署該修正分支到 SOP LAB 驗證。畫面通過後才合併 <code>main</code>，使正式平台同步修正。</p>
  <p class="notice">提交問題前請移除學生姓名、信箱、Token、金鑰及任何正式資料。</p>
  <a class="link" rel="noopener noreferrer" target="_blank" href="https://github.com/loadjovi/school/issues/new?template=sop-screen-mismatch.yml">🛠️ 提報畫面差異</a>
@@ -150,6 +157,19 @@ Promise.all([
 }).catch(err=>{
  q("readiness").textContent="⛔ LAB 環境尚未可用（"+err.message+"），禁止對正式資料執行 SOP 測試";
  q("version").textContent="版本尚待確認";fetch("./scenarios.json").then(r=>r.json()).then(data=>{scenarios=data;display()}).catch(()=>{});
+});
+q("create-fixtures").addEventListener("click",async()=>{
+ const button=q("create-fixtures"),message=q("fixture-message");
+ if(!confirm("確認建立 5 位虛構學生與團服、比賽服、活動測試資料？資料只會新增至目前獨立 LAB 的學校。"))return;
+ button.disabled=true;message.textContent="正在建立 LAB 測試資料…";
+ try{
+  const response=await fetch("/api/sop-lab/fixtures",{method:"POST",credentials:"same-origin",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({confirmation:"CREATE_SOP_FIXTURES"})});
+  const data=await response.json();
+  if(!response.ok)throw Error(data.error||"HTTP "+response.status);
+  message.textContent="✅ "+data.message+"；新增 "+data.created+" 筆／略過既有 "+data.existing+" 筆。請從完整平台首頁重新整理查看。";
+ }catch(error){message.textContent="⚠️ "+error.message+"（請確認已在 LAB 以學校管理員登入）"}
+ finally{button.disabled=false}
 });
 q("reset").addEventListener("click",()=>{
  if(!confirm("清除這台瀏覽器的 SOP 核對勾選？此操作不會刪除資料庫資料。"))return;

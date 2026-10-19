@@ -97,6 +97,23 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         self.assertNotIn("ref: main",flow)
         self.assertIn('if [[ "$LAB_TOKEN" == "$PROD_TOKEN" ]]',flow)
         self.assertIn("AZURE_STATIC_WEB_APPS_API_TOKEN_SCHOOL_FUNCTIONAL_LAB",flow)
+    def test_sop_fixtures_api_exists_only_in_generated_lab(self):
+        api=self.lab/"api/src/functions/sopLabFixtures.js"
+        self.assertTrue(api.is_file())
+        self.assertFalse((ROOT/"api/src/functions/sopLabFixtures.js").exists())
+        src=api.read_text(encoding="utf-8")
+        self.assertIn('assertLabIsolation()',src)
+        self.assertIn('context.access.role!=="admin"',src)
+        self.assertIn('body?.confirmation!=="CREATE_SOP_FIXTURES"',src)
+        self.assertIn('await client.createEntity(entry)',src)
+        self.assertIn('e.statusCode===409',src)
+        self.assertIn('TenantStudentMaster',src)
+        self.assertIn('TenantTshirtHistoricalIssue',src)
+        self.assertIn('TenantUniformEventRequest',src)
+        self.assertIn('TenantUniformEventConfig',src)
+        result=subprocess.run(["node","--check",str(api)],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_sop_hub_javascript_syntax(self):
         result=subprocess.run(["node","--check",str(self.lab/"app/sop-lab/sop.js")],
                               capture_output=True,text=True)
