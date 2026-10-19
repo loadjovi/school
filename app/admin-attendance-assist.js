@@ -75,8 +75,15 @@
     if(!confirm("確定由目前管理員帳號協助完成點名？\n\n"+label+"\n\n儲存後會直接同步到授課老師的點名畫面。"))return;
     try{
       await api(postUrl(),{method:"POST",body:JSON.stringify(body)});
-      toast("✅ 行政協助點名已儲存，老師端會同步更新");
       await adminAssistLoad();
+      // Refresh the separately loaded daily report; otherwise today's cards retain
+      // their previous snapshot until the user manually reloads them.
+      if(typeof window.todayAdminFollowup==="function"&&a.date===localDate()){
+        await window.todayAdminFollowup();
+      }else if(typeof window.refreshAdminFollowup==="function"&&state.adminOps?.date===a.date){
+        await window.refreshAdminFollowup();
+      }
+      toast("✅ 此分部點名已儲存；今日總覽已重新整理（全團完成需各分部皆點名）");
     }catch(e){toast("❌ "+e.message)}
   };
 
@@ -84,6 +91,11 @@
     normalizeSelection();
     const a=state.adminAttendanceAssist,groups=groupsForType(),sections=sectionsForGroup(),list=roster();
     const saved=new Map((a.data?.items||[]).map(x=>[String(x.studentId),String(x.status||"present")]));
+    const savedCount=list.filter(student=>saved.has(String(student.studentId))).length;
+    const complete=list.length>0&&savedCount>=list.length;
+    const sectionStatus=a.data&&list.length
+      ? `<div class="notice" style="margin-top:10px"><b>${complete?"✅ 此分部已完成點名":"⚠️ 此分部點名未完成"}：${savedCount}/${list.length} 人</b><br>此處僅代表目前選擇的${esc(typeText[a.type])}${a.type==="section"?"「"+esc(a.section)+"」":""}；今日全團統計仍須其他分部完成。</div>`
+      : "";
     const recorded=a.data?.recordedBy
       ? `<div class="notice" style="margin-top:10px">目前已有點名：<b>${esc(a.data.recordedBy)}</b>${a.data.recordedByRole==="admin"?"（行政協助）":""}</div>`
       : "";
@@ -112,7 +124,7 @@
       ${a.type!=="comprehensive"?`<label>團別</label><select onchange="adminAssistChange('groupName',this.value)">${groups.map(g=>`<option value="${esc(g)}" ${String(a.groupName)===String(g)?"selected":""}>${esc(g)}團</option>`).join("")}</select>`:""}
       ${a.type==="section"?`<label>分部</label><select onchange="adminAssistChange('section',this.value)">${sections.map(s=>`<option value="${esc(s)}" ${String(a.section)===String(s)?"selected":""}>${esc(s)}</option>`).join("")}</select>`:""}
       <button class="secondary" style="width:100%;margin-top:10px" onclick="adminAssistLoad()" ${a.loading?"disabled":""}>${a.loading?"⏳ 正在載入":"🔄 載入目前點名／開始點名"}</button>
-      ${recorded}${mergeNotice}${error}${listHtml}
+      ${sectionStatus}${recorded}${mergeNotice}${error}${listHtml}
     </div>`;
   }
 
