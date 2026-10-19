@@ -8,7 +8,10 @@ Static Web App with a different deployment token and storage account.
 from __future__ import annotations
 import argparse
 import shutil
+import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sop_lab import generate_sop_lab
 
 ROOT = Path(__file__).resolve().parents[1]
 ISOLATION = r'''
@@ -110,6 +113,8 @@ def prepare(output: Path) -> None:
         text=text.replace("<title>","<title>【UAT LAB】",1)
         page.write_text(text,encoding="utf-8");count+=1
     if count<3:raise RuntimeError("Unexpected UI layout: missing HTML entrypoints")
+    # SOP-only navigator: links to copied Production pages, never duplicates them.
+    generate_sop_lab(ROOT/"app",app)
     # No real identities/records or copied secret settings in the release.
     for forbidden in (api/"local.settings.json",app/".env"):
         if forbidden.exists():raise RuntimeError("Unexpected runtime secret file in LAB bundle")

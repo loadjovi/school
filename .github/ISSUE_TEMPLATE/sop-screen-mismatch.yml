@@ -1,0 +1,56 @@
+name: SOP LAB 畫面與流程差異
+description: 使用實際 Production 共用前端的 SOP LAB 提報錯誤；請移除任何真實個資
+title: "[SOP LAB] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        請僅使用 LAB 虛構學生資料。**不要附上正式學生個資、Google Token、Storage Key、OAuth Secret 或金流帳號。**
+        這份問題應修改 GitHub app/ 共用的畫面原始碼，不要只修 SOP LAB 複製品。
+  - type: dropdown
+    id: role
+    attributes:
+      label: 使用者角色
+      options:
+        - 家長
+        - 老師
+        - 學校管理員
+        - Global 管理員
+    validations:
+      required: true
+  - type: input
+    id: build
+    attributes:
+      label: SOP LAB 部署版本 Commit SHA
+      placeholder: 從 /sop-lab/ 的「環境及版本核對」複製
+    validations:
+      required: true
+  - type: input
+    id: page
+    attributes:
+      label: 頁面與操作路徑
+      placeholder: 例：團服與活動 → 團 T → 儲備團尺寸
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: 目前 LAB 顯示（實際結果）
+      description: 說明在哪一步出現問題，可附僅有假資料的截圖
+    validations:
+      required: true
+  - type: textarea
+    id: wanted
+    attributes:
+      label: 正確／期望的畫面與操作
+      description: 描述需要調整的文字、按鈕、順序、操作結果、手機版需求
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 驗收條件
+      placeholder: 例：家長填好尺寸後顯示「待學校發放」；正式及 LAB 兩端路徑一致
+    validations:
+      required: true
