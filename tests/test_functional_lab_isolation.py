@@ -153,6 +153,44 @@ class FunctionalUATIsolationTests(unittest.TestCase):
                              capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
 
+    def test_lab_parent_binding_isolated_and_self_only(self):
+        api=self.lab/"api/src/functions/sopLabParentBinding.js"
+        self.assertTrue(api.is_file())
+        self.assertFalse((ROOT/"api/src/functions/sopLabParentBinding.js").exists())
+        src=api.read_text(encoding="utf-8")
+        for field in [
+            'assertLabIsolation()', 'ready.environment!=="functional-uat"',
+            'ready.storageAccount!==process.env.LAB_EXPECTED_STORAGE_ACCOUNT',
+            'if(ctx.access.role!=="admin")',
+            'const schoolId=ctx.schoolId,email=String(ctx.access.email||"").trim().toLowerCase()',
+            'tenantParentPartition(schoolId,email)', 'const fixtures=new Map',
+            'if(body?.confirmation!=="BIND_MY_LAB_PARENT"||!fixtures.has(studentId))',
+            's.updatedBy!=="SOP_LAB_FIXTURE"',
+            'parentEmail:email,parentName:"LAB 測試家長"',
+            'bindingSource:"sop_lab_fixture_self_binding"',
+            'maps.createEntity(link)', 'if(old.status==="active")',
+            'changeType:"sop_lab_test_parent_binding"'
+        ]:
+            self.assertIn(field,src)
+        self.assertNotIn('body.parentEmail',src)
+        self.assertNotIn('upsertEntity(',src)
+        result=subprocess.run(["node","--check",str(api)],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_sop_parent_ui_requires_explicit_choice_and_switches_roles(self):
+        js=(self.lab/"app/sop-lab/sop.js").read_text(encoding="utf-8")
+        html=(self.lab/"app/sop-lab/index.html").read_text(encoding="utf-8")
+        for text in ["lab-parent-student","lab-parent-refresh","lab-parent-bind","lab-parent-switch"]:
+            self.assertIn(text,html)
+        for text in ['labParentRequest("POST"', '"BIND_MY_LAB_PARENT"',
+                     'sessionStorage.setItem("role_context","parent")',
+                     'sessionStorage.setItem("school_context_id",schoolId)',
+                     'if(!verified?.bound||!verified.available)']:
+            self.assertIn(text,js)
+        result=subprocess.run(["node","--check",str(self.lab/"app/sop-lab/sop.js")],
+                              capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_sop_hub_javascript_syntax(self):
         result=subprocess.run(["node","--check",str(self.lab/"app/sop-lab/sop.js")],
                               capture_output=True,text=True)
