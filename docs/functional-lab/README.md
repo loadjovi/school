@@ -30,7 +30,7 @@
 
 ## 3. 從最新正式程式部署
 1. GitHub → Actions → School Functional UAT LAB (manual, isolated) → Run workflow。
-2. 動作會 checkout 最新 main，準備 app + api 的 UAT 副本。
+2. 從 Run workflow 選擇 main 或功能修正分支（fix/sop-*），以所選分支的 app + api 產生真實畫面 SOP LAB。
 3. 先驗證專用 LAB token 不等於 Production token；再跑所有 LAB 隔離自動測試。
 4. 只向獨立 SWA 部署。LAB API 所有路由在初始化時要求 LAB_ENVIRONMENT 正確、Storage AccountName 等於 LAB 專用名稱，否則 fail-closed。
 5. 開啟新 LAB 網址的 /api/lab-readiness，核對 ready=true、environment=functional-uat、storageAccount 為新 LAB Storage 名稱。頁面須顯示「UAT 功能驗證 LAB」標記。
