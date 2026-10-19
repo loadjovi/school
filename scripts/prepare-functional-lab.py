@@ -51,13 +51,33 @@ BANNER = r'''
 if(document.getElementById("functional-uat-banner"))return;
 const attach=()=>{
  if(document.getElementById("functional-uat-banner"))return;
+ // Desktop: reserve the right-hand header area for the account/role selector.
+ // Narrow/mobile viewports: put the label in its own flow row BEFORE #app,
+ // rather than covering the mobile role switch or logout buttons.
+ const style=document.createElement("style");
+ style.id="functional-uat-banner-layout";
+ style.textContent=`
+#functional-uat-banner{
+ position:fixed;top:8px;right:clamp(240px,22vw,360px);
+ z-index:2147483647;box-sizing:border-box;
+ max-width:min(228px,calc(100vw - 24px));
+ overflow-wrap:anywhere;
+}
+@media(max-width:900px){
+ #functional-uat-banner{
+  position:relative;top:auto;right:auto;
+  display:block;width:max-content;
+  margin:8px 12px;
+  max-width:calc(100% - 24px);
+ }
+}`;
+ document.head.append(style);
  const badge=document.createElement("div");badge.id="functional-uat-banner";
  badge.setAttribute("role","status");
- badge.style.cssText="position:fixed;z-index:2147483647;right:12px;top:8px;"+
- "font:700 13px/1.35 system-ui,sans-serif;color:#fff;background:#9d4112;"+
+ badge.style.cssText="font:700 13px/1.35 system-ui,sans-serif;color:#fff;background:#9d4112;"+
  "padding:7px 12px;border-radius:9px;box-shadow:0 3px 11px #0004;pointer-events:none";
  badge.textContent="UAT 功能驗證 LAB｜非正式資料";
- document.body.append(badge);
+ document.body.insertBefore(badge,document.body.firstChild);
  fetch("/api/lab-readiness",{cache:"no-store",credentials:"same-origin"})
   .then(res=>res.ok?res.json():Promise.reject(Error("readiness HTTP "+res.status)))
   .then(info=>{

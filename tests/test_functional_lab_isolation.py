@@ -46,6 +46,26 @@ class FunctionalUATIsolationTests(unittest.TestCase):
             self.assertIn("functional-lab-banner.js",text,file.name)
             self.assertIn("noindex,nofollow",text,file.name)
         self.assertGreaterEqual(count,3)
+    def test_uat_banner_reserves_role_selector_and_mobile_header_space(self):
+        banner=(self.lab/"app/functional-lab-banner.js").read_text(encoding="utf-8")
+        # At desktop widths the overlay is moved left, out of the right-side
+        # role switcher; on phones it uses document flow above the app.
+        self.assertIn('right:clamp(240px,22vw,360px)',banner)
+        self.assertIn('max-width:min(228px,calc(100vw - 24px))',banner)
+        self.assertIn('@media(max-width:900px)',banner)
+        self.assertIn('position:relative;top:auto;right:auto',banner)
+        self.assertIn('margin:8px 12px',banner)
+        self.assertIn('document.body.insertBefore(badge,document.body.firstChild)',banner)
+        # The label is still clickable when LAB readiness succeeds, and its
+        # original warning state remains visible if isolation is not ready.
+        self.assertIn('badge.style.pointerEvents="auto"',banner)
+        self.assertIn('link.href="/sop-lab/"',banner)
+        self.assertIn('LAB 隔離狀態未驗證｜請勿操作',banner)
+        self.assertFalse((ROOT/"app/functional-lab-banner.js").exists())
+        result=subprocess.run(["node","--check",str(self.lab/"app/functional-lab-banner.js")],
+                              capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_guard_fails_closed_for_wrong_storage_or_missing_lab_env(self):
         lib=self.lab/"api/src/lib/labIsolation.mjs"
         script='import {assertLabIsolation} from '+repr(lib.as_uri())+';assertLabIsolation();'
