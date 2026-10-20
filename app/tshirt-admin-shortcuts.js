@@ -15,7 +15,7 @@ function applyView(){
  if(selected==="students")loadRoster();
 }
 function normalizedGroup(value){
- const x=String(value||"").trim().toUpperCase().replace(/\\s/g,"");
+ const x=String(value||"").trim().toUpperCase().replace(/\s/g,"");
  if(x==="A"||x==="A團")return "A";
  if(x==="B"||x==="B團")return "B";
  if(["C","C團","儲備","儲備團"].includes(x))return "C";
