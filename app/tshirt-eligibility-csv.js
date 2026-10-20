@@ -24,8 +24,10 @@ async function exportEligibility(mode="current"){
   const historyData=await historyResponse.json().catch(()=>({}));
   if(!Array.isArray(historyData.items))throw Error("團 T 領用紀錄格式不正確，已停止匯出");
   const historical=new Map(historyData.items.map(item=>[String(item.studentId||""),item]));
-  const map=new Map(),unclassified=[];
-  const roster=students.filter(s=>mode==="archive"?!isCurrentTshirtStudent(s):isCurrentTshirtStudent(s));
+  const map=new Map();
+  const roster=tshirtRosterMembers(students,"ALL",mode);
+  const unclassified=students.filter(s=>(mode==="archive"?!isCurrentTshirtStudent(s):isCurrentTshirtStudent(s))&&!roster.includes(s)).map(s=>String(s.name||s.studentName||s.studentId||""));
+
   for(const student of roster){
    const id=String(student.studentId||"").trim(),name=String(student.name||student.studentName||"").trim();
    const raw=String(student.groupName||student.group||"").trim().toUpperCase();
