@@ -25,3 +25,8 @@
  .tshirt-roster-table th:nth-child(3){width:17%}
  .tshirt-roster-table th:nth-child(4){width:29%}
 }
+
+/* Current-student and alumni/withdrawal records are separate screens. */
+.tshirt-roster-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:12px;align-items:end;margin:12px 0}
+.tshirt-roster-filters label{margin:0;min-width:0}
+.tshirt-roster-filters select{display:block;width:100%;max-width:100%;box-sizing:border-box}
