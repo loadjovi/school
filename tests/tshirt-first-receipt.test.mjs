@@ -98,3 +98,37 @@ test("CSV includes school handoff and parent receipt times without breaking lega
  assert.match(s,/parentReceivedAt/);
  assert.match(s,/\[headers,exportHeaders\]/);
 });
+
+import {isCurrentTshirtStudent,tshirtRosterMembers,tshirtArchiveLabel} from "../app/tshirt-roster-status.mjs";
+test("withdrawn reserve pupil is excluded from current roster and size planning",()=>{
+ const rows=[
+  ...Array.from({length:10},(_,i)=>({studentId:String(i),groupName:"儲備",status:"active"})),
+  {studentId:"115149",groupName:"儲備",status:"inactive",inactiveReason:"退團"},
+  {studentId:"oldA",groupName:"A",status:"inactive",inactiveReason:"畢業"},
+  {studentId:"currentA",groupName:"A",status:"active"}
+ ];
+ assert.equal(tshirtRosterMembers(rows,"C","current").length,10);
+ assert.equal(tshirtRosterMembers(rows,"C","archive").length,1);
+ assert.equal(tshirtRosterMembers(rows,"ALL","current").length,11);
+ assert.equal(tshirtRosterMembers(rows,"ALL","archive").length,2);
+ assert.equal(tshirtArchiveLabel(rows[10]),"已退團");
+ assert.equal(tshirtArchiveLabel(rows[11]),"已畢業");
+ assert.equal(isCurrentTshirtStudent({groupName:"B"}),true);
+});
+test("school T-shirt historical list is separated, read-only, and CSV has separate exports",()=>{
+ const js=readFileSync(new URL("../app/tshirt-admin-shortcuts.js",import.meta.url),"utf8");
+ const csv=readFileSync(new URL("../app/tshirt-eligibility-csv.js",import.meta.url),"utf8");
+ const html=readFileSync(new URL("../app/uniform-event-admin.html",import.meta.url),"utf8");
+ assert.match(js,/tshirtRosterMembers\(students,filter,status\)/);
+ assert.match(js,/isCurrentTshirtStudent\(s\)&&history\?\.source/);
+ assert.match(js,/isCurrentTshirtStudent\(s\)&&size/);
+ assert.match(js,/歷史資料｜不列入目前團服發放/);
+ assert.match(html,/id="tshirtStudentStatusFilter"/);
+ assert.match(html,/option value="archive"/);
+ assert.match(html,/id="exportTshirtFormerEligibility"/);
+ assert.match(csv,/tshirtRosterMembers\(students,"ALL",mode\)/);
+ assert.match(csv,/const eligible=isCurrentTshirtStudent\(student\)&&/);
+ assert.match(csv,/rosterExportHeaders=\[\.\.\.exportHeaders,"studentStatus","inactiveReason"\]/);
+ assert.match(csv,/exportEligibility\("current"\)/);
+ assert.match(csv,/exportEligibility\("archive"\)/);
+});
