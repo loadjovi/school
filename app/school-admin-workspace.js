@@ -19,7 +19,7 @@
   const clock=taipeiClock(now);
   if(!report||report.date!==clock.date)return {absent:0,unmarked:0};
   const groupTypes=new Set(['section','ensemble','comprehensive']);
-  const absent=(Array.isArray(report.items)?report.items:[]).filter(row=>row.status==='absent'&&groupTypes.has(row.classType)).length;
+  const absent=(Array.isArray(report.items)?report.items:[]).filter(row=>row.status==='absent'&&groupTypes.has(row.classType)&&row.followup?.state!=='acknowledged').length;
   const unmarked=(Array.isArray(report.courseSummary)?report.courseSummary:[]).filter(course=>{
    if(course.scheduleStatus!=='active'||!(Number(course.expected)>0)||Number(course.recorded)>=Number(course.expected))return false;
    // A missing/unspecified lesson end time is not sufficient evidence of lateness.
@@ -52,6 +52,7 @@
   summary.error=results.some(result=>result.status==='rejected')||!summary.attendance||summary.uniform===null||(sources.some(([name])=>name==='family')&&summary.family===null);
   summary.loading=false;summary.loadedAt=Date.now();organize();
  }
+ window.refreshSchoolAdminTodos=async function(){await loadTasks(true)};
  function todoHtml(){
   const rows=[],pending=state.registrations?.length||0;
   if(pending)rows.push(['parents','家長綁定待審',pending,'筆']);
