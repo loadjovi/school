@@ -131,4 +131,9 @@ test("school T-shirt historical list is separated, read-only, and CSV has separa
  assert.match(csv,/rosterExportHeaders=\[\.\.\.exportHeaders,"studentStatus","inactiveReason"\]/);
  assert.match(csv,/exportEligibility\("current"\)/);
  assert.match(csv,/exportEligibility\("archive"\)/);
+ const backend=readFileSync(new URL("../api/src/functions/tshirtHistoricalSize.js",import.meta.url),"utf8");
+ assert.match(backend,/student\?\.status\|\|"active"/);
+ assert.match(backend,/if\(!activeStudent\(student\)\)return fail\("學生已退團／畢業或停用/);
+ assert.match(js,/fetch\("\/api\/student-master"/);
+ assert.match(csv,/fetch\("\/api\/student-master"/);
 });
