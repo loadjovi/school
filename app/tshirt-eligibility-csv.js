@@ -1,14 +1,16 @@
+import {isCurrentTshirtStudent,tshirtRosterMembers,tshirtArchiveLabel} from "./tshirt-roster-status.mjs";
 // 團T資格核對：匯出已取得的申請學生，不推斷未申請者；匯入只預覽，不寫入資料庫。
 const $=id=>document.getElementById(id);
 const headers=["studentId","studentName","group","firstFreeEligible","firstIssued","issuedAt","size","notes"];
 const exportHeaders=[...headers,"schoolHandoffStatus","schoolIssuedAt","handoffTo","parentReceivedAt"];
+const rosterExportHeaders=[...exportHeaders,"studentStatus","inactiveReason"];
 const statuses=new Set(["YES","NO","UNKNOWN"]);
 function download(rows){
- const csv="\uFEFF"+[exportHeaders,...rows].map(row=>row.map(v=>'"'+String(v??"").replace(/"/g,'""')+'"').join(",")).join("\r\n");
+ const csv="\uFEFF"+[rosterExportHeaders,...rows].map(row=>row.map(v=>{let value=String(v??"");if(/^[=+@\-\t\r]/.test(value))value="\u0027"+value;return "\""+value.replace(/"/g,'""')+"\""}).join(",")).join("\r\n");
  const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
- const a=document.createElement("a");a.href=url;a.download="團T_首次免費資格核對.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ const a=document.createElement("a");a.href=url;a.download=window.tshirtHistoryExportMode==="archive"?"團T_退團畢業_歷史核對.csv":"團T_在團學生_首次資格核對.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-$("exportTshirtEligibility").addEventListener("click",async()=>{
+async function exportEligibility(mode="current"){
  try{
   const headers=typeof window.uniformEventAuthHeaders==="function"?window.uniformEventAuthHeaders():{};
   const r=await fetch("/api/students",{credentials:"same-origin",cache:"no-store",headers});
@@ -23,7 +25,8 @@ $("exportTshirtEligibility").addEventListener("click",async()=>{
   if(!Array.isArray(historyData.items))throw Error("團 T 領用紀錄格式不正確，已停止匯出");
   const historical=new Map(historyData.items.map(item=>[String(item.studentId||""),item]));
   const map=new Map(),unclassified=[];
-  for(const student of students){
+  const roster=tshirtRosterMembers(students,"ALL",mode);
+  for(const student of roster){
    const id=String(student.studentId||"").trim(),name=String(student.name||student.studentName||"").trim();
    const raw=String(student.groupName||student.group||"").trim().toUpperCase();
    const group=/^(A|A團|A 團)$/.test(raw)?"A":/^(B|B團|B 團)$/.test(raw)?"B":/^(C|C團|C 團|儲備團|儲備)$/.test(raw)?"儲備團":"";
@@ -32,20 +35,24 @@ $("exportTshirtEligibility").addEventListener("click",async()=>{
    const exception=name==="李沛臻";
    const item=historical.get(id);
    const issued=item?item.historicalIssued===true:(group==="A"||group==="B")&&!exception;
-   const eligible=!issued&&!item?.schoolIssuedAt; // a handed-over item is reserved, not available for another free issue
+   const eligible=isCurrentTshirtStudent(student)&&!issued&&!item?.schoolIssuedAt; // a handed-over item is reserved, not available for another free issue
    const receivedDate=item?.receivedAt||item?.verifiedAt||"";
    const status=item?.source==="PARENT_CONFIRMED_FIRST_PUBLIC"?"雙方確認完成"
      :item?.schoolIssuedAt?"學校已發放，待家長確認"
      :issued?"歷史已領取"
      :item?.size?"待學校發放":"待家長登記尺寸";
-   const note=issued?"已領取，首次公費資格已使用":item?.schoolIssuedAt?"學校已交付 1 件，等待家長確認；避免重複免費領取":item?.size?"尺寸已登記，尚待學校發放":"尚未首次領取，保留首次公費資格";
-   map.set(id,[id,name,group,eligible?"YES":"NO",issued?"YES":"NO",issued?(receivedDate||"UNKNOWN"):"",item?.size||"",note,status,item?.schoolIssuedAt||"",item?.schoolHandoffTo||"",item?.receivedAt||""]);
+   const noteBase=issued?"已領取，首次公費資格已使用":item?.schoolIssuedAt?"學校已交付 1 件，等待家長確認；避免重複免費領取":item?.size?"尺寸已登記，尚待學校發放":"尚未首次領取，保留首次公費資格";
+   const note=isCurrentTshirtStudent(student)?noteBase:tshirtArchiveLabel(student)+"，歷史資料不列入目前發放／尺寸需求；"+noteBase;
+   map.set(id,[id,name,group,eligible?"YES":"NO",issued?"YES":"NO",issued?(receivedDate||"UNKNOWN"):"",item?.size||"",note,status,item?.schoolIssuedAt||"",item?.schoolHandoffTo||"",item?.receivedAt||"",isCurrentTshirtStudent(student)?"active":"inactive",student.inactiveReason||""]);
   }
-  if(!map.size)throw Error("學生主檔沒有可辨識的 A、B 或儲備團資料；請確認學生主檔團別及學校身分，未產生空白檔。");
+  if(!map.size){$("tshirtEligibilityPreview").textContent=mode==="archive"?"目前沒有已退出／停用學生的團 T 歷史資料。":"目前沒有可匯出的在團學生，請核對主檔狀態與團別。";return}
+  window.tshirtHistoryExportMode=mode;
   download([...map.values()]);
-  $("tshirtEligibilityPreview").textContent="已依學生主檔與團 T 領用紀錄匯出 "+map.size+" 位學生；已補上學校交付狀態、交付時間與家長確認時間；學校已發放但家長未確認者，會暫停再次領取免費資格。"+(unclassified.length?"另有 "+unclassified.length+" 位團別無法辨識，未列入；請檢查學生主檔團別。":"")+" 僅供核對，不會寫入資料庫或扣除庫存。";
+  $("tshirtEligibilityPreview").textContent="已匯出 "+map.size+" 位"+(mode==="archive"?"退團／畢業歷史":"目前在團")+"學生；匯出包含學生狀態、尺寸、交付與家長領用確認時間。歷史檔只供查核，不列入目前發放／採購統計。"+(unclassified.length?"另有 "+unclassified.length+" 位團別無法辨識，未列入；請檢查學生主檔團別。":"")+" 僅供核對，不會寫入資料庫或扣除庫存。";
  }catch(e){$("tshirtEligibilityPreview").textContent="匯出失敗："+e.message}
-});
+}
+$("exportTshirtEligibility").addEventListener("click",()=>exportEligibility("current"));
+$("exportTshirtFormerEligibility")?.addEventListener("click",()=>exportEligibility("archive"));
 function parseCsv(src){
  const result=[],row=[];let value="",quoted=false;
  src=src.replace(/^\uFEFF/,"");
@@ -66,7 +73,7 @@ $("importTshirtEligibility").addEventListener("change",async e=>{
  try{
   if(file.size>1024*1024)throw Error("檔案不得超過 1MB");
   const rows=parseCsv(await file.text()),head=rows.shift();
-  const validHeader=Array.isArray(head)&&[headers,exportHeaders].some(allowed=>head.length===allowed.length&&allowed.every((h,i)=>head[i]===h));
+  const validHeader=Array.isArray(head)&&[headers,exportHeaders,rosterExportHeaders].some(allowed=>head.length===allowed.length&&allowed.every((h,i)=>head[i]===h));
   if(!validHeader)throw Error("CSV 欄位需符合舊版或新版匯出範本："+headers.join("、"));
   const ids=new Set(),errors=[],data=[];
   for(const [i,row] of rows.entries()){
