@@ -13,7 +13,7 @@ function download(rows,mode){
 async function exportEligibility(mode="current"){
  try{
   const headers=typeof window.uniformEventAuthHeaders==="function"?window.uniformEventAuthHeaders():{};
-  const r=await fetch("/api/students",{credentials:"same-origin",cache:"no-store",headers});
+  const r=await fetch("/api/student-master",{credentials:"same-origin",cache:"no-store",headers});
   if(r.status===401)throw Error("登入驗證失敗（HTTP 401）。請重新登入。");
   if(r.status===403)throw Error("權限不足（HTTP 403）。請切換為此校管理員。");
   if(!r.ok)throw Error("無法取得學生主檔（HTTP "+r.status+"）");
@@ -25,7 +25,7 @@ async function exportEligibility(mode="current"){
   if(!Array.isArray(historyData.items))throw Error("團 T 領用紀錄格式不正確，已停止匯出");
   const historical=new Map(historyData.items.map(item=>[String(item.studentId||""),item]));
   const map=new Map(),unclassified=[];
-  const roster=tshirtRosterMembers(students,"ALL",mode);
+  const roster=students.filter(s=>mode==="archive"?!isCurrentTshirtStudent(s):isCurrentTshirtStudent(s));
   for(const student of roster){
    const id=String(student.studentId||"").trim(),name=String(student.name||student.studentName||"").trim();
    const raw=String(student.groupName||student.group||"").trim().toUpperCase();
