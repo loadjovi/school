@@ -123,14 +123,29 @@
     if(rows.length===1){toast("這個月尚無分部課點名紀錄");return}
     downloadCsv(`${d.month}_分部課點名總表.csv`,rows);toast(`📥 已匯出 ${rows.length-1} 筆分部課點名者明細`);
   };
+  window.acknowledgeAdminAbsence=async function(followupId,recordVersion,studentName){
+    const date=state.adminOps.date;
+    if(!followupId||!recordVersion||!date)return;
+    if(!confirm("確認已知悉「"+(studentName||"此學生")+"」於 "+date+" 的缺席？\n\n只會結束行政待追蹤，不會修改老師點名、學生出勤或學期成績。\n如尚未確認學生安全或未完成必要聯繫，請勿標記。"))return;
+    const note=prompt("處理備註（選填，例如：已與家長聯絡／已由校方確認學生安全）\n注意：「已知悉」不代表已聯絡家長。","已知悉");
+    if(note===null)return;
+    try{
+      await api("/api/daily-followup?mode=acknowledge&date="+encodeURIComponent(date),
+        {method:"PATCH",body:JSON.stringify({followupId,recordVersion,note:note.slice(0,250)})});
+      toast("✅ 已標記知悉，缺席紀錄仍保留");
+      state.adminOps.followup=null;state.adminOps.followupError="";
+      await loadDaily();
+      if(typeof window.refreshSchoolAdminTodos==="function")await window.refreshSchoolAdminTodos();
+    }catch(e){toast("⚠️ 標記未完成："+(e.message||e))}
+  };
   window.exportAdminDailyFollowup=function(){
     if(state.adminOps.loadingFollowup){toast("正在彙整整日點名，請稍候");return}
     if(state.adminOps.followupError){toast("請先重新整理當日資料");return}
     const d=state.adminOps.followup,items=d?.items||[];
     if(!d){toast("尚未載入當日資料");return}
     if(!items.length){toast("✅ 這一天沒有請假／缺席學生");return}
-    const rows=[["日期","課程類型","團別","分部","學生姓名","年級","樂器","出勤狀態","點名老師"]];
-    for(const x of items)rows.push([x.date,classText[x.classType]||x.classType,x.groupName,x.section,x.name,x.grade,x.instrument,statusText[x.status]||x.status,x.teacherName]);
+    const rows=[["日期","課程類型","團別","分部","學生姓名","年級","樂器","出勤狀態","點名老師","行政處理狀態","知悉時間","知悉人員","處理備註"]];
+    for(const x of items)rows.push([x.date,classText[x.classType]||x.classType,x.groupName,x.section,x.name,x.grade,x.instrument,statusText[x.status]||x.status,x.teacherName,x.status==="absent"?(x.followup?.state==="acknowledged"?"已知悉":"待追蹤"):"請假",x.followup?.acknowledgedAt||"",x.followup?.acknowledgedBy||"",x.followup?.note||""]);
     downloadCsv(`${d.date}_弦樂團_整日未到請假追蹤.csv`,rows);toast(`📥 已匯出 ${items.length} 筆整日行政追蹤資料`);
   };
 
@@ -191,9 +206,9 @@
       const privateEmailText={sent:"✅ 已寄送",partial:"⚠️ 部分寄送",failed:"❌ 寄送失敗",not_configured:"⚠️ Email 尚未設定",no_recipients:"⚠️ 當時無可寄送家長 Gmail",disabled:"⏸️ 後台已關閉",pending:"準備寄送",not_required:"—"};
       const emailAt=v=>{if(!v)return "";try{return new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(v))}catch{return ""}};
       const courseHtml=courses.length?courses.map(x=>{const expected=Number(x.expected||0),recorded=Number(x.recorded||0),scheduleStatus=String(x.scheduleStatus||"active"),isCancelled=scheduleStatus==="cancelled",isRescheduled=scheduleStatus==="rescheduled",done=expected>0&&recorded>=expected,started=recorded>0;const status=isCancelled?`<span class="badge warn">⏸️ 今日停課</span>`:isRescheduled?`<span class="badge warn">↪️ 已改期</span>`:done?`<span class="badge good">✅ 已完成</span>`:started?`<span class="badge warn">⚠️ 點名未完成 ${recorded}/${expected}</span>`:`<span class="badge bad">🔴 尚未點名</span>`;const scheduleNote=isCancelled?(x.reason?`<br>停課原因：${esc(x.reason)}`:""):isRescheduled?`<br>原課程已改期${x.newDate?"至 "+esc(x.newDate):""}${x.reason?"｜"+esc(x.reason):""}`:"";const detail=x.key==="private"&&privateDetails.length?`<details style="margin-top:8px"><summary style="cursor:pointer;color:#3b549c;font-weight:700">查看個別課明細（${privateDetails.length} 筆）</summary><div style="margin-top:8px">${privateDetails.map(p=>`<div class="notice" style="margin-top:6px"><b>👤 ${esc(p.name||"未命名學生")}</b>｜${esc(p.groupName||"—")}團｜${esc(p.instrument||"—")}<br>老師：${esc(p.teacherName||p.teacherEmail||"—")}｜時間：${esc(p.startTime||"—")}${p.endTime?"～"+esc(p.endTime):""}${p.minutes?`｜${Number(p.minutes)} 分鐘`:""}<br>狀態：${esc(privateStatusText[p.status]||p.status||"—")}｜家長確認：${esc(confirmText[p.parentConfirmation]||p.parentConfirmation||"—")}${Number(p.teacherRating||0)?`<br>師資評價：<span style="color:#d5a100;font-weight:900">${"★".repeat(Number(p.teacherRating||0))}${"☆".repeat(Math.max(0,5-Number(p.teacherRating||0)))}</span> ${Number(p.teacherRating||0)}/5`:""}${p.teacherReview?`<br>家長評論：${esc(p.teacherReview)}`:""}${Array.isArray(p.currentParentBindings)&&p.currentParentBindings.length?`<br><b>👪 目前家長綁定（${p.currentParentBindings.length}）</b>：${p.currentParentBindings.map(x=>`${esc(x.relationship||"家長")}${x.parentName?" "+esc(x.parentName):""}｜${esc(x.parentEmail||"")}`).join("；")}`:`<br><b>👪 目前家長綁定：</b>尚未綁定`}<br>上次 Email 通知：${esc(privateEmailText[p.emailNotificationStatus]||p.emailNotificationStatus||"—")}${Number(p.emailNotificationRecipients||0)?`｜家長 ${(p.emailNotificationStatus==="sent"&&!Number(p.emailNotificationSentCount||0))?Number(p.emailNotificationRecipients||0):Number(p.emailNotificationSentCount||0)}/${Number(p.emailNotificationRecipients||0)} 位`:""}${emailAt(p.emailNotificationAt)?`｜${esc(emailAt(p.emailNotificationAt))}`:""}${Number(p.emailNotificationResendCount||0)?`｜已重寄 ${Number(p.emailNotificationResendCount||0)} 次`:""}${p.lessonContent?`<br>課程內容：${esc(p.lessonContent)}`:""}${p.duplicateSameDay?`<br><span class="badge bad" style="margin-top:6px">⚠️ 同一學生／老師當日有 ${Number(p.duplicateCount||2)} 筆個課，請確認誤登記</span>`:""}${p.parentConfirmation==="confirmed"?`<br><span class="badge good" style="margin-top:6px">🔒 已完成老師登記＋家長確認，紀錄已鎖定</span>`:""}${p.parentConfirmation==="pending"&&p.lessonId?`<button class="secondary" style="width:100%;margin-top:8px" onclick="resendAdminPrivateLessonEmail('${esc(p.studentId)}','${esc(p.lessonId)}','${esc(p.name||"學生")}')">📨 重寄確認 Email</button>`:""}${p.lessonId&&p.parentConfirmation!=="confirmed"?`<button class="secondary" style="width:100%;margin-top:8px;border-color:#c94b4b;color:#a52a2a" onclick="cancelAdminPrivateLesson('${esc(p.studentId)}','${esc(p.lessonId)}','${esc(p.name||"學生")}','${esc(p.startTime||"")}','${esc(p.endTime||"")}')">🗑️ 誤登記／取消此筆</button>`:""}</div>`).join("")}</div></details>`:"";return `<div class="item" style="align-items:flex-start"><div style="width:100%"><div style="display:flex;justify-content:space-between;gap:12px"><div><b>${esc(x.label)}</b><small>${x.groups?.length?"團別："+esc(x.groups.join("、"))+"｜":""}${esc(x.time||"")}<br>${status}${scheduleNote}<br>${isCancelled||isRescheduled?"此課程免點名":`已點名 ${recorded}/${expected}｜實到 ${x.attended||0}（含遲到 ${x.late||0}）｜請假 ${x.leave||0}｜缺席 ${x.absent||0}`}</small></div><div style="text-align:right;white-space:nowrap"><b style="font-size:18px">${isCancelled||isRescheduled?"—":(x.expected||0)+" / "+(x.attended||0)}</b><small>${isCancelled||isRescheduled?"不列入今日應到":"應到 / 實到"}<br>${isCancelled||isRescheduled?"免點名":(x.attendanceRate==null?"—":x.attendanceRate+"%")}</small></div></div>${sectionRecorderHtml(x)}${detail}</div></div>`}).join(""):`<div class="notice" style="margin-top:10px">此日期沒有依固定課表排定的團體課；若有補課或個別課，仍會依實際點名紀錄顯示。</div>`;
-      body=`<div class="grid" style="margin-top:12px"><div class="kpi"><b>${scheduledExpected}</b><span>今日應到人次</span></div><div class="kpi"><b>${scheduledAttended}</b><span>今日實到人次</span></div><div class="kpi"><b>${scheduledRate==null?"—":scheduledRate+"%"}</b><span>今日出席率</span></div><div class="kpi"><b>${c.total||0}</b><span>需追蹤筆數</span></div></div><div style="margin-top:12px"><b>今日課程／團別出席</b>${courseHtml}</div><div class="notice" style="margin-top:10px">應到依「已啟用課表＋當日停課／改期設定＋目前在團學生名單」計算；停課或改期的原課程不列入今日應到，也不會顯示為尚未點名。實到包含遲到；例如實到 18 人、遲到 2 人，表示準時出席 16 人。請假另計，不包含在實到內。</div>`;
+      body=`<div class="grid" style="margin-top:12px"><div class="kpi"><b>${scheduledExpected}</b><span>今日應到人次</span></div><div class="kpi"><b>${scheduledAttended}</b><span>今日實到人次</span></div><div class="kpi"><b>${scheduledRate==null?"—":scheduledRate+"%"}</b><span>今日出席率</span></div><div class="kpi"><b>${c.pendingAbsence||0}</b><span>缺席待追蹤（未處理）</span></div></div><div style="margin-top:12px"><b>今日課程／團別出席</b>${courseHtml}</div><div class="notice" style="margin-top:10px">應到依「已啟用課表＋當日停課／改期設定＋目前在團學生名單」計算；停課或改期的原課程不列入今日應到，也不會顯示為尚未點名。實到包含遲到；例如實到 18 人、遲到 2 人，表示準時出席 16 人。請假另計，不包含在實到內。</div>`;
     }
-    return `<div class="card"><h2>📣 當日未到／請假追蹤</h2><div class="notice">選擇任一天，管理員會跨所有老師彙整該日 00:00～23:59 的「分部課＋合奏課＋綜合課」請假與缺席學生，供學校行政老師聯絡追蹤。</div>${dateControls()}${sectionSummaryHtml()}${body}<button class="primary" style="margin-top:12px" onclick="exportAdminDailyFollowup()" ${loading?"disabled":""}>📥 匯出 ${esc(state.adminOps.date)} 整日未到／請假名單</button></div><details class="card"><summary style="cursor:pointer;font-weight:800;font-size:18px">${esc(state.adminOps.date)} 行政追蹤名單（請假 ${c.leave||0}／缺席 ${c.absent||0}，點開查看）</summary>${loading?`<div class="notice">正在整理整日點名資料…</div>`:error?`<div class="notice">請修正讀取問題後重新整理。</div>`:items.length?items.map(x=>`<div class="item"><div><b>${esc(x.name)}｜${esc(classText[x.classType]||x.classType)}</b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.grade)}｜${esc(x.instrument)}<br>點名老師：${esc(x.teacherName||"—")}</small></div><span class="badge ${x.status==="leave"?"warn":"bad"}">${esc(statusText[x.status]||x.status)}</span></div>`).join(""):`<div class="notice">✅ 這一天目前沒有分部課／合奏課／綜合課的請假或缺席紀錄。</div>`}</details>`;
+    return `<div class="card"><h2>📣 當日未到／請假追蹤</h2><div class="notice">選擇任一天，管理員會跨所有老師彙整該日 00:00～23:59 的「分部課＋合奏課＋綜合課」請假與缺席學生，供學校行政老師聯絡追蹤。確認學生安全後，可對缺席項目按「標記已知悉」；此操作只更新行政待辦，仍保留出勤紀錄，不代表已聯絡家長。</div>${dateControls()}${sectionSummaryHtml()}${body}<button class="primary" style="margin-top:12px" onclick="exportAdminDailyFollowup()" ${loading?"disabled":""}>📥 匯出 ${esc(state.adminOps.date)} 整日未到／請假名單</button></div><details class="card"><summary style="cursor:pointer;font-weight:800;font-size:18px">${esc(state.adminOps.date)} 行政追蹤名單（請假 ${c.leave||0}／缺席 ${c.absent||0}，點開查看）</summary>${loading?`<div class="notice">正在整理整日點名資料…</div>`:error?`<div class="notice">請修正讀取問題後重新整理。</div>`:items.length?items.map(x=>`<div class="item" style="align-items:flex-start"><div style="flex:1;min-width:0"><b>${esc(x.name)}｜${esc(classText[x.classType]||x.classType)}</b><small>${esc(x.groupName)}團｜${esc(x.section)}｜${esc(x.grade)}｜${esc(x.instrument)}<br>點名老師：${esc(x.teacherName||"—")}</small>${x.status==="absent"&&x.followup?.state==="acknowledged"?`<small style="color:#276749">✅ 行政已知悉｜${esc(x.followup.acknowledgedBy||"校方")}｜${esc(x.followup.acknowledgedAt||"")}${x.followup.note?`<br>處理備註：${esc(x.followup.note)}`:""}<br>原始缺席紀錄保留</small>`:x.status==="absent"&&["section","ensemble","comprehensive"].includes(x.classType)?`<button type="button" class="secondary" style="width:auto;margin:9px 0 0;padding:8px 12px" data-followup-ack="${esc(x.followupId)}" data-followup-version="${esc(x.recordVersion)}">✅ 標記已知悉</button>`:""}</div><span class="badge ${x.status==="leave"?"warn":x.followup?.state==="acknowledged"?"good":"bad"}">${esc(statusText[x.status]||x.status)}</span></div>`).join(""):`<div class="notice">✅ 這一天目前沒有分部課／合奏課／綜合課的請假或缺席紀錄。</div>`}</details>`;
   }
 
   function mountAdminOps(){
@@ -204,6 +219,16 @@
     root.innerHTML=settingsHtml()+followupHtml();
     setTimeout(ensureLoads,0);
   }
+
+  document.addEventListener("click",event=>{
+    const button=event.target.closest?.("[data-followup-ack]");
+    if(!button)return;
+    event.preventDefault();
+    const id=button.dataset.followupAck,version=button.dataset.followupVersion;
+    const row=state.adminOps.followup?.items?.find(x=>x.followupId===id&&x.recordVersion===version);
+    if(!row||row.status!=="absent"){toast("缺席紀錄已變動，請重新整理");return}
+    window.acknowledgeAdminAbsence(id,version,row.name);
+  });
 
   const baseRender=render;
   render=function(){const r=baseRender();if(state.me?.role==="admin"&&state.page==="admin")setTimeout(mountAdminOps,0);return r};

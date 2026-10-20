@@ -72,3 +72,28 @@ test('clicking either attendance todo leads to the real attendance followup scre
 test('attendance load failures are not shown as confirmed zero pending',()=>{
  assert.match(source,/summary\.error=results\.some\(result=>result\.status==='rejected'\)\|\|!summary\.attendance/);
 });
+
+test('acknowledged absence remains absent but disappears from unresolved todo counter',()=>{
+ const input=sample({items:[
+  {studentId:'101',status:'absent',classType:'section',followup:{state:'acknowledged'}},
+  {studentId:'102',status:'leave',classType:'ensemble'},
+  {studentId:'103',status:'absent',classType:'comprehensive',followup:{state:'pending'}},
+  {studentId:'104',status:'absent',classType:'private'}
+ ]});
+ assert.equal(counts(input,'2026-10-18T11:10:00+08:00').absent,1);
+});
+test('backend acknowledgement must not rewrite the attendance record',()=>{
+ const backend=readFileSync(new URL('../api/src/functions/attendanceReport.js',import.meta.url),'utf8');
+ const admin=readFileSync(new URL('../app/admin-operations.js',import.meta.url),'utf8');
+ assert.match(backend,/if\(a\.role!=="admin"\)return json\(\{error:"Forbidden"\},403\)/);
+ assert.match(backend,/const acknowledging=request\.method==="PATCH"&&request\.query\.get\("mode"\)==="acknowledge"/);
+ assert.match(backend,/target=items\.find\(x=>x\.status==="absent"/);
+ assert.match(backend,/recordVersion:version/);
+ assert.match(backend,/rowKey:"audit_"\+randomUUID\(\)/);
+ assert.match(backend,/acknowledgedBy:by,note/);
+ assert.match(backend,/updateEntity\(entry,"Replace",\{etag:existing\.etag\}\)/);
+ assert.match(backend,/pendingAbsence:items\.filter\(/);
+ assert.match(admin,/data-followup-ack/);
+ assert.match(admin,/window\.acknowledgeAdminAbsence/);
+ assert.match(admin,/window\.refreshSchoolAdminTodos/);
+});
