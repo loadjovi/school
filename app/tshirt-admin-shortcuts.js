@@ -129,7 +129,7 @@ async function loadRoster(){
  try{
   const headers=typeof window.uniformEventAuthHeaders==="function"?window.uniformEventAuthHeaders():{};
   const [rosterResult,historyResult]=await Promise.allSettled([
-   fetch("/api/students",{credentials:"same-origin",cache:"no-store",headers}),
+   fetch("/api/student-master",{credentials:"same-origin",cache:"no-store",headers}),
    fetch("/api/uniform-events/tshirt-historical-size",{credentials:"same-origin",cache:"no-store",headers})
   ]);
   if(rosterResult.status!=="fulfilled")throw rosterResult.reason;
