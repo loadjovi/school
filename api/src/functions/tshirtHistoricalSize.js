@@ -23,7 +23,7 @@ function historicalStudentInfo(student,schoolId,studentId,existing){
  return {groupName:student.groupName||student.group||"",receivedGrade:saved||confirmedReceiptGrade[schoolId]?.[studentId]||null};
 }
 const group=student=>String(student?.groupName||student?.group||"").trim().toUpperCase().replace(/\s/g,"").replace(/團$/,"");
-const activeStudent=student=>["A","B","C","儲備"].includes(group(student));
+const activeStudent=student=>String(student?.status||"active").trim().toLowerCase()==="active"&&["A","B","C","儲備"].includes(group(student));
 const historicallyIssued=student=>["A","B"].includes(group(student))&&String(student?.studentName||"").replace(/\s+/g,"")!=="李沛臻";
 async function audit(schoolId,actor,action,studentId,details){
  const t=await table("TenantUniformEventAudit");
@@ -63,6 +63,7 @@ app.http("tshirtHistoricalSize",{
    if(!body||!validId(body.studentId))return fail("Invalid student");
    const student=await getStudentMaster(body.studentId,schoolId);
    if(!student)return fail("Student not found",404);
+   if(!activeStudent(student))return fail("學生已退團／畢業或停用，團 T 歷史可查詢，但不可新增發放或異動尺寸",409);
    if(request.method==="POST"){
     if(access.role!=="admin")return fail("Admin only",403);
     if(body.confirmedIssued!==true||!Number.isSafeInteger(body.quantity)||body.quantity<1||body.quantity>20)return fail("Explicit issuance confirmation and quantity required");
