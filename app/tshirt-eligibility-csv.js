@@ -1,14 +1,14 @@
 import {isCurrentTshirtStudent,tshirtRosterMembers,tshirtArchiveLabel} from "./tshirt-roster-status.mjs";
-// 團T資格核對：匯出已取得的申請學生，不推斷未申請者；匯入只預覽，不寫入資料庫。
+// 團 T 資格核對：依學生主檔狀態分開匯出在團及退出歷史；不會寫回領用或學生主檔。
 const $=id=>document.getElementById(id);
 const headers=["studentId","studentName","group","firstFreeEligible","firstIssued","issuedAt","size","notes"];
 const exportHeaders=[...headers,"schoolHandoffStatus","schoolIssuedAt","handoffTo","parentReceivedAt"];
 const rosterExportHeaders=[...exportHeaders,"studentStatus","inactiveReason"];
 const statuses=new Set(["YES","NO","UNKNOWN"]);
-function download(rows){
+function download(rows,mode){
  const csv="\uFEFF"+[rosterExportHeaders,...rows].map(row=>row.map(v=>{let value=String(v??"");if(/^[=+@\-\t\r]/.test(value))value="\u0027"+value;return "\""+value.replace(/"/g,'""')+"\""}).join(",")).join("\r\n");
  const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
- const a=document.createElement("a");a.href=url;a.download=window.tshirtHistoryExportMode==="archive"?"團T_退團畢業_歷史核對.csv":"團T_在團學生_首次資格核對.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ const a=document.createElement("a");a.href=url;a.download=mode==="archive"?"團T_退團畢業_歷史核對.csv":"團T_在團學生_首次資格核對.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 async function exportEligibility(mode="current"){
  try{
@@ -46,8 +46,7 @@ async function exportEligibility(mode="current"){
    map.set(id,[id,name,group,eligible?"YES":"NO",issued?"YES":"NO",issued?(receivedDate||"UNKNOWN"):"",item?.size||"",note,status,item?.schoolIssuedAt||"",item?.schoolHandoffTo||"",item?.receivedAt||"",isCurrentTshirtStudent(student)?"active":"inactive",student.inactiveReason||""]);
   }
   if(!map.size){$("tshirtEligibilityPreview").textContent=mode==="archive"?"目前沒有已退出／停用學生的團 T 歷史資料。":"目前沒有可匯出的在團學生，請核對主檔狀態與團別。";return}
-  window.tshirtHistoryExportMode=mode;
-  download([...map.values()]);
+  download([...map.values()],mode);
   $("tshirtEligibilityPreview").textContent="已匯出 "+map.size+" 位"+(mode==="archive"?"退團／畢業歷史":"目前在團")+"學生；匯出包含學生狀態、尺寸、交付與家長領用確認時間。歷史檔只供查核，不列入目前發放／採購統計。"+(unclassified.length?"另有 "+unclassified.length+" 位團別無法辨識，未列入；請檢查學生主檔團別。":"")+" 僅供核對，不會寫入資料庫或扣除庫存。";
  }catch(e){$("tshirtEligibilityPreview").textContent="匯出失敗："+e.message}
 }
@@ -73,7 +72,7 @@ $("importTshirtEligibility").addEventListener("change",async e=>{
  try{
   if(file.size>1024*1024)throw Error("檔案不得超過 1MB");
   const rows=parseCsv(await file.text()),head=rows.shift();
-  const validHeader=Array.isArray(head)&&[headers,exportHeaders,rosterExportHeaders].some(allowed=>head.length===allowed.length&&allowed.every((h,i)=>head[i]===h));
+  const validHeader=Array.isArray(head)&&([headers,exportHeaders].some(allowed=>head.length===allowed.length&&allowed.every((h,i)=>head[i]===h))||[rosterExportHeaders].some(allowed=>head.length===allowed.length&&allowed.every((h,i)=>head[i]===h)));
   if(!validHeader)throw Error("CSV 欄位需符合舊版或新版匯出範本："+headers.join("、"));
   const ids=new Set(),errors=[],data=[];
   for(const [i,row] of rows.entries()){
