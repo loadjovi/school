@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
+import {Script} from "node:vm";
 const workspace=readFileSync(new URL("../app/school-admin-workspace.js",import.meta.url),"utf8");
 const page=readFileSync(new URL("../app/admin-semester-scores.html",import.meta.url),"utf8");
 const source=readFileSync(new URL("../api/src/functions/parentSemesterAttendance.js",import.meta.url),"utf8");
@@ -69,4 +70,10 @@ test("mobile totals do not misrepresent incomplete grades and are HTML-escaped",
  assert.match(page,/html\(student\.section\|\|""\)/);
  assert.match(page,/env\(safe-area-inset-bottom,0px\)/);
  assert.match(page,/\.mobile-score-breakdown/);
+});
+
+test("embedded grade page JavaScript parses after mobile compact-card update",()=>{
+ const source=page.split("<script>")[1]?.split("</script>")[0];
+ assert.ok(source);
+ assert.doesNotThrow(()=>new Script(source));
 });
