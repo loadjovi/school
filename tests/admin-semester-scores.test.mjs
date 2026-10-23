@@ -42,3 +42,31 @@ test("two distinct fifth-score modes, pending status, progress and CSV are offer
  assert.match(page,/function csvSafe/);
  assert.doesNotMatch(page,/Math\.random\(/);
 });
+
+test("mobile view is compact by default and preserves full desktop score table",()=>{
+ assert.match(page,/class="table-wrap"/);
+ assert.match(page,/id="mobileStudents" class="mobile-student-list"/);
+ assert.match(page,/@media\(max-width:760px\)/);
+ assert.match(page,/\.table-wrap\{display:none\}/);
+ assert.match(page,/\.mobile-student-list\{display:block\}/);
+ assert.match(page,/\.mobile-student-details>summary/);
+ assert.match(page,/查看 10＋5＋5 分數明細/);
+ assert.match(page,/const expandedMobileStudents=new Set\(\)/);
+ assert.match(page,/expandedMobileStudents\.has\(key\)/);
+ assert.match(page,/expandedMobileStudents\.add\(key\)/);
+ assert.match(page,/expandedMobileStudents\.delete\(key\)/);
+ assert.match(page,/members\.map\(buildMobileCard\)/);
+});
+test("mobile totals do not misrepresent incomplete grades and are HTML-escaped",()=>{
+ assert.match(page,/s\.total20!=null/);
+ assert.match(page,/scoreLabel=.*"待完成"/);
+ assert.match(page,/已取得 .*分（非總分）/);
+ assert.match(page,/待完成："+missing\.join/);
+ assert.match(page,/format\(s\.practice10,10\)/);
+ assert.match(page,/format\(s\.attendance5,5\)/);
+ assert.match(page,/format\(s\.performance5,5\)/);
+ assert.match(page,/html\(student\.name\)/);
+ assert.match(page,/html\(student\.section\|\|""\)/);
+ assert.match(page,/env\(safe-area-inset-bottom,0px\)/);
+ assert.match(page,/\.mobile-score-breakdown/);
+});
