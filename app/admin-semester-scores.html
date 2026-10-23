@@ -139,7 +139,8 @@ function display(){
  $("export").disabled=config.loading||!members.length||!records.every(Boolean);
  sendHeight();
 }
-function sendHeight(){if(window.parent===window)return;requestAnimationFrame(()=>window.parent.postMessage({type:"school-semester-scores-height",height:Math.ceil(document.documentElement.scrollHeight+12)},location.origin))}
+let lastSentHeight=0;
+function sendHeight(){if(window.parent===window)return;requestAnimationFrame(()=>{const height=Math.ceil(document.body.offsetHeight+12);if(height===lastSentHeight)return;lastSentHeight=height;window.parent.postMessage({type:"school-semester-scores-height",height},location.origin)})}
 async function load(){
  const id=++config.requestId;config.loading=true;config.scores=new Map();$("refresh").disabled=true;$("export").disabled=true;
  $("feedback").className="";$("feedback").textContent="讀取在團學生名單…";display();
