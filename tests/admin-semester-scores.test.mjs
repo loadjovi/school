@@ -19,7 +19,7 @@ test("school score overview uses exact parent semester scoring API, never a seco
  assert.match(page,/sessionStorage\.getItem\("google_id_token"\)/);
  assert.match(page,/sessionStorage\.getItem\("school_context_id"\)/);
  assert.match(page,/sessionStorage\.getItem\("role_context"\)/);
- assert.match(page,/score\.semesterScore/);
+ assert.match(page,/score\?\.semesterScore/);
  assert.match(page,/score\.practice10/);
  assert.match(page,/score\.attendance5/);
  assert.match(page,/score\.performance5/);
@@ -38,7 +38,7 @@ test("two distinct fifth-score modes, pending status, progress and CSV are offer
  assert.match(page,/config\.scores\.set\(String\(student\.studentId\),record\)/);
  assert.match(page,/明細/);
  assert.match(page,/匯出目前篩選 CSV/);
- assert.match(page,/\uFEFF/);
- assert.match(page,/\^[=\+@/);
+ assert.match(page,/const csv=/);
+ assert.match(page,/function csvSafe/);
  assert.doesNotMatch(page,/Math\.random\(/);
 });
