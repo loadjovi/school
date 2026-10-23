@@ -34,6 +34,49 @@ td strong{font-size:16px}td .pending{color:#9e6d11}.score{font-weight:800;color:
 details{margin-top:8px;font-weight:400}summary{cursor:pointer;color:#3656a8;font-weight:700}
 .monthly{font-size:12px;line-height:1.7;background:#f0f5fa;border-radius:8px;padding:10px;margin-top:8px}
 #feedback{min-height:28px;line-height:1.5}#feedback.error{color:#a72c2c}
+
+/* Mobile-first compact scores: full desktop table remains unchanged. */
+.mobile-student-list{display:none;min-width:0}
+.mobile-student-card{border:1px solid #d8e2ef;background:#fff;border-radius:12px;padding:13px;margin-top:10px;min-width:0;overflow-wrap:anywhere}
+.mobile-student-card:first-child{margin-top:0}
+.mobile-card-heading{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;min-width:0}
+.mobile-student-identity{min-width:0;flex:1}
+.mobile-student-identity b{font-size:17px;line-height:1.45;display:block}
+.mobile-student-identity small{display:block;margin-top:4px;font-size:12px}
+.mobile-total{border-radius:10px;padding:7px 9px;background:#eaf2ef;text-align:right;flex:0 0 auto;max-width:53%;min-width:90px}
+.mobile-total strong{display:block;font-size:19px;line-height:1.4;color:#175e48;overflow-wrap:anywhere}
+.mobile-total small{display:block;font-size:11px;line-height:1.45;color:#426a61}
+.mobile-total.is-pending{background:#fff3df}
+.mobile-total.is-pending strong{font-size:16px;color:#895500}
+.mobile-total.is-error{background:#fff0f0}
+.mobile-total.is-error strong{color:#a72c2c}
+.mobile-score-status{margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;line-height:1.5}
+.mobile-score-status .chip{font-size:12px}
+.mobile-score-pending{background:#fff7e7;color:#81520e;padding:9px 11px;border-radius:8px;margin-top:10px;font-size:13px;line-height:1.6}
+.mobile-student-details{border-top:1px solid #e1e8f1;margin-top:11px;padding-top:8px}
+.mobile-student-details>summary{padding:8px 4px;min-height:40px;display:list-item;color:#3656a8;line-height:1.5;font-size:14px;cursor:pointer;font-weight:700}
+.mobile-score-breakdown{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:8px}
+.mobile-score-breakdown>div{background:#f3f6fb;border:1px solid #e0e7f0;border-radius:9px;padding:9px 6px;text-align:center;min-width:0}
+.mobile-score-breakdown small{display:block;font-size:11px;line-height:1.45}
+.mobile-score-breakdown strong{display:block;font-size:14px;line-height:1.45;margin-top:5px;overflow-wrap:anywhere}
+.mobile-score-breakdown strong.pending{color:#9e6d11}
+.mobile-score-note{font-size:12px;line-height:1.65;margin-top:9px;color:#66778e}
+@media(max-width:760px){
+ body{padding:8px 8px calc(88px + env(safe-area-inset-bottom,0px))}
+ .table-wrap{display:none}
+ .mobile-student-list{display:block}
+ .card{padding:13px}
+ .banner button{width:100%}
+ .toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .toolbar label:last-of-type{grid-column:1/-1}
+ .mobile-card-heading{gap:8px}
+}
+@media(max-width:360px){
+ .mobile-score-breakdown{grid-template-columns:minmax(0,1fr)}
+ .mobile-score-breakdown>div{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;text-align:left}
+ .mobile-score-breakdown strong{margin-top:0}
+}
+
 @media(max-width:700px){body{padding:8px}.card{padding:14px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat strong{font-size:22px}h1{font-size:20px}.banner button{width:100%}.toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}.toolbar label:last-of-type{grid-column:1/-1}}
 </style>
 </head>
@@ -64,6 +107,7 @@ details{margin-top:8px;font-weight:400}summary{cursor:pointer;color:#3656a8;font
  <div class="banner"><h2>學生逐人成績明細</h2><button id="export" type="button" disabled>匯出目前篩選 CSV</button></div>
  <div class="notice warn">分數欄位以 20 分為上限。若個課／期末評分尚未完成，僅列「已取得分數」，<b>不得視為正式 20 分總成績</b>。已退團或停用學生不列入當前統計。</div>
  <div class="table-wrap"><table><thead><tr><th>學生／團別</th><th>評分模式</th><th>自主練習 /10</th><th>課程點名 /5</th><th>個課／期末 /5</th><th>合計 /20</th></tr></thead><tbody id="rows"><tr><td colspan="6">載入中…</td></tr></tbody></table></div>
+ <div id="mobileStudents" class="mobile-student-list" aria-label="手機版學生學期成績"><p>載入中…</p></div>
 </section>
 <script>
 (function(){
@@ -129,6 +173,47 @@ function buildRow(student){
  (s.total20==null?'<small>已取得 '+html(Number(available.toFixed(2)))+' 分（非正式總分）</small>':"")+
  '<small>'+html(status)+'</small>'+missingInfo+detail+'</td></tr>';
 }
+
+const expandedMobileStudents=new Set();
+function buildMobileCard(student){
+ const key=String(student.studentId||""),record=config.scores.get(key);
+ const score=record?.score, s=score?.semesterScore||{};
+ const mode=category(student,score)==="private"?"模式一｜個課":"模式二｜老師期末評分";
+ const missing=[s.practice10==null?"自主練習":null,s.attendance5==null?"課程點名":null,s.performance5==null?"學習表現 5 分":null].filter(Boolean);
+ const acquired=[s.practice10,s.attendance5,s.performance5].filter(x=>x!=null).reduce((a,b)=>a+Number(b),0);
+ const complete=record&&!record.error&&s.total20!=null;
+ const scoreLabel=record?.error?"讀取失敗":!record?"載入中":complete?format(s.total20,20):"待完成";
+ const subLabel=complete?(s.status==="final"&&s.complete?"正式成績":"目前暫估／20"):record?.error?"請重新讀取":!record?"成績讀取中":"已取得 "+Number(acquired.toFixed(2))+" 分（非總分）";
+ const indicator=record?.error?"is-error":complete?"":"is-pending";
+ const status=complete?(s.status==="final"&&s.complete?"已結算":"暫估／尚未結算"):"未完成";
+ const notice=record?.error?"無法讀取："+String(record.error):!record?"正在讀取學期成績":missing.length?"待完成："+missing.join("、"):"資料尚未可結算，請檢查學期狀態";
+ const open=expandedMobileStudents.has(key)?" open":"";
+ const breakdown='<div class="mobile-score-breakdown">'+
+  '<div><small>🎯 自主練習 /10</small><strong>'+html(format(s.practice10,10))+'</strong></div>'+
+  '<div><small>📘 課程點名 /5</small><strong>'+html(format(s.attendance5,5))+'</strong></div>'+
+  '<div><small>🎻 個課／期末 /5</small><strong class="'+(s.performance5==null?"pending":"")+'">'+html(format(s.performance5,5))+'</strong></div></div>';
+ const month=score?'<details class="mobile-monthly"><summary>查看各月份分數</summary><div class="monthly">'+monthDetails(score)+'</div></details>':"";
+ return '<article class="mobile-student-card" aria-label="'+html(student.name)+' 學期成績">'+
+  '<div class="mobile-card-heading">'+
+   '<div class="mobile-student-identity"><b>'+html(student.name)+'</b><small>'+html(student.groupName)+'｜'+html(student.grade)+'｜'+html(student.section||"")+'</small><small>學號 '+html(key)+'</small></div>'+
+   '<div class="mobile-total '+indicator+'"><strong>'+html(scoreLabel)+'</strong><small>'+html(subLabel)+'</small></div>'+
+  '</div>'+
+  '<div class="mobile-score-status"><span class="chip">'+html(mode)+'</span><span class="chip '+(complete?"":"review")+'">'+html(status)+'</span></div>'+
+  (!complete?'<div class="mobile-score-pending">'+html(notice)+'</div>':"")+
+  '<details class="mobile-student-details" data-score-student="'+html(key)+'"'+open+'><summary>查看 10＋5＋5 分數明細</summary>'+
+  breakdown+'<div class="mobile-score-note">'+html(statusLabel(score))+'；'+html(complete?status:notice)+'</div>'+month+'</details>'+
+ '</article>';
+}
+document.addEventListener("toggle",event=>{
+ const detail=event.target;
+ if(detail.matches?.(".mobile-student-details")){
+  const key=detail.dataset.scoreStudent;
+  if(detail.open)expandedMobileStudents.add(key);
+  else expandedMobileStudents.delete(key);
+ }
+ if(detail.matches?.(".mobile-student-details, .mobile-monthly"))sendHeight();
+},true);
+
 function display(){
  const members=filtered(),records=members.map(s=>config.scores.get(String(s.studentId)));
  $("countStudents").textContent=String(members.length);
@@ -136,6 +221,7 @@ function display(){
  $("countPending").textContent=String(records.filter(x=>x?.score&&x.score.semesterScore?.total20==null).length);
  $("countErrors").textContent=String(records.filter(x=>x?.error).length);
  $("rows").innerHTML=members.length?members.map(buildRow).join(""):'<tr><td colspan="6">此條件沒有在團學生。</td></tr>';
+ $("mobileStudents").innerHTML=members.length?members.map(buildMobileCard).join(""):'<div class="mobile-student-card">此條件沒有在團學生。</div>';
  $("export").disabled=config.loading||!members.length||!records.every(Boolean);
  sendHeight();
 }
