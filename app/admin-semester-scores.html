@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache">
+<title>學校後台｜學期成績總覽 20 分</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Microsoft JhengHei",sans-serif;color:#19335b;background:#f4f7fb}
+*{box-sizing:border-box}body{margin:0;padding:12px;background:#f4f7fb;font-size:15px}
+button,select,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.55;cursor:not-allowed}
+.card{background:#fff;border:1px solid #d9e2ef;border-radius:16px;padding:18px;margin-bottom:14px}
+h1{font-size:23px;line-height:1.35;margin:0 0 8px}h2{font-size:18px;margin:0 0 12px}
+small,.muted{color:#60728b}.notice{background:#f1f6f5;border-radius:10px;padding:13px;line-height:1.7;margin:12px 0}
+.warn{background:#fff6e9;color:#885000}.banner{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center}
+.toolbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:10px;align-items:end;margin:16px 0}
+label{display:block;color:#223d67;font-weight:700;font-size:14px}
+label>*{display:block;margin-top:6px;width:100%;min-height:44px;border-radius:9px;border:1px solid #cbd6e5;padding:8px 11px;background:#fff;color:#19335b}
+button{min-height:42px;border-radius:9px;border:1px solid #3b58a4;background:#fff;color:#3454a5;padding:9px 13px}
+button.primary{background:#425aaf;color:white}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.stat{border:1px solid #d8e2ef;background:#f5f8fb;border-radius:11px;padding:12px}
+.stat strong{display:block;font-size:24px;margin-bottom:5px}.stat small{display:block;font-size:12px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.filters button[aria-pressed="true"]{background:#4159ac;color:#fff}
+.table-wrap{overflow-x:auto;width:100%;border:1px solid #d8e2ef;border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:740px;font-size:14px}
+th{text-align:left;background:#eaf0f8;color:#1e3c66;white-space:nowrap}
+th,td{padding:11px 10px;border-bottom:1px solid #dce4ed;vertical-align:top}
+tbody tr:nth-child(even){background:#f8fafc}td small{display:block;line-height:1.5;margin-top:3px}
+td strong{font-size:16px}td .pending{color:#9e6d11}.score{font-weight:800;color:#284986}
+.score.pending{color:#99640d}.chip{display:inline-block;border-radius:20px;background:#e9eff8;padding:3px 8px;font-size:12px}
+.chip.review{background:#fff2d5;color:#8d5d00}
+details{margin-top:8px;font-weight:400}summary{cursor:pointer;color:#3656a8;font-weight:700}
+.monthly{font-size:12px;line-height:1.7;background:#f0f5fa;border-radius:8px;padding:10px;margin-top:8px}
+#feedback{min-height:28px;line-height:1.5}#feedback.error{color:#a72c2c}
+@media(max-width:700px){body{padding:8px}.card{padding:14px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat strong{font-size:22px}h1{font-size:20px}.banner button{width:100%}.toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}.toolbar label:last-of-type{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<section class="card">
+ <div class="banner"><div><h1>🏅 學期成績總覽｜滿分 20 分</h1><div class="muted">學校管理員專用｜直接讀取家長端相同的正式成績 API，不另設計分公式</div></div><button id="refresh" class="primary" type="button">重新讀取成績</button></div>
+ <div class="notice">🎯 自主練習 <b>10 分</b> ＋ 📘 課程點名 <b>5 分</b> ＋ 🎻 學習表現 <b>5 分</b>。<br>評分模式一：有完成個課者按每月個課完成次數計算；模式二：整學期沒有完成個課者，最後 5 分由分部老師於期末評量。<br><b>未評的項目顯示「待評分」，不會視為 0 分。10 月進行中，請以暫估成績看待。</b></div>
+ <div class="toolbar">
+  <label>學年度（民國）<input id="year" type="number" min="100" max="140" step="1"></label>
+  <label>學期<select id="term"><option value="1">上學期（10～12月）</option><option value="2">下學期（2～5月）</option></select></label>
+  <label>團別<select id="group"><option value="ALL">全部團別</option><option value="A">A 團</option><option value="B">B 團</option><option value="C">儲備團</option></select></label>
+  <label>搜尋學生<input id="search" placeholder="姓名或學號"></label>
+ </div>
+ <div class="filters" aria-label="計分模式">
+  <button type="button" data-mode="all" aria-pressed="true">全部（兩種模式）</button>
+  <button type="button" data-mode="private" aria-pressed="false">模式一｜個課表現 5 分</button>
+  <button type="button" data-mode="teacher" aria-pressed="false">模式二｜老師期末評分 5 分</button>
+ </div>
+ <div class="stats">
+  <div class="stat"><strong id="countStudents">—</strong><small>符合篩選學生</small></div>
+  <div class="stat"><strong id="countScored">—</strong><small>目前可合計 /20</small></div>
+  <div class="stat"><strong id="countPending">—</strong><small>尚有未完成項目</small></div>
+  <div class="stat"><strong id="countErrors">—</strong><small>讀取失敗</small></div>
+ </div>
+ <p id="feedback" role="status" aria-live="polite">正在確認學校管理員身分…</p>
+</section>
+<section class="card">
+ <div class="banner"><h2>學生逐人成績明細</h2><button id="export" type="button" disabled>匯出目前篩選 CSV</button></div>
+ <div class="notice warn">分數欄位以 20 分為上限。若個課／期末評分尚未完成，僅列「已取得分數」，<b>不得視為正式 20 分總成績</b>。已退團或停用學生不列入當前統計。</div>
+ <div class="table-wrap"><table><thead><tr><th>學生／團別</th><th>評分模式</th><th>自主練習 /10</th><th>課程點名 /5</th><th>個課／期末 /5</th><th>合計 /20</th></tr></thead><tbody id="rows"><tr><td colspan="6">載入中…</td></tr></tbody></table></div>
+</section>
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id), html=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+const authHeaders=()=>{const h={"Content-Type":"application/json"},token=sessionStorage.getItem("google_id_token"),school=sessionStorage.getItem("school_context_id"),role=sessionStorage.getItem("role_context");if(token)h["X-Google-ID-Token"]=token;if(school)h["X-School-Id"]=school;if(role)h["X-Role-Context"]=role;return h};
+const request=async url=>{const r=await fetch(url,{headers:authHeaders(),cache:"no-store",credentials:"same-origin"}),data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||"HTTP "+r.status);return data};
+const tp=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit"}).format(new Date());
+const yy=Number(tp.slice(0,4)),mm=Number(tp.slice(5));
+$("year").value=String((mm>=8?yy:yy-1)-1911);
+$("term").value=mm>=8?"1":"2";
+const config={students:[],scores:new Map(),mode:"all",requestId:0,loading:false};
+const format=(value,max)=>value==null?"待資料":Number(value).toFixed(2).replace(/\.?0+$/,"")+"/"+max;
+function category(row,score){
+  // Match the official family rule: completed private lessons override the
+  // end-of-term fallback even for students without a private-lesson obligation.
+  const source=score?.semesterScore?.performanceSource;
+  return source==="privateLessonFrequency"?"private":source==="sectionFinal"?"teacher":String(row.groupName).trim().toUpperCase().startsWith("A")?"private":"teacher";
+}
+function statusLabel(score){
+  const s=score?.semesterScore||{},source=s.performanceSource;
+  if(source==="privateLessonFrequency")return "個課完成次數";
+  if(source==="sectionFinal")return "分部老師期末評分";
+  return "期末 5 分待確認";
+}
+function filtered(){
+  const grp=$("group").value,q=$("search").value.trim().toLowerCase();
+  return config.students.filter(x=>{
+   let group=String(x.groupName||"").replace(/\s/g,"").toUpperCase();
+   group=group==="A團"?"A":group==="B團"?"B":["C","C團","儲備","儲備團"].includes(group)?"C":group;
+   if(grp!=="ALL"&&grp!==group)return false;
+   if(q&&!(String(x.name||"")+" "+String(x.studentId||"")).toLowerCase().includes(q))return false;
+   const record=config.scores.get(String(x.studentId)),score=record?.score;
+   if(config.mode!=="all"&&category(x,score)!==config.mode)return false;
+   return true;
+  });
+}
+function monthDetails(score){
+  const monthly=score?.monthlyScores||[];
+  return monthly.map(m=>{
+   const p=m.practice||{},a=m.attendance||{},v=m.privateLesson||{};
+   return '<div>'+html(m.month)+'｜自主 '+html(format(p.score10,10))+'｜點名 '+html(format(a.score5,5))+'｜個課 '+html(format(v.score5,5))+(m.future?"（尚未進入）":m.status==="provisional"?"（暫估）":"")+'</div>';
+  }).join("");
+}
+function buildRow(student){
+ const record=config.scores.get(String(student.studentId));
+ const s=record?.score?.semesterScore||{},mode=category(student,record?.score);
+ const modeText=mode==="private"?"模式一｜個課":"模式二｜老師期末評分";
+ const missing=[s.practice10==null?"自主練習":null,s.attendance5==null?"點名":null,s.performance5==null?"最後 5 分":null].filter(Boolean);
+ const available=[s.practice10,s.attendance5,s.performance5].filter(x=>x!=null).reduce((a,b)=>a+Number(b),0);
+ const total=record?.error?"讀取失敗":!record?"載入中":s.total20==null?"待完成":format(s.total20,20);
+ const status=s.status==="final"&&s.complete?"已結算":"暫估／待完成";
+ const missingInfo=missing.length?'<small class="pending">尚缺：'+html(missing.join("、"))+'</small>':"";
+ const base='<td><b>'+html(student.name)+'</b><small>'+html(student.grade)+"｜"+html(student.groupName)+"｜"+html(student.section||"")+'</small><small>'+html(student.studentId)+'</small></td>';
+ if(record?.error)return '<tr>'+base+'<td>'+html(modeText)+'</td><td colspan="4" class="pending">無法讀取：'+html(record.error)+'</td></tr>';
+ if(!record)return '<tr>'+base+'<td>'+html(modeText)+'</td><td colspan="4">正在讀取…</td></tr>';
+ const detail='<details><summary>各月份分數</summary><div class="monthly">'+monthDetails(record.score)+'</div></details>';
+ return '<tr>'+base+
+ '<td>'+html(modeText)+'<small>'+html(statusLabel(record.score))+'</small></td>'+
+ '<td>'+html(format(s.practice10,10))+'</td><td>'+html(format(s.attendance5,5))+'</td>'+
+ '<td>'+html(format(s.performance5,5))+'</td>'+
+ '<td><strong class="score '+(s.total20==null?"pending":"")+'">'+html(total)+'</strong>'+
+ (s.total20==null?'<small>已取得 '+html(Number(available.toFixed(2)))+' 分（非正式總分）</small>':"")+
+ '<small>'+html(status)+'</small>'+missingInfo+detail+'</td></tr>';
+}
+function display(){
+ const members=filtered(),records=members.map(s=>config.scores.get(String(s.studentId)));
+ $("countStudents").textContent=String(members.length);
+ $("countScored").textContent=String(records.filter(x=>x?.score?.semesterScore?.total20!=null).length);
+ $("countPending").textContent=String(records.filter(x=>x?.score&&x.score.semesterScore?.total20==null).length);
+ $("countErrors").textContent=String(records.filter(x=>x?.error).length);
+ $("rows").innerHTML=members.length?members.map(buildRow).join(""):'<tr><td colspan="6">此條件沒有在團學生。</td></tr>';
+ $("export").disabled=config.loading||!members.length||!records.every(Boolean);
+ sendHeight();
+}
+function sendHeight(){if(window.parent===window)return;requestAnimationFrame(()=>window.parent.postMessage({type:"school-semester-scores-height",height:Math.ceil(document.documentElement.scrollHeight+12)},location.origin))}
+async function load(){
+ const id=++config.requestId;config.loading=true;config.scores=new Map();$("refresh").disabled=true;$("export").disabled=true;
+ $("feedback").className="";$("feedback").textContent="讀取在團學生名單…";display();
+ try{
+  const master=await request("/api/student-master?status=active");
+  if(id!==config.requestId)return;
+  config.students=(master.items||[]).filter(x=>x.status==="active").sort((a,b)=>String(a.groupName).localeCompare(String(b.groupName),"zh-Hant")||String(a.grade).localeCompare(String(b.grade),"zh-Hant")||String(a.name).localeCompare(String(b.name),"zh-Hant"));
+  if(!config.students.length){$("feedback").textContent="目前沒有在團學生";return}
+  let next=0,done=0;const students=config.students,schoolYear=$("year").value,semester=$("term").value;
+  const worker=async()=>{
+   while(next<students.length&&id===config.requestId){
+    const student=students[next++];
+    let record;
+    try{const score=await request("/api/parent-semester-attendance?studentId="+encodeURIComponent(student.studentId)+"&schoolYear="+encodeURIComponent(schoolYear)+"&semester="+encodeURIComponent(semester));record={score}}
+    catch(e){record={error:String(e.message||e)}}
+    if(id!==config.requestId)return;
+    config.scores.set(String(student.studentId),record);
+    done++;
+    $("feedback").textContent="已讀取 "+done+" / "+students.length+" 位學生。以家長端同一計分 API 核對中…";
+    if(done%3===0||done===students.length)display();
+   }
+  };
+  await Promise.all(Array.from({length:Math.min(4,students.length)},worker));
+  if(id!==config.requestId)return;
+  const failed=[...config.scores.values()].filter(x=>x.error).length;
+  $("feedback").textContent="已完成 "+students.length+" 位在團學生的學期成績核對。"+(failed?"有 "+failed+" 位讀取失敗，請重新讀取。":"可依模式、團別及姓名篩選或匯出 CSV。");
+  $("feedback").className=failed?"error":"";
+ }catch(e){if(id===config.requestId){$("feedback").className="error";$("feedback").textContent="無法讀取學校學期成績："+String(e.message||e)+"。請確認已切換學校管理員身分。"}}
+ finally{if(id===config.requestId){config.loading=false;$("refresh").disabled=false;display()}}
+}
+function csvSafe(x){
+ let v=String(x??"");
+ if(/^[=+@\-\t\r]/.test(v))v="'"+v;
+ return '"'+v.replace(/"/g,'""')+'"';
+}
+function exportCsv(){
+ const headers=["學年度","學期","學號","學生","團別","年級","分部","評分模式","自主練習10","課程點名5","學習表現5","正式總分20","已取得分數（非總分）","成績狀態","缺少項目","資料錯誤"];
+ const rows=filtered().map(student=>{
+  const rec=config.scores.get(String(student.studentId)),score=rec?.score?.semesterScore||{};
+  const defined=[score.practice10,score.attendance5,score.performance5].filter(x=>x!=null);
+  const missing=[score.practice10==null?"自主練習":null,score.attendance5==null?"課程點名":null,score.performance5==null?"學習表現":null].filter(Boolean).join("、");
+  return [$("year").value,$("term").value,student.studentId,student.name,student.groupName,student.grade,student.section,category(student,rec?.score)==="private"?"個課完成次數":"老師期末評分",score.practice10??"",score.attendance5??"",score.performance5??"",score.total20??"",Number(defined.reduce((x,y)=>x+Number(y),0).toFixed(2)),score.status==="final"&&score.complete?"已結算":"暫估／待完成",missing,rec?.error||""];
+ });
+ const csv="\uFEFF"+[headers,...rows].map(r=>r.map(csvSafe).join(",")).join("\r\n");
+ const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="學期20分成績_民國"+$("year").value+"_"+$("term").value+"學期.csv";document.body.append(a);a.click();a.remove();URL.revokeObjectURL(url);
+}
+document.querySelectorAll("[data-mode]").forEach(button=>button.addEventListener("click",()=>{config.mode=button.dataset.mode;document.querySelectorAll("[data-mode]").forEach(b=>b.setAttribute("aria-pressed",String(b===button)));display()}));
+$("group").addEventListener("change",display);$("search").addEventListener("input",display);
+$("term").addEventListener("change",load);$("year").addEventListener("change",load);
+$("refresh").addEventListener("click",load);$("export").addEventListener("click",exportCsv);
+new ResizeObserver(sendHeight).observe(document.body);
+load();
+})();
+</script>
+</body>
+</html>

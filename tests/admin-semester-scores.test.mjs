@@ -1,0 +1,44 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+const workspace=readFileSync(new URL("../app/school-admin-workspace.js",import.meta.url),"utf8");
+const page=readFileSync(new URL("../app/admin-semester-scores.html",import.meta.url),"utf8");
+const source=readFileSync(new URL("../api/src/functions/parentSemesterAttendance.js",import.meta.url),"utf8");
+const studentApi=readFileSync(new URL("../api/src/functions/studentMaster.js",import.meta.url),"utf8");
+test("school workspace has dedicated 20-point score overview in both mobile and desktop",()=>{
+ assert.match(workspace,/grades:\['學期成績總覽'/);
+ assert.match(workspace,/\['grades','學期成績總覽'/);
+ assert.match(workspace,/id="awSemesterScoresFrame"/);
+ assert.match(workspace,/group==='grades'/);
+ assert.match(workspace,/school-semester-scores-height/);
+ assert.match(page,/滿分 20 分/);
+});
+test("school score overview uses exact parent semester scoring API, never a second scoring algorithm",()=>{
+ assert.match(page,/\/api\/parent-semester-attendance\?studentId=/);
+ assert.match(page,/\/api\/student-master\?status=active/);
+ assert.match(page,/sessionStorage\.getItem\("google_id_token"\)/);
+ assert.match(page,/sessionStorage\.getItem\("school_context_id"\)/);
+ assert.match(page,/sessionStorage\.getItem\("role_context"\)/);
+ assert.match(page,/score\?\.semesterScore/);
+ assert.match(page,/score\.practice10/);
+ assert.match(page,/score\.attendance5/);
+ assert.match(page,/score\.performance5/);
+ assert.match(page,/s\.total20==null\?"待完成"/);
+ assert.match(page,/已取得/);
+ assert.match(source,/access\.role!=="parent"&&access\.role!=="admin"/);
+ assert.match(studentApi,/if\(access\.role!=="admin"\)return json\(\{error:"Forbidden"\},403\)/);
+});
+test("two distinct fifth-score modes, pending status, progress and CSV are offered",()=>{
+ assert.match(page,/模式一｜個課表現 5 分/);
+ assert.match(page,/模式二｜老師期末評分 5 分/);
+ assert.match(page,/source==="privateLessonFrequency"/);
+ assert.match(page,/source==="sectionFinal"/);
+ assert.match(page,/return "期末 5 分待確認"/);
+ assert.match(page,/if\(config\.mode!=="all"/);
+ assert.match(page,/config\.scores\.set\(String\(student\.studentId\),record\)/);
+ assert.match(page,/明細/);
+ assert.match(page,/匯出目前篩選 CSV/);
+ assert.match(page,/const csv=/);
+ assert.match(page,/function csvSafe/);
+ assert.doesNotMatch(page,/Math\.random\(/);
+});
