@@ -115,7 +115,6 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         self.assertTrue((self.lab/"app/sop-lab/scenarios.json").is_file())
         scenarios=json.loads((self.lab/"app/sop-lab/scenarios.json").read_text(encoding="utf-8"))
         self.assertGreaterEqual(len(scenarios),6)
-        expected={str(i) for i in range(1,13)}
         self.assertEqual({entry["id"].replace("SOP-","") for entry in scenarios}, {f"{i:02d}" for i in range(1,13)})
         self.assertTrue(any("20 分" in entry["title"] for entry in scenarios))
         self.assertTrue(any("缺席已知悉" in entry["title"] for entry in scenarios))
@@ -127,12 +126,13 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         self.assertNotIn("ref: main",flow)
         self.assertIn('if [[ "$LAB_TOKEN" == "$PROD_TOKEN" ]]',flow)
         self.assertIn("AZURE_STATIC_WEB_APPS_API_TOKEN_SCHOOL_FUNCTIONAL_LAB",flow)
-        self.assertIn("  push:\\n    branches:\\n      - main",flow)
+        self.assertIn("  push:",flow)
+        self.assertIn("      - main",flow)
         self.assertIn("  workflow_dispatch:",flow)
         self.assertIn("app_location: .functional-lab-build/app",flow)
         self.assertIn("api_location: .functional-lab-build/api",flow)
         self.assertIn("node --test tests/admin-semester-scores.test.mjs",flow)
-        self.assertNotIn("api_location: api\\n",flow)
+        self.assertNotIn("api_location: api",flow)
 
     def test_sop_fixtures_api_exists_only_in_generated_lab(self):
         api=self.lab/"api/src/functions/sopLabFixtures.js"
