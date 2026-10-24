@@ -109,6 +109,16 @@ button,select{padding:9px 13px;border:1px solid #748ab9;color:#1d315a;border-rad
  <p class="muted">若你是在另一個分頁登入：請先<a href="/">於此分頁開啟 LAB 完整平台</a>登入並選擇學校管理員，然後點 LAB 右上方新增的「SOP LAB」捷徑返回；不需複製登入憑證。</p>
 </section>
 <section class="card">
+ <h2>03A｜將 LAB 還原至「只匯入學生」起點</h2>
+ <p>適合重拍首次團 T：保留 5 位虛構學生主檔、LAB 家長綁定及必要的模組設定；移除這 5 位學生的團 T 領用狀態、尚未核帳／採購的申請及未修改的虛構交流活動。</p>
+ <div class="notice">⚠️ 這是真正的 LAB 資料異動，不是「清除本機勾選」。僅允許 LAB 學校管理員，且只處理固定虛構學號。若已有核帳、採購或庫存異動，系統會阻擋自動還原，須先人工核對。刪除前會建立 LAB 備份批次。請先保留原始截圖與紀錄。</div>
+ <button type="button" id="preview-student-reset">① 預覽可還原的 LAB 資料</button>
+ <p id="reset-student-preview" role="status" aria-live="polite">先點選預覽；此時不會變更資料。</p>
+ <button type="button" id="apply-student-reset" disabled>② 確認還原 5 位虛構學生至初始狀態</button>
+ <p id="reset-student-result" role="status" aria-live="polite"></p>
+ <p class="muted">還原後請勿立刻再次點擊上方「建立 SOP 測試資料」，因為該功能會重新預先載入各種已領用示範狀態。直接回到 LAB 家長首頁，開始第一次填寫尺寸。</p>
+</section>
+<section class="card">
  <h2>04｜將目前帳號綁定為 LAB 測試家長</h2>
  <p>要拍攝家長端警示／團 T 申請進度，必須先用家長身分綁定虛構學生。此功能只會在獨立 LAB 建立<strong>目前登入帳號</strong>與所選假學生的家長關聯，完全不會綁定其他人的 Gmail。</p>
  <div class="notice">建議先選「測試戊同學（990105，未填尺寸）」驗證首頁黃色提醒；再選「測試甲同學（990101，學校已交付）」驗證家長確認領取。請使用專門的 LAB 測試帳號；即使在獨立 LAB 也不建議和真實家長資料混用。</div>
@@ -219,6 +229,46 @@ q("create-fixtures").addEventListener("click",async()=>{
  }catch(error){message.textContent="⚠️ "+error.message}
  finally{button.disabled=false}
 });
+
+let latestStudentReset=null;
+const resetPreview=q("reset-student-preview"),resetResult=q("reset-student-result");
+q("preview-student-reset").addEventListener("click",async()=>{
+ latestStudentReset=null;q("apply-student-reset").disabled=true;
+ resetPreview.textContent="正在檢查 LAB 學生和可還原紀錄…";resetResult.textContent="";
+ try{
+  const headers=schoolAdminHeaders();
+  const res=await fetch("/api/sop-lab/reset-students-only",{headers,cache:"no-store",credentials:"same-origin"});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok)throw Error(data.error||"HTTP "+res.status);
+  resetPreview.textContent="LAB 校別："+data.schoolId+"｜保留學生 "+data.studentCount+" 位；將移除團 T 紀錄 "+
+   data.shirtCount+" 筆、測試申請 "+data.requestCount+" 筆、原始虛構活動 "+data.eventCount+
+   " 筆。"+(data.blockers.length?"⛔ 偵測到不適合自動還原的資料："+data.blockers.join("；"):"可開始安全還原。");
+  if(data.blockers.length)return;
+  latestStudentReset=data;q("apply-student-reset").disabled=false;
+ }catch(e){resetPreview.textContent="⚠️ 無法預覽："+e.message}
+});
+q("apply-student-reset").addEventListener("click",async()=>{
+ const data=latestStudentReset;
+ if(!data)return;
+ const ask="這會真正刪除獨立 LAB 中 5 位虛構學生的團 T 領用及未核帳申請紀錄。\n學生主檔及測試家長綁定保留；會先備份。\n校別："+data.schoolId+"\n\n確定要還原至『剛匯入學生』狀態嗎？";
+ if(!confirm(ask))return;
+ if(prompt("請輸入「還原測試資料」以確認；輸入其他文字將取消。")!=="還原測試資料")return;
+ const btn=q("apply-student-reset");btn.disabled=true;resetResult.textContent="正在備份並還原 LAB 虛構資料…";
+ try{
+  const headers=schoolAdminHeaders();
+  const check=await fetch("/api/me",{headers,credentials:"same-origin",cache:"no-store"});
+  const me=await check.json().catch(()=>({}));
+  if(!check.ok||me.role!=="admin")throw Error("目前非 LAB 學校管理員，請切換後重試");
+  const res=await fetch("/api/sop-lab/reset-students-only",{method:"POST",headers,
+    credentials:"same-origin",body:JSON.stringify({schoolId:data.schoolId,previewToken:data.previewToken,
+      confirmation:"RESET_FIVE_LAB_STUDENTS_TO_IMPORT_ONLY"})});
+  const result=await res.json().catch(()=>({}));
+  if(!res.ok)throw Error(result.error||"HTTP "+res.status);
+  resetResult.textContent="✅ "+result.message+"（移除 "+result.deleted+" 筆，備份批次："+result.backupBatch+"）。請重新整理完整平台並開始重新截圖。";
+  latestStudentReset=null;
+ }catch(e){resetResult.textContent="⚠️ "+e.message+"；請再次預覽資料並確認，勿重複盲按。"}
+});
+
 let labParentBindings=[],labBindingSchoolId="";
 const bindSelect=q("lab-parent-student");
 const parentStatus=q("lab-parent-message");
