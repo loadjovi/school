@@ -31,7 +31,7 @@ def generate_sop_lab(app_source: Path, lab_app: Path) -> None:
     original_files = {
         p.relative_to(app_source).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
         for p in sorted(app_source.rglob("*"))
-        if p.is_file() and p.suffix.lower() in (".js", ".css", ".html", ".json")
+        if p.is_file() and p.suffix.lower() in (".js", ".mjs", ".css", ".html", ".json")
     }
     out_dir = lab_app / "sop-lab"
     out_dir.mkdir(parents=True, exist_ok=True)
