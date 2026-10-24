@@ -62,7 +62,7 @@ test("mobile totals do not misrepresent incomplete grades and are HTML-escaped",
  assert.match(page,/s\.total20!=null/);
  assert.match(page,/scoreLabel=.*"待完成"/);
  assert.match(page,/已取得 .*分（非總分）/);
- assert.match(page,/待完成："+missing\.join/);
+ assert.match(page,/待完成："\+missing\.join/);
  assert.match(page,/format\(s\.practice10,10\)/);
  assert.match(page,/format\(s\.attendance5,5\)/);
  assert.match(page,/format\(s\.performance5,5\)/);
