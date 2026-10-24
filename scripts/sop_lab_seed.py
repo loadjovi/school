@@ -104,6 +104,110 @@ function eventEntity(schoolId){
  return {partitionKey:schoolId,rowKey:"fieldTrip:sop_demo_activity",
   payload:JSON.stringify(payload),updatedAt:new Date().toISOString(),updatedBy:"SOP_LAB_FIXTURE"};
 }
+
+// SAFE LAB-ONLY RESET: return the five named fixture students to a student-only
+// starting point. The student master and test-account mappings stay intact;
+// never clear other tenants, bank settings, stock, or production databases.
+import {createHash,randomUUID} from "node:crypto";
+const fixtureIds=new Set(scenarios.map(s=>s.id));
+const available=async(t,schoolId,rowKey)=>{try{return await t.getEntity(schoolId,rowKey)}catch(e){if(e.statusCode===404)return null;throw e}};
+const parsePayload=e=>{try{return JSON.parse(e.payload||"{}")}catch{return {}}};
+const pkFilter=schoolId=>"PartitionKey eq '"+schoolId.replaceAll("'","''")+"'";
+async function planReset(schoolId){
+ const students=await table("TenantStudentMaster");
+ const shirts=await table("TenantTshirtHistoricalIssue");
+ const orders=await table("TenantUniformEventRequest");
+ const configs=await table(process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig");
+ const targets=[],blockers=[];
+ for(const s of scenarios){
+  const row=await available(students,schoolId,s.id);
+  if(!row||row.studentName!==s.studentName||row.updatedBy!=="SOP_LAB_FIXTURE"||row.schoolId!==schoolId){
+   blockers.push("虛構學生 "+s.id+" 主檔不是未修改的 SOP LAB 匯入資料；停止還原");
+   continue;
+  }
+  const shirt=await available(shirts,schoolId,s.id);
+  if(shirt){
+   const data=parsePayload(shirt);
+   if(data.fixtureId!==fixturePrefix+s.id)blockers.push("團 T "+s.id+" 沒有原始虛構資料標記，不能自動刪除");
+   else targets.push({name:"TenantTshirtHistoricalIssue",row:shirt});
+  }
+ }
+ for await(const row of orders.listEntities({queryOptions:{filter:pkFilter(schoolId)}})){
+  const data=parsePayload(row);
+  if(!fixtureIds.has(String(data.studentId||"")))continue;
+  if(["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(data.status)||
+     ["VERIFIED","REPORTED_UNVERIFIED"].includes(data.paymentStatus)){
+   blockers.push("申請 "+row.rowKey+" 已進入採購、核帳或發放；請先人工核對庫存與財務紀錄");
+   continue;
+  }
+  targets.push({name:"TenantUniformEventRequest",row});
+ }
+ const fixtureEvent=await available(configs,schoolId,"fieldTrip:sop_demo_activity");
+ if(fixtureEvent){
+  if(parsePayload(fixtureEvent).fixtureId!=="sop_demo_activity"){
+   blockers.push("交流測試活動已被修改為非預設資料；本次不自動刪除");
+  }else targets.push({name:process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig",row:fixtureEvent});
+ }
+ // Do not delete module configuration, parent test-account mappings or other activity records.
+ // A request/first-shirt reset does not reverse inventory or bank movements.
+ if(targets.length>70)blockers.push("異動筆數異常，超過 70 筆，必須人工核對");
+ const fingerprint=targets.map(x=>[x.name,x.row.partitionKey,x.row.rowKey,x.row.etag].join(":")).sort();
+ const previewToken=createHash("sha256").update(JSON.stringify({schoolId,fingerprint,blockers})).digest("hex");
+ return {targets,blockers,previewToken,studentCount:scenarios.length,shirtCount:targets.filter(x=>x.name==="TenantTshirtHistoricalIssue").length,
+  requestCount:targets.filter(x=>x.name==="TenantUniformEventRequest").length,
+  eventCount:targets.filter(x=>x.name===(process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig")).length};
+}
+app.http("sopLabResetToStudents",{
+ methods:["GET","POST"],authLevel:"anonymous",route:"sop-lab/reset-students-only",
+ handler:async request=>{
+  const ready=getLabReadiness();
+  if(!ready.ready||ready.environment!=="functional-uat"||ready.storageAccount!==process.env.LAB_EXPECTED_STORAGE_ACCOUNT)
+   return json({error:"LAB 隔離未通過，禁止還原資料"},503);
+  const context=await getTenantContext(request);
+  if(context.error)return context.error;
+  if(context.access.role!=="admin")return json({error:"僅 LAB 學校管理員可還原測試情境"},403);
+  const schoolId=context.schoolId;
+  try{
+   const plan=await planReset(schoolId);
+   const info={schoolId,studentCount:plan.studentCount,shirtCount:plan.shirtCount,
+    requestCount:plan.requestCount,eventCount:plan.eventCount,blockers:plan.blockers,
+    previewToken:plan.previewToken,
+    message:"只還原固定 5 位 LAB 虛構學生的首次團 T 與未核帳申請。保留學生主檔、測試家長綁定、模組啟用設定、非虛構資料、歷史稽核；不處理採購／財務／庫存。"};
+   if(request.method==="GET")return json(info);
+   const body=await request.json().catch(()=>({}));
+   if(plan.blockers.length)return json({error:"存在需要人工確認的異動；禁止部分還原",...info},409);
+   if(body.confirmation!=="RESET_FIVE_LAB_STUDENTS_TO_IMPORT_ONLY"||
+      body.schoolId!==schoolId||body.previewToken!==plan.previewToken)
+    return json({error:"請先預覽目標，再以完整確認內容執行還原"},409);
+   const batchId=randomUUID();
+   // Back up every targeted row before any deletion. Audit is preserved.
+   const backup=await table("TenantSopLabResetBackup");
+   let index=0,deleted=0;
+   for(const entry of plan.targets){
+    const {etag,...fields}=entry.row;
+    const serialized=JSON.stringify(fields);
+    if(serialized.length>45000)return json({error:"備份資料超過安全上限，未執行刪除"},409);
+    await backup.createEntity({partitionKey:schoolId,rowKey:batchId+"_"+String(index++).padStart(3,"0"),
+      sourceTable:entry.name,sourcePartition:entry.row.partitionKey,sourceRowKey:entry.row.rowKey,
+      snapshot:serialized,actor:String(context.access.email||"LAB Admin").slice(0,220),
+      capturedAt:new Date().toISOString()});
+   }
+   try{
+    for(const entry of plan.targets){
+     const client=await table(entry.name);
+     await client.deleteEntity(entry.row.partitionKey,entry.row.rowKey,{etag:entry.row.etag});
+     deleted++;
+    }
+   }catch(e){
+    console.error("SOP LAB reset incomplete",batchId,deleted,e);
+    return json({error:"還原尚未全部完成，請重新預覽；備份批次 "+batchId,deleted,backupBatch:batchId},409);
+   }
+   return json({ok:true,deleted,backupBatch:batchId,studentCount:plan.studentCount,
+    message:"已將 5 位虛構學生相關團 T／未核帳申請還原到匯入起點；學生主檔與測試家長登入綁定保留。請直接從家長首頁重新填寫尺寸。"});
+  }catch(e){console.error("SOP LAB reset failed",e);return json({error:"LAB 還原失敗，未確認全部異動；請先重新預覽"},503)}
+ }
+});
+
 app.http("sopLabFixtures",{
  methods:["GET","POST"],authLevel:"anonymous",route:"sop-lab/fixtures",
  handler:async request=>{
