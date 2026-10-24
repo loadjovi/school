@@ -137,3 +137,17 @@ test("school T-shirt historical list is separated, read-only, and CSV has separa
  assert.match(js,/fetch\("\/api\/student-master"/);
  assert.match(csv,/fetch\("\/api\/student-master"/);
 });
+
+
+test("parent receipt confirmation remains fully reachable in the embedded mobile view",()=>{
+ const html=readFileSync(new URL("../app/parent-uniform-events.html",import.meta.url),"utf8");
+ const app=readFileSync(new URL("../app/app-v3.js",import.meta.url),"utf8");
+ // Reserve space for the actual fixed bottom navigation, not just the iframe body.
+ assert.match(html,/body\.embedded main\{max-width:none;padding:0 0 104px\}/);
+ assert.match(html,/\.tshirt-receipt-confirm button\{[^}]*min-height:48px;white-space:normal/);
+ // main.scrollHeight includes the receipt action and bottom padding even when margins collapse.
+ assert.match(html,/Math\.max\(main\.scrollHeight,main\.getBoundingClientRect\(\)\.height\)/);
+ assert.match(html,/new ResizeObserver\(notify\)\.observe\(main\)/);
+ assert.match(html,/window\.addEventListener\("resize",notify\)/);
+ assert.match(app,/Math\.max\(400,Math\.min\(event\.data\.height,50000\)\)/);
+});
