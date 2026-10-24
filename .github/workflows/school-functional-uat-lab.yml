@@ -1,6 +1,11 @@
-name: School Functional UAT LAB (manual, isolated)
+name: School Functional UAT LAB (main sync + manual, isolated)
 
 on:
+  # Keep SOP screenshots in parity whenever a Production fix lands on main.
+  # PR candidates can still be deployed explicitly via workflow_dispatch.
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -17,8 +22,8 @@ jobs:
     environment: school-functional-uat
     steps:
       - uses: actions/checkout@v4
-        # The manually selected GitHub branch is the candidate UI to validate.
-        # Only merging an approved fix to main updates Production.
+        # Push event uses latest main (matches Production).
+        # Workflow_dispatch supports selected candidate branches; never deploys to Production.
         with:
           ref: ${{ github.ref_name }}
 
@@ -39,12 +44,20 @@ jobs:
           fi
           echo "Independent LAB token verified (values never logged)."
 
+      - name: Record selected source commit
+        shell: bash
+        run: |
+          echo "Source branch: $GITHUB_REF_NAME"
+          echo "Source commit: $GITHUB_SHA"
+          echo "LAB deployment remains isolated; NO Production data is copied."
+
       - name: Prepare SOP LAB from the selected code branch
         run: python3 scripts/prepare-functional-lab.py --output .functional-lab-build
 
       - name: Verify LAB isolation, generated API, and frontend
         run: |
           python3 -m unittest discover -s tests -p 'test_functional_lab_isolation.py' -v
+          node --test tests/admin-semester-scores.test.mjs tests/admin-attendance-todos.test.mjs tests/tshirt-first-receipt.test.mjs
           find .functional-lab-build/api/src -name '*.js' -print0 | xargs -0 -n1 node --check
           find .functional-lab-build/api/src -name '*.mjs' -print0 | xargs -0 -n1 node --check
           find .functional-lab-build/app -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
