@@ -85,6 +85,10 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         self.assertTrue((self.lab/"app/uniform-event-admin.html").is_file())
         self.assertTrue((self.lab/"api/src/functions/tshirtHistoricalSize.js").is_file())
         self.assertTrue((self.lab/"api/src/functions/uniformEventRequests.js").is_file())
+        for page in ("admin-semester-scores.html","tshirt-roster-status.mjs","tshirt-admin-shortcuts.js"):
+            self.assertIn(page,json.loads((self.lab/"app/sop-lab/source-manifest.json").read_text())["source_file_hashes"])
+        self.assertTrue((self.lab/"api/src/functions/attendanceReport.js").is_file())
+
 
     def test_sop_lab_uses_identical_real_production_javascript_and_css(self):
         for original in (ROOT/"app").rglob("*"):
@@ -111,12 +115,25 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         self.assertTrue((self.lab/"app/sop-lab/scenarios.json").is_file())
         scenarios=json.loads((self.lab/"app/sop-lab/scenarios.json").read_text(encoding="utf-8"))
         self.assertGreaterEqual(len(scenarios),6)
+        self.assertEqual({entry["id"].replace("SOP-","") for entry in scenarios}, {f"{i:02d}" for i in range(1,13)})
+        self.assertTrue(any("20 分" in entry["title"] for entry in scenarios))
+        self.assertTrue(any("缺席已知悉" in entry["title"] for entry in scenarios))
+        self.assertTrue(any("退團／畢業" in entry["title"] for entry in scenarios))
+
     def test_manual_workflow_deploys_selected_branch_and_never_production_token(self):
         flow=(ROOT/".github/workflows/school-functional-uat-lab.yml").read_text(encoding="utf-8")
         self.assertIn("github.ref_name",flow)
         self.assertNotIn("ref: main",flow)
         self.assertIn('if [[ "$LAB_TOKEN" == "$PROD_TOKEN" ]]',flow)
         self.assertIn("AZURE_STATIC_WEB_APPS_API_TOKEN_SCHOOL_FUNCTIONAL_LAB",flow)
+        self.assertIn("  push:",flow)
+        self.assertIn("      - main",flow)
+        self.assertIn("  workflow_dispatch:",flow)
+        self.assertIn("app_location: .functional-lab-build/app",flow)
+        self.assertIn("api_location: .functional-lab-build/api",flow)
+        self.assertIn("node --test tests/admin-semester-scores.test.mjs",flow)
+        self.assertNotIn("api_location: api",flow)
+
     def test_sop_fixtures_api_exists_only_in_generated_lab(self):
         api=self.lab/"api/src/functions/sopLabFixtures.js"
         self.assertTrue(api.is_file())
