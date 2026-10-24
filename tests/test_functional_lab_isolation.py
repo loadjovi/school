@@ -228,6 +228,32 @@ class FunctionalUATIsolationTests(unittest.TestCase):
                               capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
 
+    def test_lab_student_only_reset_is_scoped_and_double_confirmed(self):
+        api=self.lab/"api/src/functions/sopLabFixtures.js"
+        src=api.read_text(encoding="utf-8")
+        hub=(self.lab/"app/sop-lab/index.html").read_text(encoding="utf-8")
+        ui=(self.lab/"app/sop-lab/sop.js").read_text(encoding="utf-8")
+        for name in [
+            'route:"sop-lab/reset-students-only"', 'context.access.role!=="admin"',
+            'ready.storageAccount!==process.env.LAB_EXPECTED_STORAGE_ACCOUNT',
+            'row.updatedBy!=="SOP_LAB_FIXTURE"',
+            'data.fixtureId!==fixturePrefix+s.id',
+            'TenantSopLabResetBackup', 'previewToken', 'RESET_FIVE_LAB_STUDENTS_TO_IMPORT_ONLY',
+            'await client.deleteEntity(', '["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"]',
+        ]:
+            self.assertIn(name,src)
+        self.assertNotIn('await students.deleteEntity(',src)
+        self.assertNotIn('await maps.deleteEntity(',src)
+        self.assertNotIn('await audit.deleteEntity(',src)
+        for item in ('preview-student-reset','apply-student-reset','reset-student-preview'):
+            self.assertIn(item,hub)
+        self.assertIn('prompt("請輸入「還原測試資料」',ui)
+        self.assertIn('confirmation:"RESET_FIVE_LAB_STUDENTS_TO_IMPORT_ONLY"',ui)
+        self.assertIn('sessionStorage.getItem("google_id_token")',ui)
+        for js in [api,self.lab/"app/sop-lab/sop.js"]:
+            result=subprocess.run(["node","--check",str(js)],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+
     def test_sop_hub_javascript_syntax(self):
         result=subprocess.run(["node","--check",str(self.lab/"app/sop-lab/sop.js")],
                               capture_output=True,text=True)
