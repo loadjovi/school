@@ -1,6 +1,6 @@
 # 聖心弦樂成長平台｜真實功能驗證 LAB SOP
 
-版本：2026-10-19（建置準備版；尚未完成 Azure 資源設定及實站驗收）
+版本：2026-10-24（已建立獨立 SOP LAB；功能部署／登入／虛構資料驗收仍須依每次實際結果確認）
 
 ## 1. 三種環境，禁止混用
 - Production：正式家長、老師、學校管理員，正式資料庫。
@@ -28,14 +28,16 @@
 6. Google Cloud Console → OAuth 2.0 Web client → Authorized JavaScript origins：新增新 LAB 實際網站的 https origin（不含路徑及結尾 /），把新 Client ID 填入 LAB GOOGLE_CLIENT_ID。
 7. 其他設定一律以 LAB 專用值建立；不得直接貼上 Production Secret。
 
-## 3. 從最新正式程式部署
-1. GitHub → Actions → School Functional UAT LAB (manual, isolated) → Run workflow。
-2. 從 Run workflow 選擇 main 或功能修正分支（fix/sop-*），以所選分支的 app + api 產生真實畫面 SOP LAB。
+## 3. 從最新正式程式同步部署
+1. **自 2026-10-24 起**，當修正合併到 `main` 時，`.github/workflows/school-functional-uat-lab.yml` 會自動以**最新 main** 同步部署 SOP LAB；生產正式 CI/CD 仍由另一條 workflow 處理，兩邊部署 Token 不同。
+2. 如需手動同步或先驗證尚未合併的功能：GitHub → Actions → **School Functional UAT LAB (main sync + manual, isolated)** → Run workflow → 選擇 `main` 或待驗證功能分支。LAB 只會使用該分支的 app + api 生成，不會複製正式資料。
 3. 先驗證專用 LAB token 不等於 Production token；再跑所有 LAB 隔離自動測試。
 4. 只向獨立 SWA 部署。LAB API 所有路由在初始化時要求 LAB_ENVIRONMENT 正確、Storage AccountName 等於 LAB 專用名稱，否則 fail-closed。
 5. 開啟新 LAB 網址的 /api/lab-readiness，核對 ready=true、environment=functional-uat、storageAccount 為新 LAB Storage 名稱。頁面須顯示「UAT 功能驗證 LAB」標記。
 6. 若出現 Google 400 origin_mismatch，優先確認授權的 JavaScript origins 與 LAB 網域完全一致；**不要**用 Production OAuth 設定繞過。
 7. GitHub 部署成功只代表程式上傳成功，必須檢查上列 readiness、實際登入、操作寫入都完成後，才宣告 LAB 可用。
+8. SOP LAB `/sop-lab/` 的「環境及版本核對」應顯示 `分支：main`，且 **Commit SHA** 應與剛才合併至 main 的版本相符；若不是，請先重新同步，不要用舊畫面製作 SOP。
+9. 每次重新部署**只同步程式，不會清除或重建** `shorchestrauat01` 的虛構資料。進入完整平台選擇「學校管理員」→ 返回 SOP LAB →「建立 SOP 測試資料」，僅新增缺少的假資料，不覆蓋已修改資料。
 
 ## 4. 標準假資料（不要使用真實學生）
 使用 LAB 管理員頁面建立：LAB 測試甲（A 團）、LAB 測試乙（B 團）、LAB 測試丙（儲備 C 團），以及測試管理員、老師、家長 Gmail，完成權限綁定。所有人物、事件、帳戶和金額以 UAT 假資料測試。不要從正式站匯入學號、姓名或財務紀錄。
@@ -51,7 +53,10 @@
 | UAT06 | 活動 | 家長報名／取消或查看 | 報名名單與後台一致 |
 | UAT07 | CSV | — | 匯出團 T、比賽服、活動之數量與狀態 |
 | UAT08 | 學期與個課 | 老師個課完成、家長評分 | 狀態與分數正確 |
-| UAT09 | 待辦事項 | 製造合法的缺席與漏點名情境 | 首頁待辦顯示與消除 |
+| UAT09 | 待辦事項 | 製造合法的缺席與漏點名情境 | 首頁待辦顯示與消除，缺席可「標記已知悉」但不刪除原點名 |
+| UAT10 | 20 分成績總覽 | 家長查看 10＋5＋5 | 學校管理員「學期成績總覽」顯示個課或老師期末評分，待評／暫估分數及手機展開正確 |
+| UAT11 | 退團歷史 | LAB 學生先退團 | 在團名單、團 T 需求、發放、歷史 CSV 分流一致 |
+| UAT12 | 舊生團 T 加購 | LAB 家長選尺寸、數量並送單 | 後台審核、庫存／收款／交付與家長進度一致 |
 
 每次測試保留「操作前→填寫→送出→後台結果→CSV」截圖，檔案命名 UAT04_01_家長填寫尺寸.png 等。SOP 每步必載明角色、路徑、按鈕、輸入、驗收結果及例外處理。
 
@@ -73,9 +78,9 @@
 2. 對照預期功能擷取「操作前 → 輸入 → 送出 → 後台結果 → CSV」畫面，記錄 UAT Commit SHA，勾選 SOP 清單。
 3. 如果畫面不符合需求，透過 /sop-lab/「提報畫面差異」建立 Issue：角色、路徑、目前顯示、預期畫面及驗收條件，截圖不得含真實學生資料或登入 Token。
 4. 從 main 建立 fix/sop-* 分支，**在共用的 app/ 或 api/ 原始碼直接修正**，而不是修改僅供 SOP 使用的展示頁。
-5. GitHub Actions → School Functional UAT LAB (manual, isolated) → Run workflow → **Use workflow from 選修正分支**，先將修正分支部署到獨立 UAT LAB，驗證畫面、權限與資料流程。
+5. GitHub Actions → School Functional UAT LAB (main sync + manual, isolated) → Run workflow → **Use workflow from 選修正分支**，先將修正分支部署到獨立 UAT LAB，驗證畫面、權限與資料流程。
 6. 截圖確認及回歸測試通過後，再合併 PR 至 main，正式 Production CI/CD 才會跟著更新。
-7. 想用最新正式版再次製作 SOP，手動執行 Workflow 選 main 即可。不是每次都要建立新的 UAT Storage/SWA。
+7. 日後正式 `main` 有新版本時，SOP LAB 會自動部署最新程式；必要時可手動選 main 重新同步。不是每次都要建立新的 UAT Storage/SWA。
 
 **來源版本核對：** /sop-lab/source-manifest.json 保存 source_ref、source_commit 與原始 app/ HTML、JS、CSS SHA-256，供截圖紀錄及追查。各份 SOP 必須標示 GitHub Commit，避免舊截圖被誤認為新版。
 
