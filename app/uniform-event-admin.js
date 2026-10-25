@@ -30,25 +30,30 @@ async function api(path,options={}){
  return data;
 }
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[],receivedRequestIds=new Set();
+let cachedStaffFinanceItems=null;
+function staffFinancePending(items=cachedStaffFinanceItems){return (items||[]).filter(x=>x.status==="APPROVED"&&x.category!=="CADRE_FIRST"&&x.paymentStatus!=="VERIFIED")}
 function showFinancePending(uniformItems=cachedRequests,familyItems=cachedFamilyRegistrations){
  if(!hasFinanceAccess)return;
  const pending=uniformItems.filter(x=>x.paymentStatus==="REPORTED_UNVERIFIED");
  const tshirt=pending.filter(x=>x.kind==="regularUniform").length;
  const competition=pending.filter(x=>x.kind==="competitionUniform").length;
  const activities=familyItems.filter(x=>x.paymentStatus==="REPORTED_UNVERIFIED").length;
- const total=tshirt+competition+activities,review=el("inlineFinanceReview");
+ const staff=staffFinancePending().length;
+ const total=tshirt+competition+activities+staff,review=el("inlineFinanceReview");
  review.dataset.pending=total>0?"true":"false";
  review.querySelector("summary").textContent=total
-  ?"💰 待財務核帳 "+total+" 筆｜團 T "+tshirt+"、A 團比賽服 "+competition+"、活動 "+activities+"（點此處理）"
-  :"💰 財務核帳｜目前無待核帳款項";
+  ?"💰 待財務核帳 "+total+" 筆｜團 T "+tshirt+"、幹部／志工 "+staff+"、A 團比賽服 "+competition+"、活動 "+activities+"（點此處理）"
+  :cachedStaffFinanceItems===null?"💰 財務核帳｜幹部／志工需求尚未讀取完成":"💰 財務核帳｜目前無待核帳款項";
 }
 async function refreshFinancePending(){
  if(!hasFinanceAccess||!adminAuthenticated||document.visibilityState!=="visible")return;
  try{
-  const [uniform,family]=await Promise.all([api("uniform-events/requests"),api("uniform-events/family-registration")]);
+  const [uniform,family,staff]=await Promise.all([api("uniform-events/requests"),api("uniform-events/family-registration"),api("uniform-events/parent-loans?view=procurement")]);
+  cachedStaffFinanceItems=staff.items||[];
   showFinancePending(uniform.items||[],family.items||[]);
  }catch(error){el("inlineFinanceReview").querySelector("summary").textContent="💰 財務核帳｜待辦讀取失敗，點此重新查詢"}
 }
+window.addEventListener("tshirtStaffDemandsLoaded",event=>{cachedStaffFinanceItems=event.detail?.items||[];showFinancePending()});
 let visibleModuleRequests=[],moduleRequestsAll=[],showRequestHistory=false;
 const pendingRequestIds=new Set();
 const issueErrors=new Map();
@@ -534,7 +539,7 @@ async function load(){
    }
  });
  if(hasFinanceAccess){
-  if(results[0].status==="fulfilled"&&results[2].status==="fulfilled")showFinancePending();
+  if(results[0].status==="fulfilled"&&results[2].status==="fulfilled")await refreshFinancePending();
   else el("inlineFinanceReview").querySelector("summary").textContent="💰 財務核帳｜待辦讀取失敗，請重新整理";
  }
 }
@@ -589,12 +594,19 @@ async function loadInlineFinance(){
  if(!hasFinanceAccess||!adminAuthenticated)return;
  el("inlineFinanceStatus").textContent="正在讀取待核帳資料…";
  try{
-  const [uniform,family]=await Promise.all([api("uniform-events/requests"),api("uniform-events/family-registration")]);
+  const [uniform,family,staff]=await Promise.all([api("uniform-events/requests"),api("uniform-events/family-registration"),api("uniform-events/parent-loans?view=procurement")]);
+  cachedStaffFinanceItems=staff.items||[];
   const u=(uniform.items||[]).filter(x=>x.paymentStatus==="REPORTED_UNVERIFIED"),f=(family.items||[]).filter(x=>x.paymentStatus==="REPORTED_UNVERIFIED");
   const empty=text=>{const p=document.createElement("p");p.textContent=text;return p};
   el("inlineFinanceUniform").replaceChildren(...(u.length?u.map(x=>financeCard(x,"uniform")):[empty("目前沒有待核對的團服匯款。")]));
   el("inlineFinanceFamily").replaceChildren(...(f.length?f.map(x=>financeCard(x,"family")):[empty("目前沒有待核對的活動匯款。")]));
-  el("inlineFinanceStatus").textContent="待核帳：團服 "+u.length+" 筆、活動 "+f.length+" 筆。";
+  const staffPending=staffFinancePending();
+  if(staffPending.length){
+   const hint=empty("幹部／志工團 T 自費需求 "+staffPending.length+" 筆待核款；請確認實際入帳後再核帳。"),button=document.createElement("button");button.type="button";button.textContent="前往幹部／志工需求核帳";
+   button.addEventListener("click",()=>{activeAdminTab="regularUniform";syncUniformModuleVisibility();document.querySelector('[data-tshirt-view="procurement"]')?.click();el("tshirtStaffRecords")?.scrollIntoView({block:"start",behavior:"smooth"})});
+   el("inlineFinanceUniform").append(hint,button);
+  }
+  el("inlineFinanceStatus").textContent="待核帳：團服 "+u.length+" 筆、幹部／志工 "+staffPending.length+" 筆、活動 "+f.length+" 筆。";
   showFinancePending(uniform.items||[],family.items||[]);
  }catch(error){el("inlineFinanceStatus").textContent="載入失敗："+error.message}
 }

@@ -40,6 +40,7 @@ async function load(){
   const values=results.map(x=>x.value),items=x=>Array.isArray(x)?x:x.items;
   if(values.some(x=>!Array.isArray(items(x))))throw Error("資料格式不完整，請重新整理");
   data={students:items(values[0]),history:items(values[1]),requests:items(values[2]),stock:items(values[3]),staffDemands:items(values[4]),parentLoans:items(values[5])};
+  window.dispatchEvent(new CustomEvent("tshirtStaffDemandsLoaded",{detail:{items:data.staffDemands}}));
   canVerifyFinance=values[4].canVerifyFinance===true;links=items(values[6]);drawParents();draw();
  }catch(e){$("tshirtPlanStatus").textContent="採購總表讀取失敗："+e.message+"。請重新整理；資料未齊前不提供採購數字與匯出。";$("tshirtStaffRecords").replaceChildren();exportEnabled(false)}
  finally{loading=false}
