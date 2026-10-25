@@ -3,6 +3,55 @@
   state.teacherStudents=state.teacherStudents||[];
   state.teacherAdminOpen=false;
   const key=email=>String(email||"").replace(/[^a-zA-Z0-9]/g,"_");
+  const auditDate=offset=>new Date(Date.now()+8*3600000+offset*86400000).toISOString().slice(0,10);
+  const loginAudit={open:false,from:auditDate(-30),to:auditDate(0),email:"",result:"",items:[],next:"",pages:[""],page:0,loading:false,loaded:false,error:"",scope:""};
+
+  function loginAuditContent(){
+    const options=(state.teachers||[]).map(t=>`<option value="${esc(t.email)}" ${loginAudit.email===t.email?"selected":""}>${esc(t.teacherName||t.email)}｜${esc(t.email)}</option>`).join("");
+    const known=(state.teachers||[]).some(t=>t.email===loginAudit.email);
+    const rows=loginAudit.items.map(x=>`<div class="item" style="display:block;overflow-wrap:anywhere"><b>${esc(loginText(x.at))}｜${x.result==="success"?"登入成功":"老師身分未授權"}</b><small>${esc(x.name||"未提供姓名")}｜${esc(x.email)}<br>${x.role==="privateTeacher"?"個課老師":x.result==="success"?"授課老師":"已通過 Google 驗證，但未取得老師權限"}${x.reason?`<br>${esc(x.reason)}`:""}</small></div>`).join("");
+    return `<p>從本功能上線後逐次保留老師登入紀錄，時間為台灣時間。同一次 Google 登入重新整理不重複計算；重新登入會新增紀錄。舊版僅有最近登入時間，無法補回過去明細。</p><div class="row2"><div><label for="teacherLoginFrom">登入日期起</label><input id="teacherLoginFrom" type="date" value="${esc(loginAudit.from)}"></div><div><label for="teacherLoginTo">登入日期迄</label><input id="teacherLoginTo" type="date" value="${esc(loginAudit.to)}"></div></div><label for="teacherLoginEmail">老師</label><select id="teacherLoginEmail"><option value="">全部老師</option>${loginAudit.email&&!known?`<option selected value="${esc(loginAudit.email)}">${esc(loginAudit.email)}</option>`:""}${options}</select><label for="teacherLoginResult">登入結果</label><select id="teacherLoginResult"><option value="" ${!loginAudit.result?"selected":""}>全部結果</option><option value="success" ${loginAudit.result==="success"?"selected":""}>登入成功</option><option value="denied" ${loginAudit.result==="denied"?"selected":""}>老師身分未授權</option></select><button class="secondary" onclick="searchTeacherLoginHistory()" ${loginAudit.loading?"disabled":""}>查詢老師登入紀錄</button>${loginAudit.error?`<p class="error" role="alert">${esc(loginAudit.error)}</p>`:""}${loginAudit.loading?'<p role="status">正在讀取老師登入紀錄…</p>':loginAudit.loaded?`<p>第 ${loginAudit.page+1} 頁，本頁 ${loginAudit.items.length} 筆。${loginAudit.next?"可查看下一頁較早的紀錄。":""}</p>${rows||'<p>此條件沒有登入紀錄，請確認日期、老師與登入結果。</p>'}<div class="row2"><button class="secondary" onclick="pageTeacherLoginHistory(-1)" ${loginAudit.page?"":"disabled"}>上一頁</button><button class="secondary" onclick="pageTeacherLoginHistory(1)" ${loginAudit.next?"":"disabled"}>下一頁較早紀錄</button></div>`:""}`;
+  }
+  function mountLoginAudit(){
+    if(state.me?.role!=="admin"||state.page!=="admin")return;
+    const scope=String(state.me.schoolId||"")+"|"+String(state.me.email||"");
+    if(loginAudit.scope!==scope){Object.assign(loginAudit,{scope,open:false,email:"",items:[],next:"",pages:[""],page:0,loaded:false,error:""})}
+    const host=document.getElementById("schoolAdminActivity")||document.getElementById("schoolAccessAudit")||document.querySelector(".main");if(!host)return;
+    let root=document.getElementById("teacherLoginAudit");
+    if(!root){root=document.createElement("section");root.id="teacherLoginAudit";root.className="card";root.dataset.adminGroup="records";host.insertAdjacentElement("afterend",root)}
+    root.hidden=state.adminWorkspaceSection!=="records";
+    root.innerHTML=`<div class="section-title"><h2>老師完整登入歷史</h2><button class="secondary" style="width:auto;margin:0" onclick="toggleTeacherLoginHistory()">${loginAudit.open?"收合":"開啟老師登入查詢"}</button></div>${loginAudit.open?loginAuditContent():"<p>依日期、老師與登入結果，逐頁查詢本校老師登入紀錄。</p>"}`;
+  }
+  async function loadLoginAudit(cursor="",page=0){
+    if(loginAudit.loading||state.me?.role!=="admin")return;
+    loginAudit.loading=true;loginAudit.error="";mountLoginAudit();
+    const scope=loginAudit.scope;
+    const query=new URLSearchParams({from:loginAudit.from,to:loginAudit.to,email:loginAudit.email,result:loginAudit.result});if(cursor)query.set("cursor",cursor);
+    try{
+      const data=await api("/api/teacher-login-history?"+query);
+      if(scope!==loginAudit.scope)return;
+      loginAudit.items=data.items||[];loginAudit.next=data.nextCursor||"";loginAudit.page=page;loginAudit.pages[page]=cursor;loginAudit.loaded=true;
+    }catch(e){loginAudit.error=e.message||String(e);loginAudit.items=[];loginAudit.loaded=false}
+    finally{loginAudit.loading=false;mountLoginAudit()}
+  }
+  window.toggleTeacherLoginHistory=function(){loginAudit.open=!loginAudit.open;mountLoginAudit();if(loginAudit.open&&!loginAudit.loaded)loadLoginAudit()};
+  window.searchTeacherLoginHistory=function(){
+    const from=$("teacherLoginFrom")?.value,to=$("teacherLoginTo")?.value;
+    if(!from||!to||from>to){toast("請確認查詢日期起迄");return}
+    Object.assign(loginAudit,{from,to,email:$("teacherLoginEmail")?.value||"",result:$("teacherLoginResult")?.value||"",pages:[""],page:0,next:"",loaded:false});loadLoginAudit();
+  };
+  window.pageTeacherLoginHistory=function(direction){
+    const page=loginAudit.page+direction;if(page<0||direction>0&&!loginAudit.next)return;
+    loadLoginAudit(direction>0?loginAudit.next:loginAudit.pages[page],page);
+  };
+  window.openTeacherLoginHistory=async function(encodedEmail=""){
+    if(state.me?.role!=="admin")return;
+    state.teacherAdminOpen=false;
+    if(typeof window.openSchoolAdminWorkspace==="function")await window.openSchoolAdminWorkspace("records");
+    else{state.adminWorkspaceSection="records";render()}
+    mountLoginAudit();Object.assign(loginAudit,{open:true,email:decodeURIComponent(encodedEmail),items:[],next:"",pages:[""],page:0,loaded:false});mountLoginAudit();await loadLoginAudit();
+    document.getElementById("teacherLoginAudit")?.scrollIntoView({block:"start",behavior:"smooth"});
+  };
 
   const baseLoadAdmin=loadAdmin;
   loadAdmin=async function(){
@@ -54,6 +103,7 @@
       <label>帳號類型</label><select id="tt_${k}" onchange="changeTeacherAccountType('${k}',this.value)"><option value="general" ${!t.privateOnly?"selected":""}>一般老師（可自行設定授課課程）</option><option value="privateOnly" ${t.privateOnly?"selected":""}>個課限定（僅校方指定的學生）</option></select>
       ${privateEditor}
       <button class="secondary" style="width:100%;margin-top:8px" onclick="saveTeacherAdmin('${encodeURIComponent(t.email)}')">儲存老師資料</button>
+      <button class="secondary" style="width:100%;margin-top:8px" onclick="openTeacherLoginHistory('${encodeURIComponent(t.email).replaceAll("'","%27")}')">查看此老師完整登入歷史</button>
     </div>`;
   }
 
@@ -84,6 +134,9 @@
     if(state.teacherAdminOpen)return `<main class="main">${managementPage()}</main>`;
     return baseAdminPage();
   };
+
+  const baseRender=render;
+  render=function(){const result=baseRender();if(state.me?.role==="admin"&&state.page==="admin")setTimeout(mountLoginAudit,0);return result};
 
   if(state.me?.role==="admin"){loadAdmin().then(()=>render()).catch(()=>{})}
 })();

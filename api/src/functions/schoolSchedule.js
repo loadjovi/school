@@ -31,7 +31,9 @@ const scheduleView=e=>({
 const exceptionView=e=>({
   exceptionId:String(e.rowKey||""),scheduleId:String(e.scheduleId||""),sessionDate:String(e.sessionDate||""),
   status:String(e.status||"cancelled"),newDate:String(e.newDate||""),newStartTime:String(e.newStartTime||""),
-  newEndTime:String(e.newEndTime||""),reason:String(e.reason||""),updatedAt:String(e.updatedAt||"")
+  newEndTime:String(e.newEndTime||""),reason:String(e.reason||""),updatedAt:String(e.updatedAt||""),
+  cancelledReason:String(e.cancelledReason||""),cancelledAt:String(e.cancelledAt||""),
+  restoredAt:String(e.restoredAt||""),restoredBy:String(e.restoredBy||"")
 });
 async function getScheduleState(schoolId){
   const sid=tenantSchoolPartition(schoolId);
@@ -165,7 +167,7 @@ app.http("schoolSchedule",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
     const scheduleState=await saveScheduleState(schoolId,"draft",a.email);
     return json({ok:true,scheduleState});
   }
-  if(body.action==="exception"){
+  if(body.action==="exception"||body.action==="restore"){
     const scheduleId=String(body.scheduleId||""),sessionDate=String(body.sessionDate||"");
     if(!scheduleId||!validDate(sessionDate))return json({error:"缺少課程或日期"},400);
     let source;
@@ -175,10 +177,23 @@ app.http("schoolSchedule",{methods:["GET","POST","PATCH"],authLevel:"anonymous",
       ?source.sessionDate===sessionDate
       :(source.weekday===weekday&&(!source.startDate||sessionDate>=source.startDate)&&(!source.endDate||sessionDate<=source.endDate));
     if(!scheduled)return json({error:"所選日期不是此課程的上課日，請重新選擇日期"},400);
-    const key=`${scheduleId}|${sessionDate}`,entity={partitionKey:sid,rowKey:key,schoolId:sid,scheduleId,sessionDate,status:["cancelled","rescheduled","active"].includes(body.status)?body.status:"cancelled",newDate:String(body.newDate||""),newStartTime:String(body.newStartTime||""),newEndTime:String(body.newEndTime||""),reason:String(body.reason||"").slice(0,300),updatedAt:now,updatedBy:a.email};
-    let previous=null;try{previous=exceptionView(await table("tenantScheduleException").getEntity(sid,key))}catch(e){if(e.statusCode!==404)throw e}
-    await table("tenantScheduleException").upsertEntity(entity,"Replace");
-    await auditSaved(schoolId,a.email,"schedule_exception",{scheduleId,courseName:source.courseName,classDate:sessionDate,before:previous,after:exceptionView(entity)});
+    const key=`${scheduleId}|${sessionDate}`,client=table("tenantScheduleException");
+    let oldEntity=null;try{oldEntity=await client.getEntity(sid,key)}catch(e){if(e.statusCode!==404)throw e}
+    const previous=oldEntity?exceptionView(oldEntity):null;
+    const restoring=body.action==="restore"||body.status==="active";
+    if(restoring){
+      if(source.status!=="active")return json({error:"此課程已停用，請先由課務確認原課表"},409);
+      if(previous?.status!=="cancelled")return json({error:"此日期目前不是停課狀態，請重新讀取課表"},409);
+      if(body.expectedUpdatedAt&&body.expectedUpdatedAt!==previous.updatedAt)return json({error:"停課紀錄已被其他人修改，請重新讀取後再確認"},409);
+      if(!String(body.reason||"").trim())return json({error:"請填寫復課原因"},400);
+    }
+    const entity={partitionKey:sid,rowKey:key,schoolId:sid,scheduleId,sessionDate,status:restoring?"active":["cancelled","rescheduled"].includes(body.status)?body.status:"cancelled",newDate:restoring?"":String(body.newDate||""),newStartTime:restoring?"":String(body.newStartTime||""),newEndTime:restoring?"":String(body.newEndTime||""),reason:String(body.reason||"").trim().slice(0,300),updatedAt:now,updatedBy:a.email};
+    if(restoring){
+      Object.assign(entity,{cancelledReason:previous.reason,cancelledAt:previous.updatedAt,restoredAt:now,restoredBy:a.email});
+      try{await client.updateEntity(entity,"Replace",{etag:oldEntity.etag})}
+      catch(e){if(e.statusCode===412||e.statusCode===404)return json({error:"停課紀錄已變更，請重新讀取後再確認"},409);throw e}
+    }else await client.upsertEntity(entity,"Replace");
+    await auditSaved(schoolId,a.email,"schedule_exception",{action:restoring?"restore":"exception",scheduleId,courseName:source.courseName,classDate:sessionDate,before:previous,after:exceptionView(entity)});
     return json({ok:true,item:exceptionView(entity)});
   }
   return json({error:"不支援的異動"},400);

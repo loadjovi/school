@@ -4,6 +4,8 @@
   state.schedulePreview=state.schedulePreview||null;
   state.sectionMerges=state.sectionMerges||[];
   state.mergeTeachers=state.mergeTeachers||[];
+  state.scheduleExceptionDate=state.scheduleExceptionDate||"";
+  const encodeId=id=>encodeURIComponent(id).replaceAll("'","%27");
 
   const weekdayText=n=>["週日","週一","週二","週三","週四","週五","週六"][Number(n)]||"";
   const typeText=t=>({section:"分部課",ensemble:"合奏課",comprehensive:"綜合課"}[t]||"課程");
@@ -75,6 +77,35 @@
   }
 
 
+  function scheduleChangeForm(){
+    const change=state.scheduleChange;if(!change)return "";
+    const course=(state.schoolSchedule?.items||[]).find(x=>x.scheduleId===change.scheduleId);if(!course)return "";
+    const restore=change.action==="restore";
+    return `<section class="card" id="scheduleChangeForm"><h2>${restore?"確認恢復這堂課":"設定單日停課"}</h2>
+      <p><b>${esc(course.courseName)}</b>｜${esc(course.groupName)}｜${esc(course.startTime)}–${esc(course.endTime)}</p>
+      <label for="scheduleChangeDate">上課日期</label><input id="scheduleChangeDate" type="date" value="${esc(change.date)}" ${restore?"readonly":""}>
+      <label for="scheduleChangeReason">${restore?"復課原因":"停課原因"}</label><textarea id="scheduleChangeReason" maxlength="300" rows="2">${esc(change.reason)}</textarea>
+      <p>${restore?"只恢復這堂課原訂的日期與時間，保留原停課與操作紀錄。":"只停所選日期這一堂課，其他上課日維持原安排。"}</p>
+      <div class="row2"><button class="primary" onclick="submitScheduleChange()" ${state.savingScheduleChange?"disabled":""}>${state.savingScheduleChange?"正在儲存…":restore?"確認取消停課並復課":"確認停課"}</button><button class="secondary" onclick="closeScheduleChange()" ${state.savingScheduleChange?"disabled":""}>返回不變更</button></div></section>`;
+  }
+
+  function exceptionHistory(exceptions,scheduleById,exceptionLabel){
+    const rows=exceptions.filter(x=>!state.scheduleExceptionDate||x.sessionDate===state.scheduleExceptionDate).slice().sort((a,b)=>String(b.sessionDate).localeCompare(String(a.sessionDate)));
+    const items=rows.map(x=>{
+      const course=scheduleById.get(String(x.scheduleId));
+      const restore=x.status==="cancelled"&&course?.status==="active";
+      return `<div class="item" style="flex-wrap:wrap;gap:10px"><div style="flex:1 1 240px;min-width:0">
+        <b>${esc(x.sessionDate)}｜${esc(exceptionLabel(x))}｜${x.status==="cancelled"?"停課":x.status==="rescheduled"?"改期":"恢復上課"}</b>
+        <small>${esc(x.reason||"未填原因")}${x.newDate?`<br>新日期：${esc(x.newDate)} ${esc(x.newStartTime||"")}${x.newEndTime?`–${esc(x.newEndTime)}`:""}`:""}${x.restoredAt?`<br>原停課原因：${esc(x.cancelledReason||"未填原因")}<br>復課操作人：${esc(x.restoredBy||"—")}`:""}</small>
+        </div>${restore?`<button class="secondary" style="width:auto;margin:0;padding:8px 10px" onclick="restoreSchedulePrompt('${encodeId(x.scheduleId)}','${esc(x.sessionDate)}')">取消停課／恢復上課</button>`:`<span class="badge ${x.status==="active"?"ok":"warn"}">${x.status==="active"?"已復課":"異動已保存"}</span>`}</div>`;
+    }).join("");
+    return `<div class="card" id="scheduleExceptionHistory"><h2>停課與復課紀錄</h2>
+      <label for="scheduleExceptionDate">上課日期</label><input id="scheduleExceptionDate" type="date" value="${esc(state.scheduleExceptionDate)}">
+      <div class="row2"><button class="secondary" onclick="filterScheduleExceptions()">查詢指定日期</button><button class="secondary" onclick="clearScheduleExceptionFilter()">顯示全部異動</button></div>
+      <p>復課只恢復這一堂原訂課程。其他日期、原停課原因與操作紀錄會保留。</p>
+      ${items||'<div class="notice">此條件沒有課程異動。</div>'}</div>`;
+  }
+
   function scheduleAdmin(){
     const data=state.schoolSchedule||{items:[],exceptions:[],scheduleState:{status:"draft"}},items=data.items||[],exceptions=data.exceptions||[],scheduleState=data.scheduleState||{status:"draft"};
     const active=items.filter(x=>x.status==="active"),isLive=scheduleState.status==="active",preview=state.schedulePreview;
@@ -102,14 +133,40 @@
     </div>
     ${previewPanel}
     ${sectionMergeCard()}
-    <div class="card"><h2>目前課表</h2>${active.length?active.map(x=>`<div class="item"><div><b>${esc(x.courseName)}</b><small>${esc(typeText(x.courseType))}｜${esc(x.groupName||"全團")}｜${x.recurrence==="weekly"?esc(weekdayText(x.weekday)):esc(x.sessionDate)}｜${esc(x.startTime)}–${esc(x.endTime)}${x.location?`｜📍 ${esc(x.location)}`:""}</small></div><button class="secondary" style="width:auto;margin:0;padding:8px 10px" onclick="cancelSchedulePrompt('${esc(x.scheduleId)}','${esc(x.courseName)}')">停課</button></div>`).join(""):'<div class="notice">尚未建立課表，可先下載「本校課表範本」，用 Excel 編輯後再匯入。</div>'}</div>
-    <div class="card"><h2>近期異動</h2>${exceptions.length?exceptions.slice().sort((a,b)=>String(b.sessionDate).localeCompare(String(a.sessionDate))).slice(0,8).map(x=>`<div class="item"><div><b>${esc(x.sessionDate)}｜${esc(exceptionLabel(x))}｜${x.status==="cancelled"?"停課":x.status==="rescheduled"?"改期":"恢復上課"}</b><small>${esc(x.reason||"未填原因")}${x.newDate?`<br>新日期：${esc(x.newDate)} ${esc(x.newStartTime||"")}${x.newEndTime?`–${esc(x.newEndTime)}`:""}`:""}</small></div><span class="badge warn">已通知首頁</span></div>`).join(""):'<div class="notice">目前沒有課程異動。</div>'}</div>`;
+    <div class="card"><h2>目前課表</h2>${active.length?active.map(x=>`<div class="item"><div><b>${esc(x.courseName)}</b><small>${esc(typeText(x.courseType))}｜${esc(x.groupName||"全團")}｜${x.recurrence==="weekly"?esc(weekdayText(x.weekday)):esc(x.sessionDate)}｜${esc(x.startTime)}–${esc(x.endTime)}${x.location?`｜📍 ${esc(x.location)}`:""}</small></div><button class="secondary" style="width:auto;margin:0;padding:8px 10px" onclick="cancelSchedulePrompt('${encodeId(x.scheduleId)}')">停課</button></div>`).join(""):'<div class="notice">尚未建立課表，可先下載「本校課表範本」，用 Excel 編輯後再匯入。</div>'}</div>
+    ${scheduleChangeForm()}
+    ${exceptionHistory(exceptions,scheduleById,exceptionLabel)}`;
   }
 
-  window.cancelSchedulePrompt=async function(scheduleId,name){
-    const date=prompt(`${name} 要停課的日期（YYYY-MM-DD）`,new Date().toLocaleDateString("sv-SE"));if(!date)return;
-    const reason=prompt("停課原因（家長首頁會顯示）","學校行程調整")||"課程停課";
-    try{await api("/api/school-schedule",{method:"PATCH",body:JSON.stringify({action:"exception",scheduleId,sessionDate:date,status:"cancelled",reason})});toast("✅ 已設定停課，家長首頁將同步顯示");await loadSchedule();render()}catch(e){toast("❌ "+e.message)}
+  function showScheduleChange(){
+    render();requestAnimationFrame(()=>document.getElementById("scheduleChangeForm")?.scrollIntoView({block:"start",behavior:"smooth"}));
+  }
+  window.cancelSchedulePrompt=function(encodedId){
+    const scheduleId=decodeURIComponent(encodedId);
+    if(!(state.schoolSchedule?.items||[]).some(x=>x.scheduleId===scheduleId)){toast("請重新讀取課表");return}
+    state.scheduleChange={action:"exception",scheduleId,date:new Date().toLocaleDateString("sv-SE"),reason:"學校行程調整"};showScheduleChange();
+  };
+  window.filterScheduleExceptions=function(){state.scheduleExceptionDate=String($("scheduleExceptionDate")?.value||"");render()};
+  window.clearScheduleExceptionFilter=function(){state.scheduleExceptionDate="";render()};
+  window.closeScheduleChange=function(){if(state.savingScheduleChange)return;state.scheduleChange=null;render()};
+  window.restoreSchedulePrompt=function(encodedId,date){
+    const scheduleId=decodeURIComponent(encodedId),course=(state.schoolSchedule?.items||[]).find(x=>x.scheduleId===scheduleId);
+    const previous=(state.schoolSchedule?.exceptions||[]).find(x=>x.scheduleId===scheduleId&&x.sessionDate===date);
+    if(!course||previous?.status!=="cancelled"){toast("請重新讀取課表後再操作");return}
+    state.scheduleChange={action:"restore",scheduleId,date,reason:"原停課安排取消，恢復原訂上課",expectedUpdatedAt:previous.updatedAt};showScheduleChange();
+  };
+  window.submitScheduleChange=async function(){
+    const change=state.scheduleChange;if(!change||state.savingScheduleChange)return;
+    const date=change.action==="restore"?change.date:String($("scheduleChangeDate")?.value||"");
+    const reason=String($("scheduleChangeReason")?.value||"").trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!reason){toast("請選擇上課日期並填寫原因");return}
+    Object.assign(change,{date,reason});state.savingScheduleChange=true;render();
+    try{
+      await api("/api/school-schedule",{method:"PATCH",body:JSON.stringify({action:change.action,scheduleId:change.scheduleId,sessionDate:date,status:"cancelled",reason,expectedUpdatedAt:change.expectedUpdatedAt})});
+      state.schedulePreview=null;await loadSchedule();state.scheduleChange=null;state.scheduleExceptionDate=date;
+      toast(change.action==="restore"?"✅ 已取消停課，恢復原訂上課":"✅ 已設定單日停課，家長首頁將同步顯示");
+    }catch(e){toast("❌ "+e.message)}
+    finally{state.savingScheduleChange=false;render();requestAnimationFrame(()=>document.getElementById(state.scheduleChange?"scheduleChangeForm":"scheduleExceptionHistory")?.scrollIntoView({block:"start",behavior:"smooth"}))}
   };
 
   const scheduleHeaders=["courseType","courseName","groupName","recurrence","weekday","startDate","endDate","sessionDate","startTime","endTime","location","note"];

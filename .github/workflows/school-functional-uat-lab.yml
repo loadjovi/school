@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - fix/restore-and-teacher-login-history
   workflow_dispatch:
 
 permissions:
@@ -58,6 +59,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p 'test_functional_lab_isolation.py' -v
           node --test tests/admin-semester-scores.test.mjs tests/admin-attendance-todos.test.mjs tests/tshirt-first-receipt.test.mjs
+          node --test api/test/schoolScheduleRestore.test.mjs api/test/teacherLoginHistory.test.mjs
           find .functional-lab-build/api/src -name '*.js' -print0 | xargs -0 -n1 node --check
           find .functional-lab-build/api/src -name '*.mjs' -print0 | xargs -0 -n1 node --check
           find .functional-lab-build/app -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check

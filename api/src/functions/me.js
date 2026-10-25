@@ -1,5 +1,6 @@
 import { app } from "@azure/functions";
 import { getAccess, json, parseJsonEnv } from "../lib/auth.js";
+import { recordTeacherLogin } from "../lib/teacherLoginAudit.js";
 import { touchTeacherLastLogin, listTenantRolesByEmail, listTenantDirectory, getTenantDirectory, getTeacherDirectory, activeTeacherSupport, getMappedStudentsByEmail, defaultTenantId, saveUserIdentity } from "../lib/storage.js";
 app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(request)=>{
   const a=await getAccess(request);
@@ -62,8 +63,11 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
   const requestedType=String(request.headers.get("x-role-context")||"").trim();
   const requestedSchoolId=String(request.headers.get("x-school-id")||"").trim().toLowerCase();
   const teacherRoles=["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"];
-  if(teacherRoles.includes(a.role)&&(requestedType==="teacher"||(!requestedType&&contexts.length===1))){
-    try{await touchTeacherLastLogin(a.email,a.schoolId||defaultId)}catch(e){console.warn("teacher last login update failed",e)}
+  if(teacherRoles.includes(a.role)||requestedType==="teacher"){
+    try{
+      const entry=await recordTeacherLogin(a,requestedType);
+      if(entry.created&&entry.result==="success")await touchTeacherLastLogin(a.email,a.schoolId||defaultId);
+    }catch(e){console.warn("teacher login audit update failed",e?.message||String(e))}
   }
 
   let activeContextKey="";

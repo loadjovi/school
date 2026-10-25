@@ -47,7 +47,7 @@
       "/student-change-admin.js?v=20260918-1015",
       "/parent-link-admin.js?v=20260921-0135",
       "/teacher-settings.js?v=20261002-teacher-types",
-      "/teacher-admin.js?v=20261002-teacher-types",
+      "/teacher-admin.js?v=20261025-login-history",
       "/batch-upgrade.js",
       "/roster-import.js?v=20260915-1135",
       "/attendance-support.js?v=20260928-2148",
@@ -58,7 +58,7 @@
       "/system-backup.js?v=20261003-practice20",
       "/school-access.js?v=20261017-simple-accounts",
       "/school-access-audit-admin.js?v=20261017-simple-records",
-      "/school-admin-activity.js?v=20261008-activity2",
+      "/school-admin-activity.js?v=20261025-restore",
       "/school-access-refresh-fix.js?v=20261015-finance-role",
       "/training-attendance.js?v=20261002-save-confirm"
     ];
@@ -119,7 +119,7 @@
   async function loadRoleModules(){
     await waitForProfileReady();
     if(typeof state==="undefined"||!state.me)return;
-    const list=[...roleModules(),"/desktop-ui.js?v=20261017-admin-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261018-simple4"]:[])];
+    const list=[...roleModules(),"/desktop-ui.js?v=20261017-admin-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261025-login-history"]:[])];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");

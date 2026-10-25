@@ -1,4 +1,5 @@
 import { OAuth2Client } from "google-auth-library";
+import { createHash } from "node:crypto";
 import { getMappedStudentsByEmail, listStudentMaster, getTeacherProfile, getTeacherDirectory, activeTeacherSupport, listUserStudentMappings, ensureDefaultTenant, ensureBootstrapGlobalAdmin, listTenantRolesByEmail, getTenantDirectory, defaultTenantId, tenantIdValue } from "./storage.js";
 import { teacherCourseAccess } from "./teacherAccountType.js";
 import {financeAssigned} from "./financeAccess.js";
@@ -41,7 +42,7 @@ export async function verifyGoogleToken(token){
     const ticket=await googleClient.verifyIdToken({idToken:token,audience});
     const p=ticket.getPayload();
     if(!p?.email||p.email_verified!==true)return null;
-    return {sub:p.sub,email:String(p.email).trim().toLowerCase(),displayName:p.name||p.email,picture:p.picture||null};
+    return {sub:p.sub,email:String(p.email).trim().toLowerCase(),displayName:p.name||p.email,picture:p.picture||null,authSessionId:createHash("sha256").update(token).digest("hex")};
   }catch(err){
     console.error("Google ID token verification failed:",err?.message||String(err));
     return null;
