@@ -14,6 +14,7 @@ async function client(){
 }
 export const teacherLoginPartition=schoolId=>`${tenantSchoolPartition(schoolId)}|teacher-login`;
 export function teacherLoginResult(access,requestedContext){
+  if(!access.authenticated)return "";
   if(teacherRoles.has(access.role))return "success";
   return requestedContext==="teacher"&&access.authenticated?"denied":"";
 }

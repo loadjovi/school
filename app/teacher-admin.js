@@ -16,9 +16,11 @@
     if(state.me?.role!=="admin"||state.page!=="admin")return;
     const scope=String(state.me.schoolId||"")+"|"+String(state.me.email||"");
     if(loginAudit.scope!==scope){Object.assign(loginAudit,{scope,open:false,email:"",items:[],next:"",pages:[""],page:0,loaded:false,error:""})}
-    const host=document.getElementById("schoolAdminActivity")||document.getElementById("schoolAccessAudit")||document.querySelector(".main");if(!host)return;
+    const main=document.querySelector(".main");if(!main)return;
+    const host=document.getElementById("schoolAdminActivity")||document.getElementById("schoolAccessAudit");
     let root=document.getElementById("teacherLoginAudit");
-    if(!root){root=document.createElement("section");root.id="teacherLoginAudit";root.className="card";root.dataset.adminGroup="records";host.insertAdjacentElement("afterend",root)}
+    if(!root){root=document.createElement("section");root.id="teacherLoginAudit";root.className="card";root.dataset.adminGroup="records";if(host&&main.contains(host))host.insertAdjacentElement("afterend",root);else main.append(root)}
+    else if(!main.contains(root))main.append(root);
     root.hidden=state.adminWorkspaceSection!=="records";
     root.innerHTML=`<div class="section-title"><h2>老師完整登入歷史</h2><button class="secondary" style="width:auto;margin:0" onclick="toggleTeacherLoginHistory()">${loginAudit.open?"收合":"開啟老師登入查詢"}</button></div>${loginAudit.open?loginAuditContent():"<p>依日期、老師與登入結果，逐頁查詢本校老師登入紀錄。</p>"}`;
   }

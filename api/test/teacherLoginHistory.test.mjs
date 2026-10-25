@@ -72,3 +72,22 @@ test("me records teacher entry without exposing the internal session hash",async
   const response=await handlers.me(req);await handlers.me(req);
   assert.equal(events.length,2);assert.equal(touches.length,1);assert.equal(response.jsonBody.authSessionId,undefined);assert.equal(response.jsonBody.email,access.email);
 });
+
+test("teacher history mounts inside the workspace even when other audit modules have not loaded",()=>{
+  const registry=new Map(),jobs=[];
+  class Element{
+    constructor(){this.dataset={};this.children=[];this.hidden=false;this.parentElement=null}
+    set id(value){this._id=value;registry.set(value,this)}get id(){return this._id}
+    append(node){node.parentElement=this;this.children.push(node)}
+    contains(node){for(let n=node;n;n=n.parentElement)if(n===this)return true;return false}
+    insertAdjacentElement(position,node){this.parentElement?.append(node)}
+  }
+  const app=new Element(),main=new Element();app.append(main);
+  const state={me:{role:"admin",schoolId:"school-a",email:"admin@example.org"},page:"admin",adminWorkspaceSection:"home"};
+  const context={state,window:null,loadAdmin:async()=>{},adminPage:()=>"",render:()=>{},setTimeout:fn=>jobs.push(fn),api:async()=>({items:[],students:[]}),esc:x=>String(x),$:()=>null,document:{querySelector:s=>s===".main"?main:null,getElementById:id=>registry.get(id)||null,createElement:()=>new Element()}};context.window=context;
+  runInNewContext(readFileSync(new URL("../../app/teacher-admin.js",import.meta.url),"utf8"),context);
+  context.render();while(jobs.length)jobs.shift()();
+  const root=registry.get("teacherLoginAudit");assert.equal(root.parentElement,main);assert.equal(root.hidden,true);
+  state.adminWorkspaceSection="records";context.render();while(jobs.length)jobs.shift()();
+  assert.equal(root.hidden,false);assert.match(root.innerHTML,/開啟老師登入查詢/);
+});
