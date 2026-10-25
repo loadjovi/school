@@ -303,8 +303,9 @@ async function load(){
   config.students=(master.items||[]).filter(x=>x.status==="active").sort((a,b)=>String(a.groupName).localeCompare(String(b.groupName),"zh-Hant")||String(a.grade).localeCompare(String(b.grade),"zh-Hant")||String(a.name).localeCompare(String(b.name),"zh-Hant"));
   if(!config.students.length){$("feedback").textContent="目前沒有在團學生";$("followupFeedback").textContent="目前沒有在團學生可追蹤個課。";updateTeacherOptions();return}
   let next=0,done=0;const students=config.students,schoolYear=$("year").value,semester=$("term").value;
-  const followupJob=request("/api/admin-private-lesson-followup?schoolYear="+encodeURIComponent(schoolYear)+"&semester="+encodeURIComponent(semester)).then(data=>{
+  const followupJob=request("/api/teacher-directory?view=private-followup&schoolYear="+encodeURIComponent(schoolYear)+"&semester="+encodeURIComponent(semester)).then(data=>{
     if(id!==config.requestId)return;
+    if(!data.start||!data.end||!Array.isArray(data.items)||data.items.some(row=>!row.studentId))throw Error("個課追蹤服務版本尚未同步");
     config.followups=new Map((data.items||[]).map(x=>[String(x.studentId),x]));config.followupLoaded=true;updateTeacherOptions();
     $("followupFeedback").textContent="個課追蹤月份："+data.start+"～"+data.end+"，截至 "+data.asOf+"。老師依目前綁定及本期紀錄顯示；未綁定時請先確認是否安排個課。";
     display();

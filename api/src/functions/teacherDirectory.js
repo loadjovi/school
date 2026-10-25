@@ -3,6 +3,7 @@ import { getTenantContext, json } from "../lib/auth.js";
 import { sendTeacherAccessEnabledEmail } from "../lib/email.js";
 import { listTeacherDirectory, saveTeacherDirectory, getTeacherProfile, saveTeacherProfile, listStudentMaster, listActivityRange, getTenantDirectory } from "../lib/storage.js";
 import { isPrivateOnlyTeacher } from "../lib/teacherAccountType.js";
+import { privateLessonFollowupResponse } from "../lib/adminPrivateLessonFollowup.js";
 
 function clean(v,max=120){return String(v||"").trim().slice(0,max)}
 function normalizeEmail(v){return clean(v,200).toLowerCase()}
@@ -34,6 +35,7 @@ app.http("teacherDirectory",{
     const {access,schoolId}=context;
     if(access.role!=="admin")return json({error:"Forbidden"},403);
     if(request.method==="GET"){
+      if(request.query?.get("view")==="private-followup")return privateLessonFollowupResponse(request,schoolId);
       const ratingMap=new Map();
       for(const e of await listActivityRange("privateLesson",schoolId)){
         const email=normalizeEmail(e.teacher),rating=Number(e.teacherRating||0);

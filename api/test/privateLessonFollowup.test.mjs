@@ -32,8 +32,9 @@ test("follow-up API is admin-only, uses the authenticated tenant, and never writ
  const handlers={},calls=[];let role="teacher";
  const context={app:{http:(name,config)=>handlers[name]=config.handler},getTenantContext:async()=>({access:{role},schoolId:"school-a"}),json:(jsonBody,status=200)=>({jsonBody,status}),followupTerm,buildPrivateLessonFollowup,activityStudentId:r=>r.studentId,Intl,Date,
  listStudentMaster:async(...args)=>{calls.push(["students",...args]);return [{rowKey:"111001"}]},listTeacherDirectory:async(...args)=>{calls.push(["teachers",...args]);return []},listActivityRange:async(...args)=>{calls.push(["lessons",...args]);return []},getStudentIdAliases:async(id,sid)=>{calls.push(["aliases",id,sid]);return [id]},getTeacherProfile:async()=>{throw Error("not needed")}};
- runInNewContext(readFileSync(new URL("../src/functions/adminPrivateLessonFollowup.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,""),context);
- const request=values=>handlers.adminPrivateLessonFollowup({query:new URLSearchParams({schoolYear:"115",semester:"1",schoolId:"school-b",...values})});
+ runInNewContext(readFileSync(new URL("../src/lib/adminPrivateLessonFollowup.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"").replace(/^export /gm,""),context);
+ runInNewContext(readFileSync(new URL("../src/functions/teacherDirectory.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,""),context);
+ const request=values=>handlers.teacherDirectory({method:"GET",query:new URLSearchParams({view:"private-followup",schoolYear:"115",semester:"1",schoolId:"school-b",...values})});
  assert.equal((await request()).status,403);assert.equal(calls.length,0);role="admin";
  assert.equal((await request({schoolYear:"bad"})).status,400);assert.equal(calls.length,0);
  const response=await request();assert.equal(response.status,200);assert.equal(response.headers["Cache-Control"],"no-store");assert.equal(response.jsonBody.items.length,1);
