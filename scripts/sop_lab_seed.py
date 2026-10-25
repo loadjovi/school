@@ -13,7 +13,8 @@ const scenarios=[
   {id:"990102",studentName:"測試乙同學",grade:"五年級",groupName:"A",instrument:"小提琴",section:"小提一部",classCode:"5B",size:"S",shirt:"PENDING_SCHOOL",uniform:"PURCHASE"},
   {id:"990103",studentName:"測試丙同學",grade:"六年級",groupName:"A",instrument:"大提琴",section:"大提",classCode:"6A",size:"M",shirt:"RECEIVED",uniform:"PENDING"},
   {id:"990104",studentName:"測試丁同學",grade:"三年級",groupName:"B",instrument:"小提琴",section:"小提二部",classCode:"3A",size:"10",shirt:"PENDING_SCHOOL"},
-  {id:"990105",studentName:"測試戊同學",grade:"二年級",groupName:"儲備",instrument:"小提琴",section:"小提一部",classCode:"2A",size:null,shirt:"PENDING_PARENT"}
+  {id:"990105",studentName:"測試戊同學",grade:"二年級",groupName:"儲備",instrument:"小提琴",section:"小提一部",classCode:"2A",size:null,shirt:"PENDING_PARENT"},
+  {id:"990106",studentName:"測試己同學",grade:"二年級",groupName:"儲備",instrument:"小提琴",section:"小提一部",classCode:"2A",size:null,shirt:"PENDING_PARENT"}
 ];
 const fixturePrefix="sop_demo_";
 const table=async name=>{
@@ -104,6 +105,23 @@ function eventEntity(schoolId){
  return {partitionKey:schoolId,rowKey:"fieldTrip:sop_demo_activity",
   payload:JSON.stringify(payload),updatedAt:new Date().toISOString(),updatedBy:"SOP_LAB_FIXTURE"};
 }
+async function seedEmptySchedule(schoolId,result){
+ const schedules=await table(process.env.TENANT_SCHEDULE_TABLE||"TenantSchedule");
+ const filter=`PartitionKey eq '${String(schoolId).replaceAll("'","''")}'`;
+ for await(const _ of schedules.listEntities({queryOptions:{filter}})){result.scheduleDemo="kept_existing";return}
+ const states=await table(process.env.TENANT_SCHEDULE_STATE_TABLE||"TenantScheduleState");
+ let state=null;try{state=await states.getEntity(schoolId,"current")}catch(e){if(e.statusCode!==404)throw e}
+ if(state?.status==="active"){result.scheduleDemo="kept_active_state";return}
+ const at=new Date().toISOString();
+ const demos=[
+  {rowKey:"sop_course_section_20261025",courseType:"section",courseName:"示例 儲備團分部課",groupName:"儲備",recurrence:"weekly",weekday:5,startDate:"2026-10-30",endDate:"2026-11-20",sessionDate:"",startTime:"17:10",endTime:"18:30"},
+  {rowKey:"sop_course_ensemble_20261025",courseType:"ensemble",courseName:"示例 A B團合奏課",groupName:"A,B",recurrence:"date",weekday:0,startDate:"",endDate:"",sessionDate:"2026-10-27",startTime:"12:30",endTime:"13:20"},
+  {rowKey:"sop_course_comprehensive_20261025",courseType:"comprehensive",courseName:"示例 弦樂團體活動",groupName:"A,B,儲備",recurrence:"date",weekday:0,startDate:"",endDate:"",sessionDate:"2026-10-30",startTime:"08:45",endTime:"10:15"}
+ ];
+ for(const demo of demos){const status=await addIfMissing(schedules,{partitionKey:schoolId,schoolId,...demo,section:"",location:"示例團練教室",status:"active",note:"SOP LAB 虛構教學案例",updatedAt:at,updatedBy:"SOP_LAB_FIXTURE"});result[status==="created"?"created":"existing"]++}
+ const status=await addIfMissing(states,{partitionKey:schoolId,rowKey:"current",schoolId,status:"draft",updatedAt:at,updatedBy:"SOP_LAB_FIXTURE"});result[status==="created"?"created":"existing"]++;
+ result.scheduleDemo="created_three_draft_courses";
+}
 app.http("sopLabFixtures",{
  methods:["GET","POST"],authLevel:"anonymous",route:"sop-lab/fixtures",
  handler:async request=>{
@@ -131,6 +149,7 @@ app.http("sopLabFixtures",{
     result[shirtResult]++;
     if(s.uniform)await put(uniforms,competitionEntity(s,schoolId));
    }
+   await seedEmptySchedule(schoolId,result);
    await put(events,eventEntity(schoolId));
    // Parent pages require an explicit enabled module configuration.
    // Create only if absent. Never toggle an existing admin-defined setting.

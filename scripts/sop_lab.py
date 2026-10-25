@@ -101,7 +101,7 @@ button,select{padding:9px 13px;border:1px solid #748ab9;color:#1d315a;border-rad
 </section>
 <section class="card">
  <h2>03｜一鍵建立虛構測試資料</h2>
- <p>僅供 LAB 學校管理員使用。建立 A、B、儲備團 5 位虛構學生，搭配團 T 三種狀態、A 團比賽服公費／買斷及測試活動。不影響正式環境。</p>
+ <p>僅供 LAB 學校管理員使用。建立 A、B、儲備團 6 位虛構學生，搭配團 T 三種狀態、A 團比賽服公費／買斷及測試活動。不影響正式環境。</p>
  <div class="notice">重複點擊只會跳過已有的測試紀錄，不會覆蓋已修改的申請或領用狀態。必須先由 LAB 學校管理員登入完整平台。</div>
  <p class="muted" id="fixture-session-hint">正在確認這個分頁的學校管理員登入狀態…</p>
  <button id="create-fixtures">建立 SOP 測試資料</button>
@@ -111,14 +111,14 @@ button,select{padding:9px 13px;border:1px solid #748ab9;color:#1d315a;border-rad
 <section class="card">
  <h2>04｜將目前帳號綁定為 LAB 測試家長</h2>
  <p>要拍攝家長端警示／團 T 申請進度，必須先用家長身分綁定虛構學生。此功能只會在獨立 LAB 建立<strong>目前登入帳號</strong>與所選假學生的家長關聯，完全不會綁定其他人的 Gmail。</p>
- <div class="notice">建議先選「測試戊同學（990105，未填尺寸）」驗證首頁黃色提醒；再選「測試甲同學（990101，學校已交付）」驗證家長確認領取。請使用專門的 LAB 測試帳號；即使在獨立 LAB 也不建議和真實家長資料混用。</div>
+ <div class="notice">重新拍攝首次領用可選「測試己同學（990106，未填尺寸）」；原案例「測試戊同學」的既有紀錄仍會保留。再選「測試甲同學（990101，學校已交付）」驗證家長確認領取。請使用專門的 LAB 測試帳號；即使在獨立 LAB 也不建議和真實家長資料混用。</div>
  <div class="row">
   <select id="lab-parent-student" aria-label="選擇虛構 LAB 學生"><option value="">請先讀取 LAB 學生</option></select>
   <button type="button" id="lab-parent-refresh">讀取測試學生</button>
   <button type="button" id="lab-parent-bind">綁定為測試家長</button>
   <button type="button" id="lab-parent-switch" disabled>切換家長角色查看提醒 →</button>
  </div>
- <p class="muted" role="status" aria-live="polite" id="lab-parent-message">先以 LAB 學校管理員身分登入，讀取五位虛構學生。</p>
+ <p class="muted" role="status" aria-live="polite" id="lab-parent-message">先以 LAB 學校管理員身分登入，讀取六位虛構學生。</p>
 </section>
 <section class="card">
  <h2>05｜SOP 驗證項目</h2>
@@ -202,7 +202,7 @@ q("create-fixtures").addEventListener("click",async()=>{
  const button=q("create-fixtures"),message=q("fixture-message");
  let headers;
  try{headers=schoolAdminHeaders()}catch(error){message.textContent="⚠️ "+error.message;return}
- if(!confirm("確認建立 5 位虛構學生與團服、比賽服、活動測試資料？資料只會新增至目前獨立 LAB 的學校。"))return;
+ if(!confirm("確認新增缺少的 6 位虛構學生與團服、比賽服、活動測試資料？空白課表另建立三種草稿課程；已有課表不變更。資料只會新增至目前獨立 LAB 的學校。"))return;
  button.disabled=true;message.textContent="正在確認學校管理員權限…";
  try{
   const check=await fetch("/api/me",{headers,cache:"no-store",credentials:"same-origin"});
@@ -254,6 +254,7 @@ q("lab-parent-refresh").addEventListener("click",async()=>{
    bindSelect.append(option);
   }
   if(labParentBindings.some(x=>x.studentId===prior&&x.available))bindSelect.value=prior;
+  else if(labParentBindings.some(x=>x.studentId==="990106"&&x.available))bindSelect.value="990106";
   else if(labParentBindings.some(x=>x.studentId==="990105"&&x.available))bindSelect.value="990105";
   parentStatus.textContent="已取得虛構學生；選擇要測試的情境，綁定後切換家長角色。";
   refreshSwitchState();

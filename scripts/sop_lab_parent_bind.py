@@ -12,7 +12,7 @@ assertLabIsolation();
 // Exact fixture IDs; no arbitrary students or emails can be assigned.
 const fixtures=new Map([
  ["990101","測試甲同學"],["990102","測試乙同學"],["990103","測試丙同學"],
- ["990104","測試丁同學"],["990105","測試戊同學"]
+ ["990104","測試丁同學"],["990105","測試戊同學"],["990106","測試己同學"]
 ]);
 const client=async name=>{
  const c=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,name);
@@ -57,7 +57,7 @@ app.http("sopLabParentBinding",{
    return json({error:"請明確選擇並確認綁定一位虛構 LAB 學生"},400);
   const s=await master.getEntity(schoolId,studentId).catch(e=>{if(e.statusCode===404)return null;throw e});
   if(!s||s.studentName!==fixtures.get(studentId)||s.updatedBy!=="SOP_LAB_FIXTURE")
-   return json({error:"僅允許綁定目前 LAB 產生的五位虛構學生"},403);
+   return json({error:"僅允許綁定目前 LAB 產生的六位虛構學生"},403);
   try{
    const old=await maps.getEntity(partition,studentId);
    if(old.status==="active")return json({ok:true,alreadyBound:true,studentId,name:s.studentName});
