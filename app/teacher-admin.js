@@ -85,7 +85,16 @@
   function ratingReviews(t){
     const rows=Array.isArray(t.recentReviews)?t.recentReviews:[];
     if(!rows.length)return "";
-    return '<details style="margin-top:8px"><summary style="cursor:pointer;font-weight:800">查看最近家長評論</summary><div style="margin-top:8px">'+rows.map(r=>'<div class="notice" style="margin-top:6px"><b>'+"★".repeat(Number(r.rating||0))+"☆".repeat(Math.max(0,5-Number(r.rating||0)))+'</b>｜'+esc(r.lessonDate||"")+'<br>'+esc(r.review||"")+'</div>').join("")+'</div></details>';
+    return '<details class="teacher-parent-reviews" style="margin-top:8px"><summary style="cursor:pointer;font-weight:800">查看最近家長評論</summary><div style="margin-top:8px">'+rows.map(r=>{
+      const id=String(r.studentId||""),student=r.studentName||"學生資料待確認";
+      const ratedAt=r.ratedAt&&!Number.isNaN(new Date(r.ratedAt).getTime())?loginText(r.ratedAt):"";
+      return '<div class="notice teacher-parent-review" style="margin-top:6px;overflow-wrap:anywhere">'+
+        '<b>學生：'+esc(student)+'</b>'+(id?'<small>'+(/^\d{6}$/.test(id)?"學號":"學生編號")+'：'+esc(id)+'</small>':"")+
+        '<small>評論家長：'+esc(r.reviewerEmail||"舊紀錄未記錄家長帳號")+'</small>'+
+        '<div><b>'+"★".repeat(Number(r.rating||0))+"☆".repeat(Math.max(0,5-Number(r.rating||0)))+'</b>｜上課日期：'+esc(r.lessonDate||"未記錄")+'</div>'+
+        (ratedAt?'<small>評論時間：'+esc(ratedAt)+'</small>':"")+
+        '<div style="white-space:pre-wrap">'+esc(r.review||"")+'</div></div>';
+    }).join("")+'</div></details>';
   }
 
   function studentOptions(selected=[]){
@@ -98,7 +107,7 @@
     const privateEditor=`<div id="privateEditor_${k}" style="margin-top:10px;display:${t.privateOnly?"block":"none"}"><label>🔒 個課限定學生</label><select id="tp_${k}" multiple size="6" style="width:100%">${studentOptions(t.privateStudentIds)}</select><small>此類老師僅能使用個別課，綁定學生由校方管理員指定；轉為個課限定後，原團體課授課設定會清除。</small></div>`;
     return `<div class="item" style="display:block">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
-        <div><b>${esc(t.teacherName||"未命名老師")}</b> <span class="badge ${t.privateOnly?"warn":"ok"}">${t.privateOnly?"個課限定":"一般老師"}</span><small>${esc(t.email)}<br>${esc(summary(t))}<br><b>最近登入：</b>${esc(loginText(t.lastLoginAt))}<br><b>${esc(ratingText(t))}</b>${t.accountTypeUnspecified?"<br>舊帳號未記錄類型，暫列一般老師；請校方核對後儲存。":""}</small>${ratingReviews(t)}</div>
+        <div style="min-width:0;flex:1"><b>${esc(t.teacherName||"未命名老師")}</b> <span class="badge ${t.privateOnly?"warn":"ok"}">${t.privateOnly?"個課限定":"一般老師"}</span><small>${esc(t.email)}<br>${esc(summary(t))}<br><b>最近登入：</b>${esc(loginText(t.lastLoginAt))}<br><b>${esc(ratingText(t))}</b>${t.accountTypeUnspecified?"<br>舊帳號未記錄類型，暫列一般老師；請校方核對後儲存。":""}</small>${ratingReviews(t)}</div>
         <span class="badge ${active?"ok":"warn"}">${active?"啟用":"停用"}</span>
       </div>
       <div class="row2" style="margin-top:10px"><div><label>老師姓名</label><input id="tn_${k}" value="${esc(t.teacherName||"")}"></div><div><label>帳號狀態</label><select id="ts_${k}"><option value="active" ${active?"selected":""}>啟用</option><option value="inactive" ${!active?"selected":""}>停用</option></select></div></div>

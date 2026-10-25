@@ -1,7 +1,7 @@
 import { app } from "@azure/functions";
-import { getTenantContext, json } from "../lib/auth.js";
+import { getTenantContext, getStudentAliasInfo, json } from "../lib/auth.js";
 import { sendTeacherAccessEnabledEmail } from "../lib/email.js";
-import { listTeacherDirectory, saveTeacherDirectory, getTeacherProfile, saveTeacherProfile, listStudentMaster, listActivityRange, getTenantDirectory } from "../lib/storage.js";
+import { listTeacherDirectory, saveTeacherDirectory, getTeacherProfile, saveTeacherProfile, listStudentMaster, listActivityRange, activityStudentId, getTenantDirectory } from "../lib/storage.js";
 import { isPrivateOnlyTeacher } from "../lib/teacherAccountType.js";
 import { privateLessonFollowupResponse } from "../lib/adminPrivateLessonFollowup.js";
 
@@ -11,6 +11,23 @@ function validEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)}
 function parse(raw,fallback=[]){try{return JSON.parse(String(raw||""))}catch{return fallback}}
 function uniq(list){return [...new Set((Array.isArray(list)?list:[]).map(String).map(x=>x.trim()).filter(Boolean))]}
 function studentView(e){return {studentId:String(e.rowKey),name:String(e.studentName||""),grade:String(e.grade||""),groupName:String(e.groupName||""),instrument:String(e.instrument||""),section:String(e.section||"待確認")}}
+
+async function reviewStudent(rawId,masters,schoolId,cache){
+  const id=String(rawId||"").trim();
+  if(!id)return {studentId:"",studentName:""};
+  if(cache.has(id))return cache.get(id);
+  let studentId=id,master=masters.get(id);
+  // Old lesson IDs may have been replaced by the school's canonical student ID.
+  if(!master||master.replacedByStudentId||master.status==="inactive"){
+    try{
+      const alias=await getStudentAliasInfo(id,schoolId);
+      studentId=String(alias.canonicalStudentId||id);
+      master=masters.get(studentId)||master;
+    }catch(error){console.warn("Unable to resolve review student alias:",error?.message||String(error))}
+  }
+  const result={studentId,studentName:String(master?.studentName||"")};
+  cache.set(id,result);return result;
+}
 
 function publicAppUrl(request){
   const explicit=clean(process.env.APP_PUBLIC_URL||process.env.SWA_PUBLIC_URL||"",1000);
@@ -36,14 +53,16 @@ app.http("teacherDirectory",{
     if(access.role!=="admin")return json({error:"Forbidden"},403);
     if(request.method==="GET"){
       if(request.query?.get("view")==="private-followup")return privateLessonFollowupResponse(request,schoolId);
+      const [lessons,masters]=await Promise.all([listActivityRange("privateLesson",schoolId),listStudentMaster("",schoolId)]);
+      const masterMap=new Map(masters.map(row=>[String(row.rowKey),row])),reviewStudentCache=new Map();
       const ratingMap=new Map();
-      for(const e of await listActivityRange("privateLesson",schoolId)){
+      for(const e of lessons){
         const email=normalizeEmail(e.teacher),rating=Number(e.teacherRating||0);
         if(!email||!Number.isInteger(rating)||rating<1||rating>5)continue;
         const old=ratingMap.get(email)||{ratingCount:0,ratingTotal:0,fiveStarCount:0,reviews:[]};
         old.ratingCount++;old.ratingTotal+=rating;if(rating===5)old.fiveStarCount++;
         const review=clean(e.teacherReview,800);
-        if(review)old.reviews.push({rating,review,lessonDate:String(e.eventDate||""),ratedAt:String(e.teacherRatedAt||"")});
+        if(review)old.reviews.push({rating,review,lessonDate:String(e.eventDate||""),ratedAt:String(e.teacherRatedAt||""),studentId:activityStudentId(e),studentName:clean(e.studentName,120),reviewerEmail:normalizeEmail(e.teacherRatedBy),lessonId:String(e.rowKey||"")});
         ratingMap.set(email,old);
       }
       for(const v of ratingMap.values())v.reviews.sort((a,b)=>String(b.ratedAt||b.lessonDate).localeCompare(String(a.ratedAt||a.lessonDate)));
@@ -54,11 +73,16 @@ app.http("teacherDirectory",{
         const privateOnly=isPrivateOnlyTeacher(t);
         const r=ratingMap.get(normalizeEmail(t.rowKey))||{ratingCount:0,ratingTotal:0,fiveStarCount:0,reviews:[]};
         const ratingAverage=r.ratingCount?Math.round((r.ratingTotal/r.ratingCount)*100)/100:null;
+        const recentReviews=[];
+        for(const review of r.reviews.slice(0,3)){
+          const student=await reviewStudent(review.studentId,masterMap,schoolId,reviewStudentCache);
+          recentReviews.push({...review,...student,studentName:student.studentName||review.studentName});
+        }
         items.push({email:t.rowKey,teacherName:t.teacherName||"",status:t.status||"active",updatedAt:t.updatedAt||null,lastLoginAt:t.lastLoginAt||null,sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,privateOnly,accountTypeUnspecified:typeof t.privateOnly!=="boolean",
-          ratingAverage,ratingCount:r.ratingCount,fiveStarCount:r.fiveStarCount,recentReviews:r.reviews.slice(0,3)});
+          ratingAverage,ratingCount:r.ratingCount,fiveStarCount:r.fiveStarCount,recentReviews});
       }
-      const students=(await listStudentMaster("active",schoolId)).map(studentView);
-      return json({items,students});
+      const students=masters.filter(row=>row.status==="active").map(studentView);
+      return {...json({items,students}),headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}};
     }
     const body=await request.json();
     const email=normalizeEmail(body.email),teacherName=clean(body.teacherName||body.name,80),status=clean(body.status||"active",20)==="inactive"?"inactive":"active";
