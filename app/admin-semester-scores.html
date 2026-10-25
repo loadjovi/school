@@ -19,8 +19,13 @@ label>*{display:block;margin-top:6px;width:100%;min-height:44px;border-radius:9p
 button{min-height:42px;border-radius:9px;border:1px solid #3b58a4;background:#fff;color:#3454a5;padding:9px 13px}
 button.primary{background:#425aaf;color:white}
 .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
-.stat{border:1px solid #d8e2ef;background:#f5f8fb;border-radius:11px;padding:12px}
+.stat{border:1px solid #d8e2ef;background:#f5f8fb;border-radius:11px;padding:12px;text-align:left;color:#19335b}
+.stat:hover{border-color:#6078bd;background:#eff3ff}
+.stat[aria-pressed="true"]{border-color:#425aaf;box-shadow:inset 0 0 0 2px #425aaf;background:#eaf0ff}
+.stat:focus-visible{outline:3px solid #425aaf;outline-offset:3px}
 .stat strong{display:block;font-size:24px;margin-bottom:5px}.stat small{display:block;font-size:12px}
+.stats-help{font-size:13px;line-height:1.6;margin:10px 0 8px;color:#60728b}
+.score-filter-summary{background:#eef2ff;color:#28408a;border-radius:9px;padding:10px 12px;margin-top:10px;line-height:1.5;font-size:14px;font-weight:700}
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .filters button[aria-pressed="true"]{background:#4159ac;color:#fff}
 .table-wrap{overflow-x:auto;width:100%;border:1px solid #d8e2ef;border-radius:12px}
@@ -103,16 +108,18 @@ details{margin-top:8px;font-weight:400}summary{cursor:pointer;color:#3656a8;font
   <button type="button" data-mode="private" aria-pressed="false">模式一｜個課表現 5 分</button>
   <button type="button" data-mode="teacher" aria-pressed="false">模式二｜老師期末評分 5 分</button>
  </div>
- <div class="stats">
-  <div class="stat"><strong id="countStudents">—</strong><small>符合篩選學生</small></div>
-  <div class="stat"><strong id="countScored">—</strong><small>目前可合計 /20</small></div>
-  <div class="stat"><strong id="countPending">—</strong><small>尚有未完成項目</small></div>
-  <div class="stat"><strong id="countErrors">—</strong><small>讀取失敗</small></div>
+ <p class="stats-help">點選數字快速篩選名單；統計依上方條件計算。點第一格可回到全部。</p>
+ <div class="stats" aria-label="成績狀態快速篩選">
+  <button type="button" class="stat" data-score-status="all" aria-pressed="true" aria-controls="scoreStudentList"><strong id="countStudents">—</strong><small>全部符合條件學生</small></button>
+  <button type="button" class="stat" data-score-status="scored" aria-pressed="false" aria-controls="scoreStudentList"><strong id="countScored">—</strong><small>目前可合計 /20</small></button>
+  <button type="button" class="stat" data-score-status="pending" aria-pressed="false" aria-controls="scoreStudentList"><strong id="countPending">—</strong><small>尚有未完成項目</small></button>
+  <button type="button" class="stat" data-score-status="error" aria-pressed="false" aria-controls="scoreStudentList"><strong id="countErrors">—</strong><small>讀取失敗</small></button>
  </div>
+ <div id="scoreFilterSummary" class="score-filter-summary" role="status" aria-live="polite">目前顯示：全部符合條件學生</div>
  <p id="feedback" role="status" aria-live="polite">正在確認學校管理員身分…</p>
  <p id="followupFeedback" class="muted" role="status" aria-live="polite">正在讀取個課老師與追蹤資料…</p>
 </section>
-<section class="card">
+<section class="card" id="scoreStudentList">
  <div class="banner"><h2>學生逐人成績明細</h2><button id="export" type="button" disabled>匯出目前篩選 CSV</button></div>
  <div class="notice warn">分數欄位以 20 分為上限。若個課／期末評分尚未完成，僅列「已取得分數」，<b>不得視為正式 20 分總成績</b>。已退團或停用學生不列入當前統計。</div>
  <div class="table-wrap"><table><thead><tr><th>學生／團別</th><th>個課老師</th><th>評分模式</th><th>自主練習 /10</th><th>課程點名 /5</th><th>個課／期末 /5</th><th>個課追蹤</th><th>合計 /20</th></tr></thead><tbody id="rows"><tr><td colspan="8">載入中…</td></tr></tbody></table></div>
@@ -128,7 +135,8 @@ const tp=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",
 const yy=Number(tp.slice(0,4)),mm=Number(tp.slice(5));
 $("year").value=String((mm>=8?yy:yy-1)-1911);
 $("term").value=mm>=8?"1":"2";
-const config={students:[],scores:new Map(),followups:new Map(),followupError:"",followupLoaded:false,mode:"all",requestId:0,loading:false};
+const config={students:[],scores:new Map(),followups:new Map(),followupError:"",followupLoaded:false,mode:"all",scoreStatus:"all",requestId:0,loading:false};
+const scoreFilters={all:"全部符合條件學生",scored:"目前可合計 /20",pending:"尚有未完成項目",error:"讀取失敗"};
 const format=(value,max)=>value==null?"待資料":Number(value).toFixed(2).replace(/\.?0+$/,"")+"/"+max;
 function category(row,score){
   // Match the official family rule: completed private lessons override the
@@ -195,7 +203,14 @@ function updateTeacherOptions(){
  $("privateTeacher").innerHTML='<option value="ALL">全部個課老師</option>'+[...teachers].sort((a,b)=>a[1].localeCompare(b[1],"zh-Hant")).map(([key,name])=>'<option value="'+html(key)+'">'+html(name)+'</option>').join("");
  $("privateTeacher").value=teachers.has(selected)?selected:"ALL";
 }
-function filtered(){
+function matchesScoreStatus(record,status){
+ if(status==="all")return true;
+ if(status==="scored")return record?.score?.semesterScore?.total20!=null;
+ if(status==="pending")return !!record?.score&&record.score.semesterScore?.total20==null;
+ if(status==="error")return !!record?.error;
+ return false;
+}
+function filtered({includeScoreStatus=true}={}){
   const grp=$("group").value,q=$("search").value.trim().toLowerCase();
   return config.students.filter(x=>{
    let group=String(x.groupName||"").replace(/\s/g,"").toUpperCase();
@@ -205,6 +220,7 @@ function filtered(){
    const record=config.scores.get(String(x.studentId)),score=record?.score;
    if(config.mode!=="all"&&category(x,score)!==config.mode)return false;
    if(!matchesFollowup(x,score))return false;
+   if(includeScoreStatus&&!matchesScoreStatus(record,config.scoreStatus))return false;
    return true;
   });
 }
@@ -281,13 +297,17 @@ document.addEventListener("toggle",event=>{
 },true);
 
 function display(){
- const members=filtered(),records=members.map(s=>config.scores.get(String(s.studentId)));
- $("countStudents").textContent=String(members.length);
- $("countScored").textContent=String(records.filter(x=>x?.score?.semesterScore?.total20!=null).length);
- $("countPending").textContent=String(records.filter(x=>x?.score&&x.score.semesterScore?.total20==null).length);
- $("countErrors").textContent=String(records.filter(x=>x?.error).length);
- $("rows").innerHTML=members.length?members.map(buildRow).join(""):'<tr><td colspan="8">此條件沒有在團學生。</td></tr>';
- $("mobileStudents").innerHTML=members.length?members.map(buildMobileCard).join(""):'<div class="mobile-student-card">此條件沒有在團學生。</div>';
+ const scope=filtered({includeScoreStatus:false}),scopeRecords=scope.map(s=>config.scores.get(String(s.studentId))),members=filtered(),records=members.map(s=>config.scores.get(String(s.studentId)));
+ // Keep the four totals stable while switching between result subsets.
+ $("countStudents").textContent=String(scope.length);
+ $("countScored").textContent=String(scopeRecords.filter(x=>matchesScoreStatus(x,"scored")).length);
+ $("countPending").textContent=String(scopeRecords.filter(x=>matchesScoreStatus(x,"pending")).length);
+ $("countErrors").textContent=String(scopeRecords.filter(x=>matchesScoreStatus(x,"error")).length);
+ document.querySelectorAll("[data-score-status]").forEach(button=>{button.setAttribute("aria-pressed",String(button.dataset.scoreStatus===config.scoreStatus));button.setAttribute("aria-busy",String(config.loading))});
+ $("scoreFilterSummary").textContent="目前顯示："+scoreFilters[config.scoreStatus]+"（"+members.length+" 位）"+(config.loading?"，資料讀取中…":"");
+ const empty=config.scoreStatus==="error"?"此條件目前沒有讀取失敗的學生。":"此條件目前沒有符合的學生。";
+ $("rows").innerHTML=members.length?members.map(buildRow).join(""):'<tr><td colspan="8">'+html(empty)+'</td></tr>';
+ $("mobileStudents").innerHTML=members.length?members.map(buildMobileCard).join(""):'<div class="mobile-student-card">'+html(empty)+'</div>';
  $("export").disabled=config.loading||!config.followupLoaded||!members.length||!records.every(Boolean);
  sendHeight();
 }
@@ -352,6 +372,7 @@ function exportCsv(){
  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="學期20分成績_民國"+$("year").value+"_"+$("term").value+"學期.csv";document.body.append(a);a.click();a.remove();URL.revokeObjectURL(url);
 }
 document.querySelectorAll("[data-mode]").forEach(button=>button.addEventListener("click",()=>{config.mode=button.dataset.mode;document.querySelectorAll("[data-mode]").forEach(b=>b.setAttribute("aria-pressed",String(b===button)));display()}));
+document.querySelectorAll("[data-score-status]").forEach(button=>button.addEventListener("click",()=>{if(!Object.hasOwn(scoreFilters,button.dataset.scoreStatus))return;config.scoreStatus=button.dataset.scoreStatus;display()}));
 $("group").addEventListener("change",display);$("search").addEventListener("input",display);
 $("privateTeacher").addEventListener("change",display);$("followup").addEventListener("change",display);
 $("term").addEventListener("change",load);$("year").addEventListener("change",load);

@@ -31,7 +31,7 @@ jobs:
       - name: Attendance to-do regression tests
         run: node --test tests/admin-attendance-todos.test.mjs
       - name: Semester score private lesson follow-up regression tests
-        run: node --test tests/admin-semester-scores.test.mjs tests/admin-private-followup.test.mjs api/test/privateLessonFollowup.test.mjs
+        run: node --test tests/admin-semester-scores.test.mjs tests/admin-score-quick-filters.test.mjs tests/admin-private-followup.test.mjs api/test/privateLessonFollowup.test.mjs
       - name: Teacher parent review identity regression tests
         run: node --test api/test/teacherParentReviews.test.mjs api/test/teacherAccountType.test.mjs
       - name: Course restoration and teacher login history regression tests

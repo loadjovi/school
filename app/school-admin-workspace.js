@@ -141,7 +141,7 @@
   root.querySelector('.aw-account-pending').hidden=group!=='accounts';
   for(const card of main.querySelectorAll('.desktop-content > .card'))if(card.querySelector('h2')?.textContent.includes('待審核'))root.querySelector('.aw-account-pending').append(card);
   const uniformFrame=root.querySelector('#awUniformFrame');if(group==='uniformAdmin'&&uniformFrame&&uniformFrame.getAttribute('src')==='about:blank')uniformFrame.src='/uniform-event-admin.html?embedded=school';
-  const scoresFrame=root.querySelector('#awSemesterScoresFrame');if(group==='grades'&&scoresFrame&&scoresFrame.getAttribute('src')==='about:blank')scoresFrame.src='/admin-semester-scores.html?embedded=school&v=20261025-private-followup-2';
+  const scoresFrame=root.querySelector('#awSemesterScoresFrame');if(group==='grades'&&scoresFrame&&scoresFrame.getAttribute('src')==='about:blank')scoresFrame.src='/admin-semester-scores.html?embedded=school&v=20261025-score-quick-filters';
   root.querySelector('.aw-home').hidden=group!=='home';root.querySelector('.aw-account-links').hidden=group!=='accounts';root.querySelector('.aw-attendance-links').hidden=group!=='attendance';
   if(group==='attendance'&&typeof window.mountAdminAttendanceAssist==='function')window.mountAdminAttendanceAssist();
   for(const b of document.querySelectorAll('.aw-bottom [data-workspace-group]')){const active=b.dataset.workspaceGroup===group;b.classList.toggle('is-active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')}
