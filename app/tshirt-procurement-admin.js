@@ -1,4 +1,4 @@
-import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv} from "./tshirt-procurement-plan.mjs?v=20261026-term-plan";
+import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv} from "./tshirt-procurement-plan.mjs?v=20261026-term-plan-r2";
 const $=id=>document.getElementById(id);
 const term=currentTshirtTerm();
 let data=null,plan=null,loading=false,canVerifyFinance=false,links=[],extraBySize={},revision=0;

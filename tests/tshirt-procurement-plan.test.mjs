@@ -28,6 +28,7 @@ test("stock subtracts reservations and unavailable garments; missing stock is un
 test("ordered customer pieces and extra stock in flight are not purchased twice",()=>{
  const a=args();a.history[1].size="8";a.requests=[request({size:"8",quantity:1,status:"ORDERED",procurementQuantity:10,procurementBreakdown:[{size:"8",quantity:6},{size:"10",quantity:4}]})];
  const p=build(a);assert.equal(p.totalUnits,3);assert.equal(p.coveredUnits,1);assert.equal(p.sizes[0].incoming,5);assert.equal(p.sizes[1].incoming,4);assert.equal(p.needUnits,0);
+ a.requests[0].createdAt="2027-02-01T00:00:00Z";assert.equal(build(a).sizes[0].incoming,0);a.requests[0].createdAt="2026-10-10T04:00:00Z";
  a.requests[0].status="ARRIVED";a.stock[0].onHand=6;assert.equal(build(a).sizes[0].incoming,0);assert.equal(build(a).needUnits,0);
 });
 test("unpaid purchases remain visible in demand but cannot be presented as a final ready order",()=>{

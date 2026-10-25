@@ -69,7 +69,7 @@ export function buildTshirtProcurementPlan({students=[],history=[],requests=[],s
  }
  const incomingExtras=new Map();
  for(const request of requests){
-  if(request.kind!=="regularUniform"||request.status!=="ORDERED"||!studentMap.has(String(request.studentId)))continue;
+  if(request.kind!=="regularUniform"||request.status!=="ORDERED"||!studentMap.has(String(request.studentId))||day(request.createdAt)>=term.end)continue;
   if(!Array.isArray(request.procurementBreakdown)){
    if(positive(request.procurementQuantity)>positive(request.quantity))warnings.push("已採購備貨尚未分配尺碼，請先更正採購明細，避免重複下單");
    continue;
