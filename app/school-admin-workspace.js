@@ -140,7 +140,7 @@
   if(['home','tasks'].includes(group)&&!summary.loading&&(summary.key!==taskScopeKey()||!summary.loadedAt))setTimeout(()=>loadTasks(),0);
   root.querySelector('.aw-account-pending').hidden=group!=='accounts';
   for(const card of main.querySelectorAll('.desktop-content > .card'))if(card.querySelector('h2')?.textContent.includes('待審核'))root.querySelector('.aw-account-pending').append(card);
-  const uniformFrame=root.querySelector('#awUniformFrame');if(group==='uniformAdmin'&&uniformFrame&&uniformFrame.getAttribute('src')==='about:blank')uniformFrame.src='/uniform-event-admin.html?embedded=school';
+  const uniformFrame=root.querySelector('#awUniformFrame');if(group==='uniformAdmin'&&uniformFrame&&uniformFrame.getAttribute('src')==='about:blank')uniformFrame.src='/uniform-event-admin.html?embedded=school&v=20261026-term-plan';
   const scoresFrame=root.querySelector('#awSemesterScoresFrame');if(group==='grades'&&scoresFrame&&scoresFrame.getAttribute('src')==='about:blank')scoresFrame.src='/admin-semester-scores.html?embedded=school&v=20261025-score-quick-filters';
   root.querySelector('.aw-home').hidden=group!=='home';root.querySelector('.aw-account-links').hidden=group!=='accounts';root.querySelector('.aw-attendance-links').hidden=group!=='attendance';
   if(group==='attendance'&&typeof window.mountAdminAttendanceAssist==='function')window.mountAdminAttendanceAssist();
@@ -191,14 +191,14 @@
      return;
     }
     if(b.dataset.adminTodo==='parents'){await window.openSchoolAdminWorkspace('accounts');requestAnimationFrame(()=>[...document.querySelectorAll('.card')].find(x=>x.querySelector('h2')?.textContent.includes('待審核'))?.scrollIntoView({block:'center'}));return}
-    const task={tshirt:'tshirt',competition:'competition',finance:'finance'}[b.dataset.adminTodo];if(task){await window.openSchoolAdminWorkspace('uniformAdmin');const frame=document.getElementById('awUniformFrame');if(frame)frame.src='/uniform-event-admin.html?embedded=school&task='+encodeURIComponent(task)}return;
+    const task={tshirt:'tshirt',competition:'competition',finance:'finance'}[b.dataset.adminTodo];if(task){await window.openSchoolAdminWorkspace('uniformAdmin');const frame=document.getElementById('awUniformFrame');if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261026-term-plan&task='+encodeURIComponent(task)}return;
    }
    const task=guideTasks[b.dataset.adminGuide];if(task){
     try{localStorage.setItem(guideKey(),'done')}catch{}const intro=document.querySelector('.aw-onboarding');if(intro)intro.open=false;
     state.adminGuideTask=b.dataset.adminGuide;
     if(groups[task[1]])await window.openSchoolAdminWorkspace(task[1]);
-    else if(task[1]==='uniformAdmin'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&task=guideUniform'}
-    else if(task[1]==='activitySettings'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&task=activity'}
+    else if(task[1]==='uniformAdmin'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&v=20261026-term-plan&task=guideUniform'}
+    else if(task[1]==='activitySettings'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&v=20261026-term-plan&task=activity'}
     else await window.desktopNavigate(task[1]);organize();
    }
   }catch(error){toast('操作未完成：'+(error?.message||error))}
@@ -211,7 +211,7 @@
    if(button.dataset.workspaceGroup)return await window.openSchoolAdminWorkspace(button.dataset.workspaceGroup);
    const key=button.dataset.workspaceAction;
    if(groups[key])return await window.openSchoolAdminWorkspace(key);
-   if(key==='activitySettings'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&task=activity';return}
+   if(key==='activitySettings'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&v=20261026-term-plan&task=activity';return}
    if(key==='uniformAdmin'){await window.openSchoolAdminWorkspace('uniformAdmin');return}
    if(key==='parentCorrection'){if(typeof window.openParentBindingCorrection==='function')window.openParentBindingCorrection();else document.querySelector('#parentBindingStats button')?.click();return}
    if(key==='attendanceTable')return await window.desktopNavigate('attendance');

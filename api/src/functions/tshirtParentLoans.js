@@ -3,6 +3,7 @@ import {TableClient} from "@azure/data-tables";
 import {randomUUID} from "node:crypto";
 import {getTenantContext,json} from "../lib/auth.js";
 import {getStudentMaster,ensureTenantTables,table as tenantTable,tenantParentPartition} from "../lib/storage.js";
+import {staffProcurement} from "../lib/tshirtStaffProcurement.js";
 
 const sizes=new Set(["8","10","12","XS","S","M","L","XL","2L","3L","5L"]);
 const actions=new Set(["ISSUE_CADRE","BORROW_VOLUNTEER","MARK_WASHING","RETURN"]);
@@ -26,13 +27,16 @@ app.http("tshirtParentLoans",{methods:["GET","POST"],authLevel:"anonymous",route
  if(ctx.access.role!=="admin")return json({error:"Admin only"},403);
  try{
   const {client,audit}=await tables(),schoolId=ctx.schoolId;
+  if(request.method==="GET"&&request.query.get("view")==="procurement")return staffProcurement(request,ctx,{loanClient:client,audit,linked});
   if(request.method==="GET"){
    const items=[];for await(const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
     items.push({parentEmail:e.rowKey,parentName:e.parentName,studentId:e.studentId,role:e.role,size:e.size,status:e.status,issuedAt:e.issuedAt,returnedAt:e.returnedAt,etag:e.etag});
    }
    return json({items});
   }
-  const data=await request.json(),email=clean(data.parentEmail,320).toLowerCase(),studentId=clean(data.studentId,40),action=clean(data.action,40);
+  const data=await request.json();
+  if(["ADD_DEMAND","UPDATE_DEMAND_STATUS","VERIFY_DEMAND_PAYMENT"].includes(data?.action))return staffProcurement(request,ctx,{loanClient:client,audit,linked:async(s,e,id)=>{if(!await linked(s,e,id))return false;const student=await getStudentMaster(id,s);return String(student?.status||"active").toLowerCase()==="active"},data});
+  const email=clean(data.parentEmail,320).toLowerCase(),studentId=clean(data.studentId,40),action=clean(data.action,40);
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!/^\d{6}$/.test(studentId)||!actions.has(action))return json({error:"Invalid parent, student or action"},400);
   if(!await linked(schoolId,email,studentId))return json({error:"Parent is not actively linked to this student"},403);
   let old;try{old=await client.getEntity(schoolId,email)}catch(e){if(e.statusCode!==404)throw e}
