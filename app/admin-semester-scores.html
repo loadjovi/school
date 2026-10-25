@@ -24,7 +24,7 @@ button.primary{background:#425aaf;color:white}
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .filters button[aria-pressed="true"]{background:#4159ac;color:#fff}
 .table-wrap{overflow-x:auto;width:100%;border:1px solid #d8e2ef;border-radius:12px}
-table{border-collapse:collapse;width:100%;min-width:740px;font-size:14px}
+table{border-collapse:collapse;width:100%;min-width:1100px;font-size:14px}
 th{text-align:left;background:#eaf0f8;color:#1e3c66;white-space:nowrap}
 th,td{padding:11px 10px;border-bottom:1px solid #dce4ed;vertical-align:top}
 tbody tr:nth-child(even){background:#f8fafc}td small{display:block;line-height:1.5;margin-top:3px}
@@ -34,6 +34,11 @@ td strong{font-size:16px}td .pending{color:#9e6d11}.score{font-weight:800;color:
 details{margin-top:8px;font-weight:400}summary{cursor:pointer;color:#3656a8;font-weight:700}
 .monthly{font-size:12px;line-height:1.7;background:#f0f5fa;border-radius:8px;padding:10px;margin-top:8px}
 #feedback{min-height:28px;line-height:1.5}#feedback.error{color:#a72c2c}
+.lesson-followup{font-size:13px;line-height:1.6;min-width:155px;overflow-wrap:anywhere}
+.lesson-followup small{font-size:12px}.lesson-followup .chip{margin-bottom:4px}
+.mobile-followup{margin-top:10px;padding:10px;border-radius:9px;background:#f2f6fb;overflow-wrap:anywhere}
+.mobile-followup strong{display:block;margin-bottom:4px}
+#followupFeedback{line-height:1.6;margin:8px 0}#followupFeedback.error{color:#a72c2c}
 
 /* Mobile-first compact scores: full desktop table remains unchanged. */
 .mobile-student-list{display:none;min-width:0}
@@ -89,6 +94,8 @@ details{margin-top:8px;font-weight:400}summary{cursor:pointer;color:#3656a8;font
   <label>學年度（民國）<input id="year" type="number" min="100" max="140" step="1"></label>
   <label>學期<select id="term"><option value="1">上學期（10～12月）</option><option value="2">下學期（2～5月）</option></select></label>
   <label>團別<select id="group"><option value="ALL">全部團別</option><option value="A">A 團</option><option value="B">B 團</option><option value="C">儲備團</option></select></label>
+  <label>個課老師<select id="privateTeacher"><option value="ALL">全部個課老師</option></select></label>
+  <label>個課追蹤<select id="followup"><option value="all">全部個課狀態</option><option value="score_pending">模式一｜個課待資料</option><option value="no_records">尚無個課紀錄</option><option value="unassigned">未綁定個課老師</option><option value="teacher_pending">待老師登記完課</option><option value="parent_pending">待家長確認</option><option value="issues">完課有疑義</option></select></label>
   <label>搜尋學生<input id="search" placeholder="姓名或學號"></label>
  </div>
  <div class="filters" aria-label="計分模式">
@@ -103,11 +110,12 @@ details{margin-top:8px;font-weight:400}summary{cursor:pointer;color:#3656a8;font
   <div class="stat"><strong id="countErrors">—</strong><small>讀取失敗</small></div>
  </div>
  <p id="feedback" role="status" aria-live="polite">正在確認學校管理員身分…</p>
+ <p id="followupFeedback" class="muted" role="status" aria-live="polite">正在讀取個課老師與追蹤資料…</p>
 </section>
 <section class="card">
  <div class="banner"><h2>學生逐人成績明細</h2><button id="export" type="button" disabled>匯出目前篩選 CSV</button></div>
  <div class="notice warn">分數欄位以 20 分為上限。若個課／期末評分尚未完成，僅列「已取得分數」，<b>不得視為正式 20 分總成績</b>。已退團或停用學生不列入當前統計。</div>
- <div class="table-wrap"><table><thead><tr><th>學生／團別</th><th>評分模式</th><th>自主練習 /10</th><th>課程點名 /5</th><th>個課／期末 /5</th><th>合計 /20</th></tr></thead><tbody id="rows"><tr><td colspan="6">載入中…</td></tr></tbody></table></div>
+ <div class="table-wrap"><table><thead><tr><th>學生／團別</th><th>個課老師</th><th>評分模式</th><th>自主練習 /10</th><th>課程點名 /5</th><th>個課／期末 /5</th><th>個課追蹤</th><th>合計 /20</th></tr></thead><tbody id="rows"><tr><td colspan="8">載入中…</td></tr></tbody></table></div>
  <div id="mobileStudents" class="mobile-student-list" aria-label="手機版學生學期成績"><p>載入中…</p></div>
 </section>
 <script>
@@ -120,7 +128,7 @@ const tp=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",
 const yy=Number(tp.slice(0,4)),mm=Number(tp.slice(5));
 $("year").value=String((mm>=8?yy:yy-1)-1911);
 $("term").value=mm>=8?"1":"2";
-const config={students:[],scores:new Map(),mode:"all",requestId:0,loading:false};
+const config={students:[],scores:new Map(),followups:new Map(),followupError:"",followupLoaded:false,mode:"all",requestId:0,loading:false};
 const format=(value,max)=>value==null?"待資料":Number(value).toFixed(2).replace(/\.?0+$/,"")+"/"+max;
 function category(row,score){
   // Match the official family rule: completed private lessons override the
@@ -134,6 +142,59 @@ function statusLabel(score){
   if(source==="sectionFinal")return "分部老師期末評分";
   return "期末 5 分待確認";
 }
+function followupFor(student){return config.followups.get(String(student.studentId))}
+function teachersFor(info){
+ const assigned=info?.assignedTeachers||[],keys=new Set(assigned.map(t=>t.email));
+ return [...assigned.map(t=>({...t,source:"已綁定"})),...(info?.recordTeachers||[]).filter(t=>!keys.has(t.email)).map(t=>({...t,source:t.inactive?"紀錄老師／已停用":"紀錄老師"}))];
+}
+function teacherText(student){
+ const info=followupFor(student);
+ if(!info)return config.followupError?"老師資料讀取失敗":"老師資料讀取中";
+ const rows=teachersFor(info);
+ return rows.length?rows.map(t=>t.name+"（"+t.source+"）").join("、"):"未綁定個課老師";
+}
+function teacherMarkup(student){
+ const info=followupFor(student);
+ if(!info)return html(teacherText(student));
+ const rows=teachersFor(info);
+ return (rows.length?rows.map(t=>'<div><b>'+html(t.name)+'</b><small>'+html(t.source)+'</small></div>').join(""):'<span class="pending">未綁定個課老師</span>')+
+  (rows.length&&!info.assignedTeachers.length?'<small class="pending">目前無有效綁定，請確認授課安排。</small>':"");
+}
+function followupLabels(info){
+ if(!info)return [];
+ const labels=[];
+ if(!info.recordCount)labels.push("尚無個課紀錄");
+ if(info.teacherPending)labels.push("待老師登記完課 "+info.teacherPending+" 堂");
+ if(info.awaitingParent)labels.push("待家長確認 "+info.awaitingParent+" 堂");
+ if(info.issues)labels.push("完課有疑義 "+info.issues+" 堂");
+ if(info.upcoming)labels.push("預約中 "+info.upcoming+" 堂");
+ if(info.cancelled)labels.push("已取消 "+info.cancelled+" 堂");
+ if(info.other)labels.push("其他出勤紀錄 "+info.other+" 堂");
+ if(!labels.length)labels.push("已有完課紀錄");
+ return labels;
+}
+function followupMarkup(student){
+ const info=followupFor(student);
+ if(!info)return '<span class="pending">'+html(config.followupError?"追蹤資料讀取失敗，請重新讀取":"追蹤資料讀取中")+'</span>';
+ const completed=config.scores.get(String(student.studentId))?.score?.semesterScore?.privateLessonCompleted;
+ return followupLabels(info).map(t=>'<div>'+html(t)+'</div>').join("")+
+  '<small>計分月份完課：'+html(completed==null?"待讀取":completed+" 堂")+'</small>'+
+  '<small>最近紀錄：'+html(info.lastLessonDate||"尚無已到日期紀錄")+'</small>';
+}
+function matchesFollowup(student,score){
+ const teacher=$("privateTeacher").value,status=$("followup").value,info=followupFor(student);
+ if(teacher!=="ALL"&&!teachersFor(info).some(t=>t.email===teacher))return false;
+ if(status==="all")return true;
+ if(status==="score_pending")return !!score&&category(student,score)==="private"&&score.semesterScore?.performance5==null;
+ if(!info)return false;
+ return status==="no_records"?!info.recordCount:status==="unassigned"?!info.assignedTeachers.length:status==="teacher_pending"?info.teacherPending>0:status==="parent_pending"?info.awaitingParent>0:status==="issues"?info.issues>0:true;
+}
+function updateTeacherOptions(){
+ const selected=$("privateTeacher").value,teachers=new Map();
+ for(const info of config.followups.values())for(const teacher of teachersFor(info))teachers.set(teacher.email,teacher.name);
+ $("privateTeacher").innerHTML='<option value="ALL">全部個課老師</option>'+[...teachers].sort((a,b)=>a[1].localeCompare(b[1],"zh-Hant")).map(([key,name])=>'<option value="'+html(key)+'">'+html(name)+'</option>').join("");
+ $("privateTeacher").value=teachers.has(selected)?selected:"ALL";
+}
 function filtered(){
   const grp=$("group").value,q=$("search").value.trim().toLowerCase();
   return config.students.filter(x=>{
@@ -143,6 +204,7 @@ function filtered(){
    if(q&&!(String(x.name||"")+" "+String(x.studentId||"")).toLowerCase().includes(q))return false;
    const record=config.scores.get(String(x.studentId)),score=record?.score;
    if(config.mode!=="all"&&category(x,score)!==config.mode)return false;
+   if(!matchesFollowup(x,score))return false;
    return true;
   });
 }
@@ -163,13 +225,15 @@ function buildRow(student){
  const status=s.status==="final"&&s.complete?"已結算":"暫估／待完成";
  const missingInfo=missing.length?'<small class="pending">尚缺：'+html(missing.join("、"))+'</small>':"";
  const base='<td><b>'+html(student.name)+'</b><small>'+html(student.grade)+"｜"+html(student.groupName)+"｜"+html(student.section||"")+'</small><small>'+html(student.studentId)+'</small></td>';
- if(record?.error)return '<tr>'+base+'<td>'+html(modeText)+'</td><td colspan="4" class="pending">無法讀取：'+html(record.error)+'</td></tr>';
- if(!record)return '<tr>'+base+'<td>'+html(modeText)+'</td><td colspan="4">正在讀取…</td></tr>';
+ const teacherCell='<td class="lesson-followup">'+teacherMarkup(student)+'</td>';
+ if(record?.error)return '<tr>'+base+teacherCell+'<td>'+html(modeText)+'</td><td colspan="3" class="pending">無法讀取：'+html(record.error)+'</td><td class="lesson-followup">'+followupMarkup(student)+'</td><td>讀取失敗</td></tr>';
+ if(!record)return '<tr>'+base+teacherCell+'<td>'+html(modeText)+'</td><td colspan="5">正在讀取…</td></tr>';
  const detail='<details><summary>各月份分數</summary><div class="monthly">'+monthDetails(record.score)+'</div></details>';
- return '<tr>'+base+
+ return '<tr>'+base+teacherCell+
  '<td>'+html(modeText)+'<small>'+html(statusLabel(record.score))+'</small></td>'+
  '<td>'+html(format(s.practice10,10))+'</td><td>'+html(format(s.attendance5,5))+'</td>'+
  '<td>'+html(format(s.performance5,5))+'</td>'+
+ '<td class="lesson-followup">'+followupMarkup(student)+'</td>'+
  '<td><strong class="score '+(s.total20==null?"pending":"")+'">'+html(total)+'</strong>'+
  (s.total20==null?'<small>已取得 '+html(Number(available.toFixed(2)))+' 分（非正式總分）</small>':"")+
  '<small>'+html(status)+'</small>'+missingInfo+detail+'</td></tr>';
@@ -200,6 +264,7 @@ function buildMobileCard(student){
    '<div class="mobile-total '+indicator+'"><strong>'+html(scoreLabel)+'</strong><small>'+html(subLabel)+'</small></div>'+
   '</div>'+
   '<div class="mobile-score-status"><span class="chip">'+html(mode)+'</span><span class="chip '+(complete?"":"review")+'">'+html(status)+'</span></div>'+
+  '<div class="mobile-followup lesson-followup"><strong>個課老師</strong>'+teacherMarkup(student)+'<strong>個課追蹤</strong>'+followupMarkup(student)+'</div>'+
   (!complete?'<div class="mobile-score-pending">'+html(notice)+'</div>':"")+
   '<details class="mobile-student-details" data-score-student="'+html(key)+'"'+open+'><summary>查看 10＋5＋5 分數明細</summary>'+
   breakdown+'<div class="mobile-score-note">'+html(statusLabel(score))+'；'+html(complete?status:notice)+'</div>'+month+'</details>'+
@@ -221,22 +286,32 @@ function display(){
  $("countScored").textContent=String(records.filter(x=>x?.score?.semesterScore?.total20!=null).length);
  $("countPending").textContent=String(records.filter(x=>x?.score&&x.score.semesterScore?.total20==null).length);
  $("countErrors").textContent=String(records.filter(x=>x?.error).length);
- $("rows").innerHTML=members.length?members.map(buildRow).join(""):'<tr><td colspan="6">此條件沒有在團學生。</td></tr>';
+ $("rows").innerHTML=members.length?members.map(buildRow).join(""):'<tr><td colspan="8">此條件沒有在團學生。</td></tr>';
  $("mobileStudents").innerHTML=members.length?members.map(buildMobileCard).join(""):'<div class="mobile-student-card">此條件沒有在團學生。</div>';
- $("export").disabled=config.loading||!members.length||!records.every(Boolean);
+ $("export").disabled=config.loading||!config.followupLoaded||!members.length||!records.every(Boolean);
  sendHeight();
 }
 let lastSentHeight=0;
 function sendHeight(){if(window.parent===window)return;requestAnimationFrame(()=>{const height=Math.ceil(document.body.offsetHeight+12);if(height===lastSentHeight)return;lastSentHeight=height;window.parent.postMessage({type:"school-semester-scores-height",height},location.origin)})}
 async function load(){
- const id=++config.requestId;config.loading=true;config.scores=new Map();$("refresh").disabled=true;$("export").disabled=true;
+ const id=++config.requestId;config.loading=true;config.scores=new Map();config.followups=new Map();config.followupError="";config.followupLoaded=false;$("refresh").disabled=true;$("export").disabled=true;
+ $("followupFeedback").className="muted";$("followupFeedback").textContent="正在讀取個課老師與追蹤資料…";
  $("feedback").className="";$("feedback").textContent="讀取在團學生名單…";display();
  try{
   const master=await request("/api/student-master?status=active");
   if(id!==config.requestId)return;
   config.students=(master.items||[]).filter(x=>x.status==="active").sort((a,b)=>String(a.groupName).localeCompare(String(b.groupName),"zh-Hant")||String(a.grade).localeCompare(String(b.grade),"zh-Hant")||String(a.name).localeCompare(String(b.name),"zh-Hant"));
-  if(!config.students.length){$("feedback").textContent="目前沒有在團學生";return}
+  if(!config.students.length){$("feedback").textContent="目前沒有在團學生";$("followupFeedback").textContent="目前沒有在團學生可追蹤個課。";updateTeacherOptions();return}
   let next=0,done=0;const students=config.students,schoolYear=$("year").value,semester=$("term").value;
+  const followupJob=request("/api/admin-private-lesson-followup?schoolYear="+encodeURIComponent(schoolYear)+"&semester="+encodeURIComponent(semester)).then(data=>{
+    if(id!==config.requestId)return;
+    config.followups=new Map((data.items||[]).map(x=>[String(x.studentId),x]));config.followupLoaded=true;updateTeacherOptions();
+    $("followupFeedback").textContent="個課追蹤月份："+data.start+"～"+data.end+"，截至 "+data.asOf+"。老師依目前綁定及本期紀錄顯示；未綁定時請先確認是否安排個課。";
+    display();
+  }).catch(error=>{
+    if(id!==config.requestId)return;
+    config.followupError=String(error.message||error);$("followupFeedback").className="error";$("followupFeedback").textContent="個課追蹤讀取失敗："+config.followupError+"。成績仍可查看，請重新讀取後再匯出追蹤資料。";display();
+  });
   const worker=async()=>{
    while(next<students.length&&id===config.requestId){
     const student=students[next++];
@@ -250,7 +325,7 @@ async function load(){
     if(done%3===0||done===students.length)display();
    }
   };
-  await Promise.all(Array.from({length:Math.min(4,students.length)},worker));
+  await Promise.all([...Array.from({length:Math.min(4,students.length)},worker),followupJob]);
   if(id!==config.requestId)return;
   const failed=[...config.scores.values()].filter(x=>x.error).length;
   $("feedback").textContent="已完成 "+students.length+" 位在團學生的學期成績核對。"+(failed?"有 "+failed+" 位讀取失敗，請重新讀取。":"可依模式、團別及姓名篩選或匯出 CSV。");
@@ -264,18 +339,20 @@ function csvSafe(x){
  return '"'+v.replace(/"/g,'""')+'"';
 }
 function exportCsv(){
- const headers=["學年度","學期","學號","學生","團別","年級","分部","評分模式","自主練習10","課程點名5","學習表現5","正式總分20","已取得分數（非總分）","成績狀態","缺少項目","資料錯誤"];
+ const headers=["學年度","學期","學號","學生","團別","年級","分部","評分模式","自主練習10","課程點名5","學習表現5","正式總分20","已取得分數（非總分）","成績狀態","缺少項目","資料錯誤","個課老師與來源","目前有效綁定","個課追蹤狀態","計分月份完課堂數","待老師登記完課堂數","待家長確認堂數","完課有疑義堂數","預約中堂數","最近個課紀錄日期"];
  const rows=filtered().map(student=>{
   const rec=config.scores.get(String(student.studentId)),score=rec?.score?.semesterScore||{};
   const defined=[score.practice10,score.attendance5,score.performance5].filter(x=>x!=null);
   const missing=[score.practice10==null?"自主練習":null,score.attendance5==null?"課程點名":null,score.performance5==null?"學習表現":null].filter(Boolean).join("、");
-  return [$("year").value,$("term").value,student.studentId,student.name,student.groupName,student.grade,student.section,category(student,rec?.score)==="private"?"個課完成次數":"老師期末評分",score.practice10??"",score.attendance5??"",score.performance5??"",score.total20??"",Number(defined.reduce((x,y)=>x+Number(y),0).toFixed(2)),score.status==="final"&&score.complete?"已結算":"暫估／待完成",missing,rec?.error||""];
+  const info=followupFor(student);
+  return [$("year").value,$("term").value,student.studentId,student.name,student.groupName,student.grade,student.section,category(student,rec?.score)==="private"?"個課完成次數":"老師期末評分",score.practice10??"",score.attendance5??"",score.performance5??"",score.total20??"",Number(defined.reduce((x,y)=>x+Number(y),0).toFixed(2)),score.status==="final"&&score.complete?"已結算":"暫估／待完成",missing,rec?.error||"",teacherText(student),info?.assignedTeachers.length?"已綁定":"未綁定",followupLabels(info).join("；"),score.privateLessonCompleted??"",info?.teacherPending??"",info?.awaitingParent??"",info?.issues??"",info?.upcoming??"",info?.lastLessonDate||""];
  });
  const csv="\uFEFF"+[headers,...rows].map(r=>r.map(csvSafe).join(",")).join("\r\n");
  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="學期20分成績_民國"+$("year").value+"_"+$("term").value+"學期.csv";document.body.append(a);a.click();a.remove();URL.revokeObjectURL(url);
 }
 document.querySelectorAll("[data-mode]").forEach(button=>button.addEventListener("click",()=>{config.mode=button.dataset.mode;document.querySelectorAll("[data-mode]").forEach(b=>b.setAttribute("aria-pressed",String(b===button)));display()}));
 $("group").addEventListener("change",display);$("search").addEventListener("input",display);
+$("privateTeacher").addEventListener("change",display);$("followup").addEventListener("change",display);
 $("term").addEventListener("change",load);$("year").addEventListener("change",load);
 $("refresh").addEventListener("click",load);$("export").addEventListener("click",exportCsv);
 new ResizeObserver(sendHeight).observe(document.body);
