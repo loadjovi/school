@@ -18,8 +18,15 @@ export function familyPaymentInfo(config,registration){
 }
 export function paymentNoticeCandidates({uniforms=[],families=[],configs=[],students=[],mappings=[],canonicalById={},now=new Date().toISOString()}){
   const masters=new Map(students.filter(x=>x.status!=="inactive").map(x=>[String(x.rowKey||x.studentId),x]));
-  const canonical=id=>masters.has(String(id))?String(id):String(canonicalById[String(id)]||id);
   const normalizedName=value=>String(value||" ").replace(/\s+/g,"").trim();
+  const canonical=id=>{
+    const raw=String(id),target=String(canonicalById[raw]||raw),exact=masters.get(raw),alias=masters.get(target);
+    if(exact&&target!==raw){
+      const exactName=normalizedName(exact.studentName||exact.name),aliasName=normalizedName(alias?.studentName||alias?.name);
+      if(!alias||!exactName||!aliasName||exactName!==aliasName)return raw;
+    }
+    return target;
+  };
   const parents=new Map(),owners=new Map();
   for(const mapping of mappings){
     const id=canonical(mapping.studentId),address=email(mapping.parentEmail);
