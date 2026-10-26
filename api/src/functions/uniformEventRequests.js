@@ -124,7 +124,7 @@ app.http("uniformEventRequests",{
         const fields=validateRequest(data,student);
         if(data.kind==="competitionUniform"&&fields.acquisition==="PUBLIC"&&(hasHistoricalPublicIssue(schoolId,data.studentId)||await hasPublicRequest(client,schoolId,data.studentId)))return err("此學生已有公費比賽服領用或申請紀錄，後續只能選擇自費買斷",409);
         const id=randomUUID(),createdAt=new Date().toISOString();
-        const payload={kind:data.kind,studentId:data.studentId,...fields,status:"PENDING",note:data.note||"",createdAt,updatedAt:createdAt};
+        const payload={...(access.role==="parent"?{parentEmail:String(access.email||"").toLowerCase()}:{}),kind:data.kind,studentId:data.studentId,...fields,status:"PENDING",note:data.note||"",createdAt,updatedAt:createdAt};
         if(data.kind==="competitionUniform"&&fields.acquisition==="PURCHASE"){
           const account=await find(TableClient.fromConnectionString(connection(),"TenantUniformPaymentAccounts"),schoolId,"uniform:competitionUniform");
           if(!account)return err("學校尚未設定 A 團比賽服的收款帳戶，請稍後再送出買斷申請",409);

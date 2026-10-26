@@ -17,11 +17,18 @@ export function familyPaymentInfo(config,registration){
   return {amount,paymentOpen:payable,needsPayment:payable&&registration.registrationStatus==="REGISTERED"&&["","NOT_OPEN","AWAITING_TRANSFER"].includes(String(registration.paymentStatus||""))};
 }
 export function paymentNoticeCandidates({uniforms=[],families=[],configs=[],students=[],mappings=[],canonicalById={},now=new Date().toISOString()}){
-  const canonical=id=>String(canonicalById[String(id)]||id),masters=new Map(students.filter(x=>x.status!=="inactive").map(x=>[String(x.rowKey||x.studentId),x]));
+  const masters=new Map(students.filter(x=>x.status!=="inactive").map(x=>[String(x.rowKey||x.studentId),x]));
+  const canonical=id=>masters.has(String(id))?String(id):String(canonicalById[String(id)]||id);
+  const normalizedName=value=>String(value||" ").replace(/\s+/g,"").trim();
   const parents=new Map(),owners=new Map();
   for(const mapping of mappings){
     const id=canonical(mapping.studentId),address=email(mapping.parentEmail);
     if(!masters.has(id)||!validEmail(address)||mapping.status==="inactive")continue;
+    const mappedName=normalizedName(mapping.studentName||mapping.name),masterName=normalizedName(masters.get(id)?.studentName||masters.get(id)?.name);
+    if(mappedName&&masterName&&mappedName!==masterName)continue;
+    // Legacy aliases require a name match; never infer a billing recipient
+    // from an alias belonging to a different child or an unnamed legacy row.
+    if(String(mapping.studentId)!==id&&(!mappedName||!masterName))continue;
     if(!parents.has(address))parents.set(address,new Set());parents.get(address).add(id);
     if(!owners.has(id))owners.set(id,new Set());owners.get(id).add(address);
   }
@@ -30,7 +37,10 @@ export function paymentNoticeCandidates({uniforms=[],families=[],configs=[],stud
   for(const item of uniforms){
     if(!uniformNeedsPayment(item))continue;
     const id=canonical(item.studentId);
-    for(const recipient of owners.get(id)||[])notices.push({category:"uniform",sourceId:item.id,recipient,version:String(item.amount),amount:item.amount,
+    let recipients=[...(owners.get(id)||[])];
+    const applicant=email(item.parentEmail||item.requesterEmail);
+    if(applicant)recipients=recipients.filter(address=>address===applicant);
+    for(const recipient of recipients)notices.push({category:"uniform",sourceId:item.id,recipient,version:String(item.amount),amount:item.amount,
       title:item.kind==="regularUniform"?"團 T 加購":"A 團比賽服買斷",studentNames:names([id]),studentIds:[id],kind:item.kind,size:item.size||"",quantity:item.quantity||1});
   }
   for(const item of families){
@@ -120,7 +130,7 @@ export function uniformNotificationStates(uniforms,notices,ledger,now=new Date()
    const status=["SENDING","UNCONFIRMED"].includes(latest?.status)?"UNCONFIRMED":latest?.status==="FAILED"?"FAILED":currentSent.length?"SENT":"NOT_SENT";
    return {recipient,status,lastSentAt:sent[0]?.updatedAt||sent[0]?.createdAt||null,sentCount:sent.length,reminderSentToday:todayReminder?.status==="SENT"};
   });
-  const due=uniformNeedsPayment(item),sentHistory=history.filter(r=>r.status==="SENT").sort((a,b)=>String(b.updatedAt||b.createdAt).localeCompare(String(a.updatedAt||a.createdAt)));
+  const due=uniformNeedsPayment(item),sentHistory=history.filter(r=>r.status==="SENT"&&(!due||recipients.includes(r.recipient))).sort((a,b)=>String(b.updatedAt||b.createdAt).localeCompare(String(a.updatedAt||a.createdAt)));
   const status=!due?"NOT_REQUIRED":!expected.length?"MISSING_RECIPIENT":people.some(r=>r.status==="UNCONFIRMED")?"UNCONFIRMED":people.some(r=>r.status==="FAILED")?"FAILED":people.every(r=>r.status==="SENT")?"SENT":people.some(r=>r.status==="SENT")?"PARTIAL":"NOT_SENT";
   return {id:item.id,status,recipients:people,lastSentAt:sentHistory[0]?.updatedAt||sentHistory[0]?.createdAt||null,sentCount:sentHistory.length,reminderSentToday:due&&people.length>0&&people.every(r=>r.reminderSentToday)};
  });

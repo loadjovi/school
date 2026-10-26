@@ -22,15 +22,22 @@ export function paymentPlatformUrl(){
 }
 export async function processPaymentNotifications(schoolId,{scope={kind:"all"},preview=false,retryFailed=false}={}){
   const configsName=process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig";
-  const [uniformRows,familyRows,configRows,students,mappings]=await Promise.all([
-    rows("TenantUniformEventRequest",schoolId),rows("TenantFamilyEventRegistration",schoolId),rows(configsName,schoolId),listStudentMaster("",schoolId),listUserStudentMappings("active",schoolId)
+  const [uniformRows,familyRows,configRows,students,mappings,auditRows]=await Promise.all([
+    rows("TenantUniformEventRequest",schoolId),rows("TenantFamilyEventRegistration",schoolId),rows(configsName,schoolId),listStudentMaster("",schoolId),listUserStudentMappings("active",schoolId),rows("TenantUniformEventAudit",schoolId)
   ]);
   const canonicalById={};
   for(const id of new Set(mappings.map(x=>String(x.studentId)))){
     const alias=await getStudentAliasInfo(id,schoolId);canonicalById[id]=String(alias.canonicalStudentId||id);
   }
   const configs=configRows.map(row=>({...decode(row),id:row.rowKey.split(":").slice(1).join(":" )}));
-  let notices=paymentNoticeCandidates({uniforms:uniformRows.map(decode),families:familyRows.map(decode),configs,students,mappings,canonicalById}).filter(item=>noticeInScope(item,scope));
+  const uniformItems=uniformRows.map(decode).map(item=>{
+    if(item.parentEmail||item.requesterEmail)return item;
+    const creator=auditRows.filter(row=>row.subjectId===item.id&&row.action==="request.create").sort((a,b)=>String(a.at||"").localeCompare(String(b.at||"")))[0];
+    // Only an active parent mapping may establish an older request's owner.
+    const creatorOwns=creator&&paymentNoticeCandidates({uniforms:[{...item,requesterEmail:creator.actor}],students,mappings,canonicalById}).some(notice=>notice.recipient===String(creator.actor).trim().toLowerCase());
+    return creatorOwns?{...item,requesterEmail:String(creator.actor).toLowerCase()}:item;
+  });
+  let notices=paymentNoticeCandidates({uniforms:uniformItems,families:familyRows.map(decode),configs,students,mappings,canonicalById}).filter(item=>noticeInScope(item,scope));
   if(scope.reminder===true){if(scope.kind!=="uniform")throw Error("Invalid reminder scope");notices=reminderNotices(notices)}
   const ledger=client("TenantPaymentNotification"),audit=client("TenantUniformEventAudit");
   const disabled=process.env.LAB_ENVIRONMENT==="functional-uat",configured=emailConfigured();
@@ -44,7 +51,10 @@ export async function processPaymentNotifications(schoolId,{scope={kind:"all"},p
     async finish(key,status,detail={}){const old=await ledger.getEntity(schoolId,key);await ledger.updateEntity({partitionKey:schoolId,rowKey:key,status,updatedAt:new Date().toISOString(),detail:JSON.stringify(detail)},"Merge",{etag:old.etag})},
     async audit(action,notice,key){await audit.createTable().catch(e=>{if(e.statusCode!==409)throw e});await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action,subjectId:notice.sourceId,actor:"payment_notification",at:new Date().toISOString(),details:JSON.stringify({notificationId:key,recipient:notice.recipient,category:notice.category})})},
     async stillDue(notice){
-      if(notice.category==="uniform"){const row=await get(client("TenantUniformEventRequest"),schoolId,notice.sourceId);const item=row&&decode(row);return !!item&&uniformNeedsPayment(item)&&item.amount===notice.amount}
+      if(notice.category==="uniform"){const row=await get(client("TenantUniformEventRequest"),schoolId,notice.sourceId);const item=row&&decode(row);if(!item||!uniformNeedsPayment(item)||item.amount!==notice.amount)return false;
+        const enriched=uniformItems.find(x=>x.id===notice.sourceId);
+        return paymentNoticeCandidates({uniforms:[{...enriched,...item}],students,mappings,canonicalById}).some(n=>n.sourceId===notice.sourceId&&n.recipient===notice.recipient);
+      }
       const configRow=await get(client(configsName),schoolId,notice.kind+":"+notice.activityId),config=configRow&&decode(configRow);
       if(notice.category==="family"){
         const row=await get(client("TenantFamilyEventRegistration"),schoolId,notice.sourceId),item=row&&decode(row),info=item&&familyPaymentInfo(config,item);
@@ -62,7 +72,7 @@ export async function processPaymentNotifications(schoolId,{scope={kind:"all"},p
   const missingUniform=uniformRows.map(decode).filter(item=>uniformNeedsPayment(item)&&noticeInScope({category:"uniform",sourceId:item.id},scope)&&!sourceNotices.has("uniform:"+item.id)).length;
   const missingFamily=familyRows.map(decode).filter(item=>familyPaymentInfo(configs.find(c=>c.module===item.kind&&c.id===item.activityId),item).needsPayment&&noticeInScope({category:"family",sourceId:item.id,kind:item.kind,activityId:item.activityId},scope)&&!sourceNotices.has("family:"+item.id)).length;
   const missingRecipients=missingUniform+missingFamily;
-  const uniformStates=preview?uniformNotificationStates(uniformRows.map(decode),notices,ownedRows):undefined;
+  const uniformStates=preview?uniformNotificationStates(uniformItems,notices,ownedRows):undefined;
   return {...result,...(preview?{uniformStates}:{}),status:missingRecipients&&["complete","not_required","preview"].includes(result.status)?"partial":result.status,missingRecipients,configured:configured&&!disabled,scope};
 }
 export async function safePaymentNotifications(schoolId,options){
