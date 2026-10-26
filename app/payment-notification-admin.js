@@ -31,10 +31,7 @@
     let current=initial,totalSent=Number(initial.sent||0),school=sessionStorage.getItem('school_context_id');
     try{
       for(let i=0;current.remaining>0&&i<100&&!['disabled','not_configured','failed'].includes(current.status);i++){
-        window.addEventListener('uniformRequestsLoaded',refresh);
-  window.addEventListener('focus',()=>{if(sessionStorage.getItem('role_context')==='schoolAdmin')refresh()});
-  setInterval(()=>{if(!document.hidden&&sessionStorage.getItem('role_context')==='schoolAdmin')refresh()},60000);
-  if(sessionStorage.getItem('school_context_id')!==school)throw Error('學校情境已切換，停止寄送');
+        if(sessionStorage.getItem('school_context_id')!==school)throw Error('學校情境已切換，停止寄送');
         summary.textContent='正在寄送匯款通知…'+text({...current,sent:totalSent});
         current=await call('PATCH',{action:'SEND_PAYMENT_NOTICES',scope:initial.scope||{kind:'all'}});totalSent+=Number(current.sent||0);
       }
