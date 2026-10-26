@@ -19,6 +19,7 @@ SCENARIOS = [
     ("SOP-10", "在團與退團／畢業分流", "school", "學生管理 → 退出／停用；團服與活動 → 團 T → 學生領用紀錄", "僅在團學生列入需求與發放；退出／畢業留歷史且 CSV 分流"),
     ("SOP-11", "舊生團 T 另購", "parent-school", "家長 → 活動與團服 → 團 T → 我要加購團 T（第二件起）", "尺寸、公費資格、NT$400 每件、數量、後台審核及領取進度"),
     ("SOP-12", "團 T 庫存與發放核對", "school-parent", "團服與活動 → 團 T → 庫存管理／學校交付", "分尺寸庫存、交付簽收與家長確認紀錄一致，不將退團生列入當前需求"),
+    ("SOP-13", "個課老師與待補資料追蹤", "school", "學期成績總覽 → 個課表現 → 個課老師／資料狀態", "A 團未綁老師仍列入個課模式；已綁無紀錄、老師待完成、家長待確認、改期與評分分流正確"),
 ]
 
 
@@ -100,8 +101,18 @@ button,select{padding:9px 13px;border:1px solid #748ab9;color:#1d315a;border-rad
  <p class="muted">截圖應記錄本頁顯示的 Commit SHA、測試角色與日期。功能畫面使用的是目前選定 GitHub 分支，而不是另一套獨立 UI。</p>
 </section>
 <section class="card">
- <h2>03｜一鍵建立虛構測試資料</h2>
- <p>僅供 LAB 學校管理員使用。建立 A、B、儲備團 6 位虛構學生，搭配團 T 三種狀態、A 團比賽服公費／買斷及測試活動。不影響正式環境。</p>
+ <h2>03｜清空與還原 LAB 資料</h2>
+ <p>重新驗證前，可一鍵清空<strong>目前學校的 LAB 測試資料</strong>。系統會先自動備份；保留學校設定、管理員登入及財務權限、操作稽核。</p>
+ <p class="notice">清除包含學生、老師、家長綁定、個課／出勤／評量、課表、團服庫存／申請及活動資料。只限獨立 LAB；操作時請其他幹部暫停使用。清空後可從匯入學生開始，或建立下方完整案例。</p>
+ <p id="lab-data-summary" role="status">請先讀取資料範圍。</p>
+ <details><summary>查看將清除的資料筆數</summary><div id="lab-data-tables"></div></details>
+ <div class="row"><button id="lab-data-refresh" type="button">重新讀取資料範圍</button><button id="lab-data-clear" type="button" disabled>一鍵清空 LAB 測試資料</button><button id="lab-data-restore" type="button" disabled>還原最近清空前備份</button></div>
+ <p id="lab-data-backup" class="muted"></p>
+ <p id="lab-data-message" role="status" aria-live="polite"></p>
+</section>
+<section class="card">
+ <h2>04｜一鍵建立虛構測試資料</h2>
+ <p>僅供 LAB 學校管理員使用。建立 A、B、儲備團 6 位虛構學生，搭配團 T、比賽服、測試活動、課表及個課老師／待補紀錄案例。</p>
  <div class="notice">重複點擊只會跳過已有的測試紀錄，不會覆蓋已修改的申請或領用狀態。必須先由 LAB 學校管理員登入完整平台。</div>
  <p class="muted" id="fixture-session-hint">正在確認這個分頁的學校管理員登入狀態…</p>
  <button id="create-fixtures">建立 SOP 測試資料</button>
@@ -109,7 +120,7 @@ button,select{padding:9px 13px;border:1px solid #748ab9;color:#1d315a;border-rad
  <p class="muted">若你是在另一個分頁登入：請先<a href="/">於此分頁開啟 LAB 完整平台</a>登入並選擇學校管理員，然後點 LAB 右上方新增的「SOP LAB」捷徑返回；不需複製登入憑證。</p>
 </section>
 <section class="card">
- <h2>04｜將目前帳號綁定為 LAB 測試家長</h2>
+ <h2>05｜將目前帳號綁定為 LAB 測試家長</h2>
  <p>要拍攝家長端警示／團 T 申請進度，必須先用家長身分綁定虛構學生。此功能只會在獨立 LAB 建立<strong>目前登入帳號</strong>與所選假學生的家長關聯，完全不會綁定其他人的 Gmail。</p>
  <div class="notice">重新拍攝首次領用可選「測試己同學（990106，未填尺寸）」；原案例「測試戊同學」的既有紀錄仍會保留。再選「測試甲同學（990101，學校已交付）」驗證家長確認領取。請使用專門的 LAB 測試帳號；即使在獨立 LAB 也不建議和真實家長資料混用。</div>
  <div class="row">
@@ -121,14 +132,21 @@ button,select{padding:9px 13px;border:1px solid #748ab9;color:#1d315a;border-rad
  <p class="muted" role="status" aria-live="polite" id="lab-parent-message">先以 LAB 學校管理員身分登入，讀取六位虛構學生。</p>
 </section>
 <section class="card">
- <h2>05｜SOP 驗證項目</h2>
+ <h2>06｜個課異動與待補資料案例</h2>
+ <p>個課功能與正式版共用程式。使用虛構學生重現不同進度，讓幹部練習篩選、追蹤與老師綁定。</p>
+ <ul><li>測試甲（A）：已綁個課老師、完成評分及家長評論。</li><li>測試乙（A）：已綁個課老師、尚無上課紀錄。</li><li>測試丙（A）：未綁個課老師、尚無上課紀錄；仍應出現在個課表現。</li><li>測試丁（B）：已改期的未來個課。</li><li>測試戊（儲備）：老師已完成、待家長確認。</li><li>測試己（儲備）：課程已過、待老師完成。</li></ul>
+ <p class="muted">以上為首次建立時的案例；幹部後續操作會改變進度。示例老師使用不可寄信的虛構帳號，供後台核對；實際老師登入驗證請由管理員設定 LAB 測試帳號。補齊案例不會覆蓋既有修改。</p>
+ <button id="lab-private-create" type="button">建立／補齊個課測試案例</button><p id="lab-private-message" role="status" aria-live="polite"></p>
+</section>
+<section class="card">
+ <h2>07｜SOP 驗證項目</h2>
  <p>每個情境建議擷取：操作入口、輸入畫面、送出結果、對應角色畫面、CSV（若適用）。目前檢核包含最新正式版的學期20分、缺席已知悉、團T退團分流與加購。僅使用假學生資料。</p>
  <div id="scenarios"></div>
  <div class="row"><button id="export">匯出 SOP 驗收清單 JSON</button><button id="reset">清除本機核對勾選</button></div>
  <p class="muted">核對紀錄僅存於此瀏覽器，不會改動 LAB 或正式資料庫。</p>
 </section>
 <section class="card">
- <h2>06｜發現畫面不符合需求？</h2>
+ <h2>08｜發現畫面不符合需求？</h2>
  <p><strong>請不要單獨修改 SOP LAB 的 HTML。</strong> 從 GitHub 共用的 <code>app/</code> 修正，再部署該修正分支到 SOP LAB 驗證。畫面通過後才合併 <code>main</code>，使正式平台同步修正。</p>
  <p class="notice">提交問題前請移除學生姓名、信箱、Token、金鑰及任何正式資料。</p>
  <a class="link" rel="noopener noreferrer" target="_blank" href="https://github.com/loadjovi/school/issues/new?template=sop-screen-mismatch.yml">🛠️ 提報畫面差異</a>
@@ -136,6 +154,7 @@ button,select{padding:9px 13px;border:1px solid #748ab9;color:#1d315a;border-rad
 </section>
 </main>
 <script src="./sop.js" defer></script>
+<script src="./data-tools.js" defer></script>
 <script defer src="/functional-lab-banner.js"></script>
 </body></html>
 """
@@ -216,6 +235,7 @@ q("create-fixtures").addEventListener("click",async()=>{
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw Error(data.error||"HTTP "+response.status);
   message.textContent="✅ "+data.message+"；新增 "+data.created+" 筆／修補原始 LAB 團 T "+(data.repaired||0)+" 筆／保留既有 "+data.existing+" 筆。請從完整平台首頁重新整理查看。";
+  window.dispatchEvent(new Event("lab-fixtures-created"));
  }catch(error){message.textContent="⚠️ "+error.message}
  finally{button.disabled=false}
 });
@@ -294,6 +314,7 @@ q("reset").addEventListener("click",()=>{
  if(!confirm("清除這台瀏覽器的 SOP 核對勾選？此操作不會刪除資料庫資料。"))return;
  checks={};localStorage.removeItem(key);display();
 });
+window.addEventListener("lab-data-reset",()=>{checks={};display()});
 q("export").addEventListener("click",()=>{
  const payload=JSON.stringify({
   purpose:"SOP review (not formal UAT certification)",

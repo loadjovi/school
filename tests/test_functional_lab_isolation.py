@@ -115,10 +115,28 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         self.assertTrue((self.lab/"app/sop-lab/scenarios.json").is_file())
         scenarios=json.loads((self.lab/"app/sop-lab/scenarios.json").read_text(encoding="utf-8"))
         self.assertGreaterEqual(len(scenarios),6)
-        self.assertEqual({entry["id"].replace("SOP-","") for entry in scenarios}, {f"{i:02d}" for i in range(1,13)})
+        self.assertEqual({entry["id"].replace("SOP-","") for entry in scenarios}, {f"{i:02d}" for i in range(1,14)})
         self.assertTrue(any("20 分" in entry["title"] for entry in scenarios))
         self.assertTrue(any("缺席已知悉" in entry["title"] for entry in scenarios))
         self.assertTrue(any("退團／畢業" in entry["title"] for entry in scenarios))
+        self.assertTrue(any("個課老師" in entry["title"] for entry in scenarios))
+
+    def test_reset_tools_only_exist_in_lab_and_keep_identity_settings(self):
+        lib=self.lab/"api/src/lib"
+        for name in ("lab-data-tools.mjs","lab-data-engine.mjs","lab-data-tables.mjs","lab-private-fixtures.mjs"):
+            self.assertTrue((lib/name).exists())
+            self.assertFalse((ROOT/"api/src/lib"/name).exists())
+        self.assertFalse((ROOT/"app/sop-lab/data-tools.js").exists())
+        catalog=(lib/"lab-data-tables.mjs").read_text()
+        for name in ("TenantTshirtStaffDemand","TenantUniformInventory","TenantPrivateLesson","TenantScheduleException","TenantUserStudentMap"):
+            self.assertIn(name,catalog)
+        definitions=json.loads(catalog.split("const definitions=",1)[1].split(";",1)[0])
+        defaults={item["default"] for item in definitions}
+        self.assertTrue(defaults.isdisjoint({"TenantDirectory","TenantUserRole","TenantFinanceAssignment","TenantMigration","SchoolAccessLog","TenantUniformEventAudit","SystemSettings","UserIdentity"}))
+        fn=(self.lab/"api/src/functions/sopLabFixtures.js").read_text()
+        self.assertLess(fn.index('if(context.access.role!=="admin")'),fn.index('return handleLabDataTools'))
+        self.assertIn('route:"sop-lab/fixtures"',fn)
+        self.assertIn('一鍵清空 LAB 測試資料',(self.lab/"app/sop-lab/index.html").read_text())
 
     def test_manual_workflow_deploys_selected_branch_and_never_production_token(self):
         flow=(ROOT/".github/workflows/school-functional-uat-lab.yml").read_text(encoding="utf-8")

@@ -6,6 +6,8 @@ import {app} from "@azure/functions";
 import {TableClient} from "@azure/data-tables";
 import {getTenantContext,json} from "../lib/auth.js";
 import {getLabReadiness,assertLabIsolation} from "../lib/labIsolation.mjs";
+import {handleLabDataTools,withLabDataLock} from "../lib/lab-data-tools.mjs";
+import {seedPrivateExamples} from "../lib/lab-private-fixtures.mjs";
 assertLabIsolation();
 
 const scenarios=[
@@ -131,9 +133,19 @@ app.http("sopLabFixtures",{
   const context=await getTenantContext(request);
   if(context.error)return context.error;
   if(context.access.role!=="admin")return json({error:"僅 LAB 學校管理員可建立測試資料"},403);
+  if(request.method==="GET"&&request.query?.get("view")==="database")return handleLabDataTools(request,context);
   if(request.method==="GET")return json({items:scenarios.map(({id,studentName,groupName,shirt,uniform})=>
     ({id,studentName,groupName,shirt,uniform:uniform||null})),schoolId:context.schoolId});
   const body=await request.json().catch(()=>({}));
+  if(["RESET_LAB_DATA","RESTORE_LAB_DATA"].includes(body.action))return handleLabDataTools(request,context,body);
+  if(body.action==="CREATE_PRIVATE_FIXTURES"){
+   if(body.confirmation!=="CREATE_PRIVATE_FIXTURES")return json({error:"請確認建立 LAB 個課案例"},400);
+   const result={created:0,existing:0};
+   try{return await withLabDataLock(context.schoolId,async()=>{
+    await seedPrivateExamples({table,addIfMissing,schoolId:context.schoolId,result});
+    return json({ok:true,...result,message:"已補齊個課虛構案例；既有老師綁定及紀錄保持不變"});
+   })}catch(e){return json({error:e.message},[400,409].includes(e.statusCode)?e.statusCode:503)}
+  }
   if(body?.confirmation!=="CREATE_SOP_FIXTURES")return json({error:"請確認建立 LAB 虛構資料"},400);
   const schoolId=context.schoolId;
   const students=await table("TenantStudentMaster");
@@ -142,7 +154,7 @@ app.http("sopLabFixtures",{
   const events=await table(process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig");
   const result={created:0,existing:0,repaired:0,schoolId,students:scenarios.length};
   async function put(client,item){result[(await addIfMissing(client,item))==="created"?"created":"existing"]++}
-  try{
+  try{return await withLabDataLock(schoolId,async()=>{
    for(const s of scenarios){
     await put(students,demoStudent(s,schoolId));
     const shirtResult=await createOrRepairOriginalShirt(shirts,shirtEntity(s,schoolId),s);
@@ -150,6 +162,7 @@ app.http("sopLabFixtures",{
     if(s.uniform)await put(uniforms,competitionEntity(s,schoolId));
    }
    await seedEmptySchedule(schoolId,result);
+   await seedPrivateExamples({table,addIfMissing,schoolId,result});
    await put(events,eventEntity(schoolId));
    // Parent pages require an explicit enabled module configuration.
    // Create only if absent. Never toggle an existing admin-defined setting.
@@ -160,7 +173,8 @@ app.http("sopLabFixtures",{
       updatedBy:"SOP_LAB_FIXTURE"};
     await put(events,config);
    }
-   return json({ok:true,...result,message:"新增缺少的 SOP 記錄，僅修補未經修改的第一版虛構團 T 資料；不覆蓋人工調整"});
+   return json({ok:true,...result,message:"新增缺少的 SOP 與個課虛構案例，僅修補未經修改的第一版虛構團 T 資料；不覆蓋人工調整"});
+  });
   }catch(e){console.error("SOP fixture seed failed",e);return json({error:"建立部分失敗，請重新執行；已建立紀錄不會重複新增",...result},503)}
  }
 });

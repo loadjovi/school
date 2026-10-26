@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sop_lab import generate_sop_lab
 from sop_lab_seed import install as install_sop_fixtures
 from sop_lab_parent_bind import install as install_sop_parent_binding
+from sop_lab_data_tools import install as install_sop_data_tools
 
 ROOT = Path(__file__).resolve().parents[1]
 ISOLATION = r'''
@@ -150,6 +151,7 @@ def prepare(output: Path) -> None:
     generate_sop_lab(ROOT/"app",app)
     install_sop_fixtures(api)
     install_sop_parent_binding(api)
+    install_sop_data_tools(api,app)
     # No real identities/records or copied secret settings in the release.
     for forbidden in (api/"local.settings.json",app/".env"):
         if forbidden.exists():raise RuntimeError("Unexpected runtime secret file in LAB bundle")

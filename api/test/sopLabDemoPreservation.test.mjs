@@ -2,12 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import {seedPrivateExamples} from "../../scripts/functional-lab/lab-private-fixtures.mjs";
 
 function fixtures(){
   const tables=new Map(),opened=[];let role="admin",ready=true;
   const get=name=>{if(!tables.has(name))tables.set(name,new Map());return tables.get(name)};
   const table=name=>({createTable:async()=>{},getEntity:async(pk,rk)=>{const e=get(name).get(pk+"/"+rk);if(!e)throw {statusCode:404};return e},createEntity:async e=>{const key=e.partitionKey+"/"+e.rowKey;if(get(name).has(key))throw {statusCode:409};get(name).set(key,e)},updateEntity:async e=>get(name).set(e.partitionKey+"/"+e.rowKey,e),listEntities:async function*({queryOptions}){const pk=queryOptions.filter.match(/PartitionKey eq '([^']+)'/)[1];for(const row of get(name).values())if(row.partitionKey===pk)yield row}});
-  const handlers={},context={app:{http:(name,config)=>handlers[name]=config.handler},TableClient:{fromConnectionString:(connection,name)=>{opened.push(name);return table(name)}},getTenantContext:async()=>({access:{role,email:"admin@example.org"},schoolId:"sacred-heart"}),json:(jsonBody,status=200)=>({jsonBody,status}),getLabReadiness:()=>({ready,environment:"functional-uat",storageAccount:"school-test"}),assertLabIsolation:()=>{},process:{env:{LAB_EXPECTED_STORAGE_ACCOUNT:"school-test",STORAGE_CONNECTION_STRING:"test-only"}},console};
+  const handlers={},context={app:{http:(name,config)=>handlers[name]=config.handler},TableClient:{fromConnectionString:(connection,name)=>{opened.push(name);return table(name)}},getTenantContext:async()=>({access:{role,email:"admin@example.org"},schoolId:"sacred-heart"}),json:(jsonBody,status=200)=>({jsonBody,status}),getLabReadiness:()=>({ready,environment:"functional-uat",storageAccount:"school-test"}),assertLabIsolation:()=>{},withLabDataLock:async(_schoolId,action)=>action(),seedPrivateExamples,process:{env:{LAB_EXPECTED_STORAGE_ACCOUNT:"school-test",STORAGE_CONNECTION_STRING:"test-only"}},console};
   const python=readFileSync(new URL("../../scripts/sop_lab_seed.py",import.meta.url),"utf8");
   const js=python.match(/API_JS\s*=\s*r'''([\s\S]*?)'''/)[1].replace(/^import .*;\n/gm,"");runInNewContext(js,context);
   return {get,opened,setRole:r=>role=r,setReady:r=>ready=r,run:()=>handlers.sopLabFixtures({method:"POST",json:async()=>({confirmation:"CREATE_SOP_FIXTURES"})})};
