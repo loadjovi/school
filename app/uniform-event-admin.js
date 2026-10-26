@@ -17,7 +17,7 @@ function adminAuthHeaders(){
 window.uniformEventAuthHeaders=adminAuthHeaders;
 async function api(path,options={}){
  const controller=new AbortController();
- const timeoutMs=path==="uniform-events/receiving"&&options.method==="POST"?60000:path==="uniform-events/requests"&&options.method==="PATCH"?45000:12000;
+ const timeoutMs=path==="uniform-events/receiving"&&options.method==="POST"?60000:["uniform-events/requests","uniform-events/config"].includes(path)&&["PATCH","POST"].includes(options.method)?45000:12000;
  const timeout=setTimeout(()=>controller.abort(),timeoutMs);
  let r;
  try{r=await fetch("/api/"+path,{...options,signal:controller.signal,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...adminAuthHeaders(),...(options.headers||{})}})}
@@ -27,6 +27,11 @@ async function api(path,options={}){
  if(r.status===401){setAuthGate("API 回傳 401 Unauthorized：登入憑證未通過後端驗證，所有管理操作已停用。");throw Error("401 Unauthorized：請重新登入")}
  if(r.status===403){if(/財務/.test(String(data.error||"")))throw Error(data.error);setAuthGate("API 回傳 403 Forbidden：目前帳號沒有此校管理員權限。");throw Error("403 Forbidden：權限不足")}
  if(!r.ok)throw Error(data.error||"HTTP "+r.status);
+ if(data.paymentNotification&&window.finishPaymentNotificationBatches){
+  data.paymentNotification=await window.finishPaymentNotificationBatches(data.paymentNotification);
+  const n=data.paymentNotification;
+  data.notificationStatus=n.status==="complete"&&!n.remaining&&!n.failed&&!n.unconfirmed&&(n.sent||n.alreadySent)?"sent":n.status;
+ }
  return data;
 }
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[],receivedRequestIds=new Set();
@@ -385,7 +390,8 @@ function table(id,rows,columns,actions=false){
    const directIssue=r.kind==="A 團比賽服"&&r.status==="ORDERED"&&!r.received&&mayCollect?"<button type='button' data-direct-issue='"+i+"'>驗收到貨並直接交付</button>":"";
    const receive=needsReceipt?"<button type='button' data-receive='"+i+"'>"+(r.received?"同步已入庫狀態":r.status==="ORDERED"?r.kind==="A 團比賽服"?"到貨後入庫（暫不交付）":"驗收到貨並入庫":"補登驗收入庫")+"</button>":"";
    const progress=r.status==="ORDERED"?"<button type='button' data-cancel='"+i+"'>取消申請</button>":next.length?"<select data-index='"+i+"'><option value=''>選擇下一步</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>選擇後執行</button>"+(r.status==="ARRIVED"&&mayCollect&&r.received?"<p class='hint'>選擇「開放領取」後，家長畫面會顯示可以領取，並寄送通知信；實際交付時再按「確認實際發放」。</p>":""):issue||"<span>"+esc(r.statusLabel||r.status)+"</span>";
-   controls="<td data-label='狀態管理'>"+directIssue+receive+(r.status==="APPROVED"&&!mayOrder?"<p class='hint'>待財務確認入帳後，才能更新為已統一採購。</p>":"")+progress+procurementAdjust+amount+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
+   const remind=payable&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&["","AWAITING_TRANSFER"].includes(String(r.paymentStatus||""))&&Number.isSafeInteger(r.amount)&&r.amount>0?"<button type='button' data-payment-reminder='"+i+"'>再次寄送匯款提醒 Email</button><p class='hint'>僅提醒尚未回報匯款的家長；同一筆款項每天最多一次。</p>":"";
+   controls="<td data-label='狀態管理'>"+directIssue+receive+(r.status==="APPROVED"&&!mayOrder?"<p class='hint'>待財務確認入帳後，才能更新為已統一採購。</p>":"")+progress+procurementAdjust+amount+remind+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
   }
   return "<tr>"+cells+controls+"</tr>";
@@ -718,7 +724,7 @@ el("config").onsubmit=async e=>{
    await window.applyDinnerBankSelection(id);
    bankVerifiedOnSave=true;
   }
-  await api("uniform-events/config",{method:"POST",body:JSON.stringify(item)});
+  const configResult=await api("uniform-events/config",{method:"POST",body:JSON.stringify(item)});
   savedActivityId=id;
   if(module==="fieldTrip"&&!el("existingActivity").value&&fieldTripBankTemplates.some(x=>x.id===el("fieldTripBankTemplate").value)){
    feedback.textContent="活動已建立，正在綁定並驗證收款帳戶…";
@@ -737,6 +743,7 @@ el("config").onsubmit=async e=>{
   feedback.textContent=module==="yearEndDinner"&&!persisted.enabled
    ?"活動已建立並確認成功："+(persisted.title||module)+"（暫不顯示）。"+(bankVerifiedOnSave||window.dinnerBankSelection?.()?"收款帳戶已綁定，可將家長端改為「顯示」並儲存。":"請選擇下方收款帳戶並儲存，再將家長端改為「顯示」。")
    :"設定已儲存並確認成功："+(persisted.title||module)+(["fieldTrip","calendarActivity"].includes(module)?"；已依對象團別同步至行事曆／特殊活動（"+(persisted.enabled?"顯示中":"已取消")+"）。":"。")+(module==="calendarActivity"?"此公告免報名、免收費。":module==="yearEndDinner"?"收款帳戶已綁定；是否可報名依報名期間判定。":bankVerifiedOnSave?"收款帳戶已綁定；開放家長報名後，可再設定第二階段收款。":"是否可報名依活動顯示狀態與報名期間判定；收款需另行開放。");
+  if(configResult.paymentNotification?.total)feedback.textContent+=" 匯款通知："+(window.paymentEmailSummaryText?.(configResult.paymentNotification)||configResult.paymentNotification.status);
   el("status").textContent=feedback.textContent;
  }catch(err){
   if(savedActivityId){try{await load();el("existingActivity").value=savedActivityId;syncConfig();el("existingActivity").dispatchEvent(new Event("change"))}catch(refreshError){console.warn("活動已儲存，但重新讀取失敗",refreshError)}}
@@ -887,6 +894,15 @@ el("requests").addEventListener("change",e=>{
  button.textContent=select.value==="READY_FOR_PICKUP"?"開放領取並通知家長":select.value==="CANCELLED"?"取消申請並通知家長":select.value?"確認更新並通知家長":"選擇後執行";
 });
 el("requests").addEventListener("click",async e=>{
+ const reminder=e.target.closest("button[data-payment-reminder]");
+ if(reminder){
+  const row=cachedRequests[Number(reminder.dataset.paymentReminder)];if(!row)return;
+  reminder.disabled=true;el("status").textContent="正在確認付款狀態並寄送提醒…";
+  try{const result=await api("uniform-events/requests",{method:"PATCH",body:JSON.stringify({action:"SEND_PAYMENT_REMINDER",id:row.id})});el("status").textContent="二次匯款提醒："+(window.paymentEmailSummaryText?.(result)||result.status);}
+  catch(error){el("status").textContent="提醒未完成："+error.message}
+  finally{reminder.disabled=false}return;
+ }
+
  if(e.target.dataset.directIssue!==undefined){
   const row=visibleModuleRequests[Number(e.target.dataset.directIssue)];if(!row||row.kind!=="competitionUniform"||row.status!=="ORDERED"||pendingRequestIds.has(row.id))return;
   const cell=e.target.closest("td"),button=e.target;if(cell.querySelector("form"))return;

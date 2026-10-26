@@ -7,16 +7,16 @@ const id1="11111111-1111-4111-8111-111111111111",id2="22222222-2222-4222-8222-22
 const order=(extra={})=>({id:id1,kind:"regularUniform",studentId:"1",size:"XS",quantity:1,amount:400,status:"APPROVED",paymentStatus:"AWAITING_TRANSFER",...extra});
 function harness(){
   const listeners=new Map(),storage=new Map([["school_context_id","sacred-heart"]]),calls=[],timeouts=[],intervals=[];
-  let response=async()=>({items:[]});
+  let response=async()=>({items:[]}),familyResponse=async()=>({items:[]});
   const frame={contentWindow:{},contentDocument:{getElementById:()=>null}};
   const ctx={state:{me:{role:"parent",email:"parent@example.invalid"},page:"home",students:[{studentId:"1",name:"甲同學"},{studentId:"2",name:"乙同學"}],student:{studentId:"1"}},
     sessionStorage:{getItem:key=>storage.get(key)||""},home:()=>'<div id="existing-home">今日課程提醒</div>',go:async page=>{ctx.state.page=page},
-    api:async(...args)=>{calls.push(args);return response(...args)},render:()=>{},esc:value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])),
+    api:async(...args)=>{calls.push(args);return (args[0].includes('family-registration')?familyResponse:response)(...args)},render:()=>{},esc:value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])),
     document:{hidden:false,head:{append(){}},createElement:()=>({}),getElementById:id=>id==="parentUniformFrame"?frame:null,querySelector:()=>null,addEventListener:(name,fn)=>listeners.set("document:"+name,fn)},
     location:{origin:"https://lab.example.invalid"},addEventListener:(name,fn)=>listeners.set(name,fn),setTimeout:fn=>timeouts.push(fn),setInterval:fn=>intervals.push(fn),Date,console};
   ctx.window=ctx;
   for(const name of ["uniform-payment-state.js","parent-uniform-payment-notice.js"])runInNewContext(readFileSync(new URL("../app/"+name,import.meta.url),"utf8"),ctx);
-  return {ctx,storage,calls,listeners,frame,timeouts,intervals,setResponse:fn=>{response=fn}};
+  return {ctx,storage,calls,listeners,frame,timeouts,intervals,setResponse:fn=>{response=fn},setFamilyResponse:fn=>{familyResponse=fn}};
 }
 test("only actionable self-paid approved orders appear; pending, cancelled, delivered, public and unknown amounts never cause payment demands",()=>{
   const {ctx}=harness(),model=ctx.uniformPaymentState;
@@ -36,7 +36,7 @@ test("login home puts each child's payment amount and direct action before the e
   assert.match(html,/2 筆待匯款/);assert.match(html,/甲同學/);assert.match(html,/乙同學/);assert.match(html,/NT\$ 400/);assert.match(html,/NT\$ 800/);
   assert.match(html,/查看匯款帳戶／回報末五碼/);assert.match(html,/轉出帳號末五碼/);
   await h.ctx.openParentUniformPayment(id2);assert.equal(h.ctx.state.parentUniformFocus,"payment:"+id2);assert.equal(h.ctx.state.page,"uniformEvents");
-  assert.ok(h.calls.every(([url,options])=>url==="/api/uniform-events/requests"&&options===undefined));
+  assert.ok(h.calls.every(([url,options])=>["/api/uniform-events/requests","/api/uniform-events/family-registration"].includes(url)&&options===undefined));
 });
 test("later calendar decoration keeps the payment notice first",async()=>{
   const h=harness();h.setResponse(async()=>({items:[order()]}));await h.ctx.refreshParentUniformPayments();
@@ -76,7 +76,7 @@ test("network errors show a retry instead of a stale payment demand, and only th
   const handler=h.listeners.get("message"),data={type:"parent-uniform-requests-updated"},before=h.calls.length;
   handler({origin:"https://other.example.invalid",source:h.frame.contentWindow,data});handler({origin:h.ctx.location.origin,source:{},data});assert.equal(h.calls.length,before);
   h.setResponse(async()=>{throw Error("unavailable")});await h.ctx.refreshParentUniformPayments();const html=h.ctx.home();assert.match(html,/重新讀取付款狀態/);assert.doesNotMatch(html,/NT\$ 400|請完成匯款/);
-  handler({origin:h.ctx.location.origin,source:h.frame.contentWindow,data});assert.equal(h.calls.length,before+2);
+  handler({origin:h.ctx.location.origin,source:h.frame.contentWindow,data});assert.equal(h.calls.length,before+4);
 });
 test("the requested payment opens the history panel and targets that exact order after the bank form is available",()=>{
   const source=readFileSync(new URL("../app/parent-uniform-events.js",import.meta.url),"utf8"),start=source.indexOf("let uniformPaymentFocused=false;"),end=source.indexOf('document.getElementById("refreshUniformRequests")',start),messages=[];

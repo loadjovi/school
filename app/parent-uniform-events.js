@@ -1,6 +1,6 @@
 import {confirmedReceived} from "./competition-paper-receipts.js";
 import "./parent-activity-notice.js";
-import "./uniform-payment-state.js?v=20261026-home-payment";
+import "./uniform-payment-state.js?v=20261026-payment-email";
 import {buildUniformGrowth} from "./uniform-growth.js?v=20261017-first-public";
 import {roster as competitionRoster} from "./competition-roster-data.js";
 const competitionByName=new Map(competitionRoster.map(row=>[row[1],{style:row[2],size:row[3]}]));
@@ -251,7 +251,9 @@ function formatDate(v){if(!v)return "";const d=new Date(v);return Number.isNaN(d
 function element(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e}
 async function parentApi(path,options={}){
  const response=await fetch("/api/"+path,{...options,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...parentAuthHeaders(),...(options.headers||{})}});
- const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"HTTP "+response.status);return data;
+ const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"HTTP "+response.status);
+ if(path==="uniform-events/family-registration"&&["POST","PATCH"].includes(options.method)&&window.parent!==window)window.parent.postMessage({type:"parent-uniform-requests-updated"},location.origin);
+ return data;
 }
 const uniformRequestStage={
  PENDING:{title:"待學校審核",next:"學校尚未核准，請等待審核結果。"},
@@ -490,7 +492,7 @@ async function renderInlineActivities(){
   if(!(registration.items||[]).length)history.append(element("p","目前沒有活動報名或付款紀錄。","muted"));
   for(const item of registration.items||[]){
    const match=cfg.find(x=>x.module===item.kind&&x.id===item.activityId);
-   const card=element("div",undefined,"card");card.append(element("strong",match?.title||item.activityId));
+   const card=element("div",undefined,"card");card.id="family-payment-"+item.id;card.append(element("strong",match?.title||item.activityId));
    card.append(element("p","學生 "+(item.studentIds||[]).length+" 位｜陪同者 "+item.adults+" 位｜6 歲以下兒童（非團員） "+item.extraChildren+" 位"));
    card.append(element("p","報名："+(item.registrationStatus==="REGISTERED"?"已送出":item.registrationStatus)+"｜付款："+activityPaymentLabel(item,match)));
    if(item.estimatedAmount!=null)card.append(element("p","登記金額 NT$ "+Number(item.estimatedAmount).toLocaleString("zh-TW")));
@@ -568,6 +570,14 @@ async function renderInlineActivities(){
    }
   }
   drawNotice();
+  const paymentFocus=new URLSearchParams(location.search).get("focus")||"";
+  if(paymentFocus.startsWith("family-payment:")&&!window.__familyPaymentFocused){
+   const id=paymentFocus.slice("family-payment:".length),target=document.getElementById("family-payment-"+id);
+   if(target){
+    window.__familyPaymentFocused=true;select("history");target.style.outline="3px solid #bb6c16";
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{if(window.parent!==window)window.parent.postMessage({type:"parent-family-payment-focus",requestId:id},location.origin);else target.scrollIntoView({behavior:"smooth",block:"start"})}));
+   }
+  }
   if(!window.__parentActivityDeepLinkHandled){
    window.__parentActivityDeepLinkHandled=true;
    const query=new URLSearchParams(location.search),target=query.get("activity"),view=query.get("view");

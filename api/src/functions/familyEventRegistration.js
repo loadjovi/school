@@ -3,6 +3,8 @@ import {TableClient} from "@azure/data-tables";
 import {createHash,randomUUID} from "node:crypto";
 import {getTenantContext,ensureStudentAccess,json} from "../lib/auth.js";
 import {getStudentMaster} from "../lib/storage.js";
+import {familyPaymentInfo} from "../lib/paymentNoticeRules.mjs";
+import {safePaymentNotifications} from "../lib/paymentNotifications.js";
 
 const safeId=s=>typeof s==="string"&&/^[a-zA-Z0-9_-]{1,80}$/.test(s);
 const integer=(n,min,max)=>Number.isSafeInteger(n)&&n>=min&&n<=max;
@@ -54,10 +56,16 @@ app.http("familyEventRegistration",{
   try{
    const records=await table("TenantFamilyEventRegistration");
    if(request.method==="GET"){
-    const list=[];
+    const list=[],configs=await table(process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig"),configCache=new Map();
     for await(const row of records.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
      const r=decode(row);
-     if(access.role==="admin"||r.parentEmail===access.email)list.push(publicRegistration(row,access));
+     if(access.role==="admin"||r.parentEmail===access.email){
+      const key=r.kind+":"+r.activityId;
+      if(!configCache.has(key)){const config=await get(configs,schoolId,key);configCache.set(key,config?JSON.parse(config.payload||"{}"):null)}
+      const config=configCache.get(key),payment=familyPaymentInfo(config,r);
+      const reported=["REPORTED_UNVERIFIED","VERIFIED"].includes(r.paymentStatus)&&Number.isSafeInteger(r.transferReport?.expectedAmount)?r.transferReport.expectedAmount:payment.amount;
+      list.push({...publicRegistration(row,access),amount:reported,paymentOpen:payment.paymentOpen,activityTitle:config?.title||r.activityId});
+     }
     }
     return json({items:list});
    }
@@ -96,7 +104,8 @@ app.http("familyEventRegistration",{
     try{await records.createEntity({partitionKey:schoolId,rowKey:id,payload:JSON.stringify(payload),updatedAt:timestamp})}
     catch(e){if(e.statusCode===409)return fail("This family has already registered",409);throw e}
     await log(schoolId,access,"family.registration",id,{studentIds:ids,adults:body.adults,extraChildren:body.extraChildren});
-    return json({item:{...payload,id}},201);
+    const paymentNotification=familyPaymentInfo(cfg,payload).needsPayment?await safePaymentNotifications(schoolId,{scope:{kind:"family",id}}):null;
+    return json({item:{...payload,id},paymentNotification},201);
    }
    if(request.method!=="PATCH")return fail("Method not allowed",405);
    const id=registrationId(body.kind,body.activityId,access.email);
@@ -111,6 +120,7 @@ app.http("familyEventRegistration",{
    const next={...JSON.parse(previous.payload)};
    if(body.action==="REPORT_TRANSFER"){
     if(access.role!=="parent")return fail("Parent only",403);
+    if(["REPORTED_UNVERIFIED","VERIFIED"].includes(old.paymentStatus))return fail("此筆已回報或已核帳，無須重複回報匯款",409);
     if(cfg.paymentOpen!==true||cfg.feeStatus!=="PUBLISHED")return fail("Payment not open",409);
     const due=feeOf(cfg,old);
     if(due===null||due<=0)return fail("Invalid payment configuration",409);

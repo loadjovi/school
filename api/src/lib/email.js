@@ -15,6 +15,26 @@ export function emailConfigured(){
   return !!(c.connectionString&&c.senderAddress);
 }
 
+export async function sendPaymentRequiredEmail({recipient="",category="uniform",schoolName="弦樂團",title="",studentNames=[],amount=null,size="",quantity=1,appUrl="",reminder=false}={}){
+  const address=clean(recipient,320).toLowerCase();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address))return {status:"failed"};
+  const c=config();if(!c.connectionString||!c.senderAddress)return {status:"not_configured"};
+  let link;try{const url=new URL(appUrl);if(url.protocol!=="https:"||url.username||url.password)throw Error();link=url.origin+"/"}catch{return {status:"failed"}}
+  const invitation=category==="dinner_open";
+  const subject=`【${clean(schoolName,120)}】${clean(title,120)}｜${invitation?"開放報名與繳費，請登入平台辦理":(reminder?"再次提醒：尚未回報匯款，請登入平台處理":"待匯款，請登入平台處理")}`;
+  const lines=["家長您好：","",invitation?"期末餐會已開放報名與繳費。若要參加，請登入平台確認參加人數、應繳金額及收款帳戶，再依畫面完成匯款與報名。":"您有一筆需要匯款的申請，請登入平台查看收款帳戶並處理付款。",
+    "項目："+clean(title,120),!invitation&&studentNames.length?"學生："+studentNames.map(x=>clean(x,80)).join("、"):"",
+    !invitation&&Number.isSafeInteger(amount)&&amount>0?"應繳金額：NT$ "+amount.toLocaleString("zh-TW"):"",size?"尺寸："+clean(size,20)+"｜件數："+Number(quantity):"","",
+    "平台登入網址："+link,"請使用已綁定的家長 Gmail 登入。",invitation?"登入後請至「活動與團服 → 餐會」確認並辦理。":"登入後請查看首頁付款提醒，或至「活動與團服」查看對應項目。",
+    "完成匯款後，請回報匯款日期與轉出帳號末五碼，送出後等待財務核帳。",
+    invitation?"餐會依平台既有流程於報名時一併回報匯款。已由其他家長完成報名或已回報匯款者，無須重複辦理。":"若您已完成匯款但尚未回報，請登入補填；若已回報，請等待財務核帳，無須重複匯款。",
+    "收款帳戶與最新應繳金額請以登入平台後的資訊為準。"];
+  const plainText=lines.filter((line,i)=>line||i===1).join("\n");
+  const html=`<div style="font-family:Arial,sans-serif;line-height:1.8"><h2>${esc(subject)}</h2>${lines.filter(Boolean).map(line=>`<p>${esc(line)}</p>`).join("")}<p><a href="${esc(link)}" style="display:inline-block;background:#20543e;color:white;padding:12px 20px;border-radius:8px;text-decoration:none">登入平台處理</a></p></div>`;
+  const result=await sendOne(new EmailClient(c.connectionString),c.senderAddress,address,{subject,plainText,html});
+  return {status:String(result.status).toLowerCase()==="succeeded"?"sent":String(result.status).toLowerCase()==="failed"?"failed":"unconfirmed",id:result.id};
+}
+
 export async function sendUniformRequestStatusEmail({recipients=[],studentName="",kind="",status="",size="",quantity=1}={}){
   const addresses=[...new Set(recipients.map(x=>clean(x,320).toLowerCase()).filter(x=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x)))];
   if(!addresses.length)return {status:"no_recipients"};

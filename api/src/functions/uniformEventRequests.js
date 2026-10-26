@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { getTenantContext, ensureStudentAccess, getStudentAliasInfo, json } from "../lib/auth.js";
 import { getStudentMaster, listUserStudentMappings } from "../lib/storage.js";
 import { sendUniformRequestStatusEmail } from "../lib/email.js";
+import {safePaymentNotifications,paymentNotificationStatus} from "../lib/paymentNotifications.js";
+import {uniformNeedsPayment} from "../lib/paymentNoticeRules.mjs";
 import { getUniformPrice } from "../lib/uniformPricing.js";
 import {upsertCurrentCompetitionMaster,latestCompetitionRequest} from "../lib/competitionUniformMaster.js";
 
@@ -90,6 +92,10 @@ app.http("uniformEventRequests",{
     try{
       const client=await table("requests");
       if(request.method==="GET"){
+        if(request.query?.get("view")==="payment-notifications"){
+          if(access.role!=="admin")return err("Admin only",403);
+          return json(await safePaymentNotifications(schoolId,{preview:true}));
+        }
         const out=[];
         for await(const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
           const item=decode(e);
@@ -104,6 +110,13 @@ app.http("uniformEventRequests",{
         return json({items:out,publicUsedStudentIds:[...used],historicalPublicStudentIds:historical});
       }
       const data=await request.json();
+      if(["SEND_PAYMENT_NOTICES","SEND_PAYMENT_REMINDER"].includes(data?.action)){
+        if(request.method!=="PATCH"||access.role!=="admin")return err("Admin only",403);
+        const scope=data.action==="SEND_PAYMENT_REMINDER"?{kind:"uniform",id:data.id,reminder:true}:data.scope||{kind:"all"};
+        if(!["all","uniform","family","activity"].includes(scope.kind)||scope.kind!=="all"&&(typeof scope.id!=="string"||scope.id.length>250)||scope.kind==="activity"&&!["fieldTrip","yearEndDinner"].includes(scope.module))return err("Invalid notification scope",400);
+        if(scope.reminder===true&&scope.kind!=="uniform")return err("Invalid reminder scope",400);
+        return json(await safePaymentNotifications(schoolId,{scope,retryFailed:data.retryFailed===true}));
+      }
       if(request.method==="POST"){
         if(!await studentGuard(access,schoolId,data.studentId))return err("Student not found or forbidden",403);
         if(!await configuredAndOpen(schoolId,data))return err("Module or activity is not open",403);
@@ -128,7 +141,8 @@ app.http("uniformEventRequests",{
           try{await upsertCurrentCompetitionMaster(schoolId,student,{...payload,id},access.email||"parent")}
           catch(error){masterSyncPending=true;console.error("competition master pending after request creation",id,error)}
         }
-        return json({item:{...payload,id},masterSyncPending},201);
+        const paymentNotification=uniformNeedsPayment(payload)?await safePaymentNotifications(schoolId,{scope:{kind:"uniform",id}}):null;
+        return json({item:{...payload,id},masterSyncPending,paymentNotification,notificationStatus:paymentNotificationStatus(paymentNotification)},201);
       }
       if(!validId(data.id)||!safe(data.etag,200))return err("Invalid update");
       const previous=await find(client,schoolId,data.id);
@@ -217,8 +231,11 @@ app.http("uniformEventRequests",{
           await upsertCurrentCompetitionMaster(schoolId,student,latestCompetitionRequest(candidates,next.studentId),access.email||"admin");
         }catch(error){masterSyncPending=true;console.error("competition master pending after request update",data.id,error)}
       }
-      let notificationStatus="not_attempted";
-      if(shouldNotify){
+      let notificationStatus="not_attempted",paymentNotification=null;
+      if(shouldNotify&&uniformNeedsPayment(next)){
+        paymentNotification=await safePaymentNotifications(schoolId,{scope:{kind:"uniform",id:data.id}});
+        notificationStatus=paymentNotificationStatus(paymentNotification);
+      }else if(shouldNotify){
         try{
           const mappings=await listUserStudentMappings("active",schoolId),recipients=new Set();
           for(const mapping of mappings){
@@ -232,7 +249,7 @@ app.http("uniformEventRequests",{
           if(result.status!=="sent")console.warn("uniform request email not fully sent",{requestId:data.id,status:result.status,recipientCount:result.recipientCount||0});
         }catch(e){notificationStatus="failed";console.error("uniform request email failed",{requestId:data.id,error:e?.message||String(e)})}
       }
-      return json({item:{...next,id:data.id},notificationStatus,masterSyncPending});
+      return json({item:{...next,id:data.id},notificationStatus,masterSyncPending,paymentNotification});
     }catch(e){
       if(e instanceof SyntaxError||String(e.message||"").startsWith("Invalid")||String(e.message||"").startsWith("Only"))return err(e.message);
       console.error("uniformEventRequests",e);return err("Request processing failed",500);

@@ -3,8 +3,9 @@
 (()=>{
   const kinds=new Set(["regularUniform","competitionUniform"]);
   const openStatuses=new Set(["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"]);
-  function eligible(item){return kinds.has(item?.kind)&&openStatuses.has(item.status)&&item.acquisition!=="PUBLIC"&&Number.isSafeInteger(item.amount)&&item.amount>0}
-  function due(item){return eligible(item)&&["","AWAITING_TRANSFER"].includes(String(item.paymentStatus||""))}
+  function family(item){return ["fieldTrip","yearEndDinner"].includes(item?.kind)}
+  function eligible(item){return (family(item)?item.registrationStatus==="REGISTERED"&&item.paymentOpen===true:kinds.has(item?.kind)&&openStatuses.has(item.status)&&item.acquisition!=="PUBLIC")&&Number.isSafeInteger(item.amount)&&item.amount>0}
+  function due(item){return eligible(item)&&(family(item)?!["REPORTED_UNVERIFIED","VERIFIED","NOT_REQUIRED"].includes(String(item.paymentStatus||"")):["","AWAITING_TRANSFER"].includes(String(item.paymentStatus||"")))}
   function reported(item){return eligible(item)&&item.paymentStatus==="REPORTED_UNVERIFIED"}
   function alerts(items){
     const rows=(items||[]).filter(item=>due(item)||reported(item)).sort((a,b)=>String(b.updatedAt||b.createdAt||"").localeCompare(String(a.updatedAt||a.createdAt||"")));
@@ -18,5 +19,5 @@
     if(!Number.isSafeInteger(item.amount)||item.amount<=0)return {title:"已核准，待學校確認應繳金額",next:"請等待學校補正應繳金額，確認收款資訊後再匯款。"};
     return null;
   }
-  window.uniformPaymentState={due,reported,alerts,stage};
+  window.uniformPaymentState={due,reported,alerts,stage,family};
 })();

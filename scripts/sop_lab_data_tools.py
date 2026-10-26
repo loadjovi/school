@@ -43,6 +43,7 @@ def install(api_root: Path, lab_app: Path):
         ("", "TenantUniformPaymentAccounts", "團服收款設定"),
         ("", "TenantEventPaymentAccounts", "活動收款設定"),
         ("", "TenantPaymentAccountTemplates", "收款帳戶範本"),
+        ("", "TenantPaymentNotification", "匯款 Email 通知紀錄"),
     ]:
         definitions.append({"env": env, "default": name, "label": label})
     catalog = "const definitions=" + json.dumps(definitions, ensure_ascii=False) + ";\n"
