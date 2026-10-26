@@ -102,3 +102,26 @@ export function reminderNotices(notices, now=new Date()) {
   const day=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(now);
   return notices.filter(n=>n.category==="uniform").map(n=>({...n,reminder:true,version:n.version+":reminder:"+day}));
 }
+
+// Display the persistent provider-accepted history to every admin; a send
+// attempt, an unknown result or a historical amount is never a current success.
+export function uniformNotificationStates(uniforms,notices,ledger,now=new Date()){
+ const bySource=new Map();
+ for(const row of ledger){if(row.category!=="uniform")continue;if(!bySource.has(row.sourceId))bySource.set(row.sourceId,[]);bySource.get(row.sourceId).push(row)}
+ return uniforms.filter(item=>uniformKinds.has(item.kind)).map(item=>{
+  const history=bySource.get(item.id)||[],expected=notices.filter(n=>n.category==="uniform"&&n.sourceId===item.id);
+  const recipients=expected.length?[...new Set(expected.map(n=>n.recipient))]:[...new Set(history.map(r=>r.recipient))];
+  const currentVersion=String(item.amount),current=row=>row.version===currentVersion||String(row.version).startsWith(currentVersion+":reminder:");
+  const people=recipients.map(recipient=>{
+   const records=history.filter(r=>r.recipient===recipient).sort((a,b)=>String(b.updatedAt||b.createdAt).localeCompare(String(a.updatedAt||a.createdAt)));
+   const relevant=records.filter(current),sent=records.filter(r=>r.status==="SENT"),currentSent=relevant.filter(r=>r.status==="SENT");
+   const latest=relevant.find(r=>r.status!=="OBSOLETE"),today=expected.find(n=>n.recipient===recipient),reminderKey=today&&paymentNoticeKey(reminderNotices([today],now)[0]);
+   const todayReminder=history.find(r=>r.rowKey===reminderKey);
+   const status=["SENDING","UNCONFIRMED"].includes(latest?.status)?"UNCONFIRMED":latest?.status==="FAILED"?"FAILED":currentSent.length?"SENT":"NOT_SENT";
+   return {recipient,status,lastSentAt:sent[0]?.updatedAt||sent[0]?.createdAt||null,sentCount:sent.length,reminderSentToday:todayReminder?.status==="SENT"};
+  });
+  const due=uniformNeedsPayment(item),sentHistory=history.filter(r=>r.status==="SENT").sort((a,b)=>String(b.updatedAt||b.createdAt).localeCompare(String(a.updatedAt||a.createdAt)));
+  const status=!due?"NOT_REQUIRED":!expected.length?"MISSING_RECIPIENT":people.some(r=>r.status==="UNCONFIRMED")?"UNCONFIRMED":people.some(r=>r.status==="FAILED")?"FAILED":people.every(r=>r.status==="SENT")?"SENT":people.some(r=>r.status==="SENT")?"PARTIAL":"NOT_SENT";
+  return {id:item.id,status,recipients:people,lastSentAt:sentHistory[0]?.updatedAt||sentHistory[0]?.createdAt||null,sentCount:sentHistory.length,reminderSentToday:due&&people.length>0&&people.every(r=>r.reminderSentToday)};
+ });
+}

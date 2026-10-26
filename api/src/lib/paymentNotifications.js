@@ -3,7 +3,7 @@ import {createHash,randomUUID} from "node:crypto";
 import {listStudentMaster,listUserStudentMappings,getTenantDirectory} from "./storage.js";
 import {getStudentAliasInfo} from "./auth.js";
 import {emailConfigured,sendPaymentRequiredEmail} from "./email.js";
-import {paymentNoticeCandidates,paymentNoticeKey,noticeInScope,deliverPaymentNotices,uniformNeedsPayment,familyPaymentInfo,reminderNotices} from "./paymentNoticeRules.mjs";
+import {paymentNoticeCandidates,paymentNoticeKey,noticeInScope,deliverPaymentNotices,uniformNeedsPayment,familyPaymentInfo,reminderNotices,uniformNotificationStates} from "./paymentNoticeRules.mjs";
 
 const safe=value=>String(value).replaceAll("'","''");
 const decode=row=>({...JSON.parse(row.payload||"{}"),id:row.rowKey});
@@ -62,7 +62,8 @@ export async function processPaymentNotifications(schoolId,{scope={kind:"all"},p
   const missingUniform=uniformRows.map(decode).filter(item=>uniformNeedsPayment(item)&&noticeInScope({category:"uniform",sourceId:item.id},scope)&&!sourceNotices.has("uniform:"+item.id)).length;
   const missingFamily=familyRows.map(decode).filter(item=>familyPaymentInfo(configs.find(c=>c.module===item.kind&&c.id===item.activityId),item).needsPayment&&noticeInScope({category:"family",sourceId:item.id,kind:item.kind,activityId:item.activityId},scope)&&!sourceNotices.has("family:"+item.id)).length;
   const missingRecipients=missingUniform+missingFamily;
-  return {...result,status:missingRecipients&&["complete","not_required","preview"].includes(result.status)?"partial":result.status,missingRecipients,configured:configured&&!disabled,scope};
+  const uniformStates=preview?uniformNotificationStates(uniformRows.map(decode),notices,ownedRows):undefined;
+  return {...result,...(preview?{uniformStates}:{}),status:missingRecipients&&["complete","not_required","preview"].includes(result.status)?"partial":result.status,missingRecipients,configured:configured&&!disabled,scope};
 }
 export async function safePaymentNotifications(schoolId,options){
   try{return await processPaymentNotifications(schoolId,options)}catch(error){console.error("payment notifications failed",{schoolId,error:error.message});return {status:"failed",sent:0,remaining:0,failed:1,error:"寄送程序未完成，請查看通知紀錄後重試"}}

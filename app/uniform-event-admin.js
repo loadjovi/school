@@ -368,6 +368,7 @@ el("settings").addEventListener("click",async e=>{
  else{const item=savedConfigs.find(x=>x.module===button.dataset.editModule&&x.id===button.dataset.editId);if(item)el("config").elements.enabled.value=String(item.enabled===true)}
  el("config").scrollIntoView({behavior:"smooth",block:"start"});
 });
+window.addEventListener("paymentEmailStatesUpdated",()=>{if(["regularUniform","competitionUniform"].includes(activeAdminTab))renderModuleRequests()});
 function table(id,rows,columns,actions=false){
  const header=columns.map(([key,label])=>"<th>"+esc(label)+"</th>").join("");
  const body=rows.map((r,i)=>{
@@ -390,8 +391,12 @@ function table(id,rows,columns,actions=false){
    const directIssue=r.kind==="A 團比賽服"&&r.status==="ORDERED"&&!r.received&&mayCollect?"<button type='button' data-direct-issue='"+i+"'>驗收到貨並直接交付</button>":"";
    const receive=needsReceipt?"<button type='button' data-receive='"+i+"'>"+(r.received?"同步已入庫狀態":r.status==="ORDERED"?r.kind==="A 團比賽服"?"到貨後入庫（暫不交付）":"驗收到貨並入庫":"補登驗收入庫")+"</button>":"";
    const progress=r.status==="ORDERED"?"<button type='button' data-cancel='"+i+"'>取消申請</button>":next.length?"<select data-index='"+i+"'><option value=''>選擇下一步</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>選擇後執行</button>"+(r.status==="ARRIVED"&&mayCollect&&r.received?"<p class='hint'>選擇「開放領取」後，家長畫面會顯示可以領取，並寄送通知信；實際交付時再按「確認實際發放」。</p>":""):issue||"<span>"+esc(r.statusLabel||r.status)+"</span>";
-   const remind=payable&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&["","AWAITING_TRANSFER"].includes(String(r.paymentStatus||""))&&Number.isSafeInteger(r.amount)&&r.amount>0?"<button type='button' data-payment-reminder='"+i+"'>再次寄送匯款提醒 Email</button><p class='hint'>僅提醒尚未回報匯款的家長；同一筆款項每天最多一次。</p>":"";
-   controls="<td data-label='狀態管理'>"+directIssue+receive+(r.status==="APPROVED"&&!mayOrder?"<p class='hint'>待財務確認入帳後，才能更新為已統一採購。</p>":"")+progress+procurementAdjust+amount+remind+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
+   const mail=window.uniformPaymentEmailStates?.[r.id];
+   const labels={SENT:"已通知",NOT_SENT:"尚無寄送紀錄",PARTIAL:"部分家長已通知",FAILED:"寄送失敗",UNCONFIRMED:"寄送結果待確認",MISSING_RECIPIENT:"尚無可收信家長，請檢查綁定",NOT_REQUIRED:"目前無須催繳"};
+   const time=value=>value?new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}):"—";
+   const notification=payable?"<div class='payment-email-record' role='status'><strong>匯款通知："+esc(mail?labels[mail.status]||"待確認":"通知紀錄未載入，請更新通知紀錄")+"</strong>"+(mail?.lastSentAt?"<p>最後成功寄送："+esc(time(mail.lastSentAt))+"（台灣時間）｜累計 "+Number(mail.sentCount||0)+" 封</p>":"")+(mail?.recipients?.length?"<details><summary>查看各家長通知紀錄</summary>"+mail.recipients.map(p=>"<p>"+esc(p.recipient)+"｜"+esc(labels[p.status]||"待確認")+"<br>最後寄送："+esc(time(p.lastSentAt))+"｜成功 "+Number(p.sentCount||0)+" 次</p>").join("")+"</details>":"")+"</div>":"";
+   const remind=payable&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&["","AWAITING_TRANSFER"].includes(String(r.paymentStatus||""))&&Number.isSafeInteger(r.amount)&&r.amount>0?"<button type='button' data-payment-reminder='"+i+"'"+(mail?.reminderSentToday?" disabled":"")+">"+(mail?.reminderSentToday?"今日已通知":"再次寄送匯款提醒 Email")+"</button><p class='hint'>僅提醒尚未回報匯款的家長；同一筆款項每天最多一次。已通知不代表已匯款。</p>":"";
+   controls="<td data-label='狀態管理'>"+directIssue+receive+(r.status==="APPROVED"&&!mayOrder?"<p class='hint'>待財務確認入帳後，才能更新為已統一採購。</p>":"")+progress+procurementAdjust+amount+notification+remind+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
   }
   return "<tr>"+cells+controls+"</tr>";
@@ -896,11 +901,11 @@ el("requests").addEventListener("change",e=>{
 el("requests").addEventListener("click",async e=>{
  const reminder=e.target.closest("button[data-payment-reminder]");
  if(reminder){
-  const row=cachedRequests[Number(reminder.dataset.paymentReminder)];if(!row)return;
+  const row=visibleModuleRequests[Number(reminder.dataset.paymentReminder)];if(!row)return;
   reminder.disabled=true;el("status").textContent="正在確認付款狀態並寄送提醒…";
   try{const result=await api("uniform-events/requests",{method:"PATCH",body:JSON.stringify({action:"SEND_PAYMENT_REMINDER",id:row.id})});el("status").textContent="二次匯款提醒："+(window.paymentEmailSummaryText?.(result)||result.status);}
   catch(error){el("status").textContent="提醒未完成："+error.message}
-  finally{reminder.disabled=false}return;
+  finally{await window.refreshPaymentEmailStatus?.();reminder.disabled=false}return;
  }
 
  if(e.target.dataset.directIssue!==undefined){
