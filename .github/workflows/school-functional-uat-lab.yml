@@ -60,6 +60,7 @@ jobs:
           node --test tests/admin-semester-scores.test.mjs tests/admin-score-quick-filters.test.mjs tests/admin-attendance-todos.test.mjs tests/tshirt-first-receipt.test.mjs
           node --test tests/admin-private-followup.test.mjs api/test/privateLessonFollowup.test.mjs
           node --test tests/tshirt-procurement-plan.test.mjs tests/tshirt-procurement-admin.test.mjs api/test/tshirtStaffDemand.test.mjs
+          node --test tests/parent-uniform-payment-notice.test.mjs
           node --test api/test/teacherParentReviews.test.mjs api/test/teacherAccountType.test.mjs
           node --test api/test/schoolScheduleRestore.test.mjs api/test/teacherLoginHistory.test.mjs api/test/sopLabDemoPreservation.test.mjs
           node --test tests/lab-data-reset.test.mjs tests/lab-private-fixtures.test.mjs

@@ -42,6 +42,9 @@ jobs:
         run: node --test tests/tshirt-procurement-plan.test.mjs tests/tshirt-procurement-admin.test.mjs api/test/tshirtStaffDemand.test.mjs
       - name: First-time T-shirt receipt regression tests
         run: node --test tests/tshirt-first-receipt.test.mjs
+
+      - name: Parent home uniform payment notice tests
+        run: node --test tests/parent-uniform-payment-notice.test.mjs
       - name: Administrative attendance section completion regression tests
         run: node --test tests/admin-assist-section-status.test.mjs
       - name: School administrative attendance workspace regression tests

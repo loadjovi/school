@@ -66,7 +66,9 @@
   const baseHome=typeof home==="function"?home:null;
   if(baseHome)home=function(){
     const html=baseHome();
-    return state.me?.role==="parent"?parentCalendarCard()+html:html;
+    if(state.me?.role!=="parent")return html;
+    const boundary="<!-- parent-payment-notices-end -->",card=parentCalendarCard();
+    return html.includes(boundary)?html.replace(boundary,boundary+card):card+html;
   };
 
   async function loadCalendarAdmin(){state.specialCalendar=await api("/api/calendar-events")}

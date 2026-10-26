@@ -1,5 +1,6 @@
 import {confirmedReceived} from "./competition-paper-receipts.js";
 import "./parent-activity-notice.js";
+import "./uniform-payment-state.js?v=20261026-home-payment";
 import {buildUniformGrowth} from "./uniform-growth.js?v=20261017-first-public";
 import {roster as competitionRoster} from "./competition-roster-data.js";
 const competitionByName=new Map(competitionRoster.map(row=>[row[1],{style:row[2],size:row[3]}]));
@@ -262,6 +263,7 @@ const uniformRequestStage={
  FULFILLED:{title:"已完成領用",next:"此申請的領用流程已完成。"}
 };
 function requestStage(item){
+ const payment=window.uniformPaymentState.stage(item);if(payment)return payment;
  if(item.status==="READY_FOR_PICKUP"&&!item.stockReceivedAt)return {title:"待學校驗收入庫，暫不可領取",next:"學校尚未完成此筆團服的正式入庫確認，請等待後續通知。"};
  if(item.status==="READY_FOR_PICKUP"&&item.acquisition!=="PUBLIC"&&item.paymentStatus!=="VERIFIED")return {title:"待財務核帳，暫不可領取",next:"請等待學校確認入帳；核帳完成後再依學校通知領取。"};
  return uniformRequestStage[item.status]||{title:"狀態待確認",next:"請洽學校確認目前進度。"};
@@ -319,7 +321,7 @@ async function loadUniformRequestProgress(){
    card.append(element("p",`尺寸：${item.size||"待確認"}${item.style?`｜${item.style}款`:""}｜件數：${item.quantity||1}｜申請時間：${formatDate(item.createdAt)||"—"}｜更新時間：${formatDate(item.updatedAt)||"—"}`,"muted"));
    if(item.status==="FULFILLED")card.append(element("p",`實際領取：${formatDate(item.issuedAt)||"日期待確認"}｜領取人：${item.receivedBy||"待核對"}｜件數：${item.issuedQuantity||item.quantity||1}`,"hint"));
    if(["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(item.status)&&item.acquisition!=="PUBLIC"){
-    const payment=element("div",undefined,"payment-account");card.append(payment);
+    const payment=element("div",undefined,"payment-account");payment.id="uniform-payment-"+item.id;card.append(payment);
     if(Number.isSafeInteger(item.amount)&&item.amount>0){
      if(["REPORTED_UNVERIFIED","VERIFIED"].includes(item.paymentStatus)){
       payment.append(element("strong",item.paymentStatus==="VERIFIED"?"✅ 學校已確認入帳":"🕒 已回報匯款，等待學校核帳"));
@@ -328,7 +330,7 @@ async function loadUniformRequestProgress(){
      }else{
      payment.textContent="正在讀取匯款資訊…";
      parentApi("uniform-events/uniform-payment-account?kind="+encodeURIComponent(item.kind)+"&requestId="+encodeURIComponent(item.id)).then(data=>{
-      if(!data.item){payment.textContent="學校尚未設定收款帳戶，請洽學校。";return}
+      if(!data.item){payment.textContent="學校尚未設定收款帳戶，請洽學校。";focusUniformPayment(item.id);return}
       const b=data.item;payment.replaceChildren(element("strong","應繳金額：NT$ "+item.amount.toLocaleString("zh-TW")),element("p","銀行："+b.bankName+"（"+b.bankCode+"）｜戶名："+b.accountHolder),element("p","匯款帳號："+b.accountNumber));
       payment.append(element("p","付款狀態：待匯款"));
       const form=element("form",undefined,"uniform-transfer-form");
@@ -351,7 +353,8 @@ async function loadUniformRequestProgress(){
          await loadUniformRequestProgress();
         }catch(error){message.textContent="回報失敗："+error.message+"。請重新整理後再試。";submit.disabled=false}
        });
-     }).catch(()=>{payment.textContent="暫時無法讀取匯款資訊，請更新進度後重試。"});
+     focusUniformPayment(item.id);
+     }).catch(()=>{payment.textContent="暫時無法讀取匯款資訊，請更新進度後重試。";focusUniformPayment(item.id)});
      }
     }else payment.textContent="已核准，應繳金額尚待學校補正，請勿先匯款。";
    }
@@ -395,7 +398,20 @@ async function loadUniformRequestProgress(){
   latestCard.append(element("p","目前狀態："+stage.title));latestCard.append(element("p",stage.next,"hint"));
   latestCard.append(element("p","更新時間："+(formatDate(latest.updatedAt)||"—"),"muted"));summary.append(latestCard);
   {const button=element("button",`查看／管理 ${requests.length} 筆申請紀錄`);button.type="button";button.style.cssText="padding:9px;border:1px solid var(--main);border-radius:8px;background:white;color:var(--main)";button.addEventListener("click",()=>{select("history");history.scrollIntoView({behavior:"smooth",block:"start"})});summary.append(button)}
+  for(const item of requests)if(["REPORTED_UNVERIFIED","VERIFIED"].includes(item.paymentStatus))focusUniformPayment(item.id);
+  if(window.parent!==window)window.parent.postMessage({type:"parent-uniform-requests-updated"},location.origin);
  }catch(e){summary.replaceChildren(element("p","申請進度讀取失敗："+e.message,"hint"));history.replaceChildren(element("p","團服申請紀錄讀取失敗："+e.message,"hint"))}
+}
+let uniformPaymentFocused=false;
+function focusUniformPayment(id){
+ const focus=new URLSearchParams(location.search).get("focus")||"";
+ if(uniformPaymentFocused||focus!=="payment:"+id)return;
+ const target=document.getElementById("uniform-payment-"+id);if(!target)return;
+ uniformPaymentFocused=true;select("history");target.style.outline="3px solid #bb6c16";target.style.outlineOffset="4px";
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{
+  if(window.parent!==window)window.parent.postMessage({type:"parent-uniform-payment-focus",requestId:id},location.origin);
+  else target.scrollIntoView({behavior:"smooth",block:"start"});
+ }));
 }
 document.getElementById("refreshUniformRequests")?.addEventListener("click",loadUniformRequestProgress);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)loadUniformRequestProgress()});
