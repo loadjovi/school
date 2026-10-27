@@ -87,13 +87,11 @@ test('backend acknowledgement must not rewrite the attendance record',()=>{
  const admin=readFileSync(new URL('../app/admin-operations.js',import.meta.url),'utf8');
  assert.match(backend,/if\(a\.role!=="admin"\)return json\(\{error:"Forbidden"\},403\)/);
  assert.match(backend,/const acknowledging=request\.method==="PATCH"&&request\.query\.get\("mode"\)==="acknowledge"/);
- assert.match(backend,/target=items\.find\(x=>x\.status==="absent"/);
- assert.match(backend,/recordVersion:version/);
- assert.match(backend,/rowKey:"audit_"\+randomUUID\(\)/);
- assert.match(backend,/acknowledgedBy:by,note/);
- assert.match(backend,/updateEntity\(entry,"Replace",\{etag:existing\.etag\}\)/);
+ assert.match(backend,/if\(acknowledging\)return json/);
+ assert.match(backend,/請由學校老師在校方出缺勤畫面標記已知悉/);
  assert.match(backend,/pendingAbsence:items\.filter\(/);
  assert.match(admin,/data-followup-ack/);
  assert.match(admin,/window\.acknowledgeAdminAbsence/);
- assert.match(admin,/window\.refreshSchoolAdminTodos/);
+ assert.match(backend,/schoolAcknowledgement\(saved,x.recordVersion\)/);
+ assert.match(admin,/請由學校老師在校方出缺勤畫面標記已知悉/);
 });

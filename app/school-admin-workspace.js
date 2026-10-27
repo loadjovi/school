@@ -13,8 +13,7 @@
   return {date:[values.year,values.month,values.day].join('-'),minute:Number(values.hour)*60+Number(values.minute)};
  }
  // Counts are based on the existing daily-followup API, not synthetic alerts.
- // A "followup" is an absent attendance entry, not proof of an uncontacted family:
- // the current database has no separate followup-resolution field.
+ // Only school-teacher acknowledgement resolves an absence alert; original attendance remains unchanged.
  function attendanceTodoCounts(report,now=new Date()){
   const clock=taipeiClock(now);
   if(!report||report.date!==clock.date)return {absent:0,unmarked:0};
@@ -58,7 +57,7 @@
   if(pending)rows.push(['parents','家長綁定待審',pending,'筆']);
   if(summary.attendance){
    const counts=attendanceTodoCounts(summary.attendance);
-   if(counts.absent)rows.push(['absent','學生缺席待追蹤（今日）',counts.absent,'筆']);
+   if(counts.absent)rows.push(['absent','學校老師尚未知悉的缺席（今日）',counts.absent,'筆']);
    if(counts.unmarked)rows.push(['unmarked','老師尚未完成點名（今日已下課）',counts.unmarked,'堂']);
   }
   for(const [kind,label,key] of [['regularUniform','團 T 申請待審','tshirt'],['competitionUniform','比賽服申請待審','competition']]){
@@ -229,4 +228,6 @@
  let queued=false;
  new MutationObserver(()=>{if(!queued){queued=true;requestAnimationFrame(()=>{queued=false;organize()})}}).observe(document.getElementById('app'),{childList:true,subtree:true});
  organize();
+ window.addEventListener('focus',()=>{if(state.me?.role==='admin')loadTasks(true)});
+ setInterval(()=>{if(!document.hidden&&state.me?.role==='admin')loadTasks(true)},60000);
 })();

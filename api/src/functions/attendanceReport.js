@@ -1,13 +1,14 @@
+import {schoolAcknowledgement} from "../lib/attendanceFollowup.mjs";
 import { app } from "@azure/functions";
 import { TableClient } from "@azure/data-tables";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { getTenantContext, getStudentAliasInfo, json } from "../lib/auth.js";
 import { ensureTenantTables, listActivityRange, activityStudentId, listStudentMaster, getTeacherDirectory, getTeacherProfile, listUserStudentMappings } from "../lib/storage.js";
 import { getSystemSettings, saveSystemSettings } from "../lib/settings.js";
 import { resolveSchoolCourses } from "./schoolSchedule.js";
 import { sectionRecorderSummary } from "../lib/sectionRecorderSummary.js";
 
-// School-admin acknowledgement is recorded separately from the teacher's
+// School-teacher acknowledgement is recorded separately from the instructor's
 // original absence. A later attendance revision reopens the followup.
 const followupDigest=v=>createHash("sha256").update(JSON.stringify(v)).digest("hex");
 const followupPartition=(schoolId,date)=>String(schoolId)+"|"+date;
@@ -197,6 +198,7 @@ app.http("dailyFollowup",{
     if(String(request.query.get("mode")||"")==="settings")return notificationSettingsResponse(request,a,schoolId);
 
     const acknowledging=request.method==="PATCH"&&request.query.get("mode")==="acknowledge";
+    if(acknowledging)return json({error:"請由學校老師在校方出缺勤畫面標記已知悉"},403);
     if(request.method!=="GET"&&!acknowledging)return json({error:"Method not allowed"},405);
     const date=clean(request.query.get("date")||taipeiDate(),20);
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"日期格式不正確"},400);
@@ -392,43 +394,11 @@ app.http("dailyFollowup",{
     }
     items.sort((x,y)=>String(x.classType).localeCompare(String(y.classType))||String(x.groupName).localeCompare(String(y.groupName),"zh-Hant")||String(x.section).localeCompare(String(y.section),"zh-Hant")||String(x.name).localeCompare(String(y.name),"zh-Hant"));
     const followups=await followupTable();
-    if(acknowledging){
-      const body=await request.json().catch(()=>({}));
-      const id=clean(body.followupId,80),version=clean(body.recordVersion,80);
-      const note=clean(body.note,250);
-      const target=items.find(x=>x.status==="absent"&&["section","ensemble","comprehensive"].includes(x.classType)&&x.followupId===id&&x.recordVersion===version);
-      if(!target)return json({error:"缺席紀錄已異動或不屬於今日有效追蹤項目，請重新整理"},409);
-      const partitionKey=followupPartition(schoolId,date),rowKey=id;
-      const existing=await followups.getEntity(partitionKey,rowKey).catch(e=>{if(e.statusCode===404)return null;throw e});
-      if(existing?.state==="acknowledged"&&existing.recordVersion===version){
-        return json({ok:true,alreadyAcknowledged:true,message:"已知悉；原缺席紀錄仍保留"});
-      }
-      const now=new Date().toISOString(),by=String(a.email||"");
-      const entry={partitionKey,rowKey,kind:"state",state:"acknowledged",recordVersion:version,
-        studentId:target.studentId,classType:target.classType,groupName:target.groupName,
-        section:target.section,date,acknowledgedAt:now,acknowledgedBy:by,note};
-      // Append-only audit is written before the state transition. Concurrent
-      // edits to the same student record cannot be silently overwritten.
-      await followups.createEntity({partitionKey,rowKey:"audit_"+randomUUID().replaceAll("-",""),
-        kind:"audit",state:"acknowledged",recordVersion:version,studentId:target.studentId,
-        classType:target.classType,date,acknowledgedAt:now,acknowledgedBy:by,note});
-      try{
-        if(existing)await followups.updateEntity(entry,"Replace",{etag:existing.etag});
-        else await followups.createEntity(entry);
-      }catch(e){
-        if(e.statusCode===409||e.statusCode===412)return json({error:"其他管理員剛更新此筆追蹤紀錄，請重新整理"},409);
-        throw e;
-      }
-      return json({ok:true,message:"已標記知悉，不變更老師點名或成績",acknowledgedAt:now,acknowledgedBy:by});
-    }
     const acknowledgedRecords=await followupRecords(followups,schoolId,date);
     for(const x of items){
       if(x.status!=="absent")continue;
       const saved=acknowledgedRecords.get(x.followupId);
-      const active=saved?.state==="acknowledged"&&saved.recordVersion===x.recordVersion;
-      x.followup={state:active?"acknowledged":"pending",note:active?String(saved.note||""):"",
-        acknowledgedAt:active?String(saved.acknowledgedAt||""):"",
-        acknowledgedBy:active?String(saved.acknowledgedBy||""):""};
+      x.followup=schoolAcknowledgement(saved,x.recordVersion);
     }
     return json({date,scope:"00:00-23:59",items,attendanceCounts,courseSummary,privateLessonDetails,counts:{total:items.length,leave:items.filter(x=>x.status==="leave").length,absent:items.filter(x=>x.status==="absent").length,pendingAbsence:items.filter(x=>x.status==="absent"&&x.followup?.state!=="acknowledged"&&["section","ensemble","comprehensive"].includes(x.classType)).length,acknowledgedAbsence:items.filter(x=>x.status==="absent"&&x.followup?.state==="acknowledged").length,section:items.filter(x=>x.classType==="section").length,ensemble:items.filter(x=>x.classType==="ensemble").length,comprehensive:items.filter(x=>x.classType==="comprehensive").length,private:items.filter(x=>x.classType==="private").length}});
   }
