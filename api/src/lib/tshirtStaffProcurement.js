@@ -1,3 +1,4 @@
+import {safePaymentNotifications} from "./paymentNotifications.js";
 import {TableClient} from "@azure/data-tables";
 import {randomUUID} from "node:crypto";
 import {json} from "./auth.js";
@@ -34,6 +35,7 @@ export async function staffProcurement(request,ctx,{loanClient,audit,linked,data
   await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"tshirt.staff."+input.action,subjectId:id,actor,at,details:JSON.stringify({parentEmail:next.parentEmail,category:next.category,size:next.size,quantity:next.quantity,from:old?decode(old).status:null,to:next.status,paymentStatus:next.paymentStatus,note:next.progressNote||next.verificationNote||next.note}).slice(0,20000)});
   const entity={partitionKey:schoolId,rowKey:id,payload:JSON.stringify(next),updatedAt:at};
   try{if(old)await client.updateEntity(entity,"Replace",{etag:old.etag});else await client.createEntity(entity)}catch(e){if([409,412].includes(e.statusCode))return response({error:"需求已被其他人更新，請重新整理"},409);throw e}
-  return response({item:safe({...next,id})});
+  const paymentNotification=input.action==="ADD_DEMAND"&&next.paymentStatus==="AWAITING_TRANSFER"?await safePaymentNotifications(schoolId,{scope:{kind:"staff",id}}):null;
+  return response({item:safe({...next,id}),paymentNotification});
  }catch(e){if(e instanceof StaffDemandError)return response({error:e.message},e.status);console.error("staffProcurement",e);return response({error:"團 T 幹部／志工需求處理失敗，請重新整理確認"},500)}
 }

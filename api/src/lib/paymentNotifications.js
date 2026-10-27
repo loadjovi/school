@@ -1,8 +1,10 @@
+import {financeAssignments} from "./financeAccess.js";
+import {financeRecipients,financeNoticeCandidates} from "./financeNoticeRules.mjs";
 import {TableClient} from "@azure/data-tables";
 import {createHash,randomUUID} from "node:crypto";
-import {listStudentMaster,listUserStudentMappings,getTenantDirectory} from "./storage.js";
+import {listStudentMaster,listUserStudentMappings,getTenantDirectory,listTenantAdmins} from "./storage.js";
 import {getStudentAliasInfo} from "./auth.js";
-import {emailConfigured,sendPaymentRequiredEmail} from "./email.js";
+import {emailConfigured,sendPaymentRequiredEmail,sendFinancePaymentEmail} from "./email.js";
 import {paymentNoticeCandidates,paymentNoticeKey,noticeInScope,deliverPaymentNotices,uniformNeedsPayment,familyPaymentInfo,reminderNotices,uniformNotificationStates} from "./paymentNoticeRules.mjs";
 
 const safe=value=>String(value).replaceAll("'","''");
@@ -65,15 +67,39 @@ export async function processPaymentNotifications(schoolId,{scope={kind:"all"},p
       return rebuilt.some(item=>paymentNoticeKey(item)===paymentNoticeKey(notice));
     }
   };
+  const financeData=async()=>{
+    const [admins,assignments,staffRows]=await Promise.all([listTenantAdmins(schoolId,"active"),financeAssignments(schoolId),rows("TenantTshirtStaffDemand",schoolId)]);
+    return financeNoticeCandidates({uniforms:uniformRows.map(decode),families:familyRows.map(decode),configs,staff:staffRows.map(decode),recipients:financeRecipients(admins,assignments)}).filter(n=>!scope||scope.kind==="all"||scope.kind===n.sourceType&&scope.id===n.itemId||scope.kind==="activity"&&n.sourceType==="family"&&familyRows.map(decode).some(f=>f.id===n.itemId&&f.kind===scope.module&&f.activityId===scope.id));
+  };
+  const parentStillDue=repository.stillDue;
+  repository.stillDue=async notice=>{
+    if(notice.category!=="finance")return parentStillDue(notice);
+    // Rebuild from current records and permissions immediately before sending.
+    const table=notice.sourceType==="uniform"?"TenantUniformEventRequest":notice.sourceType==="family"?"TenantFamilyEventRegistration":"TenantTshirtStaffDemand";
+    const row=await get(client(table),schoolId,notice.itemId);if(!row)return false;
+    const [admins,assignments]=await Promise.all([listTenantAdmins(schoolId,"active"),financeAssignments(schoolId)]);
+    const rebuilt=financeNoticeCandidates({uniforms:notice.sourceType==="uniform"?[decode(row)]:[],families:notice.sourceType==="family"?[decode(row)]:[],staff:notice.sourceType==="staff"?[decode(row)]:[],configs,recipients:financeRecipients(admins,assignments)});
+    return rebuilt.some(n=>paymentNoticeKey(n)===paymentNoticeKey(notice));
+  };
   const school=await getTenantDirectory(schoolId);
+  let financeNotification;
+  try{
+    const financeNotices=await financeData();
+    financeNotification=await deliverPaymentNotices({notices:financeNotices,repository,configured,disabled,preview,retryFailed,send:notice=>sendFinancePaymentEmail({...notice,schoolName:school?.systemName||school?.schoolName||"弦樂團",appUrl:paymentPlatformUrl()})});
+    const potential=financeNoticeCandidates({uniforms:uniformRows.map(decode),families:familyRows.map(decode),configs,staff:[],recipients:["scope@example.invalid"]});
+    financeNotification.noFinanceRecipients=!financeNotices.length&&potential.some(n=>scope.kind==="all"||scope.kind===n.sourceType&&scope.id===n.itemId);
+  }
+  catch(error){console.error("finance payment notification failed",{schoolId,error:error.message});financeNotification={status:"failed",failed:1}}
+
   const result=await deliverPaymentNotices({notices,repository,configured,disabled,preview,retryFailed,
     send:notice=>sendPaymentRequiredEmail({...notice,schoolName:school?.systemName||school?.schoolName||"弦樂團",appUrl:paymentPlatformUrl()})});
   const sourceNotices=new Set(notices.map(item=>item.category+":"+item.sourceId));
   const missingUniform=uniformRows.map(decode).filter(item=>uniformNeedsPayment(item)&&noticeInScope({category:"uniform",sourceId:item.id},scope)&&!sourceNotices.has("uniform:"+item.id)).length;
   const missingFamily=familyRows.map(decode).filter(item=>familyPaymentInfo(configs.find(c=>c.module===item.kind&&c.id===item.activityId),item).needsPayment&&noticeInScope({category:"family",sourceId:item.id,kind:item.kind,activityId:item.activityId},scope)&&!sourceNotices.has("family:"+item.id)).length;
   const missingRecipients=missingUniform+missingFamily;
+  const financeStates=preview?ownedRows.filter(row=>row.category==="finance").map(row=>({recipient:row.recipient,sourceId:row.sourceId,status:row.status,updatedAt:row.updatedAt})):undefined;
   const uniformStates=preview?uniformNotificationStates(uniformItems,notices,ownedRows):undefined;
-  return {...result,...(preview?{uniformStates}:{}),status:missingRecipients&&["complete","not_required","preview"].includes(result.status)?"partial":result.status,missingRecipients,configured:configured&&!disabled,scope};
+  return {...result,financeNotification,...(preview?{uniformStates,financeStates}:{}),status:missingRecipients&&["complete","not_required","preview"].includes(result.status)?"partial":result.status,missingRecipients,configured:configured&&!disabled,scope};
 }
 export async function safePaymentNotifications(schoolId,options){
   try{return await processPaymentNotifications(schoolId,options)}catch(error){console.error("payment notifications failed",{schoolId,error:error.message});return {status:"failed",sent:0,remaining:0,failed:1,error:"寄送程序未完成，請查看通知紀錄後重試"}}

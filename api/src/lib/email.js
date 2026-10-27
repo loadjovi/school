@@ -35,6 +35,15 @@ export async function sendPaymentRequiredEmail({recipient="",category="uniform",
   return {status:String(result.status).toLowerCase()==="succeeded"?"sent":String(result.status).toLowerCase()==="failed"?"failed":"unconfirmed",id:result.id};
 }
 
+export async function sendFinancePaymentEmail({recipient,schoolName="弦樂團",title,stage,amount,parentEmail="",studentNames=[],sourceId,appUrl}){
+ const c=config();if(!emailConfigured())return {status:"not_configured"};
+ const url=new URL(appUrl);if(url.protocol!=="https:"||url.username||url.password)throw Error("Invalid platform URL");
+ const subject=`【${clean(schoolName,120)}】${clean(title,120)}｜${stage==="reported"?"家長已回報匯款，請核帳":"新增應繳款項，請留意後續入帳"}`;
+ const lines=["財務幹部您好：",stage==="reported"?"家長已送出匯款資料，請登入平台核對銀行實際入帳，再完成財務核帳。":"此筆已產生應繳款項，家長尚未回報匯款；請留意後續入帳。",`項目：${clean(title,120)}`,`對象：${studentNames.map(x=>clean(x,80)).join("、")}`,parentEmail?`申請家長：${clean(parentEmail,320)}`:"",`金額：NT$ ${amount}`,`紀錄編號：${clean(sourceId,200)}`,`登入平台：${url.origin}/`,"登入學校後台，從「匯款待核帳」或「團服與活動」查看對應紀錄。",stage==="reported"?"已回報不代表已入帳，請以銀行實際款項為準。":"尚未回報匯款前，不可直接核帳；後續回報時會另寄待核帳通知。","如其他財務幹部已完成核帳，請以平台最新狀態為準。"];
+ const result=await sendOne(new EmailClient(c.connectionString),c.senderAddress,recipient,{subject,plainText:lines.filter(Boolean).join("\n"),html:lines.filter(Boolean).map(x=>`<p>${esc(x)}</p>`).join("")});
+ return {status:String(result.status).toLowerCase()==="succeeded"?"sent":String(result.status).toLowerCase()==="failed"?"failed":"unconfirmed",id:result.id};
+}
+
 export async function sendUniformRequestStatusEmail({recipients=[],studentName="",kind="",status="",size="",quantity=1}={}){
   const addresses=[...new Set(recipients.map(x=>clean(x,320).toLowerCase()).filter(x=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x)))];
   if(!addresses.length)return {status:"no_recipients"};

@@ -104,7 +104,7 @@ app.http("familyEventRegistration",{
     try{await records.createEntity({partitionKey:schoolId,rowKey:id,payload:JSON.stringify(payload),updatedAt:timestamp})}
     catch(e){if(e.statusCode===409)return fail("This family has already registered",409);throw e}
     await log(schoolId,access,"family.registration",id,{studentIds:ids,adults:body.adults,extraChildren:body.extraChildren});
-    const paymentNotification=familyPaymentInfo(cfg,payload).needsPayment?await safePaymentNotifications(schoolId,{scope:{kind:"family",id}}):null;
+    const paymentNotification=(familyPaymentInfo(cfg,payload).needsPayment||payload.paymentStatus==="REPORTED_UNVERIFIED")?await safePaymentNotifications(schoolId,{scope:{kind:"family",id}}):null;
     return json({item:{...payload,id},paymentNotification},201);
    }
    if(request.method!=="PATCH")return fail("Method not allowed",405);
@@ -140,7 +140,8 @@ app.http("familyEventRegistration",{
    await log(schoolId,access,"family."+body.action,actual,{from:old.paymentStatus,to:next.paymentStatus,amount:next.transferReport?.amount,bankPostedAt:next.bankPostedAt||"",note:next.verificationNote||""});
    try{await records.updateEntity({partitionKey:schoolId,rowKey:actual,payload:JSON.stringify(next),updatedAt:next.updatedAt},"Replace",{etag:previous.etag})}
    catch(e){if(e.statusCode===412)return fail("Record changed, refresh and retry",409);throw e}
-   return json({item:{...next,id:actual}});
+   const paymentNotification=body.action==="REPORT_TRANSFER"?await safePaymentNotifications(schoolId,{scope:{kind:"family",id:actual}}):null;
+   return json({item:{...next,id:actual},paymentNotification});
   }catch(e){console.error("familyEventRegistration",e);return fail("Unable to process family registration",500)}
  }
 });

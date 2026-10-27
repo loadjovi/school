@@ -1,3 +1,4 @@
+import {safePaymentNotifications} from "../lib/paymentNotifications.js";
 import {app} from "@azure/functions";
 import {TableClient} from "@azure/data-tables";
 import {randomUUID} from "node:crypto";
@@ -39,6 +40,7 @@ app.http("uniformTransferReport",{methods:["POST","PATCH"],authLevel:"anonymous"
   await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"uniform.transfer.report",subjectId:b.requestId,actor:String(access.email||"parent"),at:stamp,details:JSON.stringify({amount:old.amount,transferDate:b.transferDate,lastFive:b.lastFive})});
   try{await t.updateEntity({partitionKey:schoolId,rowKey:b.requestId,payload:JSON.stringify(next),updatedAt:stamp},"Replace",{etag:row.etag})}
   catch(e){if(e.statusCode===412)return fail("Order changed; refresh",409);throw e}
-  return json({paymentStatus:next.paymentStatus});
+  const paymentNotification=await safePaymentNotifications(schoolId,{scope:{kind:"uniform",id:b.requestId}});
+  return json({paymentStatus:next.paymentStatus,paymentNotification});
  }catch(e){console.error("uniformTransferReport",e);return fail("Unable to report transfer",500)}
 }});

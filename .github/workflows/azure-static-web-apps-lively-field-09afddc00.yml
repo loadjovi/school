@@ -44,7 +44,7 @@ jobs:
         run: node --test tests/tshirt-first-receipt.test.mjs
 
       - name: Parent home uniform payment notice tests
-        run: node --test tests/parent-uniform-payment-notice.test.mjs tests/payment-email-notifications.test.mjs
+        run: node --test tests/parent-uniform-payment-notice.test.mjs tests/payment-email-notifications.test.mjs tests/finance-payment-notifications.test.mjs
       - name: Administrative attendance section completion regression tests
         run: node --test tests/admin-assist-section-status.test.mjs
       - name: School administrative attendance workspace regression tests
