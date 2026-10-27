@@ -8,7 +8,7 @@ function toast(msg){const t=$("toast");if(!t)return;t.textContent=msg;t.classLis
 async function api(url,options={}){const h={"Content-Type":"application/json"};if(state.token)h["X-Google-ID-Token"]=state.token;const schoolContext=sessionStorage.getItem("school_context_id")||"",roleContext=sessionStorage.getItem("role_context")||"";if(schoolContext)h["X-School-Id"]=schoolContext;if(roleContext)h["X-Role-Context"]=roleContext;Object.assign(h,options.headers||{});const method=String(options.method||"GET").toUpperCase(),fetchOptions={...options,headers:h};if(method==="GET"&&String(url).startsWith("/api/")&&!fetchOptions.cache)fetchOptions.cache="no-store";const r=await fetch(url,fetchOptions);const d=await r.json().catch(()=>({}));if(r.status===401){logout(false);throw new Error("登入已失效，請重新使用 Google 登入")};if(!r.ok)throw new Error(d.error||d.message||`HTTP ${r.status}`);return d}
 function logout(reload=true){state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}
 async function boot(){if(!state.token){renderLogin();return}try{await loadProfile()}catch(e){renderLogin(e.message)}}
-const schoolViewScript="/school-access.js?v=20260929-1305";
+const schoolViewScript="/school-access.js?v=20261027-school-followup";
 let schoolViewLoading=null;
 async function loadSchoolViewModule(){
   if(typeof window.changeSchoolFollowupDate==="function"){state.schoolViewerLoadError="";render();return}
