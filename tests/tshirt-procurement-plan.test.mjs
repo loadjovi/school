@@ -44,8 +44,8 @@ test("staff first, cadre add-ons and volunteer add-ons count separately; volunte
 test("cadre lifetime issue reconciles with the same parent across children and removes duplicate first demand",()=>{
  const a=args();a.staffDemands=[{id:"f",parentEmail:"a@x.org",parentName:"家長",category:"CADRE_FIRST",size:"M",quantity:1,schoolYear:115,semester:1,status:"APPROVED"}];
  a.parentLoans=[{parentEmail:"a@x.org",studentId:"111002",parentName:"家長",role:"CADRE",size:"M",status:"ISSUED_LIFETIME",issuedAt:"2026-10-20T00:00:00Z"}];
- let p=build(a);assert.equal(p.staffUnits,1);assert.equal(p.rows.find(x=>x.type==="CADRE_FIRST").covered,true);assert.equal(p.sizes.find(x=>x.size==="M").need,0);
- a.staffDemands=[];p=build(a);assert.equal(p.staffUnits,1);assert.equal(p.coveredUnits,1);
+ let p=build(a);assert.equal(p.staffUnits,0);assert.equal(p.rows.some(x=>x.type==="CADRE_FIRST"),false);assert.equal(p.sizes.find(x=>x.size==="M").need,0);
+ a.staffDemands=[];p=build(a);assert.equal(p.staffUnits,0);assert.equal(p.coveredUnits,0);
 });
 test("academic terms use Taipei time, include Jan in upper term, and carry overdue active orders only",()=>{
  assert.deepEqual(currentTshirtTerm(new Date("2026-07-31T16:00:00Z")),{schoolYear:115,semester:1});
@@ -65,4 +65,16 @@ test("one UTF-8 CSV contains totals, sizes, every demand and unknown-size follow
  assert.equal(csv.charCodeAt(0),0xfeff);assert.match(csv,/需求明細/);assert.match(csv,/尺碼彙總/);assert.match(csv,/待填寫/);assert.match(csv,/"'=HYPERLINK/);assert.match(csv,/"2"/);
  const supplier=tshirtPlanCsv(p,{supplierOnly:true});assert.doesNotMatch(supplier,/111001|111003|HYPERLINK|需求明細/);assert.match(supplier,/資料待補齊/);
  assert.equal(csv.trim().split("\r\n").length,1+1+11+p.rows.length);
+});
+
+test("received staff are absent from procurement names, totals and CSV while separate add-ons remain",()=>{
+ const a=args();
+ const first={id:"first",parentEmail:" CADRE@example.com ",parentName:"已領取幹部",category:"CADRE_FIRST",size:"XL",quantity:1,schoolYear:115,semester:1,status:"APPROVED"};
+ const extra={...first,id:"extra",category:"CADRE_EXTRA",parentName:"另購家長",quantity:2,paymentStatus:"VERIFIED"};
+ a.parentLoans=[{parentEmail:"cadre@example.com",parentName:"已領取幹部",role:"CADRE",status:"ISSUED_LIFETIME",size:"XL",issuedAt:"2026-10-15T01:17:00Z"}];
+ a.staffDemands=[first,extra,{...extra,id:"completed",parentName:"已完成志工",category:"VOLUNTEER_EXTRA",status:"FULFILLED",quantity:3}];
+ const p=build(a);assert.equal(p.staffUnits,2);assert.equal(p.totalUnits,4);assert.equal(p.sizes.find(x=>x.size==="XL").cadreFirst,0);assert.equal(p.sizes.find(x=>x.size==="XL").cadreExtra,2);assert.equal(p.rows.filter(x=>x.type==="CADRE_FIRST").length,0);
+ const csv=tshirtPlanCsv(p);assert.doesNotMatch(csv,/已領取幹部|已完成志工/);assert.match(csv,/另購家長/);
+ assert.equal(a.parentLoans[0].status,"ISSUED_LIFETIME");assert.equal(a.staffDemands[0].status,"APPROVED");
+ a.staffDemands=[];assert.equal(build(a).staffUnits,0);
 });

@@ -1,4 +1,4 @@
-import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv} from "./tshirt-procurement-plan.mjs?v=20261026-term-plan-r2";
+import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv} from "./tshirt-procurement-plan.mjs?v=20261028-exclude-staff-received";
 const $=id=>document.getElementById(id);
 const term=currentTshirtTerm();
 let data=null,plan=null,loading=false,canVerifyFinance=false,links=[],extraBySize={},revision=0;
@@ -25,7 +25,7 @@ function draw(){
  $("tshirtPlanOrderTotal").textContent=units===null?"規劃採購：待庫存盤點後計算。":`規劃採購 ${units} 件（已知尺寸尚缺 ${p.needUnits} ＋另加備貨 ${p.extraUnits}）。`+(units===0?"目前已知尺寸無需新購。":units<10?`距離最低採購 10 件，尚差 ${10-units} 件；可於各尺寸填寫另加備貨。`:"已達最低採購 10 件。")+(p.unknownUnits?`另有 ${p.unknownUnits} 件待填尺寸，尚未計入採購尺碼。`:"");
  $("tshirtPlanDetailCount").textContent=`查看需求明細與待辦（${p.rows.length} 筆）`;
  $("tshirtPlanDetailRows").innerHTML=p.rows.map(x=>`<tr><td data-label="姓名">${esc(x.person)}</td><td data-label="類別">${esc(x.category)}</td><td data-label="尺寸">${esc(x.size||"待填寫")}</td><td data-label="件數">${x.quantity}</td><td data-label="進度">${esc(x.status)}</td><td data-label="備註">${esc(x.note)}</td></tr>`).join("")||'<tr><td colspan="6">此學期沒有需求</td></tr>';
- $("tshirtPlanLoanNote").textContent=`志工借用／送洗中 ${p.loans.length} 件另列於完整 CSV，不增加新購需求。學生退團或停用的申請 ${p.excludedRequests} 筆不列入；幹部／志工已登記的需求仍依實際處理進度追蹤。`;
+ $("tshirtPlanLoanNote").textContent=`志工借用／送洗中 ${p.loans.length} 件另列於完整 CSV，不增加新購需求。學生退團或停用的申請 ${p.excludedRequests} 筆不列入；幹部／志工已領取或已處理完成者不列入本表與採購 CSV；領用歷史仍可至「幹部／志工」查詢，自費加購另計。`;
  exportEnabled(true);drawStaff();
 }
 async function load(){

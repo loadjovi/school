@@ -50,22 +50,18 @@ export function buildTshirtProcurementPlan({students=[],history=[],requests=[],s
   const labels={PENDING:"待審核",APPROVED:request.paymentStatus==="VERIFIED"?"已核帳，待採購":request.paymentStatus==="REPORTED_UNVERIFIED"?"待財務核帳":"待匯款",ORDERED:"已採購待到貨",ARRIVED:"已到貨",READY_FOR_PICKUP:"可領取",FULFILLED:"已領取"};
   rows.push({type:"STUDENT_EXTRA",category:"學生自費加購",person:String(student.studentName||student.name||request.studentId),studentId:String(request.studentId),group:groupOf(student)==="C"?"儲備團":groupOf(student)+" 團",size:String(request.size||""),quantity,status:labels[request.status]||"狀態待核對",covered,ready,requestId:request.id||"",note:overdue?"跨期未結案，併入目前需求":""});
  }
- const loanMap=new Map(parentLoans.map(x=>[String(x.parentEmail||"").toLowerCase(),x]));
+ const loanMap=new Map(parentLoans.map(x=>[String(x.parentEmail||"").trim().toLowerCase(),x]));
  for(const demand of staffDemands){
-  if(demand.status==="CANCELLED"||!STAFF_CATEGORIES[demand.category])continue;
+  // Completed staff receipts belong to the issue history, not procurement demand.
+  const physical=loanMap.get(String(demand.parentEmail||"").trim().toLowerCase());
+  if(["CANCELLED","FULFILLED"].includes(demand.status)||!STAFF_CATEGORIES[demand.category]||demand.category==="CADRE_FIRST"&&physical?.status==="ISSUED_LIFETIME")continue;
   const inTerm=Number(demand.schoolYear)===term.schoolYear&&Number(demand.semester)===term.semester;
   const previous=Number(demand.schoolYear)<term.schoolYear||Number(demand.schoolYear)===term.schoolYear&&Number(demand.semester)<term.semester;
   if(!inTerm&&!(previous&&outstanding(demand.status)))continue;
   const quantity=positive(demand.quantity);if(!quantity)continue;
   if(!inTerm)carryover++;
-  const physical=loanMap.get(String(demand.parentEmail||"").toLowerCase());
-  const handed=demand.category==="CADRE_FIRST"&&physical?.status==="ISSUED_LIFETIME";
-  const covered=handed||["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(demand.status);
-  rows.push({type:demand.category,category:STAFF_CATEGORIES[demand.category],person:demand.parentName||demand.parentEmail||"姓名待核對",studentId:demand.studentId||"",group:demand.category.startsWith("CADRE")?"幹部":"志工",size:demand.size||"",quantity,status:handed?"已領取（領用紀錄）":({PENDING:"待確認",APPROVED:demand.paymentStatus==="VERIFIED"||demand.category==="CADRE_FIRST"?"已確認，待採購":"待財務核帳",ORDERED:"已採購待到貨",ARRIVED:"已到貨",FULFILLED:"已處理完成"})[demand.status]||demand.status,covered,ready:demand.category==="CADRE_FIRST"||demand.paymentStatus==="VERIFIED",requestId:demand.id||"",note:!inTerm?"跨期未結案，併入目前需求":""});
- }
- for(const loan of parentLoans){
-  if(loan.role!=="CADRE"||loan.status!=="ISSUED_LIFETIME"||!within(loan.issuedAt,term)||rows.some(x=>x.type==="CADRE_FIRST"&&staffDemands.some(d=>d.id===x.requestId&&d.parentEmail===loan.parentEmail)))continue;
-  rows.push({type:"CADRE_FIRST",category:STAFF_CATEGORIES.CADRE_FIRST,person:loan.parentName||"家長",studentId:loan.studentId||"",group:"幹部",size:loan.size||"",quantity:1,status:"已領取（領用紀錄）",covered:true,ready:true,requestId:"",note:"本學期已完成首次領用，不重複採購"});
+  const covered=["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(demand.status);
+  rows.push({type:demand.category,category:STAFF_CATEGORIES[demand.category],person:demand.parentName||demand.parentEmail||"姓名待核對",studentId:demand.studentId||"",group:demand.category.startsWith("CADRE")?"幹部":"志工",size:demand.size||"",quantity,status:({PENDING:"待確認",APPROVED:demand.paymentStatus==="VERIFIED"||demand.category==="CADRE_FIRST"?"已確認，待採購":"待財務核帳",ORDERED:"已採購待到貨",ARRIVED:"已到貨",FULFILLED:"已處理完成"})[demand.status]||demand.status,covered,ready:demand.category==="CADRE_FIRST"||demand.paymentStatus==="VERIFIED",requestId:demand.id||"",note:!inTerm?"跨期未結案，併入目前需求":""});
  }
  const incomingExtras=new Map();
  for(const request of requests){
