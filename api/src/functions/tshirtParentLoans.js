@@ -1,3 +1,4 @@
+import {cadreActions,cadreApplication} from "../lib/tshirtCadreApplication.mjs";
 import {app} from "@azure/functions";
 import {TableClient} from "@azure/data-tables";
 import {randomUUID} from "node:crypto";
@@ -6,7 +7,7 @@ import {getStudentMaster,ensureTenantTables,table as tenantTable,tenantParentPar
 import {staffProcurement} from "../lib/tshirtStaffProcurement.js";
 
 const sizes=new Set(["8","10","12","XS","S","M","L","XL","2L","3L","5L"]);
-const actions=new Set(["ISSUE_CADRE","BORROW_VOLUNTEER","MARK_WASHING","RETURN"]);
+const actions=new Set([...cadreActions,"BORROW_VOLUNTEER","MARK_WASHING","RETURN"]);
 let client,audit;
 async function tables(){
  const conn=process.env.STORAGE_CONNECTION_STRING;if(!conn)throw Error("Storage unavailable");
@@ -30,7 +31,7 @@ app.http("tshirtParentLoans",{methods:["GET","POST"],authLevel:"anonymous",route
   if(request.method==="GET"&&request.query.get("view")==="procurement")return staffProcurement(request,ctx,{loanClient:client,audit,linked});
   if(request.method==="GET"){
    const items=[];for await(const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
-    items.push({parentEmail:e.rowKey,parentName:e.parentName,studentId:e.studentId,role:e.role,size:e.size,status:e.status,issuedAt:e.issuedAt,returnedAt:e.returnedAt,etag:e.etag});
+    items.push({parentEmail:e.rowKey,parentName:e.parentName,studentId:e.studentId,role:e.role,size:e.size,status:e.status,issuedAt:e.issuedAt,returnedAt:e.returnedAt,requestedAt:e.requestedAt,schoolYear:e.schoolYear,semester:e.semester,correctionReason:e.correctionReason,etag:e.etag});
    }
    return json({items});
   }
@@ -40,15 +41,14 @@ app.http("tshirtParentLoans",{methods:["GET","POST"],authLevel:"anonymous",route
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!/^\d{6}$/.test(studentId)||!actions.has(action))return json({error:"Invalid parent, student or action"},400);
   if(!await linked(schoolId,email,studentId))return json({error:"Parent is not actively linked to this student"},403);
   let old;try{old=await client.getEntity(schoolId,email)}catch(e){if(e.statusCode!==404)throw e}
-  const previous=old?{parentName:old.parentName,studentId:old.studentId,role:old.role,size:old.size,status:old.status,issuedAt:old.issuedAt,returnedAt:old.returnedAt}:null;
+  const previous=old?{parentName:old.parentName,studentId:old.studentId,role:old.role,size:old.size,status:old.status,issuedAt:old.issuedAt,returnedAt:old.returnedAt,requestedAt:old.requestedAt||"",schoolYear:old.schoolYear||0,semester:old.semester||0,previousIssuedAt:old.previousIssuedAt||"",correctionReason:old.correctionReason||""}:null;
   if(old&&data.etag!==old.etag)return json({error:"Record changed; refresh and retry"},409);
   if(!old&&data.etag)return json({error:"Record changed; refresh and retry"},409);
   const now=new Date().toISOString(),name=clean(data.parentName,80),size=clean(data.size,10);
   let next;
-  if(action==="ISSUE_CADRE"){
-   if(!sizes.has(size)||!name)return json({error:"Parent name and size required"},400);
-   if(old)return json({error:"This parent already has a T-shirt record; lifetime issue or outstanding loan prevents a second issue"},409);
-   next={parentName:name,studentId,role:"CADRE",size,status:"ISSUED_LIFETIME",issuedAt:now,returnedAt:""};
+  if(cadreActions.has(action)){
+   try{next=cadreApplication(previous,{action,size,parentName:name,studentId,reason:data.reason},now)}
+   catch(e){return json({error:e.message},e.statusCode||400)}
   }else if(action==="BORROW_VOLUNTEER"){
    if(!sizes.has(size)||!name)return json({error:"Parent name and size required"},400);
    if(old&&old.status!=="RETURNED")return json({error:"Parent has an active loan or lifetime issued shirt"},409);

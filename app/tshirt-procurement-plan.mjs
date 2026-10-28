@@ -63,6 +63,17 @@ export function buildTshirtProcurementPlan({students=[],history=[],requests=[],s
   const covered=["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(demand.status);
   rows.push({type:demand.category,category:STAFF_CATEGORIES[demand.category],person:demand.parentName||demand.parentEmail||"姓名待核對",studentId:demand.studentId||"",group:demand.category.startsWith("CADRE")?"幹部":"志工",size:demand.size||"",quantity,status:({PENDING:"待確認",APPROVED:demand.paymentStatus==="VERIFIED"||demand.category==="CADRE_FIRST"?"已確認，待採購":"待財務核帳",ORDERED:"已採購待到貨",ARRIVED:"已到貨",FULFILLED:"已處理完成"})[demand.status]||demand.status,covered,ready:demand.category==="CADRE_FIRST"||demand.paymentStatus==="VERIFIED",requestId:demand.id||"",note:!inTerm?"跨期未結案，併入目前需求":""});
  }
+ // Unreceived first applications are real demand, including corrected legacy records.
+ for(const loan of parentLoans){
+  if(loan.role!=="CADRE"||loan.status!=="REQUESTED")continue;
+  const year=Number(loan.schoolYear),semester=Number(loan.semester);
+  if(year>term.schoolYear||year===term.schoolYear&&semester>term.semester)continue;
+  const address=String(loan.parentEmail||"").trim().toLowerCase();
+  if(rows.some(row=>row.type==="CADRE_FIRST"&&staffDemands.some(d=>d.id===row.requestId&&String(d.parentEmail||"").trim().toLowerCase()===address)))continue;
+  const overdue=year<term.schoolYear||year===term.schoolYear&&semester<term.semester;
+  if(overdue)carryover++;
+  rows.push({type:"CADRE_FIRST",category:STAFF_CATEGORIES.CADRE_FIRST,person:loan.parentName||address,studentId:loan.studentId||"",group:"幹部",size:loan.size||"",quantity:1,status:"已申請，尚未領取",covered:false,ready:true,requestId:"parent:"+address,note:overdue?"跨期尚未領取，併入目前需求":"首次公費；先核對庫存，缺額才需採購"});
+ }
  const incomingExtras=new Map();
  for(const request of requests){
   if(request.kind!=="regularUniform"||request.status!=="ORDERED"||!studentMap.has(String(request.studentId))||day(request.createdAt)>=term.end)continue;

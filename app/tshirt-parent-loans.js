@@ -9,7 +9,7 @@ async function call(path,options={}){
  return d;
 }
 function displayTime(value){if(!value)return "—";const date=new Date(value);return Number.isNaN(date.getTime())?String(value):new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(date)}
-const loanStatus=x=>({ISSUED_LIFETIME:"已領取（終身一次）",BORROWED:"借用中",WASHING:"送洗中",RETURNED:"已歸還"})[x.status]||x.status;
+const loanStatus=x=>({REQUESTED:"已申請，尚未領取",ISSUED_LIFETIME:"已領取（終身一次）",BORROWED:"借用中",WASHING:"送洗中",RETURNED:"已歸還"})[x.status]||x.status;
 function drawRecords(){
  const container=$("tshirtParentRecords");container.replaceChildren();
  const toolbar=document.createElement("div");toolbar.className="parent-loan-toolbar";
@@ -35,10 +35,25 @@ function drawRecords(){
    status.className="parent-loan-status";status.textContent=loanStatus(x);
    summary.append(name,meta,status);details.append(summary);
    const body=document.createElement("dl");
-   for(const [label,value] of [["家長 Email",x.parentEmail],["關聯學生",(names.get(String(x.studentId))||"姓名待補登")+"（"+x.studentId+"）"],["角色",x.role==="CADRE"?"幹部":"志工"],["尺寸",x.size||"—"],["目前狀態",loanStatus(x)],["領取時間",displayTime(x.issuedAt)],["歸還時間",displayTime(x.returnedAt)]]){
+   for(const [label,value] of [["申請時間",displayTime(x.requestedAt)],["更正原因",x.correctionReason],["家長 Email",x.parentEmail],["關聯學生",(names.get(String(x.studentId))||"姓名待補登")+"（"+x.studentId+"）"],["角色",x.role==="CADRE"?"幹部":"志工"],["尺寸",x.size||"—"],["目前狀態",loanStatus(x)],["領取時間",displayTime(x.issuedAt)],["歸還時間",displayTime(x.returnedAt)]]){
     const dt=document.createElement("dt"),dd=document.createElement("dd");dt.textContent=label;dd.textContent=String(value||"—");body.append(dt,dd)
    }
-   details.append(body);list.append(details)
+   details.append(body);
+   if(x.role==="CADRE"){
+    for(const [action,label] of (x.status==="REQUESTED"?[["ISSUE_CADRE","確認已領取（終身一次）"],["EDIT_CADRE_PENDING","修改申請尺寸"]]:x.status==="ISSUED_LIFETIME"?[["CORRECT_CADRE_PENDING","更正為已申請、尚未領取"]]:[])){
+     const button=document.createElement("button");button.type="button";button.textContent=label;
+     button.addEventListener("click",async()=>{
+      let size=x.size,reason="";
+      if(action==="EDIT_CADRE_PENDING"){size=prompt("請輸入團 T 尺寸：8、10、12、XS、S、M、L、XL、2L、3L、5L",x.size);if(size===null)return;size=size.trim().toUpperCase()}
+      if(action==="CORRECT_CADRE_PENDING"){reason=prompt("請填寫更正原因（未實際領取，恢復採購需求）");if(!reason?.trim())return}
+      if(!confirm(`${x.parentName||x.parentEmail}：${label}？`))return;
+      button.disabled=true;
+      try{await call("uniform-events/parent-loans",{method:"POST",body:JSON.stringify({parentEmail:x.parentEmail,parentName:x.parentName,studentId:x.studentId,size,action,reason,etag:x.etag})});await reload();window.dispatchEvent(new CustomEvent("tshirtParentLoansChanged"))}
+      catch(error){alert(error.message);button.disabled=false}
+     });details.append(button);
+    }
+   }
+   list.append(details)
   }
  }
  search.addEventListener("input",()=>{parentSearch=search.value;updateList()});role.addEventListener("change",()=>{parentRole=role.value;updateList()});updateList();
@@ -61,7 +76,7 @@ function drawParents(){
  for(const [email,l] of found)parent.add(new Option((l.parentName||l.relationship||"家長")+"（"+email+"）",email));
  if([...parent.options].some(o=>o.value===before))parent.value=before;
  const record=records.find(x=>x.parentEmail===parent.value);
- if(record)$("tshirtParentFeedback").textContent="此家長現有紀錄："+({ISSUED_LIFETIME:"幹部終身已領取，不可重複",BORROWED:"志工借用中",WASHING:"志工送洗中",RETURNED:"志工已歸還，可再次借用"})[record.status];
+ if(record)$("tshirtParentFeedback").textContent="此家長現有紀錄："+({REQUESTED:"已申請，尚未領取；請在下方紀錄確認發放或更改尺寸",ISSUED_LIFETIME:"幹部終身已領取，不可重複",BORROWED:"志工借用中",WASHING:"志工送洗中",RETURNED:"志工已歸還，可再次借用"})[record.status];
  else $("tshirtParentFeedback").textContent=studentId?(parent.value?"請確認家長本人尺寸與操作後儲存。":found.size?"請選擇家長 Gmail。":"此學生尚無已核准的家長 Gmail 綁定。"):"請先選擇學生。";
 }
 
@@ -85,7 +100,7 @@ $("tshirtParentLoanForm")?.addEventListener("submit",async e=>{
  try{
   $("tshirtParentFeedback").textContent="正在儲存…";
   await call("uniform-events/parent-loans",{method:"POST",body:JSON.stringify({parentEmail:email,parentName:link.parentName,studentId,action,size,etag:previous?.etag||""})});
-  $("tshirtParentFeedback").textContent="已更新家長領用紀錄";await reload();
+  $("tshirtParentFeedback").textContent="已更新家長申請／領用紀錄";await reload();window.dispatchEvent(new CustomEvent("tshirtParentLoansChanged"));
  }catch(err){$("tshirtParentFeedback").textContent="儲存失敗："+err.message}
 });
 window.addEventListener("uniformAdminAuth",e=>{if(e.detail?.authenticated)reload()});

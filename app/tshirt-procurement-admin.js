@@ -1,4 +1,4 @@
-import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv} from "./tshirt-procurement-plan.mjs?v=20261028-exclude-staff-received";
+import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv} from "./tshirt-procurement-plan.mjs?v=20261028-cadre-application";
 const $=id=>document.getElementById(id);
 const term=currentTshirtTerm();
 let data=null,plan=null,loading=false,canVerifyFinance=false,links=[],extraBySize={},revision=0;
@@ -111,3 +111,5 @@ $("openStaffTshirtDemand")?.addEventListener("click",()=>{document.querySelector
 window.addEventListener("uniformRequestsLoaded",()=>{if(!$("tshirtProcurementPanel").hidden)load()});
 window.addEventListener("uniformInventoryLoaded",()=>{if(!$("tshirtProcurementPanel").hidden)load()});
 window.addEventListener("uniformAdminAuth",e=>{if(!e.detail?.authenticated){revision++;data=null;plan=null;exportEnabled(false)}});
+
+window.addEventListener("tshirtParentLoansChanged",()=>load());

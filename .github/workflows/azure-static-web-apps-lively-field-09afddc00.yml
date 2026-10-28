@@ -39,7 +39,7 @@ jobs:
       - name: Competition uniform canonical master regression tests
         run: node --test tests/competition-uniform-master.test.mjs
       - name: T-shirt semester procurement and staff demand regression tests
-        run: node --test tests/tshirt-procurement-plan.test.mjs tests/tshirt-procurement-admin.test.mjs api/test/tshirtStaffDemand.test.mjs
+        run: node --test tests/tshirt-procurement-plan.test.mjs tests/tshirt-cadre-application.test.mjs tests/tshirt-procurement-admin.test.mjs api/test/tshirtStaffDemand.test.mjs
       - name: First-time T-shirt receipt regression tests
         run: node --test tests/tshirt-first-receipt.test.mjs
 
