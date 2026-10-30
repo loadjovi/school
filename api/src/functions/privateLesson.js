@@ -238,7 +238,7 @@ app.http("privateLesson",{
       if(action==="update_lesson_content"){
         if(!(isAdmin||isTeacher))return json({error:"只有個別課老師或管理員可以修改上課內容"},403);
         if(workflowStatus(entity)!=="scheduled")return json({error:"只有尚未完成的預約可以修改上課內容"},409);
-        if(!isAdmin&&String(entity.eventDate||"")!==clock.date)return json({error:"僅能在預約上課當天修改實際上課內容"},409);
+        if(!isAdmin&&(String(entity.eventDate||"")>clock.date||(String(entity.eventDate||"")===clock.date&&String(entity.startTime||"")>clock.time)))return json({error:"須於個課開始後才能填寫；已過上課日期且尚未完課的紀錄可補登內容"},409);
         entity.lessonContent=clean(body.lessonContent,500);
         entity.updatedAt=new Date().toISOString();
         await table("tenantPrivateLesson").updateEntity(entity,"Merge");
