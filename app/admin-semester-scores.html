@@ -322,7 +322,8 @@ function display(){
  $("countPending").textContent=String(scopeRecords.filter(x=>matchesScoreStatus(x,"pending")).length);
  $("countErrors").textContent=String(scopeRecords.filter(x=>matchesScoreStatus(x,"error")).length);
  document.querySelectorAll("[data-score-status]").forEach(button=>{button.setAttribute("aria-pressed",String(button.dataset.scoreStatus===config.scoreStatus));button.setAttribute("aria-busy",String(config.loading))});
- $("scoreFilterSummary").textContent="目前顯示："+scoreFilters[config.scoreStatus]+"（"+members.length+" 位）｜排序："+scoreSortLabels[$("scoreOrder").value]+(config.loading?"，資料讀取中…":"");
+ const order=$("scoreOrder")?.value||"default";
+ $("scoreFilterSummary").textContent="目前顯示："+scoreFilters[config.scoreStatus]+"（"+members.length+" 位）"+(order==="default"?"":"｜排序："+(scoreSortLabels[order]||scoreSortLabels.default))+(config.loading?"，資料讀取中…":"");
  const empty=config.scoreStatus==="error"?"此條件目前沒有讀取失敗的學生。":"此條件目前沒有符合的學生。";
  $("rows").innerHTML=members.length?members.map(buildRow).join(""):'<tr><td colspan="8">'+html(empty)+'</td></tr>';
  $("mobileStudents").innerHTML=members.length?members.map(buildMobileCard).join(""):'<div class="mobile-student-card">'+html(empty)+'</div>';
