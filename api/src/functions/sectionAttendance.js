@@ -3,6 +3,7 @@ import { getTenantContext, ensureSectionAccess, ensureTemporaryCourseAccess, jso
 import { ensureTenantTables, table, rowKey, getStudentMaster, listStudentMaster, tenantStudentPartition, listActivityRange, activityStudentId } from "../lib/storage.js";
 import { enforceScheduledCourse } from "./schoolSchedule.js";
 import { listSectionMerges, receivingMerges, validMergeDate } from "../lib/sectionMerge.js";
+import { dispatchSchoolAbsenceEmails } from "../lib/schoolAbsenceMail.mjs";
 
 const taipeiDate=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 
@@ -82,7 +83,7 @@ app.http("sectionAttendance",{
     const now=new Date().toISOString(),roster=await rosterFor(schoolId,requestedGroup,requestedSection,merge.received);
     const allowed=new Map(roster.map(x=>[x.studentId,x]));
     if(items.some(x=>!allowed.has(String(x.studentId)))||new Set(items.map(x=>String(x.studentId))).size!==items.length)return json({error:"點名名單含不屬於本次併班的學生或重複學號"},403);
-    const savedItems=[];
+    const savedItems=[],newAbsences=[];
     for(const item of items){
       const master=await getStudentMaster(item.studentId,schoolId);
       if(!master)return json({error:`找不到學生 ${item.studentId}`},404);
@@ -96,7 +97,10 @@ app.http("sectionAttendance",{
       const saved={studentId:String(item.studentId),status:String(item.status||"present"),minutes:Number(item.minutes||0),teacher:a.email,teacherName:String(a.displayName||a.email||""),actorRole:a.role==="admin"?"admin":"teacher",createdAt:now};
       await client.createEntity({partitionKey:tenantStudentPartition(schoolId,item.studentId),rowKey:rowKey("s"),schoolId,studentId:String(item.studentId),eventDate:sessionDate,section,groupName,...saved,classType:"section",...(sourceMerge?{mergeId:sourceMerge.mergeId,mergeTargetSection:requestedSection,mergeTeacherEmail:sourceMerge.receivingTeacherEmail,mergeTeacherName:sourceMerge.receivingTeacherName}:{})});
       savedItems.push(saved);
+      if(saved.status==="absent"&&!oldRows.some(x=>x.status==="absent"))newAbsences.push({date:sessionDate,classType:"section",studentId:saved.studentId,name:String(master.studentName||""),groupName,section});
     }
+    try{await dispatchSchoolAbsenceEmails({schoolId,date:sessionDate,items:newAbsences,actor:a.email})}
+    catch(error){console.error("school absence mail audit failed",{schoolId,sessionDate,error:String(error?.message||error)})}
     return json({ok:true,count:savedItems.length,sessionDate,groupName:requestedGroup,section:requestedSection,roster,merges:merge.received,recordedBy:String(a.displayName||a.email||""),recordedByEmail:String(a.email||""),recordedByRole:a.role==="admin"?"admin":"teacher",lastSavedAt:now,items:savedItems},200);
   }
 });

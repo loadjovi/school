@@ -4,6 +4,7 @@ import { TableClient, TableServiceClient } from "@azure/data-tables";
 import { getAccess, getTenantContext, getStudentAliasInfo, json } from "../lib/auth.js";
 import { ensureTenantTables, table, listActivityRange, activityStudentId, listStudentMaster, getTeacherDirectory, getTenantDirectory, listTenantDirectory, defaultTenantId, tenantIdValue, tenantSchoolPartition } from "../lib/storage.js";
 import { adminAuditPartition, recordAdminAudit } from "../lib/adminAudit.js";
+import { listSchoolAbsenceEmails } from "../lib/schoolAbsenceMail.mjs";
 
 const settingsTableName=()=>process.env.SYSTEM_SETTINGS_TABLE||"SystemSettings";
 const accessLogTableName=()=>process.env.SCHOOL_ACCESS_LOG_TABLE||"SchoolAccessLog";
@@ -144,6 +145,20 @@ app.http("schoolAdminActivity",{methods:["GET","POST"],authLevel:"anonymous",rou
     }
   }catch(e){
     if(e.statusCode!==404)console.error("school uniform audit read failed",e);
+  }
+  // Per-recipient mail delivery history is independent from school acknowledgement.
+  // This view never interprets "sent" as "已知悉".
+  try{
+    const mails=await listSchoolAbsenceEmails(schoolId,{from,to});
+    for(const mail of mails)events.push({type:"school_absence_email",at:mail.at,
+      actor:mail.actor||"系統通知",eventDate:mail.eventDate,
+      studentName:mail.studentName,studentId:mail.studentId,
+      groupName:mail.groupName,section:mail.section,classType:mail.classType,
+      recipient:mail.recipient,deliveryStatus:mail.status,
+      providerMessageId:mail.providerMessageId,deliveryError:mail.error});
+  }catch(e){
+    console.error("school absence mail audit query failed",{schoolId,error:String(e?.message||e)});
+    return json({error:"缺席 Email 發送紀錄暫時無法查詢，請稍後重試"},503);
   }
   // Previous revisions were stored on the original record before this screen existed.
   const known=new Set(events.filter(x=>x.type==="section_correction").map(x=>[x.at,x.studentId,x.actor].join("|")));

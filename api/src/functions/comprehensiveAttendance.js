@@ -2,6 +2,7 @@ import { app } from "@azure/functions";
 import { getTenantContext, ensureComprehensiveAccess, ensureTemporaryCourseAccess, json } from "../lib/auth.js";
 import { ensureTenantTables, table, rowKey, getStudentMaster, getTeacherProfile, tenantStudentPartition, listActivityRange, activityStudentId } from "../lib/storage.js";
 import { enforceScheduledCourse } from "./schoolSchedule.js";
+import { dispatchSchoolAbsenceEmails } from "../lib/schoolAbsenceMail.mjs";
 
 const allowedGroups=new Set(["A","B","儲備"]);
 const safe=v=>String(v||"").replaceAll("'","''");
@@ -59,7 +60,7 @@ app.http("comprehensiveAttendance",{
     if(!ensureTemporaryCourseAccess(access,"comprehensive",sessionDate))return json({error:"此日期不在短期代課期間"},403);
     const schedulePolicy=await enforceScheduledCourse(schoolId,sessionDate,"comprehensive");
     if(schedulePolicy.enforced&&!schedulePolicy.allowed)return json({error:schedulePolicy.reason,scheduleBlocked:true},409);
-    const now=new Date().toISOString();
+    const now=new Date().toISOString(),newAbsences=[];
     for(const item of items){
       const master=await getStudentMaster(item.studentId,schoolId);
       if(!master)return json({error:`找不到學生 ${item.studentId}`},404);
@@ -74,7 +75,10 @@ app.http("comprehensiveAttendance",{
         status,minutes:Number(item.minutes??(["present","late"].includes(status)?90:0)),
         teacher:access.email,teacherName:String(access.displayName||access.email||""),actorRole:access.role==="admin"?"admin":"teacher",classType:"comprehensive",createdAt:now
       });
+      if(status==="absent"&&!oldRows.some(x=>x.status==="absent"))newAbsences.push({date:sessionDate,classType:"comprehensive",studentId:String(item.studentId),name:String(master.studentName||""),groupName:String(master.groupName||""),section:String(master.section||"")});
     }
+    try{await dispatchSchoolAbsenceEmails({schoolId,date:sessionDate,items:newAbsences,actor:access.email})}
+    catch(error){console.error("school absence mail audit failed",{schoolId,sessionDate,error:String(error?.message||error)})}
     return json({ok:true,count:items.length,sessionDate},200);
   }
 });
