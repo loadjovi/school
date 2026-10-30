@@ -8,6 +8,28 @@
   state.showPrivateParentWaiting=Boolean(state.showPrivateParentWaiting);
   state.showPrivateHistory=Boolean(state.showPrivateHistory);
   let privatePoll=null;
+  // Local unsent drafts survive redraws; never persist ratings/reviews until confirmation.
+  const parentReviewDrafts=new Map();
+  const reviewDraftKey=lessonId=>String(lessonId||"");
+  function captureParentReviewDraft(lessonId){
+    const k=lessonDomKey(lessonId),rating=document.getElementById("rating_"+k),review=document.getElementById("review_"+k);
+    const old=parentReviewDrafts.get(reviewDraftKey(lessonId))||{};
+    parentReviewDrafts.set(reviewDraftKey(lessonId),{
+      rating:rating?Number(rating.value||0):Number(old.rating||0),
+      review:review?String(review.value||""):String(old.review||"")
+    });
+  }
+  function isParentReviewEditing(){
+    if(state.me?.role!=="parent")return false;
+    if(String(document.activeElement?.id||"").startsWith("review_"))return true;
+    return (state.privateLessons||[]).some(x=>{
+      if(workflow(x)!=="awaiting_parent")return false;
+      const k=lessonDomKey(x.lessonId),draft=parentReviewDrafts.get(reviewDraftKey(x.lessonId));
+      const rating=Number(document.getElementById("rating_"+k)?.value??draft?.rating??x.teacherRating??0);
+      const review=String(document.getElementById("review_"+k)?.value??draft?.review??x.teacherReview??"");
+      return rating!==Number(x.teacherRating||0)||review!==String(x.teacherReview||"");
+    });
+  }
 
   const workflowText={scheduled:"已預約",awaiting_parent:"待家長確認",issue:"家長回報問題",completed:"流程完成",cancelled:"已停課"};
   const workflowClass={scheduled:"warn",awaiting_parent:"warn",issue:"bad",completed:"ok",cancelled:"bad"};
