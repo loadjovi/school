@@ -1,7 +1,7 @@
 import {createHash} from "node:crypto";
 import {EmailClient} from "@azure/communication-email";
 import {TableClient,TableServiceClient} from "@azure/data-tables";
-import {tenantSchoolPartition} from "./storage.js";
+import {tenantSchoolPartition,defaultTenantId} from "./storage.js";
 
 // School staff are the explicitly authorized "校方查詢帳號" (school-access),
 // NOT every instructor nor parent. Only notify for group-class absences.
@@ -47,7 +47,7 @@ async function staffEmails(schoolId){
  try{entity=await c.getEntity("SCHOOL|"+sid,"schoolAccess")}
  catch(e){
   if(e.statusCode!==404)throw e;
-  if(sid!=="school_default")return []; // cross-tenant fallback is prohibited
+  if(sid!==defaultTenantId())return []; // cross-tenant fallback is prohibited
   try{entity=await c.getEntity("SYSTEM","schoolAccess")}catch(other){if(other.statusCode!==404)throw other;return []}
  }
  let rows=[];
