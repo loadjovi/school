@@ -61,7 +61,7 @@ test("overdue class has an independent content editor and save control",()=>{
  vm.createContext(ctx);
  vm.runInContext(fragment("  function teacherLessonRow(x){","  window.toggleTeacherPrivateLesson=")+"\nthis.getLessonRow=teacherLessonRow;",ctx);
  const html=ctx.getLessonRow(rows[0]);
- assert.match(html,/待補登/);
+ assert.match(html,/本堂尚未完成老師端登記/);
  assert.match(html,/completeContent_oct29/);
  assert.match(html,/先儲存上課內容/);
  assert.match(html,/savePrivateLessonContent\('s1','oct29'\)/);
