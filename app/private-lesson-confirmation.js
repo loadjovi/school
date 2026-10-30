@@ -304,7 +304,7 @@
     const d=today(),defaultBookingDate=nowTime()<"18:00"?d:shiftDate(d,1),ids=new Set((state.me.privateStudentIds||[]).map(String)),students=(state.students||[]).filter(s=>ids.has(String(s.studentId)));
     if(!students.length)return `<div class="card"><h2>個別課預約</h2><div class="notice">目前尚未綁定這位老師的個課學生。請到「⚙️ 我的教學」選擇個別課學生。</div></div>`;
     setTimeout(startPrivatePoll,0);
-    const rows=state.privateLessons||[],month=d.slice(0,7),monthRows=rows.filter(x=>String(x.lessonDate||"").startsWith(month)),scheduled=rows.filter(x=>workflow(x)==="scheduled"&&String(x.lessonDate)>=d),pending=rows.filter(x=>["awaiting_parent","issue"].includes(workflow(x))),completed=monthRows.filter(x=>workflow(x)==="completed"&&["present","late"].includes(String(x.status))),minutes=completed.reduce((n,x)=>n+Number(x.minutes||0),0);
+    const rows=state.privateLessons||[],month=d.slice(0,7),monthRows=rows.filter(x=>String(x.lessonDate||"").startsWith(month)),scheduled=rows.filter(x=>workflow(x)==="scheduled"&&String(x.lessonDate)>=d),catchup=rows.filter(needsLessonCatchup),issues=rows.filter(x=>workflow(x)==="issue"),waitingParent=rows.filter(x=>workflow(x)==="awaiting_parent"),completed=monthRows.filter(x=>workflow(x)==="completed"&&["present","late"].includes(String(x.status))),minutes=completed.reduce((n,x)=>n+Number(x.minutes||0),0);
     const latestCompleted=new Map(),nextScheduled=new Map();
     for(const x of rows){
       const id=String(x.studentId),w=workflow(x);
@@ -313,8 +313,8 @@
       // 優先顯示今天，其次未來最近一堂；若只有逾期未完課，也保留為「已約」供老師補登完成。
       if(w==="scheduled"){
         const current=nextScheduled.get(id);
-        const rank=y=>String(y.lessonDate)===d?0:String(y.lessonDate)>d?1:2;
-        if(!current||rank(x)<rank(current)||(rank(x)===rank(current)&&(rank(x)===2?String(x.lessonDate)>String(current.lessonDate):String(x.lessonDate)<String(current.lessonDate)))||String(x.lessonDate)===String(current.lessonDate)&&String(x.startTime||"")<String(current.startTime||""))nextScheduled.set(id,x);
+        const rank=y=>needsLessonCatchup(y)?0:String(y.lessonDate)===d?1:2;
+        if(!current||rank(x)<rank(current)||(rank(x)===rank(current)&&(rank(x)===0?String(x.lessonDate)>String(current.lessonDate):String(x.lessonDate)<String(current.lessonDate)))||String(x.lessonDate)===String(current.lessonDate)&&String(x.startTime||"")<String(current.startTime||""))nextScheduled.set(id,x);
       }
     }
     // 進入個課頁時，若今天已有 scheduled 課程，直接進入本次上課模式，
@@ -327,16 +327,16 @@
       state.activePrivateLessonId=String((current||upcoming||todayScheduled[todayScheduled.length-1]).lessonId);
     }
     const daysSince=date=>date?Math.floor((new Date(d+"T12:00:00")-new Date(date+"T12:00:00"))/86400000):999;
-    const sorted=[...students].sort((a,b)=>{const an=nextScheduled.get(String(a.studentId)),bn=nextScheduled.get(String(b.studentId));if(!!an!==!!bn)return an?-1:1;if(an&&bn)return String(an.lessonDate).localeCompare(String(bn.lessonDate));return daysSince(latestCompleted.get(String(b.studentId))?.lessonDate)-daysSince(latestCompleted.get(String(a.studentId))?.lessonDate)});
-    const quick=sorted.map(st=>{const next=nextScheduled.get(String(st.studentId)),last=latestCompleted.get(String(st.studentId)),hint=next?`${String(next.lessonDate)===d?"今日已約":String(next.lessonDate)<d?"尚未完課":"下次"}：${next.lessonDate} ${next.startTime}–${next.endTime}`:last?`最近完成：${last.lessonDate} ${last.startTime}–${last.endTime}`:"尚無預約";return `<button class="item" style="width:100%;text-align:left;background:#fff;cursor:pointer" onclick="quickPrivateStudent('${esc(st.studentId)}')"><div><b>${esc(st.name)}</b><small>${esc(st.groupName)}團｜${esc(st.instrument)}｜${esc(hint)}</small></div><span>${next?"＋ 下一堂":"＋ 預約"}</span></button>`}).join("");
+    const sorted=[...students].sort((a,b)=>{const an=nextScheduled.get(String(a.studentId)),bn=nextScheduled.get(String(b.studentId));if(!!an!==!!bn)return an?-1:1;if(an&&bn&&needsLessonCatchup(an)!==needsLessonCatchup(bn))return needsLessonCatchup(an)?-1:1;if(an&&bn)return String(an.lessonDate).localeCompare(String(bn.lessonDate));return daysSince(latestCompleted.get(String(b.studentId))?.lessonDate)-daysSince(latestCompleted.get(String(a.studentId))?.lessonDate)});
+    const quick=sorted.map(st=>{const next=nextScheduled.get(String(st.studentId)),last=latestCompleted.get(String(st.studentId)),hint=next?`${String(next.lessonDate)===d?"今日已約":String(next.lessonDate)<d?"尚未完課":"下次"}：${next.lessonDate} ${next.startTime}–${next.endTime}`:last?`最近完成：${last.lessonDate} ${last.startTime}–${last.endTime}`:"尚無預約";return `<button class="item" style="width:100%;text-align:left;background:#fff;cursor:pointer" onclick="${next&&needsLessonCatchup(next)?`openTeacherCatchup('${esc(next.lessonId)}')`:`quickPrivateStudent('${esc(st.studentId)}')`}"><div><b>${esc(st.name)}</b><small>${esc(st.groupName)}團｜${esc(st.instrument)}｜${esc(hint)}</small></div><span>${next&&needsLessonCatchup(next)?"✏️ 補登此堂":next?"＋ 下一堂":"＋ 預約"}</span></button>`}).join("");
     const activeLesson=state.activePrivateLessonId?rows.find(x=>String(x.lessonId)===String(state.activePrivateLessonId)&&workflow(x)==="scheduled"&&String(x.lessonDate)===d):null;
     const bookingOrActive=activeLesson
       ? `<div class="card" id="privateBookingForm">${activeLessonHtml(activeLesson)}</div>`
       : `<div class="card" id="privateBookingForm"><h2>📅 預約個別課</h2><div class="notice">建立後會立即顯示在家長平台，並依後台通知設定寄送預約 Email。</div><label>學生</label><select id="iStudent" onchange="rememberPrivateBookingStudent(this.value)">${students.map(st=>`<option value="${esc(st.studentId)}" ${String(st.studentId)===String(state.privateBookingStudentId||students[0]?.studentId||"")?"selected":""}>${esc(st.name)}｜${esc(st.groupName)}團｜${esc(st.instrument)}</option>`).join("")}</select><label>上課日期</label><input id="iDate" type="date" min="${esc(d)}" value="${esc(defaultBookingDate)}"><div class="row2"><div><label>開始時間</label><input id="iStart" type="time" value="18:00"></div><div><label>結束時間</label><input id="iEnd" type="time" value="18:50"></div></div><label>預約備註／預計內容（選填）</label><textarea id="iContent" rows="3" placeholder="例：預計複習音階、換把、考試曲"></textarea><button class="primary" onclick="savePrivate()">📅 預約上課並通知家長</button></div>`;
-    return `<div class="card"><h2>👤 個別課流程</h2><div class="notice"><b>預約 → 上課 → 老師完課 → 家長確認 → 正式完成</b><br>有完成個課的學生，由系統依正式計分月份的個課次數換算期末 5%，每月完成 4 次為 5 分，再取各月平均；沒有完成個課的學生，才由分部老師於學期末評量。<br>遲到標準：以預約開始時間為準，超過 10 分鐘才到課記為遲到；10 分鐘內記為出席，遲到後完成仍計入個課次數。</div><div class="grid"><div class="kpi"><b>${scheduled.length}</b><span>未來預約</span></div><div class="kpi"><b>${pending.length}</b><span>待處理／確認</span></div><div class="kpi"><b>${completed.length}</b><span>本月完成流程</span></div><div class="kpi"><b>${minutes}</b><span>本月完成分鐘</span></div></div></div>
+    return `<div class="card"><h2>👤 個別課流程</h2><div class="notice"><b>預約 → 上課 → 老師完課 → 家長確認 → 正式完成</b><br>有完成個課的學生，由系統依正式計分月份的個課次數換算期末 5%，每月完成 4 次為 5 分，再取各月平均；沒有完成個課的學生，才由分部老師於學期末評量。<br>遲到標準：以預約開始時間為準，超過 10 分鐘才到課記為遲到；10 分鐘內記為出席，遲到後完成仍計入個課次數。</div><div class="grid"><div class="kpi"><b>${scheduled.length}</b><span>今日／未來預約</span></div><div class="kpi"><b>${catchup.length+issues.length}</b><span>老師待補登／處理</span></div><div class="kpi"><b>${waitingParent.length}</b><span>已交家長確認</span></div><div class="kpi"><b>${completed.length}</b><span>本月完成流程</span></div><div class="kpi"><b>${minutes}</b><span>本月完成分鐘</span></div></div></div>
     <div class="card"><h2>快速選擇學生</h2><div class="notice">已有預約的學生優先顯示；也可直接選擇學生建立下一堂課。</div>${quick}</div>
     ${bookingOrActive}
-    <div class="card"><h2>預約／完課／家長確認</h2><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理雙方狀態</button><div id="privateConfirmList">${teacherHistoryHtml()}</div></div>`;
+    <div class="card"><h2>老師個課處理與紀錄</h2><button class="secondary" style="width:100%;margin:0 0 10px" onclick="reloadPrivateLessons()">🔄 重新整理雙方狀態</button><div id="privateConfirmList">${teacherHistoryHtml()}</div></div>`;
   };
   function activeLessonHtml(x){
     const changeable=canChange(x),ended=canComplete(x);
@@ -378,6 +378,15 @@
     try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"complete_lesson",lessonContent,attendanceStatus})});notifyToast(r,"已完成上課並通知家長");state.activePrivateLessonId="";state.suppressAutoPrivateLesson=false;await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
   };
   window.rememberPrivateBookingStudent=function(studentId){state.privateBookingStudentId=String(studentId||"")};
+  window.openTeacherCatchup=function(lessonId){
+    const x=(state.privateLessons||[]).find(item=>String(item.lessonId)===String(lessonId));
+    if(!x||!needsLessonCatchup(x))return;
+    state.activePrivateLessonId="";
+    state.suppressAutoPrivateLesson=true;
+    state.expandedPrivateLessonId=String(lessonId);
+    render();
+    setTimeout(()=>document.getElementById("privateLesson_"+lessonDomKey(lessonId))?.scrollIntoView({behavior:"smooth",block:"center"}),30);
+  };
   window.quickPrivateStudent=function(studentId){
     state.privateBookingStudentId=String(studentId||"");
     state.activePrivateLessonId="";
