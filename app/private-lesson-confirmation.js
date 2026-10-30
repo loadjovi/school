@@ -173,16 +173,30 @@
     },30000);
   }
   function teacherHistoryHtml(){
-    const rows=sortedLessons().slice(0,40);
+    const rows=sortedLessons();
     if(!rows.length)return `<div class="notice">目前尚無個別課預約。</div>`;
-    return rows.map(x=>{
+    const tasks=rows.filter(x=>["scheduled","issue"].includes(workflow(x)));
+    const waiting=rows.filter(x=>workflow(x)==="awaiting_parent");
+    const history=rows.filter(x=>["completed","cancelled"].includes(workflow(x)));
+    const renderRow=x=>{
       if(state.activePrivateLessonId&&String(x.lessonId)===String(state.activePrivateLessonId)){
         const w=workflow(x),badge=`<span class="badge ${workflowClass[w]||""}">${esc(workflowText[w]||w)}</span>`;
         return `<div class="private-student-card is-active" id="privateLesson_${lessonDomKey(x.lessonId)}">${teacherLessonHeader(x,badge)}<div class="private-student-card-body"><div class="private-editing-banner">🎻 目前正在上方操作：<b>${esc(currentStudentName(x.studentId))}</b>${studentMetaLine(x.studentId)?`｜${esc(studentMetaLine(x.studentId))}`:""}</div><div class="muted" style="margin-top:8px">此堂課正在上方「本次個別課」操作。</div></div></div>`;
       }
       return teacherLessonRow(x);
-    }).join("");
+    };
+    const urgent=tasks.filter(x=>needsLessonCatchup(x)||workflow(x)==="issue").length;
+    return `<div class="notice" style="margin-bottom:10px">老師只需處理「未完課」及「家長回報問題」。已送出的完課確認交由家長處理，不持續佔據老師待辦清單。</div>
+      <h3 style="margin:12px 0">📌 老師需處理（${tasks.length} 筆，${urgent} 筆需補登或回覆）</h3>
+      ${tasks.length?tasks.map(renderRow).join(""):'<div class="notice">✅ 目前沒有需要老師處理的個課。</div>'}
+      <div class="card" style="margin-top:12px;padding:12px"><button class="secondary" style="width:100%;margin:0" onclick="togglePrivateParentWaiting()">📨 已送出・待家長確認（${waiting.length} 筆） ${state.showPrivateParentWaiting?"▲ 收合":"▼ 查看"}</button>
+      <div class="muted" style="margin:6px 0">老師端已完成，不算老師待辦。展開可查詢、重寄通知，家長仍可照常確認。</div>
+      ${state.showPrivateParentWaiting?waiting.map(renderRow).join(""):""}</div>
+      <div class="card" style="margin-top:12px;padding:12px"><button class="secondary" style="width:100%;margin:0" onclick="togglePrivateHistory()">📚 已結案／已停課（${history.length} 筆） ${state.showPrivateHistory?"▲ 收合":"▼ 查看"}</button>
+      ${state.showPrivateHistory?history.map(renderRow).join(""):""}</div>`;
   }
+  window.togglePrivateParentWaiting=function(){state.showPrivateParentWaiting=!state.showPrivateParentWaiting;const box=document.getElementById("privateConfirmList");if(box)box.innerHTML=teacherHistoryHtml()};
+  window.togglePrivateHistory=function(){state.showPrivateHistory=!state.showPrivateHistory;const box=document.getElementById("privateConfirmList");if(box)box.innerHTML=teacherHistoryHtml()};
 
   window.reloadPrivateLessons=async function(){await loadPrivateLessons();render();toast("已更新個別課預約與確認狀態")};
   window.reschedulePrivateLesson=async function(studentId,lessonId,source){
