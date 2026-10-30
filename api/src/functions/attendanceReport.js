@@ -398,7 +398,7 @@ app.http("dailyFollowup",{
     for(const x of items){
       if(x.status!=="absent")continue;
       const saved=acknowledgedRecords.get(x.followupId);
-      x.followup=schoolAcknowledgement(saved,x.recordVersion);
+      x.followup=schoolAcknowledgement(saved,x.recordVersion,schoolId);
     }
     return json({date,scope:"00:00-23:59",items,attendanceCounts,courseSummary,privateLessonDetails,counts:{total:items.length,leave:items.filter(x=>x.status==="leave").length,absent:items.filter(x=>x.status==="absent").length,pendingAbsence:items.filter(x=>x.status==="absent"&&x.followup?.state!=="acknowledged"&&["section","ensemble","comprehensive"].includes(x.classType)).length,acknowledgedAbsence:items.filter(x=>x.status==="absent"&&x.followup?.state==="acknowledged").length,section:items.filter(x=>x.classType==="section").length,ensemble:items.filter(x=>x.classType==="ensemble").length,comprehensive:items.filter(x=>x.classType==="comprehensive").length,private:items.filter(x=>x.classType==="private").length}});
   }
