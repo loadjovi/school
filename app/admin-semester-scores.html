@@ -102,7 +102,9 @@ details{margin-top:8px;font-weight:400}summary{cursor:pointer;color:#3656a8;font
   <label>個課老師<select id="privateTeacher"><option value="ALL">全部個課老師</option></select></label>
   <label>個課追蹤<select id="followup"><option value="all">全部個課狀態</option><option value="score_pending">模式一｜個課待資料</option><option value="no_records">尚無個課紀錄</option><option value="unassigned">未綁定個課老師</option><option value="teacher_pending">待老師登記完課</option><option value="parent_pending">待家長確認</option><option value="issues">完課有疑義</option></select></label>
   <label>搜尋學生<input id="search" placeholder="姓名或學號"></label>
+  <label>成績排序<select id="scoreOrder" aria-label="依學期成績排序"><option value="default">預設（團別／年級）</option><option value="desc">總分：高分到低分</option><option value="asc">總分：低分到高分</option></select></label>
  </div>
+ <p class="muted" id="sortHelp">依目前可合計的 20 分排序；暫估成績不代表正式排名。尚未有總分或讀取失敗的學生列在最後，不會以「已取得分數」代替總分。</p>
  <div class="filters" aria-label="計分模式">
   <button type="button" data-mode="all" aria-pressed="true">全部（兩種模式）</button>
   <button type="button" data-mode="private" aria-pressed="false">模式一｜個課表現 5 分</button>
@@ -137,6 +139,7 @@ $("year").value=String((mm>=8?yy:yy-1)-1911);
 $("term").value=mm>=8?"1":"2";
 const config={students:[],scores:new Map(),followups:new Map(),followupError:"",followupLoaded:false,mode:"all",scoreStatus:"all",requestId:0,loading:false};
 const scoreFilters={all:"全部符合條件學生",scored:"目前可合計 /20",pending:"尚有未完成項目",error:"讀取失敗"};
+const scoreSortLabels={default:"原始順序",desc:"總分高到低",asc:"總分低到高"};
 const format=(value,max)=>value==null?"待資料":Number(value).toFixed(2).replace(/\.?0+$/,"")+"/"+max;
 function category(row,score){
   // Match the official family rule: completed private lessons override the
@@ -210,9 +213,23 @@ function matchesScoreStatus(record,status){
  if(status==="error")return !!record?.error;
  return false;
 }
+function scoreForSorting(student,scores){
+ const record=scores.get(String(student.studentId)),total=record?.score?.semesterScore?.total20;
+ if(record?.error||total==null||total==="")return null;
+ const value=Number(total);
+ return Number.isFinite(value)?value:null;
+}
+function compareSemesterGrades(a,b,scores,order){
+ if(order!=="asc"&&order!=="desc")return 0;
+ const left=scoreForSorting(a,scores),right=scoreForSorting(b,scores);
+ if(left==null&&right==null)return 0;
+ if(left==null)return 1;
+ if(right==null)return -1;
+ return order==="desc"?right-left:left-right;
+}
 function filtered({includeScoreStatus=true}={}){
   const grp=$("group").value,q=$("search").value.trim().toLowerCase();
-  return config.students.filter(x=>{
+  const members=config.students.filter(x=>{
    let group=String(x.groupName||"").replace(/\s/g,"").toUpperCase();
    group=group==="A團"?"A":group==="B團"?"B":["C","C團","儲備","儲備團"].includes(group)?"C":group;
    if(grp!=="ALL"&&grp!==group)return false;
@@ -223,6 +240,7 @@ function filtered({includeScoreStatus=true}={}){
    if(includeScoreStatus&&!matchesScoreStatus(record,config.scoreStatus))return false;
    return true;
   });
+  return members.sort((a,b)=>compareSemesterGrades(a,b,config.scores,$("scoreOrder").value));
 }
 function monthDetails(score){
   const monthly=score?.monthlyScores||[];
@@ -304,7 +322,8 @@ function display(){
  $("countPending").textContent=String(scopeRecords.filter(x=>matchesScoreStatus(x,"pending")).length);
  $("countErrors").textContent=String(scopeRecords.filter(x=>matchesScoreStatus(x,"error")).length);
  document.querySelectorAll("[data-score-status]").forEach(button=>{button.setAttribute("aria-pressed",String(button.dataset.scoreStatus===config.scoreStatus));button.setAttribute("aria-busy",String(config.loading))});
- $("scoreFilterSummary").textContent="目前顯示："+scoreFilters[config.scoreStatus]+"（"+members.length+" 位）"+(config.loading?"，資料讀取中…":"");
+ const order=$("scoreOrder")?.value||"default";
+ $("scoreFilterSummary").textContent="目前顯示："+scoreFilters[config.scoreStatus]+"（"+members.length+" 位）"+(order==="default"?"":"｜排序："+(scoreSortLabels[order]||scoreSortLabels.default))+(config.loading?"，資料讀取中…":"");
  const empty=config.scoreStatus==="error"?"此條件目前沒有讀取失敗的學生。":"此條件目前沒有符合的學生。";
  $("rows").innerHTML=members.length?members.map(buildRow).join(""):'<tr><td colspan="8">'+html(empty)+'</td></tr>';
  $("mobileStudents").innerHTML=members.length?members.map(buildMobileCard).join(""):'<div class="mobile-student-card">'+html(empty)+'</div>';
@@ -374,6 +393,7 @@ function exportCsv(){
 document.querySelectorAll("[data-mode]").forEach(button=>button.addEventListener("click",()=>{config.mode=button.dataset.mode;document.querySelectorAll("[data-mode]").forEach(b=>b.setAttribute("aria-pressed",String(b===button)));display()}));
 document.querySelectorAll("[data-score-status]").forEach(button=>button.addEventListener("click",()=>{if(!Object.hasOwn(scoreFilters,button.dataset.scoreStatus))return;config.scoreStatus=button.dataset.scoreStatus;display()}));
 $("group").addEventListener("change",display);$("search").addEventListener("input",display);
+$("scoreOrder").addEventListener("change",display);
 $("privateTeacher").addEventListener("change",display);$("followup").addEventListener("change",display);
 $("term").addEventListener("change",load);$("year").addEventListener("change",load);
 $("refresh").addEventListener("click",load);$("export").addEventListener("click",exportCsv);
