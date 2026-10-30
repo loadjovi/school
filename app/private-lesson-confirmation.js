@@ -157,17 +157,16 @@
   }
   function lessonSignature(){return JSON.stringify((state.privateLessons||[]).map(x=>[x.lessonId,x.updatedAt,x.status,x.parentConfirmation,x.lessonDate,x.startTime,x.endTime]))}
   function startPrivatePoll(){
-    if(privatePoll)clearInterval(privatePoll);
-    if(!(teacherAccount()||state.me?.role==="parent"))return;
+    if(privatePoll){clearInterval(privatePoll);privatePoll=null}
+    // 個課老師在填寫預約／上課內容時，背景更新可能在輸入框短暫失焦或
+    // await 請求完成後覆蓋尚未儲存的文字。老師端統一改為手動重新整理；
+    // 家長端仍保留 30 秒背景同步，以追蹤老師完課／家長確認狀態。
+    if(teacherAccount()||state.me?.role!=="parent")return;
     privatePoll=setInterval(async()=>{
-      const active=teacherAccount()?state.page==="private":["home","record"].includes(state.page);if(!active)return;
-      // 老師正在輸入時，不重新繪製個課畫面，避免 textarea/input 因背景同步失去焦點或未儲存文字被覆蓋。
-      const focused=document.activeElement;
-      const editing=teacherAccount()&&focused&&["INPUT","TEXTAREA","SELECT"].includes(focused.tagName)&&focused.closest("#privateBookingForm, #privateConfirmList");
-      const before=lessonSignature();await loadPrivateLessons();
-      if(editing)return;
+      if(!["home","record"].includes(state.page)||document.hidden)return;
+      const before=lessonSignature();
+      await loadPrivateLessons();
       if(before!==lessonSignature())render();
-      else if(teacherAccount()){const box=document.getElementById("privateConfirmList");if(box)box.innerHTML=teacherHistoryHtml()}
     },30000);
   }
   function teacherHistoryHtml(){

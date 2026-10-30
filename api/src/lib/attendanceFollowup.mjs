@@ -21,5 +21,5 @@ export async function acknowledgeSchoolAbsence({client,schoolId,date,target,acto
  await client.createEntity({partitionKey,rowKey:'audit_'+randomUUID().replaceAll('-',''),kind:'audit',...fields});
  const entry={partitionKey,rowKey,kind:'state',...fields};
  try{if(saved)await client.updateEntity(entry,'Replace',{etag:saved.etag});else await client.createEntity(entry)}catch(e){if([409,412].includes(e.statusCode))return {status:409,error:'其他校方人員剛更新此筆紀錄，請重新整理'};throw e}
- return {status:200,ok:true,acknowledgedAt:at,acknowledgedBy:fields.acknowledgedBy,message:'學校老師已知悉，缺席及成績紀錄保留'};
+ return {status:200,ok:true,acknowledgedAt:at,acknowledgedBy:fields.acknowledgedBy,message:'校方帳號已標記知悉，缺席及成績紀錄保留'};
 }
