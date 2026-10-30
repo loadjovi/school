@@ -2,6 +2,7 @@ import { app } from "@azure/functions";
 import { getTenantContext, ensureEnsembleAccess, ensureTemporaryCourseAccess, json } from "../lib/auth.js";
 import { ensureTenantTables, table, rowKey, getStudentMaster, tenantStudentPartition, listActivityRange, activityStudentId } from "../lib/storage.js";
 import { enforceScheduledCourse } from "./schoolSchedule.js";
+import { dispatchSchoolAbsenceEmails } from "../lib/schoolAbsenceMail.mjs";
 
 const safe=v=>String(v||"").replaceAll("'","''");
 
@@ -56,7 +57,7 @@ app.http("ensembleAttendance",{
     if(!ensureEnsembleAccess(a,{groupName}))return json({error:"無此團體課權限"},403);
     const schedulePolicy=await enforceScheduledCourse(schoolId,sessionDate,"ensemble",groupName);
     if(schedulePolicy.enforced&&!schedulePolicy.allowed)return json({error:schedulePolicy.reason,scheduleBlocked:true},409);
-    const now=new Date().toISOString();
+    const now=new Date().toISOString(),newAbsences=[];
     for(const item of items){
       const master=await getStudentMaster(item.studentId,schoolId);
       if(!master)return json({error:`找不到學生 ${item.studentId}`},404);
@@ -65,7 +66,10 @@ app.http("ensembleAttendance",{
       const oldRows=await existingRows(client,schoolId,item.studentId,sessionDate,groupName);
       for(const old of oldRows)await client.deleteEntity(String(old.partitionKey),String(old.rowKey));
       await client.createEntity({partitionKey:tenantStudentPartition(schoolId,item.studentId),rowKey:rowKey("e"),schoolId,studentId:String(item.studentId),eventDate:sessionDate,groupName:master.groupName,section:master.section||"待確認",status:String(item.status||"present"),minutes:Number(item.minutes||0),teacher:a.email,teacherName:String(a.displayName||a.email||""),actorRole:a.role==="admin"?"admin":"teacher",classType:"ensemble",createdAt:now});
+      if(String(item.status)==="absent"&&!oldRows.some(x=>x.status==="absent"))newAbsences.push({date:sessionDate,classType:"ensemble",studentId:String(item.studentId),name:String(master.studentName||""),groupName,section:String(master.section||"")});
     }
+    try{await dispatchSchoolAbsenceEmails({schoolId,date:sessionDate,items:newAbsences,actor:a.email})}
+    catch(error){console.error("school absence mail audit failed",{schoolId,sessionDate,error:String(error?.message||error)})}
     return json({ok:true,count:items.length,sessionDate,groupName},200);
   }
 });
