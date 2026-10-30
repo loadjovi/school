@@ -72,6 +72,36 @@ test("mobile totals do not misrepresent incomplete grades and are HTML-escaped",
  assert.match(page,/\.mobile-score-breakdown/);
 });
 
+
+test("school score sorting works in both directions and preserves incomplete grades at the bottom",()=>{
+ assert.match(page,/id="scoreOrder"/);
+ assert.match(page,/value="default">預設（團別／年級）/);
+ assert.match(page,/value="desc">總分：高分到低分/);
+ assert.match(page,/value="asc">總分：低分到高分/);
+ assert.match(page,/scoreSortLabels\[\$\("scoreOrder"\)\.value\]/);
+ assert.match(page,/return members\.sort\(\(a,b\)=>compareSemesterGrades\(a,b,config\.scores,\$\("scoreOrder"\)\.value\)\)/);
+ assert.match(page,/\$\("scoreOrder"\)\.addEventListener\("change",display\)/);
+ assert.match(page,/const rows=filtered\(\)\.map\(student=>/); // CSV matches visible ordering
+ assert.match(page,/暫估成績不代表正式排名/);
+ assert.match(page,/不會以「已取得分數」代替總分/);
+ const begin=page.indexOf("function scoreForSorting(");
+ const end=page.indexOf("function filtered(",begin);
+ assert.ok(begin>0&&end>begin);
+ const compare=new Script(page.slice(begin,end)+"\ncompareSemesterGrades").runInNewContext();
+ const students=[{studentId:"p"},{studentId:"n"},{studentId:"e"},{studentId:"q"},{studentId:"t"}];
+ const scores=new Map([
+  ["p",{score:{semesterScore:{total20:7.5,status:"provisional"}}}],
+  ["n",{score:{semesterScore:{total20:11.58,status:"final"}}}],
+  ["e",{error:"failed"}],
+  ["q",{score:{semesterScore:{total20:null,practice10:10}}}],
+  ["t",{score:{semesterScore:{total20:11.58,status:"provisional"}}}]
+ ]);
+ const order=(direction)=>[...students].sort((a,b)=>compare(a,b,scores,direction)).map(x=>x.studentId);
+ assert.deepEqual(order("desc"),["n","t","p","e","q"]); // stable ties, errors / incomplete last
+ assert.deepEqual(order("asc"),["p","n","t","e","q"]); // incomplete never appears before valid scores
+ assert.deepEqual(order("default"),["p","n","e","q","t"]); // existing order unchanged
+});
+
 test("embedded grade page JavaScript parses after mobile compact-card update",()=>{
  const source=page.split("<script>")[1]?.split("</script>")[0];
  assert.ok(source);
