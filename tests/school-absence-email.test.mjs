@@ -9,7 +9,7 @@ const attendance=["sectionAttendance","ensembleAttendance","comprehensiveAttenda
 const schoolApi=readFileSync(new URL("../api/src/functions/schoolAccess.js",import.meta.url),"utf8");
 const auditUi=readFileSync(new URL("../app/school-admin-activity.js",import.meta.url),"utf8");
 
-function harness({lab=false,withRecipient=true}={}){
+function harness({lab=false,withRecipient=true,notificationsEnabled=true}={}){
  const data=new Map(),settings=new Map(),sent=[];
  const schoolId="sacred-heart";
  if(withRecipient)settings.set("SCHOOL|"+schoolId+"|schoolAccess",{emailsJson:JSON.stringify(["school@example.com"])});
@@ -18,13 +18,13 @@ function harness({lab=false,withRecipient=true}={}){
  }:{
   createEntity:async row=>{const key=row.partitionKey+"|"+row.rowKey;if(data.has(key))throw {statusCode:409};data.set(key,row)},
   updateEntity:async row=>{const key=row.partitionKey+"|"+row.rowKey;data.set(key,{...data.get(key),...row})},
-  async *listEntities(){for(const item of data.values())yield item}
+  async *listEntities({queryOptions}={}){const partition=String(queryOptions?.filter||"").split("'")[1];for(const item of data.values())if(!partition||item.partitionKey===partition)yield item}
  }};
  const FakeEmail=class{
   beginSend=async message=>{sent.push(message);return {pollUntilDone:async()=>({status:"Succeeded",id:"provider-1"})}}
  };
  const ctx={createHash,EmailClient:FakeEmail,TableClient:FakeTableClient,TableServiceClient:{fromConnectionString:()=>({createTable:async()=>{}})},
-  tenantSchoolPartition:s=>s,defaultTenantId:()=>schoolId,process:{env:{STORAGE_CONNECTION_STRING:"test-storage",ACS_EMAIL_CONNECTION_STRING:"test-email",ACS_EMAIL_SENDER:"robot@example.com",LAB_ENVIRONMENT:lab?"functional-uat":""}},
+  tenantSchoolPartition:s=>s,defaultTenantId:()=>schoolId,getSystemSettings:async()=>({emailNotificationsEnabled:notificationsEnabled}),process:{env:{STORAGE_CONNECTION_STRING:"test-storage",ACS_EMAIL_CONNECTION_STRING:"test-email",ACS_EMAIL_SENDER:"robot@example.com",LAB_ENVIRONMENT:lab?"functional-uat":""}},
   console,Date,JSON,Set,Map,String,Number,Error,Promise,Array};
  const js=moduleSource.replace(/^import .+;$/gm,"").replace(/\bexport (async )?(function|const)\b/g,(_,asyncPart,kind)=>(asyncPart||"")+kind);
  const api=runInNewContext(js+";({dispatchSchoolAbsenceEmails,schoolAbsenceKey,schoolAbsenceMailContent,absenceNotificationCandidates,listSchoolAbsenceEmails})",ctx);
@@ -63,6 +63,13 @@ test("LAB is recorded as suppressed without sending real mail",async()=>{
  assert.equal(result.sent,0);assert.equal(h.sent.length,0);
  const records=await h.api.listSchoolAbsenceEmails("sacred-heart",{from:"2026-10-30",to:"2026-10-30"});
  assert.equal(records[0].status,"lab_suppressed");
+});
+test("disabled school email notifications are recorded but do not send",async()=>{
+ const h=harness({notificationsEnabled:false});
+ await h.api.dispatchSchoolAbsenceEmails({schoolId:"sacred-heart",date:"2026-10-30",items:[absent()]});
+ assert.equal(h.sent.length,0);
+ const xs=await h.api.listSchoolAbsenceEmails("sacred-heart",{from:"2026-10-30",to:"2026-10-30"});
+ assert.equal(xs[0].status,"disabled");
 });
 test("no recipients is recorded and does not invent a successful notification",async()=>{
  const h=harness({withRecipient:false});
