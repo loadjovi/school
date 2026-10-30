@@ -32,6 +32,8 @@ jobs:
         run: node --test tests/admin-attendance-todos.test.mjs tests/school-absence-followup.test.mjs
       - name: Private lesson background refresh regression test
         run: node --test tests/private-lesson-no-auto-redraw.test.mjs
+      - name: Parent private lesson feedback draft preservation regression
+        run: node --test tests/parent-private-review-refresh-guard.test.mjs
       - name: Private lesson catchup and teacher queue regression tests
         run: node --test tests/private-lesson-catchup-queue.test.mjs
       - name: School absence Email notification and audit regression tests

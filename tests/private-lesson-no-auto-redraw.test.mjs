@@ -12,7 +12,7 @@ function harness(role="teacher"){
  const context={
   teacherAccount:()=>role==="teacher",state,
   clearInterval:()=>{privatePoll=null},setInterval:fn=>{callbacks.push(fn);return 1},
-  document:{hidden:false},loadPrivateLessons:async()=>{fetches++;changes++},
+  document:{hidden:false},isParentReviewEditing:()=>false,loadPrivateLessons:async()=>{fetches++;changes++},
   lessonSignature:()=>String(changes),
   render:()=>{rendered++}
  };

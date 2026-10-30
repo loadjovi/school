@@ -8,6 +8,28 @@
   state.showPrivateParentWaiting=Boolean(state.showPrivateParentWaiting);
   state.showPrivateHistory=Boolean(state.showPrivateHistory);
   let privatePoll=null;
+  // Local unsent drafts survive redraws; never persist ratings/reviews until confirmation.
+  const parentReviewDrafts=new Map();
+  const reviewDraftKey=lessonId=>String(lessonId||"");
+  function captureParentReviewDraft(lessonId){
+    const k=lessonDomKey(lessonId),rating=document.getElementById("rating_"+k),review=document.getElementById("review_"+k);
+    const old=parentReviewDrafts.get(reviewDraftKey(lessonId))||{};
+    parentReviewDrafts.set(reviewDraftKey(lessonId),{
+      rating:rating?Number(rating.value||0):Number(old.rating||0),
+      review:review?String(review.value||""):String(old.review||"")
+    });
+  }
+  function isParentReviewEditing(){
+    if(state.me?.role!=="parent")return false;
+    if(String(document.activeElement?.id||"").startsWith("review_"))return true;
+    return (state.privateLessons||[]).some(x=>{
+      if(workflow(x)!=="awaiting_parent")return false;
+      const k=lessonDomKey(x.lessonId),draft=parentReviewDrafts.get(reviewDraftKey(x.lessonId));
+      const rating=Number(document.getElementById("rating_"+k)?.value??draft?.rating??x.teacherRating??0);
+      const review=String(document.getElementById("review_"+k)?.value??draft?.review??x.teacherReview??"");
+      return rating!==Number(x.teacherRating||0)||review!==String(x.teacherReview||"");
+    });
+  }
 
   const workflowText={scheduled:"已預約",awaiting_parent:"待家長確認",issue:"家長回報問題",completed:"流程完成",cancelled:"已停課"};
   const workflowClass={scheduled:"warn",awaiting_parent:"warn",issue:"bad",completed:"ok",cancelled:"bad"};
@@ -99,9 +121,9 @@
   }
   function parentReviewControls(x){
     if(workflow(x)!=="awaiting_parent")return "";
-    const k=lessonDomKey(x.lessonId),rating=Number(x.teacherRating||0);let stars="";
+    const k=lessonDomKey(x.lessonId),draft=parentReviewDrafts.get(reviewDraftKey(x.lessonId)),rating=Number(draft?.rating??x.teacherRating??0),review=String(draft?.review??x.teacherReview??"");let stars="";
     for(let n=1;n<=5;n++)stars+=`<button type="button" data-star-rating="${esc(k)}" data-star-value="${n}" aria-label="${n} 顆星" aria-pressed="${n<=rating?"true":"false"}" onclick="setPrivateLessonRating('${esc(x.lessonId)}',${n})" style="border:0;background:transparent;padding:2px;font-size:30px;line-height:1;color:#d5a100;cursor:pointer">${n<=rating?"★":"☆"}</button>`;
-    return `<div class="notice" style="margin-top:10px"><b>✅ 請家長確認已完成上課</b><br><span class="muted">老師已送出完課；下方星等是「家長對老師教學的回饋」，不是學生期末成績。若選擇 1～5 顆星，請同時填寫文字評論；若不評分，可直接確認完成上課。</span><input id="rating_${esc(k)}" type="hidden" value="${rating}"><label style="margin-top:10px">老師教學星等（選填）</label><div style="display:flex;align-items:center;gap:4px;margin:6px 0 10px">${stars}<button type="button" class="secondary" style="margin:0 0 0 8px;padding:6px 9px" onclick="setPrivateLessonRating('${esc(x.lessonId)}',0)">清除</button></div><label>老師教學評論／家長備註（選擇星等後必填）</label><textarea id="review_${esc(k)}" rows="3" maxlength="800" placeholder="選擇星等後，請填寫本次課程回饋，例如：學習狀況、老師指導或需要協助的事項">${esc(x.teacherReview||"")}</textarea><div class="row2" style="margin-top:10px"><button class="primary" style="margin-top:0" onclick="confirmPrivateLesson('${esc(x.lessonId)}','confirmed')">✅ 確認完成上課</button><button class="secondary" style="margin-top:0" onclick="confirmPrivateLesson('${esc(x.lessonId)}','issue')">⚠️ 回報問題</button></div></div>`;
+    return `<div class="notice" style="margin-top:10px"><b>✅ 請家長確認已完成上課</b><br><span class="muted">老師已送出完課；下方星等是「家長對老師教學的回饋」，不是學生期末成績。若選擇 1～5 顆星，請同時填寫文字評論；若不評分，可直接確認完成上課。</span><input id="rating_${esc(k)}" type="hidden" value="${rating}"><label style="margin-top:10px">老師教學星等（選填）</label><div style="display:flex;align-items:center;gap:4px;margin:6px 0 10px">${stars}<button type="button" class="secondary" style="margin:0 0 0 8px;padding:6px 9px" onclick="setPrivateLessonRating('${esc(x.lessonId)}',0)">清除</button></div><label>老師教學評論／家長備註（選擇星等後必填）</label><textarea id="review_${esc(k)}" rows="3" maxlength="800" oninput="rememberPrivateLessonReview('${esc(x.lessonId)}')" placeholder="選擇星等後，請填寫本次課程回饋，例如：學習狀況、老師指導或需要協助的事項">${esc(review)}</textarea><div class="row2" style="margin-top:10px"><button class="primary" style="margin-top:0" onclick="confirmPrivateLesson('${esc(x.lessonId)}','confirmed')">✅ 確認完成上課</button><button class="secondary" style="margin-top:0" onclick="confirmPrivateLesson('${esc(x.lessonId)}','issue')">⚠️ 回報問題</button></div></div>`;
   }
   function parentLessonRow(x){
     const w=workflow(x),badge=`<span class="badge ${workflowClass[w]||""}">${esc(needsLessonCatchup(x)?"待老師補登":workflowText[w]||w)}</span>`;
@@ -166,10 +188,11 @@
     // 家長端仍保留 30 秒背景同步，以追蹤老師完課／家長確認狀態。
     if(teacherAccount()||state.me?.role!=="parent")return;
     privatePoll=setInterval(async()=>{
-      if(!["home","record"].includes(state.page)||document.hidden)return;
+      if(!["home","record"].includes(state.page)||document.hidden||isParentReviewEditing())return;
       const before=lessonSignature();
       await loadPrivateLessons();
-      if(before!==lessonSignature())render();
+      // Recheck: parent may start typing while the 30-second request is pending.
+      if(before!==lessonSignature()&&!isParentReviewEditing())render();
     },30000);
   }
   function teacherHistoryHtml(){
@@ -226,12 +249,13 @@
     try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"resend_email"})});notifyToast(r,`${kind} Email 已重寄`);if(source==="admin"&&typeof refreshAdminFollowup==="function")await refreshAdminFollowup();else{await loadPrivateLessons();render()}}catch(e){toast("❌ "+e.message)}
   };
   window.cancelPrivateLessonTeacher=function(studentId,lessonId){return window.cancelPrivateLesson(studentId,lessonId,"teacher")};
-  window.setPrivateLessonRating=function(lessonId,value){const k=lessonDomKey(lessonId),n=Math.max(0,Math.min(5,Number(value||0))),input=document.getElementById("rating_"+k);if(input)input.value=String(n);document.querySelectorAll(`[data-star-rating="${k}"]`).forEach(btn=>{const selected=Number(btn.dataset.starValue||0)<=n;btn.textContent=selected?"★":"☆";btn.setAttribute("aria-pressed",selected?"true":"false")})};
+  window.rememberPrivateLessonReview=function(lessonId){captureParentReviewDraft(lessonId)};
+  window.setPrivateLessonRating=function(lessonId,value){const k=lessonDomKey(lessonId),n=Math.max(0,Math.min(5,Number(value||0))),input=document.getElementById("rating_"+k);if(input)input.value=String(n);captureParentReviewDraft(lessonId);document.querySelectorAll(`[data-star-rating="${k}"]`).forEach(btn=>{const selected=Number(btn.dataset.starValue||0)<=n;btn.textContent=selected?"★":"☆";btn.setAttribute("aria-pressed",selected?"true":"false")})};
   window.confirmPrivateLesson=async function(lessonId,action){
     if(state.me?.role!=="parent"||!state.student)return;let note="",teacherRating=0,teacherReview="";
     if(action==="issue"){note=prompt("請說明問題，例如：日期或時間不符、當天未完成上課")||"";if(!note.trim()){toast("請填寫問題說明");return}}
     else{const k=lessonDomKey(lessonId),reviewInput=document.getElementById("review_"+k);teacherRating=Number(document.getElementById("rating_"+k)?.value||0);teacherReview=String(reviewInput?.value||"").trim();if(teacherRating&&(!Number.isInteger(teacherRating)||teacherRating<1||teacherRating>5)){toast("老師評價必須為 1～5 顆星");return}if(teacherRating&&!teacherReview){toast("已選擇星等，請填寫老師教學評論後再確認");reviewInput?.focus();return}if(teacherReview&&!teacherRating){toast("若要留下老師教學評論，請先選擇 1～5 顆星");return}}
-    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId:state.student.studentId,lessonId,action,note,teacherRating,teacherReview})});notifyToast(r,action==="confirmed"?"已確認完成上課，個課流程已結案":"問題已同步給老師");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
+    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId:state.student.studentId,lessonId,action,note,teacherRating,teacherReview})});notifyToast(r,action==="confirmed"?"已確認完成上課，個課流程已結案":"問題已同步給老師");parentReviewDrafts.delete(reviewDraftKey(lessonId));await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
   };
 
   function parentActivePanel(location="home"){
