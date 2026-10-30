@@ -30,6 +30,8 @@ jobs:
           find app -maxdepth 1 -name "*.js" -print0 | xargs -0 -n1 node --check
       - name: Attendance to-do regression tests
         run: node --test tests/admin-attendance-todos.test.mjs tests/school-absence-followup.test.mjs
+      - name: Private lesson background refresh regression test
+        run: node --test tests/private-lesson-no-auto-redraw.test.mjs
       - name: School absence Email notification and audit regression tests
         run: node --test tests/school-absence-email.test.mjs
       - name: Semester score private lesson follow-up regression tests
