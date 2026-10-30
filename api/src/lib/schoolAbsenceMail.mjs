@@ -2,6 +2,7 @@ import {createHash} from "node:crypto";
 import {EmailClient} from "@azure/communication-email";
 import {TableClient,TableServiceClient} from "@azure/data-tables";
 import {tenantSchoolPartition,defaultTenantId} from "./storage.js";
+import {getSystemSettings} from "./settings.js";
 
 // School staff are the explicitly authorized "校方查詢帳號" (school-access),
 // NOT every instructor nor parent. Only notify for group-class absences.
@@ -90,6 +91,7 @@ export async function dispatchSchoolAbsenceEmails({schoolId,date,items=[],actor=
  if(!students.length)return {created:0,sent:0,skipped:0};
  const log=await logs();
  const recipients=await staffEmails(schoolId);
+ const enabled=(await getSystemSettings(schoolId)).emailNotificationsEnabled===true;
  const recipientsForAudit=recipients.length?recipients:[""];
  const batches=new Map(),now=new Date().toISOString(),sid=schoolAbsenceLogPartition(schoolId);
  let created=0,sent=0,skipped=0;
@@ -111,6 +113,7 @@ export async function dispatchSchoolAbsenceEmails({schoolId,date,items=[],actor=
   let result;
   if(!recipient)result={status:"no_recipient",messageId:"",error:"尚未設定校方查詢帳號收件人"};
   else if(process.env.LAB_ENVIRONMENT==="functional-uat")result={status:"lab_suppressed",messageId:"",error:"LAB 不寄送真實通知"};
+  else if(!enabled)result={status:"disabled",messageId:"",error:"學校 Email 通知功能尚未啟用"};
   else{
    const mail=schoolAbsenceMailContent({date,students:rows,appUrl:truncate(process.env.PUBLIC_APP_URL||"",350)});
    result=await deliver(recipient,mail);
