@@ -78,7 +78,8 @@ test("school score sorting works in both directions and preserves incomplete gra
  assert.match(page,/value="default">預設（團別／年級）/);
  assert.match(page,/value="desc">總分：高分到低分/);
  assert.match(page,/value="asc">總分：低分到高分/);
- assert.match(page,/scoreSortLabels\[\$\("scoreOrder"\)\.value\]/);
+ assert.match(page,/const order=\$\("scoreOrder"\)\?\.value\|\|"default"/);
+ assert.match(page,/order==="default"\?"":"｜排序："/);
  assert.match(page,/return members\.sort\(\(a,b\)=>compareSemesterGrades\(a,b,config\.scores,\$\("scoreOrder"\)\.value\)\)/);
  assert.match(page,/\$\("scoreOrder"\)\.addEventListener\("change",display\)/);
  assert.match(page,/const rows=filtered\(\)\.map\(student=>/); // CSV matches visible ordering
