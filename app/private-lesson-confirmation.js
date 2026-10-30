@@ -188,10 +188,11 @@
     // 家長端仍保留 30 秒背景同步，以追蹤老師完課／家長確認狀態。
     if(teacherAccount()||state.me?.role!=="parent")return;
     privatePoll=setInterval(async()=>{
-      if(!["home","record"].includes(state.page)||document.hidden)return;
+      if(!["home","record"].includes(state.page)||document.hidden||isParentReviewEditing())return;
       const before=lessonSignature();
       await loadPrivateLessons();
-      if(before!==lessonSignature())render();
+      // Recheck: parent may start typing while the 30-second request is pending.
+      if(before!==lessonSignature()&&!isParentReviewEditing())render();
     },30000);
   }
   function teacherHistoryHtml(){
