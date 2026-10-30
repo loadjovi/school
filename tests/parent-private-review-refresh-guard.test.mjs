@@ -29,7 +29,7 @@ function harness(){
   const context={
     state,document,window:{},setInterval:fn=>{callbacks.push(fn);return callbacks.length},
     clearInterval:()=>{},lessonDomKey:x=>x,workflow:x=>x.workflowStatus,
-    esc:x=>String(x??""),toast:()=>{},notifyToast:()=>{},prompt:()=>"",
+    esc:x=>String(x??""),teacherAccount:()=>false,toast:()=>{},notifyToast:()=>{},prompt:()=>"",
     render:()=>{renders++},
     lessonSignature:()=>JSON.stringify(state.privateLessons.map(x=>x.updatedAt)),
     loadPrivateLessons:async()=>{fetches++;row.updatedAt=String(fetches)},
