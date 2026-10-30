@@ -249,12 +249,13 @@
     try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"resend_email"})});notifyToast(r,`${kind} Email 已重寄`);if(source==="admin"&&typeof refreshAdminFollowup==="function")await refreshAdminFollowup();else{await loadPrivateLessons();render()}}catch(e){toast("❌ "+e.message)}
   };
   window.cancelPrivateLessonTeacher=function(studentId,lessonId){return window.cancelPrivateLesson(studentId,lessonId,"teacher")};
-  window.setPrivateLessonRating=function(lessonId,value){const k=lessonDomKey(lessonId),n=Math.max(0,Math.min(5,Number(value||0))),input=document.getElementById("rating_"+k);if(input)input.value=String(n);document.querySelectorAll(`[data-star-rating="${k}"]`).forEach(btn=>{const selected=Number(btn.dataset.starValue||0)<=n;btn.textContent=selected?"★":"☆";btn.setAttribute("aria-pressed",selected?"true":"false")})};
+  window.rememberPrivateLessonReview=function(lessonId){captureParentReviewDraft(lessonId)};
+  window.setPrivateLessonRating=function(lessonId,value){const k=lessonDomKey(lessonId),n=Math.max(0,Math.min(5,Number(value||0))),input=document.getElementById("rating_"+k);if(input)input.value=String(n);captureParentReviewDraft(lessonId);document.querySelectorAll(`[data-star-rating="${k}"]`).forEach(btn=>{const selected=Number(btn.dataset.starValue||0)<=n;btn.textContent=selected?"★":"☆";btn.setAttribute("aria-pressed",selected?"true":"false")})};
   window.confirmPrivateLesson=async function(lessonId,action){
     if(state.me?.role!=="parent"||!state.student)return;let note="",teacherRating=0,teacherReview="";
     if(action==="issue"){note=prompt("請說明問題，例如：日期或時間不符、當天未完成上課")||"";if(!note.trim()){toast("請填寫問題說明");return}}
     else{const k=lessonDomKey(lessonId),reviewInput=document.getElementById("review_"+k);teacherRating=Number(document.getElementById("rating_"+k)?.value||0);teacherReview=String(reviewInput?.value||"").trim();if(teacherRating&&(!Number.isInteger(teacherRating)||teacherRating<1||teacherRating>5)){toast("老師評價必須為 1～5 顆星");return}if(teacherRating&&!teacherReview){toast("已選擇星等，請填寫老師教學評論後再確認");reviewInput?.focus();return}if(teacherReview&&!teacherRating){toast("若要留下老師教學評論，請先選擇 1～5 顆星");return}}
-    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId:state.student.studentId,lessonId,action,note,teacherRating,teacherReview})});notifyToast(r,action==="confirmed"?"已確認完成上課，個課流程已結案":"問題已同步給老師");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
+    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId:state.student.studentId,lessonId,action,note,teacherRating,teacherReview})});notifyToast(r,action==="confirmed"?"已確認完成上課，個課流程已結案":"問題已同步給老師");parentReviewDrafts.delete(reviewDraftKey(lessonId));await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
   };
 
   function parentActivePanel(location="home"){
