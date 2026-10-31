@@ -8,6 +8,7 @@ const core=readFileSync(new URL("../app/app-v3.js",import.meta.url),"utf8");
 const privateApi=readFileSync(new URL("../api/src/functions/privateLesson.js",import.meta.url),"utf8");
 const practiceApi=readFileSync(new URL("../api/src/functions/practice.js",import.meta.url),"utf8");
 const summaryApi=readFileSync(new URL("../api/src/functions/summary.js",import.meta.url),"utf8");
+const practiceHistory=readFileSync(new URL("../app/parent-practice-history.js",import.meta.url),"utf8");
 const testLesson=(overrides={})=>({lessonId:"private-A",studentId:"student1",lessonDate:"2026-10-29",workflowStatus:"awaiting_parent",
   weeklyPracticeGoals:["降 E 大調音階","第 18～24 小節換把練習"],teacherName:"測試個課老師",completedAt:"2026-10-29T10:00:00Z",...overrides});
 
@@ -96,4 +97,27 @@ test("current score remains based on qualified minutes, not weekly goals",()=>{
  assert.match(summaryApi,/privateMonthlyScore5/);
  assert.doesNotMatch(summaryApi,/weeklyGoalText|weeklyPracticeGoals/);
  assert.match(practiceApi,/PRACTICE_QUALIFIED_MINUTES/);
+});
+
+test("previous-month background refresh cannot erase unsent practice goal choice or typed practice text",()=>{
+ const segment=practiceHistory.slice(practiceHistory.indexOf("  function practiceDraftActive(){"),practiceHistory.indexOf("  function previousMonth(){"));
+ assert.ok(segment.includes("function practiceDraftActive"));
+ const dom={text:{value:""},selected:null,confirm:{checked:false},activeElement:{id:""}};
+ const context={state:{page:"practice"},document:{
+   getElementById:id=>id==="pContent"?dom.text:id==="pConfirm"?dom.confirm:null,
+   querySelector:()=>dom.selected,
+   get activeElement(){return dom.activeElement}
+ }};
+ vm.createContext(context);
+ vm.runInContext(segment+";this.check=practiceDraftActive",context);
+ assert.equal(context.check(),false);
+ dom.selected={dataset:{goalLesson:"private-A"}};
+ assert.equal(context.check(),true);
+ dom.selected=null;dom.text.value="今天天氣好，練習換把";
+ assert.equal(context.check(),true);
+ dom.text.value="";dom.confirm.checked=true;
+ assert.equal(context.check(),true);
+ dom.confirm.checked=false;context.state.page="record";
+ assert.equal(context.check(),false);
+ assert.match(practiceHistory,/&&!practiceDraftActive\(\)\)render\(\)/);
 });
