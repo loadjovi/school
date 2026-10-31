@@ -48,7 +48,6 @@ const records=[],iterations=3;
 let ready=false,busy=false;
 const now=()=>performance.now();
 const date=()=>new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"});
-const escapeCsv=()=>null; // deliberately no account-data export
 function headers(auth){
   const x={Accept:"application/json"};
   if(auth){
@@ -77,7 +76,6 @@ async function get(stage,path,auth=false,parse=false){
 }
 function updateButtons(){
   $("public").disabled=!ready||busy;$("auth").disabled=!ready||busy;
-  $("download").disabled===true; // evaluation has no side effects
   $("download").disabled=busy||!records.length;
   $("busy").textContent=busy?"測量中，請不要重複點擊。":"";
 }
