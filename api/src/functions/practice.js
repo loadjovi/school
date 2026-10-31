@@ -2,6 +2,7 @@ import { app } from "@azure/functions";
 import { getTenantContext, ensureStudentAccess, getStudentIdAliases, json } from "../lib/auth.js";
 import { ensureTenantTables, table, listByStudent, tenantStudentPartition, activityStudentId } from "../lib/storage.js";
 import { groupPracticeRows, practiceDayTotals, practiceSessionKey, practiceSessionId, PRACTICE_QUALIFIED_MINUTES } from "../lib/practiceRecords.js";
+import {readWeeklyGoals,isPublishedLesson,withinGoalWindow} from "../lib/musicLearningGoals.mjs";
 function minutesBetween(start,end){
   const [sh,sm]=String(start||"").split(":").map(Number),[eh,em]=String(end||"").split(":").map(Number);
   if([sh,sm,eh,em].some(Number.isNaN))return -1;
@@ -20,7 +21,7 @@ app.http("practice",{methods:["GET","POST","DELETE"],authLevel:"anonymous",route
     const groups=groupPracticeRows((await Promise.all(aliases.map(id=>listByStudent("practice",id,start,end,schoolId)))).flat())
       .sort((a,b)=>String(b.record.eventDate||"").localeCompare(String(a.record.eventDate||""))||String(b.record.createdAt||"").localeCompare(String(a.record.createdAt||"")));
     const dayTotals=practiceDayTotals(groups.map(x=>x.record));
-    return json({qualifiedMinutes:PRACTICE_QUALIFIED_MINUTES,items:groups.map(({record:x,duplicates})=>({practiceId:String(x.rowKey||""),studentId:activityStudentId(x),sourceStudentId:partitionStudentId(x),practiceDate:x.eventDate,startTime:x.startTime,endTime:x.endTime,minutes:x.minutes,dailyMinutes:dayTotals.get(String(x.eventDate||""))||0,qualified:(dayTotals.get(String(x.eventDate||""))||0)>=PRACTICE_QUALIFIED_MINUTES,practiceContent:x.practiceContent,focus:x.focus,createdBy:String(x.createdBy||""),createdAt:String(x.createdAt||""),duplicateRecords:duplicates.map(r=>({practiceId:String(r.rowKey||""),sourceStudentId:partitionStudentId(r)})).filter(r=>r.practiceId&&r.sourceStudentId)}))});
+    return json({qualifiedMinutes:PRACTICE_QUALIFIED_MINUTES,items:groups.map(({record:x,duplicates})=>({practiceId:String(x.rowKey||""),studentId:activityStudentId(x),sourceStudentId:partitionStudentId(x),practiceDate:x.eventDate,startTime:x.startTime,endTime:x.endTime,minutes:x.minutes,dailyMinutes:dayTotals.get(String(x.eventDate||""))||0,qualified:(dayTotals.get(String(x.eventDate||""))||0)>=PRACTICE_QUALIFIED_MINUTES,practiceContent:x.practiceContent,focus:x.focus,weeklyGoalText:String(x.weeklyGoalText||""),weeklyGoalLessonDate:String(x.weeklyGoalLessonDate||""),weeklyGoalLessonId:String(x.weeklyGoalLessonId||""),createdBy:String(x.createdBy||""),createdAt:String(x.createdAt||""),duplicateRecords:duplicates.map(r=>({practiceId:String(r.rowKey||""),sourceStudentId:partitionStudentId(r)})).filter(r=>r.practiceId&&r.sourceStudentId)}))});
   }
 
   if(request.method==="DELETE"){
@@ -56,6 +57,22 @@ app.http("practice",{methods:["GET","POST","DELETE"],authLevel:"anonymous",route
   const existing=dayRows.find(x=>practiceSessionKey(x)===sessionKey);
   const existingDailyMinutes=practiceDayTotals(dayRows).get(body.practiceDate)||0;
   if(existing)return json({ok:true,duplicate:true,practiceId:existing.rowKey,studentId:canonicalStudentId,minutes:existing.minutes,dailyMinutes:existingDailyMinutes,qualified:existingDailyMinutes>=PRACTICE_QUALIFIED_MINUTES});
+  let linkedGoal=null;
+  if(body.weeklyGoal!=null){
+    const lessonId=String(body.weeklyGoal?.lessonId||"").trim(),index=Number(body.weeklyGoal?.index);
+    if(!lessonId||lessonId.length>180||!Number.isInteger(index)||index<0||index>=3)
+      return json({error:"選擇的老師練習建議格式不正確"},400);
+    let lesson=null;
+    for(const id of aliases){
+      try{lesson=await table("tenantPrivateLesson").getEntity(tenantStudentPartition(schoolId,id),lessonId);break}
+      catch(e){if(e.statusCode!==404)throw e}
+    }
+    if(!lesson||!isPublishedLesson(lesson)||!withinGoalWindow(lesson.eventDate,body.practiceDate))
+      return json({error:"練習建議不屬於此學生，或已超過 14 天使用期間"},400);
+    const goals=readWeeklyGoals(lesson.weeklyPracticeGoalsJson);
+    if(!goals[index])return json({error:"老師練習建議已不存在，請重新選擇"},400);
+    linkedGoal={lessonId,lessonDate:String(lesson.eventDate),text:goals[index]};
+  }
   const practiceId=practiceSessionId(schoolId,canonicalStudentId,body);
   const qualified=minutes>=PRACTICE_QUALIFIED_MINUTES;
   const dailyMinutes=existingDailyMinutes+minutes,dailyQualified=dailyMinutes>=PRACTICE_QUALIFIED_MINUTES;
@@ -65,6 +82,7 @@ app.http("practice",{methods:["GET","POST","DELETE"],authLevel:"anonymous",route
       partitionKey:tenantStudentPartition(schoolId,canonicalStudentId),rowKey:practiceId,schoolId,studentId:canonicalStudentId,eventDate:body.practiceDate,
       startTime:body.startTime,endTime:body.endTime,minutes,qualified,
       practiceContent:String(body.practiceContent||"").slice(0,500),focus:String(body.focus||"").slice(0,100),
+      weeklyGoalText:linkedGoal?.text||"",weeklyGoalLessonDate:linkedGoal?.lessonDate||"",weeklyGoalLessonId:linkedGoal?.lessonId||"",
       confirmed:true,createdBy:a.email,createdAt:new Date().toISOString()
     });
   }catch(e){if(e.statusCode!==409)throw e;return json({ok:true,duplicate:true,practiceId,studentId:canonicalStudentId,minutes,dailyMinutes,qualified:dailyQualified})}

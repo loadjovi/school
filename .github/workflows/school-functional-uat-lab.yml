@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - feat/music-learning-journey-lab-20261031
   workflow_dispatch:
 
 permissions:
@@ -59,6 +60,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_functional_lab_isolation.py' -v
           node --test tests/admin-semester-scores.test.mjs tests/admin-score-quick-filters.test.mjs tests/admin-attendance-todos.test.mjs tests/tshirt-first-receipt.test.mjs
           node --test tests/admin-private-followup.test.mjs api/test/privateLessonFollowup.test.mjs
+          node --test tests/music-learning-journey.test.mjs
           node --test tests/tshirt-procurement-plan.test.mjs tests/tshirt-cadre-application.test.mjs tests/tshirt-procurement-admin.test.mjs api/test/tshirtStaffDemand.test.mjs
           node --test tests/school-absence-followup.test.mjs
           node --test tests/parent-uniform-payment-notice.test.mjs tests/payment-email-notifications.test.mjs tests/finance-payment-notifications.test.mjs
