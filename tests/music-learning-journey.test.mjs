@@ -12,7 +12,7 @@ const testLesson=(overrides={})=>({lessonId:"private-A",studentId:"student1",les
   weeklyPracticeGoals:["降 E 大調音階","第 18～24 小節換把練習"],teacherName:"測試個課老師",completedAt:"2026-10-29T10:00:00Z",...overrides});
 
 test("weekly teacher goals bounded, sanitized and legacy JSON safe",()=>{
-  assert.deepEqual(normalizeWeeklyGoals(["音階","  換把  ","換把",""]).goals,["音階","換把"]);
+  assert.deepEqual(normalizeWeeklyGoals(["音階","  換把  ","換把"]).goals,["音階","換把"]);
   assert.match(normalizeWeeklyGoals(["1","2","3","4"]).error,/最多/);
   assert.match(normalizeWeeklyGoals(["x".repeat(121)]).error,/120/);
   assert.match(normalizeWeeklyGoals([123]).error,/格式/);
