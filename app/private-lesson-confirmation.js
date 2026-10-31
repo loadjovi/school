@@ -165,6 +165,11 @@
     }else if(w==="completed")action=`<div class="notice private-completed-state" style="margin-top:10px">✅ 已完成上課並經家長確認，紀錄已結案。</div>`;
     else if(w==="cancelled")action=`<div class="notice" style="margin-top:10px">⏸️ 此堂個別課已停課。</div>`;
 
+    if(w==="awaiting_parent"||w==="completed"){
+      const k=lessonDomKey(x.lessonId);
+      action+=weeklyGoalEditor(x,"published_"+k)+`<button class="secondary" style="width:100%;margin-top:8px" onclick="savePublishedWeeklyGoals('\${esc(x.studentId)}','\${esc(x.lessonId)}')">💾 更新本週練習建議</button>`;
+    }
+
     const editBanner=expanded?`<div class="private-editing-banner">✏️ 目前操作：<b>${esc(currentStudentName(x.studentId))}</b>${studentMetaLine(x.studentId)?`｜${esc(studentMetaLine(x.studentId))}`:""}</div>`:"";
     return `<div class="private-student-card ${expanded?"is-expanded":""}" id="privateLesson_${lessonDomKey(x.lessonId)}">
       ${teacherLessonHeader(x,badge)}
@@ -244,6 +249,14 @@
     if(reason===null)return;if(!String(reason).trim()){toast("請填寫停課原因");return}
     if(!confirm(`確定停課？\n\n${x?`${x.lessonDate} ${x.startTime}～${x.endTime}\n`:""}停課後會同步更新雙方平台。`))return;
     try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"cancel_lesson",reason:String(reason).trim()})});notifyToast(r,"個別課已停課並同步");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
+  };
+  window.savePublishedWeeklyGoals=async function(studentId,lessonId){
+    const k=lessonDomKey(lessonId),weeklyPracticeGoals=weeklyGoalsFromEditor("published_"+k);
+    try{
+      await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"update_weekly_practice_goals",weeklyPracticeGoals})});
+      toast("✅ 本週練習建議已更新，家長重新整理即可看到");
+      await loadPrivateLessons();render();
+    }catch(e){toast("❌ "+e.message)}
   };
   window.savePrivateLessonContent=async function(studentId,lessonId){
     const k=lessonDomKey(lessonId),lessonContent=document.getElementById(`completeContent_${k}`)?.value.trim()||"";
@@ -464,7 +477,7 @@
   };
 
   const baseRefreshStudent=refreshStudent;refreshStudent=async function(){await baseRefreshStudent();if(state.me?.role==="parent")await loadPrivateLessons()};
-  const baseGo=go;go=async function(p){if((p==="private"&&teacherAccount())||(state.me?.role==="parent"&&["home","record","practice"].includes(p)))await loadPrivateLessons();const result=await baseGo(p);startPrivatePoll();return result};
+  const baseGo=go;go=async function(p){if((p==="private"&&teacherAccount())||(state.me?.role==="parent"&&["home","record"].includes(p)))await loadPrivateLessons();const result=await baseGo(p);startPrivatePoll();return result};
   if(state.me?.role==="parent"&&state.student)loadPrivateLessons().then(()=>{render();startPrivatePoll()}).catch(()=>{});
   if(teacherAccount())startPrivatePoll();
 })();
