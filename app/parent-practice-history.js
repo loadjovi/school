@@ -6,6 +6,15 @@
   state.parentPreviousPracticeExpandedKey="";
   state.parentPracticeRefreshing=false;
 
+  function practiceDraftActive(){
+    if(state.page!=="practice")return false;
+    const content=document.getElementById("pContent");
+    const selectedGoal=document.querySelector('input[name="weeklyGoalChoice"]:checked[data-goal-lesson]');
+    const editor=document.activeElement;
+    return !!content?.value?.trim()||!!selectedGoal||
+      !!document.getElementById("pConfirm")?.checked||
+      ["pContent","pDate","pStart","pEnd"].includes(String(editor?.id||""));
+  }
   function previousMonth(){
     const current=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit"}).format(new Date());
     const [year,month]=current.split("-").map(Number);
@@ -24,7 +33,7 @@
       }
     }finally{
       if(pending?.id===id)pending=null;
-      if(id===requestId&&state.me?.role==="parent"&&historyKey()===key&&["practice","record"].includes(state.page))render();
+      if(id===requestId&&state.me?.role==="parent"&&historyKey()===key&&["practice","record"].includes(state.page)&&!practiceDraftActive())render();
     }
   }
   function scheduleLoad(key,studentId,month,immediate=false){
