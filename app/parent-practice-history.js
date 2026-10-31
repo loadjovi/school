@@ -48,6 +48,7 @@
   };
   window.refreshParentPracticeHistory=async function(){
     if(state.me?.role!=="parent"||!state.student?.studentId||state.parentPracticeRefreshing)return;
+    if(practiceDraftActive()){toast("請先送出目前練習紀錄，再重新整理歷史，避免未儲存的內容消失");return}
     state.parentPracticeRefreshing=true;
     const studentId=String(state.student.studentId);
     render();
