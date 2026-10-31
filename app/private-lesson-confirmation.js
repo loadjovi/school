@@ -365,7 +365,7 @@
     if(!lesson)return `<section class="card"><h2>🎯 個課老師本週練習建議</h2><div class="notice">老師尚未設定本週練習建議。仍可正常自主練習、登記時間，不影響成績。</div></section>`;
     const goals=lesson.weeklyPracticeGoals.map((goal,index)=>({goal:String(goal||"").trim(),index})).filter(g=>g.goal);
     return `<section class="card" id="weeklyPracticeGoals"><h2>🎯 個課老師本週建議練什麼？</h2>
-      <div class="notice">來源：${esc(teacherLabel(lesson))}｜${esc(lesson.lessonDate)} 個課；本週可依建議練習。選擇一項後，本次打卡會記錄練習對應目標（選填，不影響練習分數）。</div>
+      <div class="notice">來源：${esc(teacherLabel(lesson))}｜${esc(lesson.lessonDate)} 個課；本週可依建議練習。選擇一項後，本次打卡會記錄練習對應目標（選填，不影響練習分數）。${lesson.lessonContent?`<div style="margin-top:6px">📖 上次個課內容：${esc(lesson.lessonContent)}</div>`:""}</div>
       ${goals.map(({goal,index})=>`<label class="check" style="margin:10px 0;padding:10px;border:1px solid #dce6e2;border-radius:10px"><input type="radio" name="weeklyGoalChoice" data-goal-lesson="${esc(lesson.lessonId)}" data-goal-index="${index}"><span>${esc(goal)}</span></label>`).join("")}
       <label class="check" style="margin:8px 0"><input type="radio" name="weeklyGoalChoice" checked><span>這次練習其他內容（不指定老師目標）</span></label>
     </section>`;
@@ -373,13 +373,13 @@
   function learningJourneyParentPanel(){
     if(state.me?.role!=="parent"||!state.student)return "";
     const lesson=currentWeeklyLearningGoals();
-    const rows=(state.practice||[]).filter(x=>x.weeklyGoalText).slice(0,12);
+    const all=(state.practice||[]).filter(x=>x.weeklyGoalText),rows=all.slice(0,12);
     const goals=lesson?.weeklyPracticeGoals||[];
     if(!goals.length&&!rows.length)return "";
     const latest=goals.length?`<div class="notice">最近老師建議：${esc(lesson.lessonDate)}｜${esc(teacherLabel(lesson))}</div>
-      ${goals.map(goal=>{const count=rows.filter(x=>String(x.weeklyGoalText)===String(goal)&&String(x.weeklyGoalLessonId)===String(lesson.lessonId)).length;
+      ${goals.map(goal=>{const count=all.filter(x=>String(x.weeklyGoalText)===String(goal)&&String(x.weeklyGoalLessonId)===String(lesson.lessonId)).length;
         return `<div class="item"><div><b>${esc(goal)}</b><small>本月已對應練習 ${count} 次</small></div><span class="badge ${count?"ok":"warn"}">${count?"有練習紀錄":"持續練習"}</span></div>`}).join("")}`:"";
-    const recent=rows.length?`<details style="margin-top:10px"><summary>📒 查看本月練習歷程（${rows.length} 筆）</summary>
+    const recent=rows.length?`<details style="margin-top:10px"><summary>📒 查看最近練習歷程（顯示 ${rows.length}／${all.length} 筆）</summary>
       ${rows.map(x=>`<div class="item"><div><b>${esc(x.practiceDate)}｜${esc(x.weeklyGoalText)}</b><small>${Number(x.minutes||0)} 分鐘｜${esc(x.practiceContent||"自主練習")}</small></div></div>`).join("")}</details>`:"";
     return `<section class="card"><h2>🎼 我的音樂學習歷程</h2>
       <div class="muted">將個課老師建議與自主練習紀錄連起來。這是練習追蹤，不代表已達成老師評量或更動學期成績。</div>
