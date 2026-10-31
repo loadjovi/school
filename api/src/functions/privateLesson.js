@@ -6,7 +6,7 @@ import {
 } from "../lib/storage.js";
 import { sendPrivateLessonWorkflowEmail } from "../lib/email.js";
 import { getSystemSettings } from "../lib/settings.js";
-import {normalizeWeeklyGoals,readWeeklyGoals} from "../lib/musicLearningGoals.mjs";
+import {normalizeWeeklyGoals,readWeeklyGoals,isPublishedLesson} from "../lib/musicLearningGoals.mjs";
 
 const attendanceStatuses=new Set(["present","late","leave","absent"]);
 const teacherCompletionStatuses=new Set(["scheduled","completion_issue"]);
@@ -262,6 +262,25 @@ app.http("privateLesson",{
         const result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"completed",target:"parents",actorEmail:a.email,actorName:a.displayName||teacherName});
         applyNotification(entity,"completed",result,a.email);await table("tenantPrivateLesson").updateEntity(entity,"Merge");
         return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity)});
+      }
+
+      if(action==="update_weekly_practice_goals"){
+        if(!(isAdmin||isTeacher))return json({error:"只有授權個課老師或管理員可維護本週練習建議"},403);
+        if(!isPublishedLesson(entity))return json({error:"請先完成上課，才能更新已發布的練習建議"},409);
+        const goals=normalizeWeeklyGoals(body.weeklyPracticeGoals);
+        if(goals.error)return json({error:goals.error},400);
+        entity.weeklyPracticeGoalsJson=JSON.stringify(goals.goals);
+        entity.weeklyPracticeGoalsUpdatedBy=String(a.email||"");
+        entity.weeklyPracticeGoalsUpdatedAt=new Date().toISOString();
+        entity.updatedAt=entity.weeklyPracticeGoalsUpdatedAt;
+        await table("tenantPrivateLesson").updateEntity({
+          partitionKey:entity.partitionKey,rowKey:entity.rowKey,
+          weeklyPracticeGoalsJson:entity.weeklyPracticeGoalsJson,
+          weeklyPracticeGoalsUpdatedBy:entity.weeklyPracticeGoalsUpdatedBy,
+          weeklyPracticeGoalsUpdatedAt:entity.weeklyPracticeGoalsUpdatedAt,
+          updatedAt:entity.updatedAt
+        },"Merge");
+        return json({ok:true,item:view(entity,teacherName)});
       }
 
       if(action==="resend_email"){
