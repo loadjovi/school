@@ -370,9 +370,24 @@
       <label class="check" style="margin:8px 0"><input type="radio" name="weeklyGoalChoice" checked><span>這次練習其他內容（不指定老師目標）</span></label>
     </section>`;
   }
+  function learningJourneyParentPanel(){
+    if(state.me?.role!=="parent"||!state.student)return "";
+    const lesson=currentWeeklyLearningGoals();
+    const rows=(state.practice||[]).filter(x=>x.weeklyGoalText).slice(0,12);
+    const goals=lesson?.weeklyPracticeGoals||[];
+    if(!goals.length&&!rows.length)return "";
+    const latest=goals.length?`<div class="notice">最近老師建議：\${esc(lesson.lessonDate)}｜\${esc(teacherLabel(lesson))}</div>
+      \${goals.map(goal=>{const count=rows.filter(x=>String(x.weeklyGoalText)===String(goal)&&String(x.weeklyGoalLessonId)===String(lesson.lessonId)).length;
+        return `<div class="item"><div><b>\${esc(goal)}</b><small>本月已對應練習 \${count} 次</small></div><span class="badge \${count?"ok":"warn"}">\${count?"有練習紀錄":"持續練習"}</span></div>`}).join("")}`:"";
+    const recent=rows.length?`<details style="margin-top:10px"><summary>📒 查看本月練習歷程（\${rows.length} 筆）</summary>
+      \${rows.map(x=>`<div class="item"><div><b>\${esc(x.practiceDate)}｜\${esc(x.weeklyGoalText)}</b><small>\${Number(x.minutes||0)} 分鐘｜\${esc(x.practiceContent||"自主練習")}</small></div></div>`).join("")}</details>`:"";
+    return `<section class="card"><h2>🎼 我的音樂學習歷程</h2>
+      <div class="muted">將個課老師建議與自主練習紀錄連起來。這是練習追蹤，不代表已達成老師評量或更動學期成績。</div>
+      \${latest}\${recent}</section>`;
+  }
   const basePracticePage=practicePage;practicePage=function(){return weeklyGoalsParentPanel()+basePracticePage()};
   const baseHome=home;home=function(){return parentActivePanel("home")+baseHome()};
-  const baseRecordPage=recordPage;recordPage=function(){const html=baseRecordPage();if(state.me?.role!=="parent")return html;const score=typeof window.parentSemesterScorePanel==="function"?window.parentSemesterScorePanel():"";return html+score+window.privateLessonParentPanels("record")};
+  const baseRecordPage=recordPage;recordPage=function(){const html=baseRecordPage();if(state.me?.role!=="parent")return html;const score=typeof window.parentSemesterScorePanel==="function"?window.parentSemesterScorePanel():"";return html+score+window.privateLessonParentPanels("record")+learningJourneyParentPanel()};
 
   privatePage=function(){
     const d=today(),defaultBookingDate=nowTime()<"18:00"?d:shiftDate(d,1),ids=new Set((state.me.privateStudentIds||[]).map(String)),students=(state.students||[]).filter(s=>ids.has(String(s.studentId)));
