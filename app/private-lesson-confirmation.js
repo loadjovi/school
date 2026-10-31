@@ -247,12 +247,12 @@
   };
   window.savePrivateLessonContent=async function(studentId,lessonId){
     const k=lessonDomKey(lessonId),lessonContent=document.getElementById(`completeContent_${k}`)?.value.trim()||"";
-    try{await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"update_lesson_content",lessonContent})});toast("✅ 上課內容已儲存；原預約日期與時間保持不變");await loadPrivateLessons();render();setTimeout(()=>document.getElementById("privateLesson_"+k)?.scrollIntoView({behavior:"smooth",block:"center"}),50)}catch(e){toast("❌ "+e.message)}
+    try{await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"update_lesson_content",lessonContent,weeklyPracticeGoals:weeklyGoalsFromEditor("complete_"+k)})});toast("✅ 上課內容已儲存；原預約日期與時間保持不變");await loadPrivateLessons();render();setTimeout(()=>document.getElementById("privateLesson_"+k)?.scrollIntoView({behavior:"smooth",block:"center"}),50)}catch(e){toast("❌ "+e.message)}
   };
   window.completePrivateLesson=async function(studentId,lessonId){
     const k=lessonDomKey(lessonId),lessonContent=document.getElementById(`completeContent_${k}`)?.value.trim()||"",attendanceStatus=document.getElementById(`completeAttendance_${k}`)?.value||"present";
     if(!confirm("確定本堂已完成上課？\n\n本堂完成紀錄會自動累計個課次數；每月完成 4 次 = 5 分，正式月份再取學期平均。送出後家長平台會出現『待確認』。"))return;
-    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"complete_lesson",lessonContent,attendanceStatus})});notifyToast(r,"已送出完成上課，等待家長確認");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
+    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"complete_lesson",lessonContent,attendanceStatus,weeklyPracticeGoals:weeklyGoalsFromEditor("complete_"+k)})});notifyToast(r,"已送出完成上課，等待家長確認");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
   };
   window.resendPrivateLessonEmail=async function(studentId,lessonId,source="teacher"){
     if(!studentId||!lessonId)return;const x=(state.privateLessons||[]).find(r=>String(r.lessonId)===String(lessonId)),kind=workflow(x)==="scheduled"?"預約":"完課確認";
@@ -403,14 +403,14 @@
   window.closeActivePrivateLesson=window.showPrivateBookingForm;
   window.saveActivePrivateLessonContent=async function(studentId,lessonId){
     const lessonContent=document.getElementById("activeLessonContent")?.value.trim()||"";
-    try{await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"update_lesson_content",lessonContent})});toast("✅ 上課內容已儲存");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
+    try{await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"update_lesson_content",lessonContent,weeklyPracticeGoals:weeklyGoalsFromEditor("active")})});toast("✅ 上課內容已儲存");await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
   };
   window.completeActivePrivateLesson=async function(studentId,lessonId){
     const x=(state.privateLessons||[]).find(r=>String(r.lessonId)===String(lessonId)),lessonContent=document.getElementById("activeLessonContent")?.value.trim()||"",attendanceStatus=document.getElementById("activeLessonAttendance")?.value||"present";
     if(!x)return;
     if(!canComplete(x)){toast(`目前尚未到預約結束時間 ${x.endTime}，請於課程結束後再送出完成上課。`);return}
     if(!confirm("確定本堂已完成上課？\n\n本堂完成紀錄會自動累計個課次數；每月完成 4 次 = 5 分，正式月份再取學期平均。送出後家長平台會出現『待確認』。"))return;
-    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"complete_lesson",lessonContent,attendanceStatus})});notifyToast(r,"已完成上課並通知家長");state.activePrivateLessonId="";state.suppressAutoPrivateLesson=false;await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
+    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"complete_lesson",lessonContent,attendanceStatus,weeklyPracticeGoals:weeklyGoalsFromEditor("active")})});notifyToast(r,"已完成上課並通知家長");state.activePrivateLessonId="";state.suppressAutoPrivateLesson=false;await loadPrivateLessons();render()}catch(e){toast("❌ "+e.message)}
   };
   window.rememberPrivateBookingStudent=function(studentId){state.privateBookingStudentId=String(studentId||"")};
   window.openTeacherCatchup=function(lessonId){
