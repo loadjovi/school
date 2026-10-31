@@ -167,7 +167,7 @@
 
     if(w==="awaiting_parent"||w==="completed"){
       const k=lessonDomKey(x.lessonId);
-      action+=weeklyGoalEditor(x,"published_"+k)+`<button class="secondary" style="width:100%;margin-top:8px" onclick="savePublishedWeeklyGoals('\${esc(x.studentId)}','\${esc(x.lessonId)}')">💾 更新本週練習建議</button>`;
+      action+=weeklyGoalEditor(x,"published_"+k)+`<button class="secondary" style="width:100%;margin-top:8px" onclick="savePublishedWeeklyGoals('${esc(x.studentId)}','${esc(x.lessonId)}')">💾 更新本週練習建議</button>`;
     }
 
     const editBanner=expanded?`<div class="private-editing-banner">✏️ 目前操作：<b>${esc(currentStudentName(x.studentId))}</b>${studentMetaLine(x.studentId)?`｜${esc(studentMetaLine(x.studentId))}`:""}</div>`:"";
