@@ -149,6 +149,14 @@ def prepare(output: Path) -> None:
     if count<3:raise RuntimeError("Unexpected UI layout: missing HTML entrypoints")
     # SOP-only navigator: links to copied Production pages, never duplicates them.
     generate_sop_lab(ROOT/"app",app)
+    # Install a read-only diagnostic AFTER copy/branding; this page never exists in Production app/.
+    healthcheck_source=ROOT/"scripts"/"lab-performance-healthcheck.html"
+    healthcheck_output=app/"sop-lab"/"performance-healthcheck.html"
+    healthcheck=healthcheck_source.read_text(encoding="utf-8")
+    if "</body>" not in healthcheck or "<meta name=\"robots\" content=\"noindex,nofollow\">" not in healthcheck:
+        raise RuntimeError("LAB performance diagnostic must be noindex and have an HTML body")
+    healthcheck_output.write_text(healthcheck.replace("</body>",
+        '<script defer src="/functional-lab-banner.js"></script></body>'),encoding="utf-8")
     install_sop_fixtures(api)
     install_sop_parent_binding(api)
     install_sop_data_tools(api,app)

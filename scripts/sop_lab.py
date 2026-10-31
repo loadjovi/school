@@ -91,6 +91,7 @@ button,select{padding:9px 13px;border:1px solid #748ab9;color:#1d315a;border-rad
   <a class="link" href="/">🏫 完整平台首頁</a>
   <a class="link" href="/parent-uniform-events.html">🎽 家長團服與活動原始頁</a>
   <a class="link" href="/uniform-event-admin.html">📋 團服管理原始頁（檢查用）</a>
+  <a class="link" href="/sop-lab/performance-healthcheck.html">📊 四大流程效能健檢（唯讀）</a>
  </div>
  <p class="muted">管理員請由「完整平台首頁」登入，再依正式導航進入「團服與活動」。家長、老師要使用 LAB 專屬測試帳號；此工具不會繞過身分驗證。</p>
 </section>
