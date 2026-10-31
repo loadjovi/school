@@ -376,14 +376,14 @@
     const rows=(state.practice||[]).filter(x=>x.weeklyGoalText).slice(0,12);
     const goals=lesson?.weeklyPracticeGoals||[];
     if(!goals.length&&!rows.length)return "";
-    const latest=goals.length?`<div class="notice">最近老師建議：\${esc(lesson.lessonDate)}｜\${esc(teacherLabel(lesson))}</div>
-      \${goals.map(goal=>{const count=rows.filter(x=>String(x.weeklyGoalText)===String(goal)&&String(x.weeklyGoalLessonId)===String(lesson.lessonId)).length;
-        return `<div class="item"><div><b>\${esc(goal)}</b><small>本月已對應練習 \${count} 次</small></div><span class="badge \${count?"ok":"warn"}">\${count?"有練習紀錄":"持續練習"}</span></div>`}).join("")}`:"";
-    const recent=rows.length?`<details style="margin-top:10px"><summary>📒 查看本月練習歷程（\${rows.length} 筆）</summary>
-      \${rows.map(x=>`<div class="item"><div><b>\${esc(x.practiceDate)}｜\${esc(x.weeklyGoalText)}</b><small>\${Number(x.minutes||0)} 分鐘｜\${esc(x.practiceContent||"自主練習")}</small></div></div>`).join("")}</details>`:"";
+    const latest=goals.length?`<div class="notice">最近老師建議：${esc(lesson.lessonDate)}｜${esc(teacherLabel(lesson))}</div>
+      ${goals.map(goal=>{const count=rows.filter(x=>String(x.weeklyGoalText)===String(goal)&&String(x.weeklyGoalLessonId)===String(lesson.lessonId)).length;
+        return `<div class="item"><div><b>${esc(goal)}</b><small>本月已對應練習 ${count} 次</small></div><span class="badge ${count?"ok":"warn"}">${count?"有練習紀錄":"持續練習"}</span></div>`}).join("")}`:"";
+    const recent=rows.length?`<details style="margin-top:10px"><summary>📒 查看本月練習歷程（${rows.length} 筆）</summary>
+      ${rows.map(x=>`<div class="item"><div><b>${esc(x.practiceDate)}｜${esc(x.weeklyGoalText)}</b><small>${Number(x.minutes||0)} 分鐘｜${esc(x.practiceContent||"自主練習")}</small></div></div>`).join("")}</details>`:"";
     return `<section class="card"><h2>🎼 我的音樂學習歷程</h2>
       <div class="muted">將個課老師建議與自主練習紀錄連起來。這是練習追蹤，不代表已達成老師評量或更動學期成績。</div>
-      \${latest}\${recent}</section>`;
+      ${latest}${recent}</section>`;
   }
   const basePracticePage=practicePage;practicePage=function(){return weeklyGoalsParentPanel()+basePracticePage()};
   const baseHome=home;home=function(){return parentActivePanel("home")+baseHome()};
