@@ -332,6 +332,32 @@
       ${active}${history}
     </section>`;
   };
+  function currentWeeklyLearningGoals(){
+    if(state.me?.role!=="parent"||!state.student)return null;
+    const day=today(),studentId=String(state.student.studentId);
+    const lessons=(state.privateLessons||[]).filter(x=>
+      String(x.studentId)===studentId&&
+      ["awaiting_parent","completed"].includes(workflow(x))&&
+      Array.isArray(x.weeklyPracticeGoals)&&x.weeklyPracticeGoals.some(g=>String(g||"").trim())&&
+      /^\d{4}-\d{2}-\d{2}$/.test(String(x.lessonDate||""))&&
+      x.lessonDate<=day&&
+      Math.floor((Date.parse(day+"T00:00:00Z")-Date.parse(x.lessonDate+"T00:00:00Z"))/86400000)<=14
+    );
+    lessons.sort((a,b)=>String(b.lessonDate).localeCompare(String(a.lessonDate))||String(b.completedAt||"").localeCompare(String(a.completedAt||"")));
+    return lessons[0]||null;
+  }
+  function weeklyGoalsParentPanel(){
+    if(state.me?.role!=="parent")return "";
+    const lesson=currentWeeklyLearningGoals();
+    if(!lesson)return `<section class="card"><h2>🎯 個課老師本週練習建議</h2><div class="notice">老師尚未設定本週練習建議。仍可正常自主練習、登記時間，不影響成績。</div></section>`;
+    const goals=lesson.weeklyPracticeGoals.map((goal,index)=>({goal:String(goal||"").trim(),index})).filter(g=>g.goal);
+    return `<section class="card" id="weeklyPracticeGoals"><h2>🎯 個課老師本週建議練什麼？</h2>
+      <div class="notice">來源：${esc(teacherLabel(lesson))}｜${esc(lesson.lessonDate)} 個課；本週可依建議練習。選擇一項後，本次打卡會記錄練習對應目標（選填，不影響練習分數）。</div>
+      ${goals.map(({goal,index})=>`<label class="check" style="margin:10px 0;padding:10px;border:1px solid #dce6e2;border-radius:10px"><input type="radio" name="weeklyGoalChoice" data-goal-lesson="${esc(lesson.lessonId)}" data-goal-index="${index}"><span>${esc(goal)}</span></label>`).join("")}
+      <label class="check" style="margin:8px 0"><input type="radio" name="weeklyGoalChoice" checked><span>這次練習其他內容（不指定老師目標）</span></label>
+    </section>`;
+  }
+  const basePracticePage=practicePage;practicePage=function(){return weeklyGoalsParentPanel()+basePracticePage()};
   const baseHome=home;home=function(){return parentActivePanel("home")+baseHome()};
   const baseRecordPage=recordPage;recordPage=function(){const html=baseRecordPage();if(state.me?.role!=="parent")return html;const score=typeof window.parentSemesterScorePanel==="function"?window.parentSemesterScorePanel():"";return html+score+window.privateLessonParentPanels("record")};
 
@@ -438,7 +464,7 @@
   };
 
   const baseRefreshStudent=refreshStudent;refreshStudent=async function(){await baseRefreshStudent();if(state.me?.role==="parent")await loadPrivateLessons()};
-  const baseGo=go;go=async function(p){if((p==="private"&&teacherAccount())||(state.me?.role==="parent"&&["home","record"].includes(p)))await loadPrivateLessons();const result=await baseGo(p);startPrivatePoll();return result};
+  const baseGo=go;go=async function(p){if((p==="private"&&teacherAccount())||(state.me?.role==="parent"&&["home","record","practice"].includes(p)))await loadPrivateLessons();const result=await baseGo(p);startPrivatePoll();return result};
   if(state.me?.role==="parent"&&state.student)loadPrivateLessons().then(()=>{render();startPrivatePoll()}).catch(()=>{});
   if(teacherAccount())startPrivatePoll();
 })();
