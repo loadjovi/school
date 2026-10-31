@@ -46,6 +46,31 @@ class FunctionalUATIsolationTests(unittest.TestCase):
             self.assertIn("functional-lab-banner.js",text,file.name)
             self.assertIn("noindex,nofollow",text,file.name)
         self.assertGreaterEqual(count,3)
+    def test_performance_healthcheck_is_lab_only_read_only_and_linked(self):
+        source=(ROOT/"scripts/lab-performance-healthcheck.html").read_text(encoding="utf-8")
+        lab_file=self.lab/"app/sop-lab/performance-healthcheck.html"
+        self.assertTrue(lab_file.is_file())
+        html=lab_file.read_text(encoding="utf-8")
+        hub=(self.lab/"app/sop-lab/index.html").read_text(encoding="utf-8")
+        self.assertFalse((ROOT/"app/sop-lab/performance-healthcheck.html").exists())
+        self.assertIn("href=\"/sop-lab/performance-healthcheck.html\"",hub)
+        self.assertIn("functional-lab-banner.js",html)
+        self.assertIn("noindex,nofollow",html)
+        self.assertIn("/api/lab-readiness",html)
+        self.assertIn("response.arrayBuffer()",html)
+        self.assertIn('method:"GET"',source)
+        self.assertNotIn('method:"POST"',source)
+        self.assertNotIn('method:"PATCH"',source)
+        self.assertNotIn('method:"DELETE"',source)
+        self.assertNotIn('localStorage.setItem(',source)
+        self.assertNotIn("token:records",source)
+        self.assertIn('const report={kind:"SOP_LAB_performance_baseline"',source)
+        self.assertIn('environment:"functional-uat"',source)
+        self.assertIn('success.length>=20?',source)
+        js=html.split("<script>",1)[1].split("</script>",1)[0]
+        result=subprocess.run(["node","--check","-"],input=js,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_uat_banner_reserves_role_selector_and_mobile_header_space(self):
         banner=(self.lab/"app/functional-lab-banner.js").read_text(encoding="utf-8")
         # At desktop widths the overlay is moved left, out of the right-side
