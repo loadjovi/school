@@ -6,6 +6,7 @@ import {
 } from "../lib/storage.js";
 import { sendPrivateLessonWorkflowEmail } from "../lib/email.js";
 import { getSystemSettings } from "../lib/settings.js";
+import {normalizeWeeklyGoals,readWeeklyGoals} from "../lib/musicLearningGoals.mjs";
 
 const attendanceStatuses=new Set(["present","late","leave","absent"]);
 const teacherCompletionStatuses=new Set(["scheduled","completion_issue"]);
@@ -57,7 +58,7 @@ function view(e,teacherNameOverride=""){
     lessonId:String(e.rowKey||""),studentId:activityStudentId(e),lessonDate:String(e.eventDate||""),
     startTime:String(e.startTime||""),endTime:String(e.endTime||""),minutes:Number(e.minutes||0),status,
     workflowStatus:workflowStatus(e),actualAttendanceStatus:String(e.actualAttendanceStatus||(["present","late"].includes(status)?status:"present")),
-    lessonContent:String(e.lessonContent||""),teacher:String(e.teacher||""),teacherName:String(teacherNameOverride||e.teacherName||e.teacher||""),
+    lessonContent:String(e.lessonContent||""),weeklyPracticeGoals:readWeeklyGoals(e.weeklyPracticeGoalsJson),teacher:String(e.teacher||""),teacherName:String(teacherNameOverride||e.teacherName||e.teacher||""),
     parentConfirmation:String(e.parentConfirmation||(["present","late"].includes(status)?"pending":"not_required")),
     parentConfirmedAt:String(e.parentConfirmedAt||""),parentConfirmedBy:String(e.parentConfirmedBy||""),parentNote:String(e.parentNote||""),
     teacherRating:Number(e.teacherRating||0),teacherReview:String(e.teacherReview||""),teacherRatedAt:String(e.teacherRatedAt||""),teacherRatedBy:String(e.teacherRatedBy||""),
@@ -240,6 +241,7 @@ app.http("privateLesson",{
         if(workflowStatus(entity)!=="scheduled")return json({error:"只有尚未完成的預約可以修改上課內容"},409);
         if(!isAdmin&&(String(entity.eventDate||"")>clock.date||(String(entity.eventDate||"")===clock.date&&String(entity.startTime||"")>clock.time)))return json({error:"須於個課開始後才能填寫；已過上課日期且尚未完課的紀錄可補登內容"},409);
         entity.lessonContent=clean(body.lessonContent,500);
+        if(Object.hasOwn(body,"weeklyPracticeGoals")){const goals=normalizeWeeklyGoals(body.weeklyPracticeGoals);if(goals.error)return json({error:goals.error},400);entity.weeklyPracticeGoalsJson=JSON.stringify(goals.goals)}
         entity.updatedAt=new Date().toISOString();
         await table("tenantPrivateLesson").updateEntity(entity,"Merge");
         return json({ok:true,item:view(entity,teacherName)});
@@ -254,6 +256,7 @@ app.http("privateLesson",{
         const now=new Date().toISOString();
         entity.status="teacher_completed";entity.actualAttendanceStatus=attendanceStatus;entity.parentConfirmation="pending";entity.parentConfirmedAt="";entity.parentConfirmedBy="";entity.parentNote="";
         if(Object.hasOwn(body,"lessonContent"))entity.lessonContent=clean(body.lessonContent,500);
+        if(Object.hasOwn(body,"weeklyPracticeGoals")){const goals=normalizeWeeklyGoals(body.weeklyPracticeGoals);if(goals.error)return json({error:goals.error},400);entity.weeklyPracticeGoalsJson=JSON.stringify(goals.goals)}
         entity.completedAt=now;entity.completedBy=a.email;entity.updatedAt=now;
         await table("tenantPrivateLesson").updateEntity(entity,"Merge");
         const result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"completed",target:"parents",actorEmail:a.email,actorName:a.displayName||teacherName});
