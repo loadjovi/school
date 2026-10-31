@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>【SOP LAB】四大流程唯讀效能健檢</title>
+<style>
+:root{font:16px/1.55 system-ui,-apple-system,"Noto Sans TC",sans-serif;color:#1c3154;background:#f3f6fb}
+body{margin:0 auto;padding:18px;max-width:900px}h1{font-size:1.35rem}h2{font-size:1.05rem}
+article{border:1px solid #dce5f2;border-radius:14px;background:white;padding:18px;margin:14px 0}
+button{border:1px solid #395fa5;background:#395fa5;color:white;border-radius:9px;padding:12px 16px;cursor:pointer;margin:3px}
+button:disabled{opacity:.4;cursor:default}
+a{color:#3156a0}
+p{margin:10px 0}.muted{color:#52657b;font-size:.91rem}
+.good{color:#137e4c;font-weight:600}.error{color:#b42318;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:.88rem}th,td{padding:9px 7px;border-bottom:1px solid #e1e8f3;text-align:left;word-break:break-word}
+section{overflow-x:auto}details{margin:9px 0;padding:8px;background:#f6f9fd;border-radius:9px}
+code{font-size:.88em}summary{cursor:pointer;font-weight:600}
+</style>
+</head>
+<body>
+<p><a href="/sop-lab/">← 返回 SOP LAB</a></p>
+<h1>📊 聖心弦樂成長平台｜四大流程效能健檢</h1>
+<p class="muted">此工具僅由獨立 LAB 建置產生，不會部署至正式平台。只發送同站內唯讀 GET，不修改點名、個課、通知或學生資料。</p>
+<article>
+<h2>環境安全確認</h2>
+<p id="isolation">正在驗證 LAB 資料隔離…</p>
+<p id="role" class="muted">請先在同一個分頁登入完整 LAB 平台，選好家長、個課老師、校方查詢或管理員角色，再返回本頁。</p>
+<p class="muted">評估流程：家長登入後初始化（不含 Google OAuth）／老師個課查詢／校方出缺勤／管理員首頁待辦。每項連續執行 3 次；初次樣本量不足以形成可靠 p95。</p>
+<button id="public" disabled>1. 量測公開首頁與靜態資源</button>
+<button id="auth" disabled>2. 量測目前登入角色</button>
+<button id="download" disabled>匯出匿名 JSON 量測摘要</button>
+<p id="busy" role="status" class="muted"></p>
+</article>
+<article><h2>本次即時測試</h2><div id="events"></div><div id="details"></div></article>
+<article><h2>量測摘要</h2><section id="stats"><p>尚未執行測試。</p></section>
+<p class="muted">每次測量只保存：情境代碼、API 類別、回應 HTTP 狀態、耗時、回傳大小、是否成功。**不匯出學生名單、姓名、學號、Email、Token、任何 API 回傳內容。** p50 為樣本中位數；待至少 20 次測試才提供有效的 p95 趨勢。</p></article>
+<article><h2>測試限制與下一步</h2>
+<p>本頁計算的是 LAB API 往返與下載耗時，不能取代在原生頁面進行 Google 登入、LCP、INP、畫面繪製與手機捲動的使用者體驗測試。請以 Chrome DevTools 或 Safari Web Inspector 針對真實操作另行錄製 Network/Performance。</p>
+<p>建議先取得四個角色的首輪樣本，再由同一網路、同一裝置重複 20 次，採樣本數、成功率、p50/p95 排出修正順位。</p>
+</article>
+<script>
+(()=>{
+"use strict";
+const $=id=>document.getElementById(id);
+const records=[],iterations=3;
+let ready=false,busy=false;
+const now=()=>performance.now();
+const date=()=>new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"});
+const escapeCsv=()=>null; // deliberately no account-data export
+function headers(auth){
+  const x={Accept:"application/json"};
+  if(auth){
+    const token=sessionStorage.getItem("google_id_token");
+    if(token)x["X-Google-ID-Token"]=token;
+    const school=sessionStorage.getItem("school_context_id");
+    const role=sessionStorage.getItem("role_context");
+    if(school)x["X-School-Id"]=school;
+    if(role)x["X-Role-Context"]=role;
+  }
+  return x;
+}
+async function get(stage,path,auth=false,parse=false){
+  if(!path.startsWith("/")||path.startsWith("//"))throw Error("只允許同站內 GET");
+  const started=now(),url=new URL(path,location.origin);
+  let response=null,parsed=null,bytes=0,error="";
+  try{
+    response=await fetch(url,{method:"GET",cache:"no-store",credentials:"same-origin",
+      mode:"same-origin",redirect:"error",headers:headers(auth),signal:AbortSignal.timeout(15000)});
+    const body=await response.arrayBuffer();
+    bytes=body.byteLength;
+    if(parse&&response.ok)try{parsed=JSON.parse(new TextDecoder().decode(body))}catch{}
+  }catch(e){error=e?.name==="TimeoutError"?"timeout":"network"}
+  return {measure:{stage,ms:Math.round((now()-started)*10)/10,status:response?.status||0,
+    bytes,ok:!!response?.ok&&!error,error},data:parsed};
+}
+function updateButtons(){
+  $("public").disabled=!ready||busy;$("auth").disabled=!ready||busy;
+  $("download").disabled===true; // evaluation has no side effects
+  $("download").disabled=busy||!records.length;
+  $("busy").textContent=busy?"測量中，請不要重複點擊。":"";
+}
+const percentile=(list,frac)=>{
+  const a=list.filter(Number.isFinite).sort((x,y)=>x-y);
+  return a.length?a[Math.max(0,Math.ceil(a.length*frac)-1)]:null;
+};
+const ms=n=>n==null?"—":Math.round(n)+" ms";
+function log(run){
+  records.push(run);
+  const failed=run.steps.filter(s=>!s.ok);
+  const p=document.createElement("p");
+  p.className=failed.length?"error":"good";
+  p.textContent=run.label+"｜"+ms(run.totalMs)+"｜成功 "+(run.steps.length-failed.length)+"/"+run.steps.length;
+  $("events").prepend(p);
+  const details=document.createElement("details"),summary=document.createElement("summary");
+  summary.textContent=run.label+" · 展開 API 耗時";details.append(summary);
+  const ul=document.createElement("ul");
+  run.steps.forEach(s=>{const li=document.createElement("li");
+    li.textContent=s.stage+"： "+ms(s.ms)+"；HTTP "+s.status+"；"+(s.bytes/1024).toFixed(1)+" KB";
+    ul.append(li);
+  });
+  details.append(ul);$("details").prepend(details);
+  redraw();
+}
+function redraw(){
+  const sets=new Map();
+  for(const run of records)for(const step of run.steps){
+    const key=run.type+"/"+step.stage;
+    if(!sets.has(key))sets.set(key,[]);
+    sets.get(key).push(step);
+  }
+  const table=document.createElement("table"),head=document.createElement("tr");
+  ["流程/API","成功／次數","p50","p95（需 20 筆以上）"].forEach(t=>{
+    const th=document.createElement("th");th.textContent=t;head.append(th);
+  });table.append(head);
+  for(const [name,steps] of sets){
+    const success=steps.filter(s=>s.ok),tr=document.createElement("tr");
+    [name,success.length+"/"+steps.length,ms(percentile(success.map(s=>s.ms),.5)),
+     success.length>=20?ms(percentile(success.map(s=>s.ms),.95)):"樣本不足"].forEach(t=>{
+      const td=document.createElement("td");td.textContent=t;tr.append(td);
+    });table.append(tr);
+  }
+  $("stats").replaceChildren(table);
+}
+async function labCheck(){
+  const result=await get("lab-readiness","/api/lab-readiness",false,true);
+  ready=result.measure.ok&&result.data?.ready===true&&
+    result.data?.environment==="functional-uat";
+  $("isolation").textContent=ready?"✅ 已驗證 Functional UAT LAB 隔離環境":"⛔ LAB 隔離未驗證，測量已停用";
+  $("isolation").className=ready?"good":"error";
+  updateButtons();
+}
+function detectRole(me){
+  if(me?.role==="parent")return "parent";
+  if(me?.role==="school")return "school";
+  if(me?.role==="admin")return "admin";
+  if(me?.role==="privateTeacher"||me?.capabilities?.private===true)return "teacher";
+  return "";
+}
+async function publicRun(){
+  const t=now(),steps=await Promise.all([
+    get("homepage","/"),get("styles","/styles.css"),get("lab-readiness","/api/lab-readiness")]);
+  return {type:"public",label:"公開資源",totalMs:Math.round(now()-t),steps:steps.map(x=>x.measure)};
+}
+async function roleRun(role,me,iteration){
+  const t=now(),steps=[];
+  const grab=async(stage,path,parse=false)=>{
+    const result=await get(stage,path,true,parse);
+    steps.push(result.measure);return result.data;
+  };
+  const group=async req=>{
+    const responses=await Promise.all(req.map(([key,path])=>get(key,path,true)));
+    steps.push(...responses.map(x=>x.measure));
+  };
+  if(role==="parent"){
+    await grab("me","/api/me");
+    const students=await grab("students","/api/students",true);
+    const id=Array.isArray(students)?String(students[0]?.studentId||""):"";
+    if(id){
+      const suffix="?studentId="+encodeURIComponent(id)+"&month="+date().slice(0,7);
+      await group([["summary","/api/summary"+suffix],["practice","/api/practice"+suffix]]);
+    }
+  }else if(role==="teacher"){
+    await group([["students","/api/students"],["private-lesson","/api/private-lesson"]]);
+  }else if(role==="school"){
+    await grab("school-followup","/api/school-followup?date="+date());
+  }else if(role==="admin"){
+    await group([["student-registration","/api/student-registration?status=pending"],
+      ["student-master","/api/student-master"],["uniform-requests","/api/uniform-events/requests"],
+      ["daily-followup","/api/daily-followup?date="+date()]]);
+    if(me?.capabilities?.financeVerifier===true)
+      await grab("family-registration","/api/uniform-events/family-registration");
+  }
+  return {type:role,label:({parent:"家長資料初始化",teacher:"個課老師",school:"出勤查詢",admin:"管理員首頁"})[role]+" #"+iteration,
+    totalMs:Math.round(now()-t),steps};
+}
+async function task(fn){
+  if(!ready||busy)return;busy=true;updateButtons();
+  try{await fn()}catch(e){
+    const p=document.createElement("p");p.textContent="量測失敗，請確認 LAB 登入狀態與網路。";
+    p.className="error";$("events").prepend(p);
+  }finally{busy=false;updateButtons()}
+}
+$("public").onclick=()=>task(async()=>{for(let i=0;i<iterations;i++)log(await publicRun())});
+$("auth").onclick=()=>task(async()=>{
+  const first=await get("me","/api/me",true,true),role=detectRole(first.data);
+  if(!first.measure.ok||!role){
+    $("role").textContent="尚未取得有效的 LAB 登入／角色。請於相同瀏覽器分頁登入 LAB 完整平台再返回。";
+    return;
+  }
+  $("role").textContent="目前登入角色："+({parent:"家長",teacher:"個課老師",school:"校方查詢",admin:"學校管理員"})[role];
+  for(let i=1;i<=iterations;i++)log(await roleRun(role,first.data,i));
+});
+$("download").onclick=()=>{
+  const report={kind:"SOP_LAB_performance_baseline",at:new Date().toISOString(),
+    environment:"functional-uat",samples:records,
+    caveats:["No real Google OAuth timing","No UI rendering metrics","Three probes are not enough for valid p95"]};
+  const blob=new Blob([JSON.stringify(report,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download="sop-lab-performance-"+date()+".json";a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+};
+labCheck();
+})();
+</script>
+</body>
+</html>
