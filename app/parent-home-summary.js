@@ -164,7 +164,7 @@
   }
   function leaderboardFeedback(x){
     const level=feedbackLevels[Number(x.feedback?.level||0)];
-    const status=level?`${level.icon} ${esc(level.label)}${x.feedback?.date?`｜${esc(shortDate(x.feedback.date))}`:""}`:"本月尚無回饋";
+    const status=level?`${level.icon} ${esc(level.label)}${x.feedback?.date?`｜${esc(shortDate(x.feedback.date))}`:""}`:"該排行月份尚無回饋";
     return `<span class="practice-leaderboard-feedback">💛 老師日常鼓勵：${status}</span>`;
   }
   function parentPracticeLeaderboardCard(){
