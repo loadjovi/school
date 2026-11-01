@@ -174,7 +174,7 @@
     const current=state.parentPracticeLeaderboardStudentId===studentId&&state.parentPracticeLeaderboardDataMode===mode&&data&&!state.parentPracticeLeaderboardError;
     const months=current?d.includedMonths||[]:[],month=months[0]||"",monthName=month?Number(month.slice(5))+" 月":"上個月";
     const rows=current?(d.items||[]):[];
-    const monthTarget=current&&d.mine?.monthlyDetails?.[0]?.targetDays?Number(d.mine.monthlyDetails[0].targetDays):Number(d.targetDays||30);
+    const monthTarget=current&&d.mine?.monthlyDetails?.[0]?.targetDays?Number(d.mine.monthlyDetails[0].targetDays):month?Math.min(Number(d.targetDays||30),new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).getDate()):Number(d.targetDays||30);
     const currentMonth=localDate().slice(0,7),currentMonthName=Number(currentMonth.slice(5))+" 月";
     const summary=state.summary||{},progressReady=String(summary.month||"")===currentMonth;
     const days=progressReady?Number(summary.practiceQualifiedDays||0):null;
@@ -189,7 +189,7 @@
       <div class="practice-leaderboard-head"><div><h2>🏅 自主練習分數 TOP 5</h2><small>${current&&months.length?monthName+"練習成果｜已結束月份":"以已結束月份為單位"}</small></div><button class="secondary" type="button" onclick="refreshParentPracticeLeaderboard()" ${state.parentPracticeLeaderboardLoading?"disabled":""}>更新</button></div>
       <div class="muted" style="margin:8px 0 10px">${months.length?`${monthName}獨立排名；${currentMonthName}練習不會影響上月名次。`:"每個月份獨立排名，不跨月混算。"}鼓勵用途，非學期正式成績。</div>
       <div style="padding:9px 11px;margin-bottom:12px;background:var(--notice-bg,#f2f7f5);border-radius:10px;font-size:14px;line-height:1.6">
-        <b>分數怎麼算？</b> 每天累計滿 ${Number(d.qualifiedMinutes||20)} 分鐘算 1 天；<b>${monthName}有效練習日 ÷ ${monthTarget} 天 × 10 ＝ 本月分數</b>（最高 10 分）。
+        <b>分數怎麼算？</b> 每天累計滿 ${Number(d.qualifiedMinutes||20)} 分鐘算 1 天；<b>${months.length?`${monthName}有效練習日 ÷ ${monthTarget} 天 × 10`:"有效練習日 ÷ 當月目標天數 × 10"} ＝ 月分數</b>（最高 10 分）。
       </div>
       ${content}
       <div style="margin-top:12px;padding:12px;border:1px solid #d6e6de;background:#f4faf6;border-radius:12px">
