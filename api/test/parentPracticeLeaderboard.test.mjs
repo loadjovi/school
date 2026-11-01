@@ -103,11 +103,13 @@ test("when current October is not yet completed, primary leaderboard waits until
  assert.equal(live.mine.score10,3.33);
 });
 
-test("on December 1, the primary leaderboard averages only October and November, excluding December",()=>{
+test("on December 1, the main encouragement leaderboard compares November alone, not an October-November average",()=>{
  const students=[student("s1","小朋友")],rows=[row("s1","2026-10-01",20),row("s1","2026-11-01",20),row("s1","2026-12-01",20)];
  const result=buildPracticeLeaderboard({students,rows,months:practiceScoreMonths("2026-12-01"),today:"2026-12-01",studentId:"s1"});
- assert.deepEqual(result.includedMonths,["2026-10","2026-11"]);
- assert.deepEqual(result.mine.monthlyDetails.map(x=>x.targetDays),[30,30]);
- assert.deepEqual(result.mine.monthlyDetails.map(x=>x.provisional),[false,false]);
+ assert.deepEqual(result.includedMonths,["2026-11"]);
+ assert.deepEqual(result.mine.monthlyDetails.map(x=>x.targetDays),[30]);
+ assert.deepEqual(result.mine.monthlyDetails.map(x=>x.provisional),[false]);
  assert.equal(result.mine.score10,0.33);
+ const legacyPreview=buildPracticeLeaderboard({students,rows,months:practiceScoreMonths("2026-12-01"),today:"2026-12-01",studentId:"s1",mode:"provisional"});
+ assert.deepEqual(legacyPreview.includedMonths,["2026-10","2026-11","2026-12"]);
 });
