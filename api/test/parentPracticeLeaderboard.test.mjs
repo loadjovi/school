@@ -60,3 +60,27 @@ test("latest monthly teacher encouragement is shown without affecting score or e
   assert.equal(result.items[0].score10,result.items[1].score10);
   assert.doesNotMatch(JSON.stringify(result),/私訊|私下鼓勵|teacher@example.com/);
 });
+
+test("Nov 1 provisional 8.5 vs 4.34 is mathematically explainable and parents can audit only their own months",()=>{
+ const students=[student("s1","林心澄"),student("s2","游同學")];
+ const rows=[
+  ...Array.from({length:21},(_,i)=>row("s1",`2026-10-${String(i+1).padStart(2,"0")}`,25)),
+  row("s1","2026-11-01",20),
+  ...Array.from({length:26},(_,i)=>row("s2",`2026-10-${String(i+1).padStart(2,"0")}`,25))
+ ];
+ const report=buildPracticeLeaderboard({students,rows,months:practiceScoreMonths("2026-11-01"),today:"2026-11-01",studentId:"s1"});
+ assert.deepEqual(report.includedMonths,["2026-10","2026-11"]);
+ assert.equal(report.items[0].score10,8.5);
+ assert.equal(report.items[0].qualifiedDays,22);
+ assert.equal(report.items[1].score10,4.34);
+ assert.equal(report.items[1].qualifiedDays,26);
+ assert.deepEqual(report.items[0].monthlyDetails,[
+  {month:"2026-10",qualifiedDays:21,targetDays:30,score10:7,provisional:false},
+  {month:"2026-11",qualifiedDays:1,targetDays:1,score10:10,provisional:true}
+ ]);
+ assert.equal(Object.hasOwn(report.items[1],"monthlyDetails"),false);
+ assert.deepEqual(report.mine.monthlyDetails,report.items[0].monthlyDetails);
+ const day2=buildPracticeLeaderboard({students,rows,months:practiceScoreMonths("2026-11-02"),today:"2026-11-02",studentId:"s1"});
+ assert.equal(day2.items[0].score10,6);
+ assert.equal(day2.mine.monthlyDetails[1].targetDays,2);
+});
