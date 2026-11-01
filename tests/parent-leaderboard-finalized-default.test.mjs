@@ -52,7 +52,7 @@ test("month score calculation is collapsed by default and includes only signed-i
  assert.match(html,/<details class="practice-leaderboard-audit"/);
  assert.match(html,/計算方式與我的孩子明細/);
  assert.match(html,/分數怎麼算？/);
- assert.match(html,/10 月有效練習日 ÷ 30 天 × 10 ＝ 本月分數/);
+ assert.match(html,/10 月有效練習日 ÷ 30 天 × 10 ＝ 月分數/);
  assert.match(html,/每天累計滿 20 分鐘算 1 天/);
  assert.match(html,/21 個有效練習日 ÷ 30 天 × 10/);
  assert.match(html,/主要鼓勵榜<strong>只比較最近已結束的單一月份/);
