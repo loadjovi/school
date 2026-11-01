@@ -12,7 +12,8 @@
   state.parentPracticeLeaderboardLoadedAt=0;
   state.parentPracticeLeaderboardLoading=false;
   state.parentPracticeLeaderboardError="";
-  state.parentPracticeLeaderboardMode="final";
+  state.parentPracticeLeaderboardMode="monthly";
+  state.parentPracticeLeaderboardMonth="";
   state.parentPracticeLeaderboardDataMode="";
   state.parentActivityConfigs=state.parentActivityConfigs||[];
   state.parentActivityLoadedAt=0;
@@ -112,20 +113,21 @@
   }
   async function loadParentPracticeLeaderboard(studentId){
     if(!studentId||state.parentPracticeLeaderboardLoading)return;
-    const mode=state.parentPracticeLeaderboardMode==="provisional"?"provisional":"final";
+    const mode="monthly",month=String(state.parentPracticeLeaderboardMonth||"");
+    const key=mode+"|"+month;
     state.parentPracticeLeaderboardLoading=true;
     state.parentPracticeLeaderboardError="";
     try{
-      const data=await api("/api/parent-practice-leaderboard?studentId="+encodeURIComponent(studentId)+"&mode="+mode);
-      if(state.me?.role==="parent"&&String(state.student?.studentId)===String(studentId)&&state.parentPracticeLeaderboardMode===mode){
-        state.parentPracticeLeaderboardDataMode=mode;
+      const data=await api("/api/parent-practice-leaderboard?studentId="+encodeURIComponent(studentId)+"&mode="+mode+(month?"&month="+encodeURIComponent(month):""));
+      if(state.me?.role==="parent"&&String(state.student?.studentId)===String(studentId)&&state.parentPracticeLeaderboardMonth===month){
+        state.parentPracticeLeaderboardDataMode=key;
         state.parentPracticeLeaderboard=data;
         state.parentPracticeLeaderboardStudentId=studentId;
         state.parentPracticeLeaderboardLoadedAt=Date.now();
       }
     }catch(e){
-      if(state.me?.role==="parent"&&String(state.student?.studentId)===String(studentId)&&state.parentPracticeLeaderboardMode===mode){
-        state.parentPracticeLeaderboardDataMode=mode;
+      if(state.me?.role==="parent"&&String(state.student?.studentId)===String(studentId)&&state.parentPracticeLeaderboardMonth===month){
+        state.parentPracticeLeaderboardDataMode=key;
         state.parentPracticeLeaderboardError=e.message||"排名暫時無法取得";
         state.parentPracticeLeaderboardStudentId=studentId;
         state.parentPracticeLeaderboardLoadedAt=Date.now();
@@ -140,10 +142,12 @@
     const studentId=String(state.student?.studentId||"");
     if(studentId&&!state.parentPracticeLeaderboardLoading){loadParentPracticeLeaderboard(studentId);render()}
   };
-  window.setParentPracticeLeaderboardMode=function(mode){
-    const next=mode==="provisional"?"provisional":"final";
-    if(state.parentPracticeLeaderboardLoading||state.parentPracticeLeaderboardMode===next)return;
-    state.parentPracticeLeaderboardMode=next;
+  window.setParentPracticeLeaderboardMonth=function(value){
+    const month=String(value||"");
+    if(state.parentPracticeLeaderboardLoading||!/^\d{4}-\d{2}$/.test(month))return;
+    const offered=state.parentPracticeLeaderboard?.availableMonths||[];
+    if(!offered.includes(month))return;
+    state.parentPracticeLeaderboardMonth=month;
     state.parentPracticeLeaderboardLoadedAt=0;
     state.parentPracticeLeaderboard=null;
     state.parentPracticeLeaderboardError="";
@@ -152,7 +156,6 @@
     if(studentId)loadParentPracticeLeaderboard(studentId);
     render();
   };
-
   function leaderboardMonthlyDetail(data){
     const own=data?.mine,rows=Array.isArray(own?.monthlyDetails)?own.monthlyDetails:[];
     if(!rows.length)return `<p class="muted">目前沒有可核對的結算紀錄；仍可持續累積本月練習。</p>`;
