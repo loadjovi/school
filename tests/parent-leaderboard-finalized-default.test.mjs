@@ -38,7 +38,7 @@ test("optional provisional view warns about daily denominator changes and shows 
    {month:"2026-11",qualifiedDays:1,targetDays:1,score10:10,provisional:true}];
  const {html}=setup("provisional",["2026-10","2026-11"],8.5,details);
  assert.match(html,/⚠️ 進行中暫估/);
- assert.match(html,/不作為主要鼓勵榜單/);
+ assert.match(html,/非主要鼓勵榜單/);
  assert.match(html,/8\.5\/10/);
  assert.match(html,/1 \/ 1 天/);
  assert.match(html,/進行中・暫估/);
