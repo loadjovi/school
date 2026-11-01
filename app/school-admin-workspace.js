@@ -75,14 +75,21 @@
   if(!panel){panel=document.createElement('aside');panel.id='adminTaskGuide';panel.className='aw-task-guide';main.prepend(panel)}
   const html=`<div><b>${task[0]}</b><p>${task[2]}</p></div><button type="button" data-admin-guide-close>關閉提示</button>`;if(panel.innerHTML!==html)panel.innerHTML=html;
  }
- const privateLookup={studentId:"",month:"",status:"all",items:[],busy:false,queried:false,error:""};
+ const privateLookup={studentId:"",month:"",status:"all",items:[],busy:false,queried:false,error:"",roster:[],rosterLoading:false,rosterLoaded:false,rosterError:""};
  const htmlSafe=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
  function privateLookupHtml(){
    // Admin student roster is loaded into state.master by loadAdmin(); state.students
    // can remain empty when entering the workspace through a different route.
-   const students=(Array.isArray(state.master)&&state.master.length?state.master:Array.isArray(state.students)?state.students:[]);
-
-   const select=students.filter(x=>x.studentId).map(x=>'<option value="'+htmlSafe(x.studentId)+'" '+(String(x.studentId)===privateLookup.studentId?'selected':'')+'>'+htmlSafe(x.name||x.studentName||x.studentId)+'｜'+htmlSafe(x.studentId)+'</option>').join('');
+   const students=(privateLookup.roster.length?privateLookup.roster:
+     Array.isArray(state.master)&&state.master.length?state.master:
+     Array.isArray(state.students)?state.students:[]);
+   const select=students.filter(x=>x&&String(x.studentId||x.studentNo||x.rowKey||"").trim()).map(x=>{
+     const id=String(x.studentId||x.studentNo||x.rowKey||"").trim();
+     return '<option value="'+htmlSafe(id)+'" '+(id===privateLookup.studentId?'selected':'')+'>'+htmlSafe(x.name||x.studentName||id)+'｜'+htmlSafe(id)+'</option>';
+   }).join('');
+   const rosterNote=privateLookup.rosterLoading?'<p role="status">正在載入學生名單…</p>':
+     privateLookup.rosterError?'<p role="alert">學生名單載入失敗：'+htmlSafe(privateLookup.rosterError)+' <button type="button" data-lookup-roster-retry>重新載入學生名單</button></p>':
+     '<small>學生名單：'+students.length+' 位'+(students.length?'':'。若仍顯示 0，請按「重新載入學生名單」。')+'</small>';
    const filtered=privateLookup.items.filter(x=>privateLookup.status==="all"||x.workflowStatus===privateLookup.status);
    const rows=filtered.map(x=>{
      const history=Array.isArray(x.scheduleHistory)?x.scheduleHistory:[];
@@ -96,7 +103,7 @@
        (history.length?'<details><summary>查看原預約／改期紀錄（'+history.length+' 筆）</summary><ol>'+steps+'</ol></details>':"")+'</article>';
    }).join('');
    return '<section class="card" style="margin:12px 0"><h2>🔎 個課紀錄查詢（唯讀）</h2><p>可查所有日期的預約，包括已約、已完課、已改期及已取消。查詢不會更動原始課程，也不會寄送通知。</p>'+
-     '<label for="awLessonStudent">學生（必選）</label><select id="awLessonStudent" style="width:100%"><option value="">請選擇學生</option>'+select+'</select>'+
+     '<label for="awLessonStudent">學生（必選）</label><div><button type="button" data-lookup-roster-retry>重新載入學生名單</button></div>'+rosterNote+'<select id="awLessonStudent" style="width:100%"><option value="">請選擇學生</option>'+select+'</select>'+
      '<label for="awLessonMonth">月份（可留空查全部）</label><input id="awLessonMonth" type="month" value="'+htmlSafe(privateLookup.month)+'" style="width:100%">'+
      '<label for="awLessonStatus">狀態</label><select id="awLessonStatus" style="width:100%">'+
        [['all','全部'],['scheduled','已預約'],['awaiting_parent','待家長確認'],['completed','已完成'],['cancelled','已取消'],['issue','有問題']].map(([v,n])=>'<option value="'+v+'" '+(privateLookup.status===v?'selected':'')+'>'+n+'</option>').join('')+
@@ -107,6 +114,7 @@
  }
  async function lookupPrivateLessons(){
    const root=document.getElementById("schoolAdminWorkspace"), studentId=root?.querySelector("#awLessonStudent")?.value||"";
+   if(!studentId){privateLookup.error="請先選擇學生，若名單空白請按重新載入。";organize();return;}
    if(state.me?.role!=="admin"||!studentId)return;
    privateLookup.studentId=studentId;privateLookup.month=root.querySelector("#awLessonMonth")?.value||"";
    privateLookup.status=root.querySelector("#awLessonStatus")?.value||"all";
@@ -119,7 +127,23 @@
    }catch(e){privateLookup.error=e.message||"查詢失敗"}
    finally{privateLookup.busy=false;organize()}
  }
- document.addEventListener("click",event=>{if(event.target.closest?.("[data-lookup-private-run]")){event.preventDefault();lookupPrivateLessons()}});
+ async function reloadPrivateLookupRoster(){
+   if(state.me?.role!=="admin"||privateLookup.rosterLoading)return;
+   privateLookup.rosterLoading=true;privateLookup.rosterError="";organize();
+   try{
+     const data=await api("/api/student-master");
+     if(state.me?.role!=="admin")return;
+     if(!Array.isArray(data.items))throw Error("學生名單回傳格式異常");
+     privateLookup.roster=data.items;privateLookup.rosterLoaded=true;
+     state.master=data.items;
+     if(!data.items.length)privateLookup.rosterError="後端回傳 0 位學生，請確認目前學校／帳號的資料範圍";
+   }catch(err){privateLookup.rosterLoaded=true;privateLookup.rosterError=String(err.message||err)}
+   finally{privateLookup.rosterLoading=false;organize()}
+ }
+ document.addEventListener("click",event=>{
+   if(event.target.closest?.("[data-lookup-private-run]")){event.preventDefault();lookupPrivateLessons()}
+   if(event.target.closest?.("[data-lookup-roster-retry]")){event.preventDefault();reloadPrivateLookupRoster()}
+ });
  document.addEventListener("change",event=>{if(event.target.id==="awLessonStatus"){privateLookup.status=event.target.value;organize()}});
  const previousNav=nav;
  nav=function(){if(state.me?.role!=='admin')return previousNav();const current=state.page==='admin'?(state.adminWorkspaceSection||'home'):'';return `<nav class="nav aw-bottom" aria-label="手機後台導覽">${[['home','工作首頁'],['tasks','待辦事項'],['more','更多']].map(([key,label])=>`<button type="button" data-workspace-group="${key}" ${current===key?'aria-current="page"':''}>${label}</button>`).join('')}</nav>`};
@@ -189,16 +213,8 @@
   const uniformFrame=root.querySelector('#awUniformFrame');if(group==='uniformAdmin'&&uniformFrame&&uniformFrame.getAttribute('src')==='about:blank')uniformFrame.src='/uniform-event-admin.html?embedded=school&v=20261026-term-plan';
   const scoresFrame=root.querySelector('#awSemesterScoresFrame');if(group==='grades'&&scoresFrame&&scoresFrame.getAttribute('src')==='about:blank')scoresFrame.src='/admin-semester-scores.html?embedded=school&v=20261025-score-quick-filters';
   root.querySelector('.aw-home').hidden=group!=='home';root.querySelector('.aw-account-links').hidden=group!=='accounts';root.querySelector('.aw-attendance-links').hidden=group!=='attendance';
-  if(group==='privateLookup'&&!(Array.isArray(state.master)&&state.master.length)&&!privateLookup.busy){
-    // Load the canonical student master once, without requiring a page reload.
-    if(!privateLookup.loadingRoster&&!privateLookup.rosterLoaded){
-      privateLookup.rosterLoaded=true;
-      privateLookup.loadingRoster=true;
-      api("/api/student-master").then(data=>{
-        if(state.me?.role==="admin"){state.master=Array.isArray(data.items)?data.items:[];organize()}
-      }).catch(err=>{privateLookup.error="學生名單載入失敗："+String(err.message||err);organize()})
-      .finally(()=>{privateLookup.loadingRoster=false});
-    }
+  if(group==='privateLookup'&&!privateLookup.rosterLoaded&&!privateLookup.rosterLoading){
+    setTimeout(()=>reloadPrivateLookupRoster(),0);
   }
   if(group==='attendance'&&typeof window.mountAdminAttendanceAssist==='function')window.mountAdminAttendanceAssist();
   for(const b of document.querySelectorAll('.aw-bottom [data-workspace-group]')){const active=b.dataset.workspaceGroup===group;b.classList.toggle('is-active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')}
