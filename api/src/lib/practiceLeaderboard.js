@@ -58,12 +58,17 @@ export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,st
     if(!valid.length)continue;
     const qualified=qualifiedPracticeDates(valid);
     const qualifiedDays=qualified.size,minutes=valid.reduce((n,row)=>n+Number(row.minutes||0),0);
-    const monthlyScores=includedMonths.map(month=>{
+    const monthlyDetails=includedMonths.map(month=>{
       const days=[...qualified].filter(date=>date.startsWith(month)).length;
-      return round2(Math.min(days/byMonth.get(month).target,1)*10);
+      const targetDays=byMonth.get(month).target;
+      return {
+        month,qualifiedDays:days,targetDays,
+        score10:round2(Math.min(days/targetDays,1)*10),
+        provisional:month===String(today).slice(0,7)
+      };
     });
-    const score10=round2(monthlyScores.reduce((n,value)=>n+value,0)/includedMonths.length);
-    ranked.push({studentId:String(student.studentId),name:String(student.name||""),score10,qualifiedDays,minutes});
+    const score10=round2(monthlyDetails.reduce((n,value)=>n+value.score10,0)/includedMonths.length);
+    ranked.push({studentId:String(student.studentId),name:String(student.name||""),score10,qualifiedDays,minutes,monthlyDetails});
   }
   ranked.sort((a,b)=>b.score10-a.score10||b.qualifiedDays-a.qualifiedDays||b.minutes-a.minutes||a.studentId.localeCompare(b.studentId));
   const selected=String(studentId||"");
@@ -71,6 +76,8 @@ export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,st
   const view=(x,index)=>({
     rank:index+1,name:x.studentId===selected?x.name:maskedStudentName(x.name),isMine:x.studentId===selected,
     score10:x.score10,qualifiedDays:x.qualifiedDays,minutes:x.minutes,
+    // Only the requesting parent can inspect their child's monthly counting detail.
+    ...(x.studentId===selected?{monthlyDetails:x.monthlyDetails}:{}),
     feedback:feedbackByStudentId.get(x.studentId)||null
   });
   return {
