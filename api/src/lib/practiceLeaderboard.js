@@ -33,14 +33,21 @@ export function latestLeaderboardFeedback(students=[],feedbackRows=[]){
   return new Map([...latest].map(([id,value])=>[id,{level:value.level,date:value.date}]));
 }
 
-export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,studentId,targetDays=30,feedbackByStudentId=new Map()}){
-  const includedMonths=months.filter(month=>month<=String(today).slice(0,7));
+export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,studentId,targetDays=30,mode="final",feedbackByStudentId=new Map()}){
+  // The main encouragement board ranks one last finished month only. Never average
+  // October with November on Nov 1 (or October with November on Dec 1).
+  // The opt-in API provisional mode remains for legacy comparisons, but is not shown
+  // as a student-facing ranking on the simplified parent home.
+  const currentMonth=String(today).slice(0,7);
+  const selectedMode=mode==="provisional"?"provisional":"final";
+  const completedMonths=months.filter(month=>month<currentMonth);
+  const includedMonths=selectedMode==="final"?(completedMonths.length?[completedMonths[completedMonths.length-1]]:[]):months.filter(month=>month<=currentMonth);
   const byMonth=new Map(includedMonths.map(month=>[month,{
     target:Math.max(1,Math.min(targetDays,month===String(today).slice(0,7)
       ?Number(String(today).slice(8,10))
       :new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).getDate()))
   }]));
-  if(!includedMonths.length)return {includedMonths,participantCount:0,items:[],mine:null};
+  if(!includedMonths.length)return {mode:selectedMode,completedMonths,includedMonths,participantCount:0,items:[],mine:null};
   const ranked=[];
   for(const student of students){
     const aliases=new Set((student.aliases||[]).map(String));
@@ -58,12 +65,14 @@ export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,st
     if(!valid.length)continue;
     const qualified=qualifiedPracticeDates(valid);
     const qualifiedDays=qualified.size,minutes=valid.reduce((n,row)=>n+Number(row.minutes||0),0);
-    const monthlyScores=includedMonths.map(month=>{
+    const monthlyDetails=includedMonths.map(month=>{
       const days=[...qualified].filter(date=>date.startsWith(month)).length;
-      return round2(Math.min(days/byMonth.get(month).target,1)*10);
+      const target=byMonth.get(month).target;
+      return {month,qualifiedDays:days,targetDays:target,score10:round2(Math.min(days/target,1)*10),
+        provisional:month===currentMonth};
     });
-    const score10=round2(monthlyScores.reduce((n,value)=>n+value,0)/includedMonths.length);
-    ranked.push({studentId:String(student.studentId),name:String(student.name||""),score10,qualifiedDays,minutes});
+    const score10=round2(monthlyDetails.reduce((n,value)=>n+value.score10,0)/includedMonths.length);
+    ranked.push({studentId:String(student.studentId),name:String(student.name||""),score10,qualifiedDays,minutes,monthlyDetails});
   }
   ranked.sort((a,b)=>b.score10-a.score10||b.qualifiedDays-a.qualifiedDays||b.minutes-a.minutes||a.studentId.localeCompare(b.studentId));
   const selected=String(studentId||"");
@@ -71,10 +80,12 @@ export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,st
   const view=(x,index)=>({
     rank:index+1,name:x.studentId===selected?x.name:maskedStudentName(x.name),isMine:x.studentId===selected,
     score10:x.score10,qualifiedDays:x.qualifiedDays,minutes:x.minutes,
+    // The signed-in parent alone may inspect the numerator and denominator of their child.
+    ...(x.studentId===selected?{monthlyDetails:x.monthlyDetails}:{}),
     feedback:feedbackByStudentId.get(x.studentId)||null
   });
   return {
-    includedMonths,
+    mode:selectedMode,completedMonths,includedMonths,
     participantCount:ranked.length,
     items:ranked.slice(0,5).map(view),
     mine:myIndex<0?null:view(ranked[myIndex],myIndex)
