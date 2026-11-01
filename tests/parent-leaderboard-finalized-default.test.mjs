@@ -30,10 +30,10 @@ function setup({month="2026-10",mineScore=7,days=21,minutes=705,hasCompletedMont
 }
 test("single October encouragement board displays stable October counts, not November's volatile cross-month mean",()=>{
  const {html}=setup();
- assert.match(html,/自主練習鼓勵榜/);
+ assert.match(html,/自主練習分數 TOP 5/);
  assert.match(html,/10 月練習成果｜已結束月份/);
- assert.match(html,/10 月有效練習 26 天/);
- assert.match(html,/10 月有效練習 21 天/);
+ assert.match(html,/10 月有效練習 26 \/ 30 天/);
+ assert.match(html,/10 月有效練習 21 \/ 30 天/);
  assert.match(html,/8\.67\/10/);
  assert.match(html,/7\/10/);
  assert.doesNotMatch(html,/4\.34\/10|8\.5\/10|10、11月平均/);
@@ -45,12 +45,15 @@ test("homepage clearly separates the child's current month progress without rank
  assert.match(html,/1 天/);
  assert.match(html,/25 分鐘/);
  assert.match(html,/本月尚未結束，不參與上月鼓勵排名/);
- assert.match(html,/本榜單用於鼓勵，非學期正式成績/);
+ assert.match(html,/鼓勵用途，非學期正式成績/);
 });
 test("month score calculation is collapsed by default and includes only signed-in child's details",()=>{
  const {html}=setup();
  assert.match(html,/<details class="practice-leaderboard-audit"/);
  assert.match(html,/計算方式與我的孩子明細/);
+ assert.match(html,/分數怎麼算？/);
+ assert.match(html,/10 月有效練習日 ÷ 30 天 × 10 ＝ 月分數/);
+ assert.match(html,/每天累計滿 20 分鐘算 1 天/);
  assert.match(html,/21 個有效練習日 ÷ 30 天 × 10/);
  assert.match(html,/主要鼓勵榜<strong>只比較最近已結束的單一月份/);
  assert.match(html,/其他學生僅顯示遮蔽姓名/);
