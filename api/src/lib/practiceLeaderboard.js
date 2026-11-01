@@ -40,8 +40,8 @@ export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,st
   const currentMonth=String(today).slice(0,7);
   const selectedMode=mode==="final"?"final":mode==="provisional"?"provisional":"monthly";
   const completedMonths=months.filter(month=>month<currentMonth);
-  const selected=String(selectedMonth||currentMonth);
-  const activeMonth=months.includes(selected)&&selected<=currentMonth?selected:
+  const requestedMonth=String(selectedMonth||currentMonth);
+  const activeMonth=months.includes(requestedMonth)&&requestedMonth<=currentMonth?requestedMonth:
     months.filter(month=>month<=currentMonth).at(-1)||"";
   const includedMonths=selectedMode==="monthly"?(activeMonth?[activeMonth]:[]):
     selectedMode==="final"?(completedMonths.length?[completedMonths.at(-1)]:[]):
