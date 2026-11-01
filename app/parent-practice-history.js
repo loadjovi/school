@@ -6,6 +6,15 @@
   state.parentPreviousPracticeExpandedKey="";
   state.parentPracticeRefreshing=false;
 
+  function practiceDraftActive(){
+    if(state.page!=="practice")return false;
+    const content=document.getElementById("pContent");
+    const selectedGoal=document.querySelector('input[name="weeklyGoalChoice"]:checked[data-goal-lesson]');
+    const editor=document.activeElement;
+    return !!content?.value?.trim()||!!selectedGoal||
+      !!document.getElementById("pConfirm")?.checked||
+      ["pContent","pDate","pStart","pEnd"].includes(String(editor?.id||""));
+  }
   function previousMonth(){
     const current=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit"}).format(new Date());
     const [year,month]=current.split("-").map(Number);
@@ -24,7 +33,7 @@
       }
     }finally{
       if(pending?.id===id)pending=null;
-      if(id===requestId&&state.me?.role==="parent"&&historyKey()===key&&["practice","record"].includes(state.page))render();
+      if(id===requestId&&state.me?.role==="parent"&&historyKey()===key&&["practice","record"].includes(state.page)&&!practiceDraftActive())render();
     }
   }
   function scheduleLoad(key,studentId,month,immediate=false){
@@ -39,6 +48,7 @@
   };
   window.refreshParentPracticeHistory=async function(){
     if(state.me?.role!=="parent"||!state.student?.studentId||state.parentPracticeRefreshing)return;
+    if(practiceDraftActive()){toast("請先送出目前練習紀錄，再重新整理歷史，避免未儲存的內容消失");return}
     state.parentPracticeRefreshing=true;
     const studentId=String(state.student.studentId);
     render();
@@ -66,7 +76,7 @@
     const content=!d?`<div class="notice">正在讀取上個月的練習紀錄…</div>`
       :d.error?`<div class="notice">上月紀錄暫時無法讀取：${esc(d.error)}。可到「自主打卡」的「最近練習」按更新。</div>`
       :!rows.length?`<div class="notice">${esc(state.student.name||"孩子")}在 ${esc(title)}尚無自主練習紀錄。</div>`
-      :rows.map(x=>`<div class="item" style="align-items:flex-start"><div style="min-width:0;flex:1"><b>${esc(x.practiceDate)}｜${esc(x.practiceContent||"自主練習")}</b><small>${esc(x.startTime||"")}～${esc(x.endTime||"")}｜本次 ${Number(x.minutes||0)} 分鐘｜當日累計 ${Number(x.dailyMinutes||x.minutes||0)} 分鐘</small>${x.focus?`<small>練習重點：${esc(x.focus)}</small>`:""}</div><span class="badge ${x.qualified?"ok":"warn"}">${x.qualified?"當日達標":"當日未達"}</span></div>`).join("");
+      :rows.map(x=>`<div class="item" style="align-items:flex-start"><div style="min-width:0;flex:1"><b>${esc(x.practiceDate)}｜${esc(x.practiceContent||"自主練習")}</b><small>${esc(x.startTime||"")}～${esc(x.endTime||"")}｜本次 ${Number(x.minutes||0)} 分鐘｜當日累計 ${Number(x.dailyMinutes||x.minutes||0)} 分鐘</small>${x.focus?`<small>練習重點：${esc(x.focus)}</small>`:""}${x.weeklyGoalText?`<small>🎯 老師指定：${esc(x.weeklyGoalText)}</small>`:""}</div><span class="badge ${x.qualified?"ok":"warn"}">${x.qualified?"當日達標":"當日未達"}</span></div>`).join("");
     const summary=!d?"正在讀取紀錄…":d.error?"讀取失敗，請更新":rows.length?`${rows.length} 筆｜${total} 分鐘｜達標 ${days.size} 天`:"尚無練習紀錄";
     return `<section class="card parent-previous-practice"><details ${state.parentPreviousPracticeExpandedKey===key?"open":""}><summary onclick="setParentPracticeHistoryOpen(!this.parentElement.open)"><span><b>📅 上月自主練習｜${esc(title)}</b><small>${esc(summary)}</small></span></summary><div class="parent-previous-practice-body"><div class="muted" style="margin-bottom:10px">${esc(state.student.name||"孩子")}的逐筆練習紀錄。${trial}</div>${content}</div></details></section>`;
   }

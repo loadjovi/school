@@ -57,7 +57,7 @@ test("quick student picker prioritizes an overdue October 29 lesson ahead of Oct
 
 test("overdue class has an independent content editor and save control",()=>{
  const state={expandedPrivateLessonId:"oct29"};
- const ctx={state,workflow:flow,needsLessonCatchup:catchup,teacherLessonHeader:()=>"<header></header>",studentMetaLine:()=>"",currentStudentName:()=> "測試學生",lessonDomKey:x=>x,lessonSummary:()=>"<section></section>",canChange:()=>false,canComplete:()=>true,today:()=>today,esc,workflowClass:{scheduled:"warn"},workflowText:{scheduled:"已預約"}};
+ const ctx={state,workflow:flow,needsLessonCatchup:catchup,teacherLessonHeader:()=>"<header></header>",weeklyGoalEditor:()=>"<div>weekly goals</div>",studentMetaLine:()=>"",currentStudentName:()=> "測試學生",lessonDomKey:x=>x,lessonSummary:()=>"<section></section>",canChange:()=>false,canComplete:()=>true,today:()=>today,esc,workflowClass:{scheduled:"warn"},workflowText:{scheduled:"已預約"}};
  vm.createContext(ctx);
  vm.runInContext(fragment("  function teacherLessonRow(x){","  window.toggleTeacherPrivateLesson=")+"\nthis.getLessonRow=teacherLessonRow;",ctx);
  const html=ctx.getLessonRow(rows[0]);
