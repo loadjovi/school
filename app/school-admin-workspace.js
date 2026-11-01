@@ -191,7 +191,8 @@
   root.querySelector('.aw-home').hidden=group!=='home';root.querySelector('.aw-account-links').hidden=group!=='accounts';root.querySelector('.aw-attendance-links').hidden=group!=='attendance';
   if(group==='privateLookup'&&!(Array.isArray(state.master)&&state.master.length)&&!privateLookup.busy){
     // Load the canonical student master once, without requiring a page reload.
-    if(!privateLookup.loadingRoster){
+    if(!privateLookup.loadingRoster&&!privateLookup.rosterLoaded){
+      privateLookup.rosterLoaded=true;
       privateLookup.loadingRoster=true;
       api("/api/student-master").then(data=>{
         if(state.me?.role==="admin"){state.master=Array.isArray(data.items)?data.items:[];organize()}
