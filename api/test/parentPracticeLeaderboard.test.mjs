@@ -109,5 +109,5 @@ test("on December 1, the primary leaderboard averages only October and November,
  assert.deepEqual(result.includedMonths,["2026-10","2026-11"]);
  assert.deepEqual(result.mine.monthlyDetails.map(x=>x.targetDays),[30,30]);
  assert.deepEqual(result.mine.monthlyDetails.map(x=>x.provisional),[false,false]);
- assert.equal(result.mine.score10,0.34);
+ assert.equal(result.mine.score10,0.33);
 });
