@@ -137,7 +137,7 @@
      privateLookup.roster=data.items;privateLookup.rosterLoaded=true;
      state.master=data.items;
      if(!data.items.length)privateLookup.rosterError="後端回傳 0 位學生，請確認目前學校／帳號的資料範圍";
-   }catch(err){privateLookup.rosterError=String(err.message||err)}
+   }catch(err){privateLookup.rosterLoaded=true;privateLookup.rosterError=String(err.message||err)}
    finally{privateLookup.rosterLoading=false;organize()}
  }
  document.addEventListener("click",event=>{
