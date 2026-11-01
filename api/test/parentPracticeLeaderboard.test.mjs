@@ -69,7 +69,7 @@ test("the primary encouraging TOP5 shows only fully elapsed months and does not 
   ...Array.from({length:26},(_,i)=>row("s2",`2026-10-${String(i+1).padStart(2,"0")}`,20))
  ];
  const args={students,rows,months:practiceScoreMonths("2026-11-01"),today:"2026-11-01",studentId:"s1"};
- const final=buildPracticeLeaderboard(args);
+ const final=buildPracticeLeaderboard({...args,mode:"final"});
  assert.equal(final.mode,"final");
  assert.deepEqual(final.includedMonths,["2026-10"]);
  assert.equal(final.items[0].score10,8.67);
@@ -86,14 +86,14 @@ test("the primary encouraging TOP5 shows only fully elapsed months and does not 
  assert.equal(preview.mine.monthlyDetails[1].score10,10);
  const second=buildPracticeLeaderboard({...args,today:"2026-11-02",mode:"provisional"});
  assert.equal(second.mine.score10,6,"An unmodified Nov 1 record yields a different provisional score on Nov 2");
- const stable=buildPracticeLeaderboard({...args,today:"2026-11-02"});
+ const stable=buildPracticeLeaderboard({...args,today:"2026-11-02",mode:"final"});
  assert.equal(stable.mine.score10,7,"Finalized October scores remain unchanged without corrections");
 });
 
 test("when current October is not yet completed, primary leaderboard waits until November without fabricating zero scores",()=>{
  const students=[student("s1","小朋友")],rows=[row("s1","2026-10-03",30)];
  const args={students,rows,months:practiceScoreMonths("2026-10-03"),today:"2026-10-03",studentId:"s1"};
- const final=buildPracticeLeaderboard(args);
+ const final=buildPracticeLeaderboard({...args,mode:"final"});
  assert.deepEqual(final.includedMonths,[]);
  assert.deepEqual(final.items,[]);
  assert.equal(final.mine,null);
@@ -105,11 +105,61 @@ test("when current October is not yet completed, primary leaderboard waits until
 
 test("on December 1, the main encouragement leaderboard compares November alone, not an October-November average",()=>{
  const students=[student("s1","小朋友")],rows=[row("s1","2026-10-01",20),row("s1","2026-11-01",20),row("s1","2026-12-01",20)];
- const result=buildPracticeLeaderboard({students,rows,months:practiceScoreMonths("2026-12-01"),today:"2026-12-01",studentId:"s1"});
+ const result=buildPracticeLeaderboard({students,rows,months:practiceScoreMonths("2026-12-01"),today:"2026-12-01",studentId:"s1",mode:"final"});
  assert.deepEqual(result.includedMonths,["2026-11"]);
  assert.deepEqual(result.mine.monthlyDetails.map(x=>x.targetDays),[30]);
  assert.deepEqual(result.mine.monthlyDetails.map(x=>x.provisional),[false]);
  assert.equal(result.mine.score10,0.33);
  const legacyPreview=buildPracticeLeaderboard({students,rows,months:practiceScoreMonths("2026-12-01"),today:"2026-12-01",studentId:"s1",mode:"provisional"});
  assert.deepEqual(legacyPreview.includedMonths,["2026-10","2026-11","2026-12"]);
+});
+
+test("11/1 TOP 5 begins fresh in November, never combining 10月 26-day history and November day one",()=>{
+ const students=[student("s1","十月勤練"),student("s2","十一月勤練")];
+ const rows=[...Array.from({length:26},(_,i)=>row("s1",`2026-10-${String(i+1).padStart(2,"0")}`,20)),
+   row("s2","2026-11-01",20)];
+ const args={students,rows,months:practiceScoreMonths("2026-11-01"),today:"2026-11-01",studentId:"s2"};
+ const current=buildPracticeLeaderboard(args);
+ assert.equal(current.mode,"monthly");
+ assert.deepEqual(current.includedMonths,["2026-11"]);
+ assert.equal(current.items.length,1);
+ assert.equal(current.items[0].name,"十一月勤練");
+ assert.equal(current.items[0].qualifiedDays,1);
+ assert.equal(current.items[0].score10,0.33,"One day = 1/30, not an immediate 10/10");
+ assert.equal(current.mine.monthlyDetails[0].targetDays,30);
+ assert.equal(current.mine.monthlyDetails[0].provisional,true);
+ const historical=buildPracticeLeaderboard({...args,selectedMonth:"2026-10"});
+ assert.deepEqual(historical.includedMonths,["2026-10"]);
+ assert.equal(historical.items[0].score10,8.67);
+ assert.equal(historical.items[0].qualifiedDays,26);
+ assert.equal(historical.mine,null);
+});
+test("current month is empty if only October has records; new-month participants enter only after practising",()=>{
+ const students=[student("s1","有十月")],rows=[row("s1","2026-10-31",20)];
+ const args={students,rows,months:practiceScoreMonths("2026-11-01"),today:"2026-11-01",studentId:"s1"};
+ const current=buildPracticeLeaderboard(args);
+ assert.deepEqual(current.includedMonths,["2026-11"]);
+ assert.equal(current.participantCount,0);
+ assert.deepEqual(current.items,[]);
+ const previous=buildPracticeLeaderboard({...args,selectedMonth:"2026-10"});
+ assert.equal(previous.items.length,1);
+ assert.equal(previous.items[0].score10,0.33);
+});
+test("11/2 denominator is a steady 30-day monthly target, so one November exercise does not lose points overnight",()=>{
+ const args={students:[student("s1","十一月")],rows:[row("s1","2026-11-01",20)],
+ months:practiceScoreMonths("2026-11-01"),today:"2026-11-01",studentId:"s1"};
+ const day1=buildPracticeLeaderboard(args),day2=buildPracticeLeaderboard({...args,today:"2026-11-02"});
+ assert.equal(day1.mine.score10,0.33);
+ assert.equal(day2.mine.score10,0.33);
+ assert.equal(day2.mine.monthlyDetails[0].targetDays,30);
+});
+test("monthly leaderboard starts December on Dec 1 and October is still available as an older-month lookup",()=>{
+ const args={students:[student("s1","小朋友")],
+ rows:[row("s1","2026-10-01",20),row("s1","2026-11-01",20),row("s1","2026-12-01",20)],
+ months:practiceScoreMonths("2026-12-01"),today:"2026-12-01",studentId:"s1"};
+ assert.deepEqual(buildPracticeLeaderboard(args).includedMonths,["2026-12"]);
+ assert.deepEqual(buildPracticeLeaderboard({...args,selectedMonth:"2026-10"}).includedMonths,["2026-10"]);
+ assert.deepEqual(buildPracticeLeaderboard({...args,selectedMonth:"2026-11"}).includedMonths,["2026-11"]);
+ const jan={...args,months:practiceScoreMonths("2027-01-01"),today:"2027-01-01"};
+ assert.deepEqual(buildPracticeLeaderboard(jan).includedMonths,["2026-12"]);
 });
