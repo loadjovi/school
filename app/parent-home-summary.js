@@ -174,6 +174,7 @@
     const current=state.parentPracticeLeaderboardStudentId===studentId&&state.parentPracticeLeaderboardDataMode===mode&&data&&!state.parentPracticeLeaderboardError;
     const months=current?d.includedMonths||[]:[],month=months[0]||"",monthName=month?Number(month.slice(5))+" 月":"上個月";
     const rows=current?(d.items||[]):[];
+    const monthTarget=current&&d.mine?.monthlyDetails?.[0]?.targetDays?Number(d.mine.monthlyDetails[0].targetDays):month?Math.min(Number(d.targetDays||30),new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).getDate()):Number(d.targetDays||30);
     const currentMonth=localDate().slice(0,7),currentMonthName=Number(currentMonth.slice(5))+" 月";
     const summary=state.summary||{},progressReady=String(summary.month||"")===currentMonth;
     const days=progressReady?Number(summary.practiceQualifiedDays||0):null;
@@ -183,10 +184,13 @@
       :!current?`<div class="notice">正在載入最近已結束月份的練習成果…</div>`
       :!months.length?`<div class="notice">目前還沒有已結束的正式練習月份。本月練習會持續累積，月底後再顯示鼓勵榜。</div>`
       :!rows.length?`<div class="notice">這個月份尚無可列入鼓勵榜的練習紀錄。</div>`
-      :`<ol class="practice-leaderboard-list">${rows.map(x=>`<li class="practice-leaderboard-item ${x.isMine?"is-mine":""}"><span class="practice-leaderboard-rank">${Number(x.rank)}</span><div><b>${esc(x.name)}${x.isMine?"（我的孩子）":""}</b><small>${monthName}有效練習 ${Number(x.qualifiedDays)} 天</small></div><strong>${Number(x.score10)}/10</strong></li>`).join("")}</ol>${d.mine&&Number(d.mine.rank)>5?`<div class="practice-leaderboard-mine">我的孩子｜第 ${Number(d.mine.rank)} 名｜${Number(d.mine.qualifiedDays)} 個有效日｜${Number(d.mine.score10)}/10</div>`:""}`;
+      :`<ol class="practice-leaderboard-list">${rows.map(x=>`<li class="practice-leaderboard-item ${x.isMine?"is-mine":""}"><span class="practice-leaderboard-rank">${Number(x.rank)}</span><div><b>${esc(x.name)}${x.isMine?"（我的孩子）":""}</b><small>${monthName}有效練習 ${Number(x.qualifiedDays)} / ${monthTarget} 天</small></div><strong>${Number(x.score10)}/10</strong></li>`).join("")}</ol>${d.mine&&Number(d.mine.rank)>5?`<div class="practice-leaderboard-mine">我的孩子｜第 ${Number(d.mine.rank)} 名｜${Number(d.mine.qualifiedDays)} 個有效日｜${Number(d.mine.score10)}/10</div>`:""}`;
     return `<section class="card practice-leaderboard">
-      <div class="practice-leaderboard-head"><div><h2>🏅 自主練習鼓勵榜</h2><small>${current&&months.length?monthName+"練習成果｜已結束月份":"以已結束月份為單位"}</small></div><button class="secondary" type="button" onclick="refreshParentPracticeLeaderboard()" ${state.parentPracticeLeaderboardLoading?"disabled":""}>更新</button></div>
-      <div class="muted" style="margin:8px 0 12px">${months.length?`${monthName}成果獨立計算，${currentMonthName}的練習不會影響上月名次。`:"每個月的努力獨立累積，不會因跨月而直接扣分。"}本榜單用於鼓勵，非學期正式成績。</div>
+      <div class="practice-leaderboard-head"><div><h2>🏅 自主練習分數 TOP 5</h2><small>${current&&months.length?monthName+"練習成果｜已結束月份":"以已結束月份為單位"}</small></div><button class="secondary" type="button" onclick="refreshParentPracticeLeaderboard()" ${state.parentPracticeLeaderboardLoading?"disabled":""}>更新</button></div>
+      <div class="muted" style="margin:8px 0 10px">${months.length?`${monthName}獨立排名；${currentMonthName}練習不會影響上月名次。`:"每個月份獨立排名，不跨月混算。"}鼓勵用途，非學期正式成績。</div>
+      <div style="padding:9px 11px;margin-bottom:12px;background:var(--notice-bg,#f2f7f5);border-radius:10px;font-size:14px;line-height:1.6">
+        <b>分數怎麼算？</b> 每天累計滿 ${Number(d.qualifiedMinutes||20)} 分鐘算 1 天；<b>${months.length?`${monthName}有效練習日 ÷ ${monthTarget} 天 × 10`:"有效練習日 ÷ 當月目標天數 × 10"} ＝ 月分數</b>（最高 10 分）。
+      </div>
       ${content}
       <div style="margin-top:12px;padding:12px;border:1px solid #d6e6de;background:#f4faf6;border-radius:12px">
         <div style="font-weight:800">🌱 ${currentMonthName}｜我的練習進度</div>
