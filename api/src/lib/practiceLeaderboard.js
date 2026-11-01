@@ -34,12 +34,14 @@ export function latestLeaderboardFeedback(students=[],feedbackRows=[]){
 }
 
 export function buildPracticeLeaderboard({students=[],rows=[],months=[],today,studentId,targetDays=30,mode="final",feedbackByStudentId=new Map()}){
-  // A completed-month leaderboard never includes the current month's volatile denominator.
-  // The provisional view remains available only on explicit request.
+  // The main encouragement board ranks one last finished month only. Never average
+  // October with November on Nov 1 (or October with November on Dec 1).
+  // The opt-in API provisional mode remains for legacy comparisons, but is not shown
+  // as a student-facing ranking on the simplified parent home.
   const currentMonth=String(today).slice(0,7);
   const selectedMode=mode==="provisional"?"provisional":"final";
   const completedMonths=months.filter(month=>month<currentMonth);
-  const includedMonths=months.filter(month=>month<currentMonth||(selectedMode==="provisional"&&month===currentMonth));
+  const includedMonths=selectedMode==="final"?(completedMonths.length?[completedMonths[completedMonths.length-1]]:[]):months.filter(month=>month<=currentMonth);
   const byMonth=new Map(includedMonths.map(month=>[month,{
     target:Math.max(1,Math.min(targetDays,month===String(today).slice(0,7)
       ?Number(String(today).slice(8,10))
