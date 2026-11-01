@@ -22,8 +22,8 @@ app.http("parentPracticeLeaderboard",{
     if(!studentId||!ensureStudentAccess(access,studentId))return json({error:"Forbidden"},403);
     const asOf=taipeiDate(),months=practiceScoreMonths(asOf);
     const mode=request.query.get("mode")==="provisional"?"provisional":"final";
-    const includedMonths=months.filter(month=>month<asOf.slice(0,7)||(mode==="provisional"&&month===asOf.slice(0,7)));
     const completedMonths=months.filter(month=>month<asOf.slice(0,7));
+    const includedMonths=mode==="final"?(completedMonths.length?[completedMonths[completedMonths.length-1]]:[]):months.filter(month=>month<=asOf.slice(0,7));
     const qualifiedMinutes=PRACTICE_QUALIFIED_MINUTES;
     const targetDays=Math.max(1,Number(process.env.PRACTICE_TARGET_DAYS||30));
     if(!includedMonths.length)return json({asOf,months,mode,includedMonths,completedMonths,qualifiedMinutes,targetDays,participantCount:0,items:[],mine:null});
