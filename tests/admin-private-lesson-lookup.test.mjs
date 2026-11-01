@@ -40,3 +40,11 @@ test("student dropdown reads canonical school administrator student master, not 
  assert.match(ui,/privateLookup\.rosterLoading/);
  assert.match(ui,/privateLookup\.rosterLoaded=true/);
 });
+
+test("mobile student dropdown is not replaced during MutationObserver workspace redraw",()=>{
+ assert.match(ui,/lookupHost\._lastLookupMarkup!==markup/);
+ assert.match(ui,/lookupHost\.contains\(focused\)/);
+ assert.match(ui,/if\(!focused\|\|!lookupHost\.contains\(focused\)/);
+ assert.match(ui,/lookupHost\.innerHTML=markup/);
+ assert.doesNotMatch(ui,/lookupHost\.innerHTML=privateLookupHtml\(\)/);
+});
