@@ -21,16 +21,23 @@ app.http("parentPracticeLeaderboard",{
     const studentId=String(request.query.get("studentId")||"").trim();
     if(!studentId||!ensureStudentAccess(access,studentId))return json({error:"Forbidden"},403);
     const asOf=taipeiDate(),months=practiceScoreMonths(asOf);
-    const mode=request.query.get("mode")==="provisional"?"provisional":"final";
+    const requestedMode=String(request.query.get("mode")||"");
+    const mode=requestedMode==="final"||requestedMode==="provisional"?requestedMode:"monthly";
     const completedMonths=months.filter(month=>month<asOf.slice(0,7));
-    const includedMonths=mode==="final"?(completedMonths.length?[completedMonths[completedMonths.length-1]]:[]):months.filter(month=>month<=asOf.slice(0,7));
+    const availableMonths=months.filter(month=>month<=asOf.slice(0,7));
+    const queryMonth=String(request.query.get("month")||"").trim();
+    if(queryMonth&&mode==="monthly"&&(!/^\d{4}-\d{2}$/.test(queryMonth)||!availableMonths.includes(queryMonth)))
+      return json({error:"查詢月份不在本學期範圍內"},400);
+    const selectedMonth=queryMonth||availableMonths.at(-1)||"";
+    const includedMonths=mode==="monthly"?(selectedMonth?[selectedMonth]:[]):
+      mode==="final"?(completedMonths.length?[completedMonths.at(-1)]:[]):availableMonths;
     const qualifiedMinutes=PRACTICE_QUALIFIED_MINUTES;
     const targetDays=Math.max(1,Number(process.env.PRACTICE_TARGET_DAYS||30));
-    if(!includedMonths.length)return json({asOf,months,mode,includedMonths,completedMonths,qualifiedMinutes,targetDays,participantCount:0,items:[],mine:null});
+    if(!includedMonths.length)return json({asOf,months,mode,selectedMonth,availableMonths,includedMonths,completedMonths,qualifiedMinutes,targetDays,participantCount:0,items:[],mine:null});
 
     // 每次只讀取登入家長所屬學校的在籍學生與正式計分月份；9 月試行紀錄不參與排名。
     const feedbackMonth=includedMonths[includedMonths.length-1];
-    const rangeEnd=mode==="final"?`${feedbackMonth}-${new Date(Number(feedbackMonth.slice(0,4)),Number(feedbackMonth.slice(5,7)),0).getDate()}`:asOf;
+    const rangeEnd=mode==="final"||(mode==="monthly"&&selectedMonth!==asOf.slice(0,7))?`${feedbackMonth}-${new Date(Number(feedbackMonth.slice(0,4)),Number(feedbackMonth.slice(5,7)),0).getDate()}`:asOf;
     const [masters,rows,feedbackRows]=await Promise.all([
       listStudentMaster("active",schoolId),
       listActivityRange("practice",schoolId,`${includedMonths[0]}-01`,rangeEnd),
@@ -43,7 +50,7 @@ app.http("parentPracticeLeaderboard",{
     }));
     // 家長只收到顯示所需的狀態與日期；老師留言、姓名和帳號不在排行榜回傳。
     const feedbackByStudentId=latestLeaderboardFeedback(students,feedbackRows);
-    const result=buildPracticeLeaderboard({students,rows,months,today:asOf,studentId,targetDays,mode,feedbackByStudentId});
-    return json({asOf,months,qualifiedMinutes,targetDays,feedbackMonth,...result});
+    const result=buildPracticeLeaderboard({students,rows,months,today:asOf,studentId,targetDays,mode,selectedMonth,feedbackByStudentId});
+    return json({asOf,months,availableMonths,qualifiedMinutes,targetDays,feedbackMonth,...result});
   }
 });
