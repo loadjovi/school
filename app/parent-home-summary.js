@@ -12,6 +12,8 @@
   state.parentPracticeLeaderboardLoadedAt=0;
   state.parentPracticeLeaderboardLoading=false;
   state.parentPracticeLeaderboardError="";
+  state.parentPracticeLeaderboardMode="final";
+  state.parentPracticeLeaderboardDataMode="";
   state.parentActivityConfigs=state.parentActivityConfigs||[];
   state.parentActivityLoadedAt=0;
   state.parentActivityLoading=false;
@@ -110,17 +112,20 @@
   }
   async function loadParentPracticeLeaderboard(studentId){
     if(!studentId||state.parentPracticeLeaderboardLoading)return;
+    const mode=state.parentPracticeLeaderboardMode==="provisional"?"provisional":"final";
     state.parentPracticeLeaderboardLoading=true;
     state.parentPracticeLeaderboardError="";
     try{
-      const data=await api("/api/parent-practice-leaderboard?studentId="+encodeURIComponent(studentId));
-      if(state.me?.role==="parent"&&String(state.student?.studentId)===String(studentId)){
+      const data=await api("/api/parent-practice-leaderboard?studentId="+encodeURIComponent(studentId)+"&mode="+mode);
+      if(state.me?.role==="parent"&&String(state.student?.studentId)===String(studentId)&&state.parentPracticeLeaderboardMode===mode){
+        state.parentPracticeLeaderboardDataMode=mode;
         state.parentPracticeLeaderboard=data;
         state.parentPracticeLeaderboardStudentId=studentId;
         state.parentPracticeLeaderboardLoadedAt=Date.now();
       }
     }catch(e){
-      if(state.me?.role==="parent"&&String(state.student?.studentId)===String(studentId)){
+      if(state.me?.role==="parent"&&String(state.student?.studentId)===String(studentId)&&state.parentPracticeLeaderboardMode===mode){
+        state.parentPracticeLeaderboardDataMode=mode;
         state.parentPracticeLeaderboardError=e.message||"排名暫時無法取得";
         state.parentPracticeLeaderboardStudentId=studentId;
         state.parentPracticeLeaderboardLoadedAt=Date.now();
@@ -135,6 +140,28 @@
     const studentId=String(state.student?.studentId||"");
     if(studentId&&!state.parentPracticeLeaderboardLoading){loadParentPracticeLeaderboard(studentId);render()}
   };
+  window.setParentPracticeLeaderboardMode=function(mode){
+    const next=mode==="provisional"?"provisional":"final";
+    if(state.parentPracticeLeaderboardLoading||state.parentPracticeLeaderboardMode===next)return;
+    state.parentPracticeLeaderboardMode=next;
+    state.parentPracticeLeaderboardLoadedAt=0;
+    state.parentPracticeLeaderboard=null;
+    state.parentPracticeLeaderboardError="";
+    state.parentPracticeLeaderboardDataMode="";
+    const studentId=String(state.student?.studentId||"");
+    if(studentId)loadParentPracticeLeaderboard(studentId);
+    render();
+  };
+  function leaderboardMonthlyDetail(data){
+    const mine=data?.mine,rows=Array.isArray(mine?.monthlyDetails)?mine.monthlyDetails:[];
+    if(!rows.length)return "";
+    const label=month=>Number(String(month).slice(5))+" 月";
+    const entries=rows.map(x=>`<tr><td style="padding:6px">${esc(label(x.month))}</td><td style="padding:6px">${Number(x.qualifiedDays)} / ${Number(x.targetDays)} 天</td><td style="padding:6px">${Number(x.score10)}/10</td><td style="padding:6px">${x.provisional?"進行中・暫估":"月份已結束"}</td></tr>`).join("");
+    return `<details class="practice-leaderboard-audit" style="margin-top:10px"><summary style="cursor:pointer;font-weight:700">🔎 查看我的孩子逐月算式</summary>
+      <div style="overflow-x:auto"><table style="width:100%;font-size:13px"><thead><tr><th>月份</th><th>有效日／目標</th><th>月分數</th><th>狀態</th></tr></thead><tbody>${entries}</tbody></table></div>
+      <div class="notice" style="margin-top:8px">每月分數＝有效練習日 ÷ 月計分目標 × 10（最多 10 分）。先將各月分數四捨五入至兩位小數，再平均：(${rows.map(x=>Number(x.score10)).join(" ＋ ")}) ÷ ${rows.length} ＝ <b>${Number(mine.score10)}/10</b>。排名僅顯示自己孩子的逐月算式，不公開其他學生紀錄。</div>
+      </details>`;
+  }
   function leaderboardFeedback(x){
     const level=feedbackLevels[Number(x.feedback?.level||0)];
     const status=level?`${level.icon} ${esc(level.label)}${x.feedback?.date?`｜${esc(shortDate(x.feedback.date))}`:""}`:"本月尚無回饋";
