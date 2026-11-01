@@ -201,7 +201,19 @@
    <section class="aw-uniform" hidden><div class="aw-uniform-frame-wrap"><iframe id="awUniformFrame" title="團服與活動管理" loading="lazy" src="about:blank"></iframe></div></section><section class="aw-semester-scores" hidden><iframe id="awSemesterScoresFrame" title="全體學生學期 20 分成績" loading="lazy" src="about:blank"></iframe></section><div class="aw-private-lookup" hidden></div><div class="aw-account-panels"><div class="aw-account-school"></div><section id="awTeacherAccountCard" class="card" data-admin-group="accounts"><h2>👩‍🏫 藝享老師帳號</h2><div class="notice" id="awTeacherCount"></div><button type="button" class="secondary" data-open-teacher-admin>管理老師 →</button></section><div id="awTeacherAccountDetails" class="aw-teacher-details" hidden></div><div class="aw-account-family"></div></div><div class="aw-account-pending"></div><div class="aw-account-links"><button type="button" data-workspace-action="parentCorrection">修正家長綁定</button></div><div class="aw-attendance-links"><button type="button" data-workspace-action="attendanceTable">開啟出勤工作台</button></div>`;
    main.prepend(root);root.querySelector('.aw-heading').after(root.querySelector('.aw-todos'));
   }
-  const lookupHost=root.querySelector('.aw-private-lookup');if(group==='privateLookup'&&lookupHost)lookupHost.innerHTML=privateLookupHtml();
+  const lookupHost=root.querySelector('.aw-private-lookup');
+  if(group==='privateLookup'&&lookupHost){
+    const markup=privateLookupHtml();
+    // Do not replace a focused native select/input on MutationObserver rerenders:
+    // replacing its DOM node instantly dismisses the iOS/Android picker.
+    if(lookupHost._lastLookupMarkup!==markup){
+      const focused=document.activeElement;
+      if(!focused||!lookupHost.contains(focused)||privateLookup.queried||privateLookup.rosterLoading){
+        lookupHost.innerHTML=markup;
+        lookupHost._lastLookupMarkup=markup;
+      }
+    }
+  }
   const guide=document.getElementById('adminTaskGuide');if(guide){if(guide.nextElementSibling!==root)guide.after(root)}else if(main.firstElementChild!==root)main.prepend(root);
   const text=(selector,value)=>{const n=root.querySelector(selector);if(n.textContent!==String(value))n.textContent=String(value)};
   text('h1',groups[group][0]);text('.aw-heading p',groups[group][1]);
