@@ -29,3 +29,10 @@ test("admin-only audit data can show previous schedule and does not expose it to
  assert.match(ui,/teacherName/);
  assert.doesNotMatch(ui,/method:"PATCH"|method:"POST"/);
 });
+
+test("student dropdown reads canonical school administrator student master, not stale state.students",()=>{
+ assert.match(ui,/Array\.isArray\(state\.master\)/);
+ assert.match(ui,/api\("\/api\/student-master"\)/);
+ assert.match(ui,/x\.name\|\|x\.studentName\|\|x\.studentId/);
+ assert.match(ui,/privateLookup\.rosterLoaded=true/);
+});
