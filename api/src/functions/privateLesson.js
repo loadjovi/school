@@ -184,7 +184,13 @@ app.http("privateLesson",{
       for(const r of rows){
         const teacherEmail=String(r.teacher||"").trim().toLowerCase();
         if(!nameCache.has(teacherEmail))nameCache.set(teacherEmail,await resolvedTeacherName(teacherEmail,r.teacherName,schoolId));
-        records.push(view(r,nameCache.get(teacherEmail)));
+        const item=view(r,nameCache.get(teacherEmail));
+        // Original schedule changes are visible only to school administrators.
+        if(a.role==="admin"){
+          try{const changes=JSON.parse(String(r.scheduleHistory||"[]"));item.scheduleHistory=Array.isArray(changes)?changes.slice(-10):[]}catch{item.scheduleHistory=[]}
+          item.rescheduleReason=String(r.rescheduleReason||"");
+        }
+        records.push(item);
       }
       records.sort((x,y)=>String(y.lessonDate).localeCompare(String(x.lessonDate))||String(y.startTime).localeCompare(String(x.startTime))||String(y.createdAt).localeCompare(String(x.createdAt)));
       return json({items:records.slice(0,150),pendingCount:records.filter(x=>x.workflowStatus==="awaiting_parent").length,scheduledCount:records.filter(x=>x.workflowStatus==="scheduled").length,today:clock.date,nowTime:clock.time,timeZone});

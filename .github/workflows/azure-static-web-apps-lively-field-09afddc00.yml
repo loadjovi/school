@@ -30,6 +30,8 @@ jobs:
           find app -maxdepth 1 -name "*.js" -print0 | xargs -0 -n1 node --check
       - name: Attendance to-do regression tests
         run: node --test tests/admin-attendance-todos.test.mjs tests/school-absence-followup.test.mjs
+      - name: School admin private lesson readonly lookup regressions
+        run: node --test tests/admin-private-lesson-lookup.test.mjs
       - name: Single-month parent encouragement leaderboard and privacy regressions
         run: node --test api/test/parentPracticeLeaderboard.test.mjs tests/parent-leaderboard-finalized-default.test.mjs
       - name: Private lesson background refresh regression test
