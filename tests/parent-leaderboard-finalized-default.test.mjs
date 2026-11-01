@@ -5,76 +5,78 @@ import {readFileSync} from "node:fs";
 const source=readFileSync(new URL("../app/parent-home-summary.js",import.meta.url),"utf8");
 const begin=source.indexOf("  function leaderboardMonthlyDetail(data){");
 const end=source.indexOf("  function parentMonthlyScoreCard(){",begin);
-assert.ok(begin>=0&&end>begin,"Parent encouragement board section should exist");
+assert.ok(begin>=0&&end>begin,"Monthly TOP 5 UI section exists");
 const code=source.slice(begin,end);
-function setup({month="2026-10",mineScore=7,days=21,minutes=705,hasCompletedMonth=true,progressDays=1,progressMinutes=25}={}){
- const studentId="student1",months=hasCompletedMonth?[month]:[];
- const state={student:{studentId},summary:{month:"2026-11",practiceQualifiedDays:progressDays,practiceMinutes:progressMinutes},
-   parentPracticeLeaderboardDataMode:"final",parentPracticeLeaderboardLoadedAt:Date.now(),
-   parentPracticeLeaderboardLoading:false,parentPracticeLeaderboardStudentId:studentId,parentPracticeLeaderboardError:"",
+function setup({month="2026-11",includeRows=true,selectedMonth="",summaryDays=1,summaryMinutes=20,asOf="2026-11-01",mineScore=0.33}={}){
+ const studentId="student1",activeMonth="2026-11";
+ const state={student:{studentId},
+   summary:{month:activeMonth,practiceQualifiedDays:summaryDays,practiceMinutes:summaryMinutes},
+   parentPracticeLeaderboardMonth:selectedMonth,parentPracticeLeaderboardMode:"monthly",
+   parentPracticeLeaderboardDataMode:"monthly|"+selectedMonth,
+   parentPracticeLeaderboardLoadedAt:Date.now(),
+   parentPracticeLeaderboardLoading:false,
+   parentPracticeLeaderboardStudentId:studentId,parentPracticeLeaderboardError:"",
    parentPracticeLeaderboard:{
-      mode:"final",asOf:"2026-11-01",includedMonths:months,targetDays:30,qualifiedMinutes:20,
-      participantCount:2,
-      items:hasCompletedMonth?[
-         {rank:1,name:"林○○",score10:8.67,qualifiedDays:26,minutes:951,isMine:false},
-         {rank:2,name:"游○○",score10:mineScore,qualifiedDays:days,minutes,isMine:true}
-      ]:[],
-      mine:hasCompletedMonth?{rank:2,score10:mineScore,qualifiedDays:days,minutes,
-        monthlyDetails:[{month,qualifiedDays:days,targetDays:30,score10:mineScore,provisional:false}]}:null
-   }};
- const ctx={state,Date,localDate:()=>"2026-11-01",shortDate:x=>x,
-   setTimeout:()=>{throw Error("Should not fetch if cached result still valid")},esc:x=>String(x??"")};
+     mode:"monthly",asOf,selectedMonth:month,availableMonths:["2026-10","2026-11"],
+     includedMonths:[month],targetDays:30,qualifiedMinutes:20,participantCount:includeRows?2:0,
+     items:includeRows?[
+       {rank:1,name:"林○○",score10:mineScore,qualifiedDays:1,minutes:20,isMine:true},
+       {rank:2,name:"游○○",score10:0,qualifiedDays:0,minutes:15,isMine:false}
+     ]:[],
+     mine:includeRows?{rank:1,score10:mineScore,qualifiedDays:1,minutes:20,
+       monthlyDetails:[{month,qualifiedDays:1,targetDays:30,score10:mineScore,provisional:month===activeMonth}]}:null
+   }
+ };
+ const ctx={state,Date,localDate:()=>asOf,shortDate:x=>x,esc:x=>String(x??""),
+   setTimeout:()=>{throw Error("No polling when same-day cached ranking is valid")}};
  vm.createContext(ctx);
- vm.runInContext(code+"\nthis.view=parentPracticeLeaderboardCard;this.audit=leaderboardMonthlyDetail;",ctx);
- return {html:ctx.view(),state};
+ vm.runInContext(code+"\nthis.view=parentPracticeLeaderboardCard;this.audit=leaderboardMonthlyDetail",ctx);
+ return {state,ctx,html:ctx.view()};
 }
-test("single October encouragement board displays stable October counts, not November's volatile cross-month mean",()=>{
+test("11/1 first view is November TOP 5, not previous October ranking",()=>{
  const {html}=setup();
  assert.match(html,/自主練習分數 TOP 5/);
- assert.match(html,/10 月練習成果｜已結束月份/);
- assert.match(html,/10 月有效練習 26 \/ 30 天/);
- assert.match(html,/10 月有效練習 21 \/ 30 天/);
- assert.match(html,/8\.67\/10/);
- assert.match(html,/7\/10/);
- assert.doesNotMatch(html,/4\.34\/10|8\.5\/10|10、11月平均/);
- assert.doesNotMatch(html,/setParentPracticeLeaderboardMode|當月暫估/);
+ assert.match(html,/11 月｜本月進行中/);
+ assert.match(html,/11 月有效練習 1 \/ 30 天/);
+ assert.match(html,/0\.33\/10/);
+ assert.doesNotMatch(html,/10、11月平均|10 月練習成果｜已結束月份|8\.5\/10/);
 });
-test("homepage clearly separates the child's current month progress without ranking the new month",()=>{
- const {html}=setup({progressDays:1,progressMinutes:25});
- assert.match(html,/11 月｜我的練習進度/);
- assert.match(html,/1 天/);
- assert.match(html,/25 分鐘/);
- assert.match(html,/本月尚未結束，不參與上月鼓勵排名/);
- assert.match(html,/鼓勵用途，非學期正式成績/);
+test("October is only selected for past-month lookup and never averaged with November",()=>{
+ const {html}=setup({month:"2026-10",selectedMonth:"2026-10",mineScore:0.33});
+ assert.match(html,/10 月｜歷史月份/);
+ assert.match(html,/10 月有效練習 1 \/ 30 天/);
+ assert.match(html,/10 月（歷史紀錄）/);
+ assert.match(html,/11 月（進行中）/);
+ assert.match(html,/只比較選定的單一月份/);
 });
-test("month score calculation is collapsed by default and includes only signed-in child's details",()=>{
+test("monthly score formula is visible and uses a fixed target rather than day-one full scores",()=>{
  const {html}=setup();
- assert.match(html,/<details class="practice-leaderboard-audit"/);
- assert.match(html,/計算方式與我的孩子明細/);
  assert.match(html,/分數怎麼算？/);
- assert.match(html,/10 月有效練習日 ÷ 30 天 × 10 ＝ 月分數/);
  assert.match(html,/每天累計滿 20 分鐘算 1 天/);
- assert.match(html,/21 個有效練習日 ÷ 30 天 × 10/);
- assert.match(html,/主要鼓勵榜<strong>只比較最近已結束的單一月份/);
- assert.match(html,/其他學生僅顯示遮蔽姓名/);
- assert.doesNotMatch(html,/teacherEmail|createdBy|partitionKey/);
+ assert.match(html,/本月有效日 ÷ 30 天 × 10＝本月分數/);
+ assert.match(html,/11\/1 首次達標 1 天＝0\.33\/10/);
+ assert.match(html,/<details class="practice-leaderboard-audit"/);
+ assert.match(html,/1 個有效練習日 ÷ 30 天 × 10/);
+ assert.doesNotMatch(html,/本月分數\s*10\/10/);
 });
-test("an unfinished month cannot appear as a fake finalized leaderboard",()=>{
- const {html}=setup({hasCompletedMonth:false,progressDays:4,progressMinutes:130});
- assert.match(html,/目前還沒有已結束的正式練習月份/);
+test("fresh November before any student has practiced shows a welcoming empty state, not October data",()=>{
+ const {html}=setup({includeRows:false,summaryDays:0,summaryMinutes:0});
+ assert.match(html,/新的月份開始了！目前尚無練習紀錄/);
+ assert.match(html,/不與其他月份混算/);
  assert.doesNotMatch(html,/practice-leaderboard-item/);
- assert.match(html,/4 天/);
 });
-test("current month is not mistaken for zero progress when summary has not loaded",()=>{
- const {html,state}=setup();
- state.summary=null;
- const ctx={state,Date,localDate:()=>"2026-11-01",shortDate:x=>x,setTimeout:()=>{},esc:x=>String(x??"")};
- vm.createContext(ctx);vm.runInContext(code+"\nthis.view=parentPracticeLeaderboardCard;",ctx);
- assert.match(ctx.view(),/讀取中/);
- assert.doesNotMatch(ctx.view(),/<b>0 天<\/b>/);
+test("classmate monthly details are never exposed, and failed loading does not fabricate zero scores",()=>{
+ const {html}=setup();
+ assert.match(html,/其他學生姓名僅顯示遮蔽資料/);
+ assert.doesNotMatch(html,/studentId|teacherEmail|createdBy|partitionKey/);
+ const x=setup({includeRows:false});x.state.parentPracticeLeaderboardError="讀取失敗";
+ assert.match(x.ctx.view(),/排行榜暫時無法取得/);
 });
-test("API request remains explicitly finalized by default",()=>{
- assert.match(source,/parentPracticeLeaderboardMode="final"/);
- assert.match(source,/&mode="\+mode/);
- assert.match(source,/parentPracticeLeaderboardDataMode===mode/);
+test("monthly fetch uses only the selected historical month; earlier response is not reused",()=>{
+ assert.match(source,/parentPracticeLeaderboardMonth=""/);
+ assert.match(source,/&mode="\+mode\+\(month\?"&month="/);
+ assert.match(source,/parentPracticeLeaderboardDataMode=key/);
+ assert.match(source,/parentPracticeLeaderboardMonth===month/);
+ assert.match(source,/window\.setParentPracticeLeaderboardMonth=function\(value\)/);
+ assert.doesNotMatch(code,/setParentPracticeLeaderboardMode/);
 });
