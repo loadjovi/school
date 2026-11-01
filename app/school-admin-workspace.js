@@ -78,8 +78,11 @@
  const privateLookup={studentId:"",month:"",status:"all",items:[],busy:false,queried:false,error:""};
  const htmlSafe=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
  function privateLookupHtml(){
-   const students=Array.isArray(state.students)?state.students:[];
-   const select=students.map(x=>'<option value="'+htmlSafe(x.studentId)+'" '+(String(x.studentId)===privateLookup.studentId?'selected':'')+'>'+htmlSafe(x.name||x.studentId)+'｜'+htmlSafe(x.studentId)+'</option>').join('');
+   // Admin student roster is loaded into state.master by loadAdmin(); state.students
+   // can remain empty when entering the workspace through a different route.
+   const students=(Array.isArray(state.master)&&state.master.length?state.master:Array.isArray(state.students)?state.students:[]);
+
+   const select=students.filter(x=>x.studentId).map(x=>'<option value="'+htmlSafe(x.studentId)+'" '+(String(x.studentId)===privateLookup.studentId?'selected':'')+'>'+htmlSafe(x.name||x.studentName||x.studentId)+'｜'+htmlSafe(x.studentId)+'</option>').join('');
    const filtered=privateLookup.items.filter(x=>privateLookup.status==="all"||x.workflowStatus===privateLookup.status);
    const rows=filtered.map(x=>{
      const history=Array.isArray(x.scheduleHistory)?x.scheduleHistory:[];
@@ -186,6 +189,17 @@
   const uniformFrame=root.querySelector('#awUniformFrame');if(group==='uniformAdmin'&&uniformFrame&&uniformFrame.getAttribute('src')==='about:blank')uniformFrame.src='/uniform-event-admin.html?embedded=school&v=20261026-term-plan';
   const scoresFrame=root.querySelector('#awSemesterScoresFrame');if(group==='grades'&&scoresFrame&&scoresFrame.getAttribute('src')==='about:blank')scoresFrame.src='/admin-semester-scores.html?embedded=school&v=20261025-score-quick-filters';
   root.querySelector('.aw-home').hidden=group!=='home';root.querySelector('.aw-account-links').hidden=group!=='accounts';root.querySelector('.aw-attendance-links').hidden=group!=='attendance';
+  if(group==='privateLookup'&&!(Array.isArray(state.master)&&state.master.length)&&!privateLookup.busy){
+    // Load the canonical student master once, without requiring a page reload.
+    if(!privateLookup.loadingRoster&&!privateLookup.rosterLoaded){
+      privateLookup.rosterLoaded=true;
+      privateLookup.loadingRoster=true;
+      api("/api/student-master").then(data=>{
+        if(state.me?.role==="admin"){state.master=Array.isArray(data.items)?data.items:[];organize()}
+      }).catch(err=>{privateLookup.error="學生名單載入失敗："+String(err.message||err);organize()})
+      .finally(()=>{privateLookup.loadingRoster=false});
+    }
+  }
   if(group==='attendance'&&typeof window.mountAdminAttendanceAssist==='function')window.mountAdminAttendanceAssist();
   for(const b of document.querySelectorAll('.aw-bottom [data-workspace-group]')){const active=b.dataset.workspaceGroup===group;b.classList.toggle('is-active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')}
   // Keep all account management cards together in a stable, explicit order.
