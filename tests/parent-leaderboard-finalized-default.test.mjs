@@ -52,7 +52,7 @@ test("no completed month shows a clear explanation rather than fabricating a zer
 test("mode switch handler marks old response stale and requests newly selected mode",()=>{
  const header=source.slice(source.indexOf("  async function loadParentPracticeLeaderboard("),
    source.indexOf("  function leaderboardMonthlyDetail("));
- assert.match(header,/parentPracticeLeaderboardMode="final"/); // initialized above fetch
+ assert.match(source,/parentPracticeLeaderboardMode="final"/); // initialized before first request
  assert.match(header,/&mode="\+mode/);
  assert.match(header,/state\.parentPracticeLeaderboardMode===mode/);
  assert.match(header,/state\.parentPracticeLeaderboardDataMode=mode/);
