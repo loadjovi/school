@@ -14,6 +14,7 @@ test("school admin lookup script parses and is reachable from the work homepage"
  assert.match(ui,/lookupPrivateLessons\(\)/);
 });
 test("only school admin fetches lookup; requests student-scoped or month-scoped data",()=>{
+ assert.match(ui,/if\(!studentId\)/);
  assert.match(ui,/if\(state.me\?\.role!=="admin"\|\|!studentId\)return/);
  assert.match(ui,/encodeURIComponent\(studentId\)/);
  assert.match(ui,/encodeURIComponent\(privateLookup.month\)/);
@@ -33,6 +34,9 @@ test("admin-only audit data can show previous schedule and does not expose it to
 test("student dropdown reads canonical school administrator student master, not stale state.students",()=>{
  assert.match(ui,/Array\.isArray\(state\.master\)/);
  assert.match(ui,/api\("\/api\/student-master"\)/);
- assert.match(ui,/x\.name\|\|x\.studentName\|\|x\.studentId/);
+ assert.match(ui,/x\.name\|\|x\.studentName\|\|id/);
+ assert.match(ui,/data-lookup-roster-retry/);
+ assert.match(ui,/privateLookup\.rosterError/);
+ assert.match(ui,/privateLookup\.rosterLoading/);
  assert.match(ui,/privateLookup\.rosterLoaded=true/);
 });
