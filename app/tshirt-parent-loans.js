@@ -53,6 +53,26 @@ function drawRecords(){
      });details.append(button);
     }
    }
+   if(x.role==="VOLUNTEER"&&["BORROWED","WASHING"].includes(x.status)){
+    const button=document.createElement("button");button.type="button";
+    button.textContent="✏️ 更正志工團 T 尺寸";
+    button.addEventListener("click",async()=>{
+     const input=prompt("更正志工團 T 尺寸（請確認實際申請／領用的尺寸）",x.size);
+     if(input===null)return;
+     const size=input.trim().toUpperCase();
+     if(!["8","10","12","XS","S","M","L","XL","2L","3L","5L"].includes(size)){alert("尺寸不正確");return}
+     if(size===x.size){alert("尺寸沒有變更");return}
+     const reason=prompt("請填寫更正原因，供後台稽核查詢（不可留空）","原申請為 "+size+"，原紀錄為 "+x.size+"，管理員核實更正");
+     if(!reason?.trim())return;
+     if(!confirm("確定更正「"+(x.parentName||x.parentEmail)+"」團 T 尺寸："+x.size+" → "+size+"？借用中狀態與原始領取時間不變，並保留異動紀錄。"))return;
+     button.disabled=true;
+     try{
+      await call("uniform-events/parent-loans",{method:"POST",body:JSON.stringify({parentEmail:x.parentEmail,studentId:x.studentId,action:"CORRECT_VOLUNTEER_SIZE",size,reason:reason.trim(),etag:x.etag})});
+      await reload();window.dispatchEvent(new CustomEvent("tshirtParentLoansChanged"));
+     }catch(err){alert("尺寸更正失敗："+err.message);button.disabled=false}
+    });
+    details.append(button);
+   }
    list.append(details)
   }
  }
