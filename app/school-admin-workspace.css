@@ -203,7 +203,20 @@
 @media(max-width:380px){.aw-course-task-grid{grid-template-columns:1fr}.aw-course-task-grid>button,.aw-course-task-grid>button:last-child{grid-column:auto;min-height:82px}.course-workflow-steps{grid-template-columns:1fr}.course-workflow-steps span{display:flex;justify-content:flex-start}}
 
 
-/* Embedded unified school 20-point semester report (administrators only). */
-.aw-semester-scores{min-width:0;max-width:100%;margin-top:8px;padding-bottom:24px}
+/* Unified learning workspace: semester overview and monthly practice share one entry. */
+.aw-learning-workspace{min-width:0;max-width:100%;padding-bottom:24px}
+.aw-learning-switcher{padding:18px;border:1px solid var(--aw-line);border-radius:16px;background:#fff}
+.aw-learning-switcher h2{margin:0 0 5px!important;color:var(--aw-ink)}
+.aw-learning-switcher>p{margin:0;color:var(--aw-muted);font-size:14px;line-height:1.65}
+.aw-learning-kicker{display:block;margin-bottom:5px;color:var(--primary);font-size:12px;font-weight:900;letter-spacing:.04em}
+.aw-learning-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px}
+.aw-learning-tabs>button{display:grid;grid-template-columns:42px minmax(0,1fr);align-items:center;gap:10px;width:100%!important;min-height:88px;margin:0!important;padding:13px!important;border:1px solid var(--aw-line)!important;border-radius:13px!important;background:#f8faff!important;color:var(--aw-ink)!important;text-align:left;box-shadow:none!important}
+.aw-learning-tabs>button.is-active{border:2px solid var(--primary)!important;background:#eef3ff!important;box-shadow:0 0 0 3px rgba(49,85,164,.08)!important}
+.aw-learning-tabs b{display:block;font-size:15px}.aw-learning-tabs small{display:block;margin-top:4px;color:var(--aw-muted);font-size:11px;line-height:1.45;font-weight:500}
+.aw-learning-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:#e4ebfb;font-size:22px}
+.aw-learning-overview,.aw-learning-practice{min-width:0;max-width:100%;margin-top:12px}
+.aw-learning-context{display:grid;gap:4px;margin-bottom:10px;padding:12px 14px;border-left:4px solid var(--primary);border-radius:10px;background:#eef3ff;color:#40536e;font-size:13px;line-height:1.5}
+.aw-learning-context b{color:#19366f;font-size:14px}.aw-learning-context span{display:block}
 #awSemesterScoresFrame{display:block;width:100%;min-width:0;height:1100px;border:0;background:transparent}
-@media(max-width:899px){.aw-semester-scores{margin-bottom:24px}#awSemesterScoresFrame{max-width:100%}}
+@media(max-width:899px){.aw-learning-workspace{margin-bottom:24px}#awSemesterScoresFrame{max-width:100%}}
+@media(max-width:600px){.aw-learning-switcher{padding:15px}.aw-learning-switcher>p{font-size:13px}.aw-learning-tabs{grid-template-columns:1fr;gap:8px}.aw-learning-tabs>button{min-height:78px;padding:11px!important}.aw-learning-tabs b{font-size:14px}}

@@ -52,7 +52,7 @@
       "/roster-import.js?v=20261102-student-workflow",
       "/attendance-support.js?v=20260928-2148",
       "/attendance-edit.js?v=20261002-save-confirm",
-      "/practice-progress.js?v=20261003-record-counts",
+      "/practice-progress.js?v=20261102-learning-workspace",
       "/admin-operations.js?v=20261027-school-followup",
       "/admin-followup-summary-fix.js?v=20260917-1320",
       "/system-backup.js?v=20261003-practice20",
@@ -70,7 +70,7 @@
       "/private-student-bottom-back.js?v=20260915-1432",
       "/attendance-support.js?v=20260930-section-merge",
       "/attendance-edit.js?v=20261002-save-confirm",
-      "/practice-progress.js?v=20261003-record-counts",
+      "/practice-progress.js?v=20261102-learning-workspace",
       "/teacher-navigation.js?v=20261002-teacher-types",
       "/training-attendance.js?v=20261102-activity-boundary",
       "/comprehensive-support.js?v=20261002-save-confirm",
@@ -121,7 +121,7 @@
   async function loadRoleModules(){
     await waitForProfileReady();
     if(typeof state==="undefined"||!state.me)return;
-    const list=[...roleModules(),"/desktop-ui.js?v=20261017-admin-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261102-account-workflow","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
+    const list=[...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261102-learning-workspace","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");

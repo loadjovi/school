@@ -6,9 +6,11 @@ const workspace=readFileSync(new URL("../app/school-admin-workspace.js",import.m
 const page=readFileSync(new URL("../app/admin-semester-scores.html",import.meta.url),"utf8");
 const source=readFileSync(new URL("../api/src/functions/parentSemesterAttendance.js",import.meta.url),"utf8");
 const studentApi=readFileSync(new URL("../api/src/functions/studentMaster.js",import.meta.url),"utf8");
-test("school workspace has dedicated 20-point score overview in both mobile and desktop",()=>{
- assert.match(workspace,/grades:\['學期成績總覽'/);
- assert.match(workspace,/\['grades','學期成績總覽'/);
+test("school workspace combines the 20-point overview with monthly practice in both mobile and desktop",()=>{
+ assert.match(workspace,/grades:\['成績與練習'/);
+ assert.match(workspace,/\['grades','成績與練習'/);
+ assert.match(workspace,/data-learning-work="overview"/);
+ assert.match(workspace,/data-learning-work="practice"/);
  assert.match(workspace,/id="awSemesterScoresFrame"/);
  assert.match(workspace,/group==='grades'/);
  assert.match(workspace,/school-semester-scores-height/);
