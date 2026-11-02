@@ -61,6 +61,22 @@ test("latest monthly teacher encouragement is shown without affecting score or e
   assert.doesNotMatch(JSON.stringify(result),/私訊|私下鼓勵|teacher@example.com/);
 });
 
+test("equal effective days are ranked by total practice minutes",()=>{
+  const students=[student("s1","累計較多"),student("s2","累計較少")];
+  const rows=[
+    row("s1","2026-11-01",20,"18:00"),
+    row("s1","2026-11-01",15,"19:00"),
+    row("s2","2026-11-01",25,"18:00")
+  ];
+  const result=buildPracticeLeaderboard({students,rows,months:practiceScoreMonths("2026-11-02"),today:"2026-11-02",studentId:"s2"});
+  assert.equal(result.items[0].qualifiedDays,1);
+  assert.equal(result.items[1].qualifiedDays,1);
+  assert.equal(result.items[0].score10,result.items[1].score10);
+  assert.equal(result.items[0].minutes,35);
+  assert.equal(result.items[1].minutes,25);
+  assert.equal(result.items[0].name,"累○○○");
+});
+
 test("the primary encouraging TOP5 shows only fully elapsed months and does not halve October scores on Nov 1",()=>{
  const students=[student("s1","王小明"),student("s2","游小朋")];
  const rows=[

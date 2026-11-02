@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import {readFileSync} from "node:fs";
 const source=readFileSync(new URL("../app/parent-home-summary.js",import.meta.url),"utf8");
+const index=readFileSync(new URL("../app/index.html",import.meta.url),"utf8");
+const guard=readFileSync(new URL("../app/webview-guard.js",import.meta.url),"utf8");
 const begin=source.indexOf("  function leaderboardMonthlyDetail(data){");
 const end=source.indexOf("  function parentMonthlyScoreCard(){",begin);
 assert.ok(begin>=0&&end>begin,"Monthly TOP 5 UI section exists");
@@ -38,6 +40,9 @@ test("11/1 first view is November TOP 5, not previous October ranking",()=>{
  assert.match(html,/自主練習分數 TOP 5/);
  assert.match(html,/11 月｜本月進行中/);
  assert.match(html,/11 月有效練習 1 \/ 30 天/);
+ assert.match(html,/累計 20 分鐘/);
+ assert.match(html,/累計 15 分鐘/);
+ assert.match(html,/天數相同時，再比較本月累計練習分鐘/);
  assert.match(html,/0\.33\/10/);
  assert.doesNotMatch(html,/10、11月平均|10 月練習成果｜已結束月份|8\.5\/10/);
 });
@@ -57,6 +62,7 @@ test("monthly score formula is visible and uses a fixed target rather than day-o
  assert.match(html,/11\/1 首次達標 1 天＝0\.33\/10/);
  assert.match(html,/<details class="practice-leaderboard-audit"/);
  assert.match(html,/1 個有效練習日 ÷ 30 天 × 10/);
+ assert.match(html,/本月累計練習：<b>20 分鐘<\/b>/);
  assert.doesNotMatch(html,/本月分數\s*10\/10/);
 });
 test("fresh November before any student has practiced shows a welcoming empty state, not October data",()=>{
@@ -79,4 +85,9 @@ test("monthly fetch uses only the selected historical month; earlier response is
  assert.match(source,/parentPracticeLeaderboardMonth===month/);
  assert.match(source,/window\.setParentPracticeLeaderboardMonth=function\(value\)/);
  assert.doesNotMatch(code,/setParentPracticeLeaderboardMode/);
+});
+test("leaderboard minute UI assets are cache-busted",()=>{
+ assert.match(index,/styles\.css\?v=20261102-leaderboard-minutes/);
+ assert.match(index,/webview-guard\.js\?v=20261102-leaderboard-minutes/);
+ assert.match(guard,/parent-home-summary\.js\?v=20261102-leaderboard-minutes/);
 });

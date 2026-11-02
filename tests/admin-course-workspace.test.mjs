@@ -49,6 +49,6 @@ test("course workflow assets are cache-busted",()=>{
   assert.match(index,/schedule-admin\.js\?v=20261102-course-workflow/);
   assert.match(index,/special-calendar\.js\?v=20261102-training-form/);
   assert.match(index,/school-admin-workspace\.css\?v=20261102-activity-boundary/);
-  assert.match(index,/webview-guard\.js\?v=20261102-activity-boundary/);
+  assert.match(index,/webview-guard\.js\?v=20261102-leaderboard-minutes/);
   assert.match(guard,/school-admin-workspace\.js\?v=20261102-activity-boundary/);
 });

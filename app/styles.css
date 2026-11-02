@@ -296,11 +296,15 @@ input:focus,select:focus,textarea:focus{border-color:var(--green2);box-shadow:0 
 .practice-leaderboard-head small{display:block;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.5}
 .practice-leaderboard-head button{width:auto;flex:0 0 auto;margin:0;padding:7px 12px}
 .practice-leaderboard-list{list-style:none;padding:0;margin:13px 0 0;display:grid;gap:7px}
+.practice-leaderboard-order-note{margin-top:10px;padding:9px 11px;border:1px solid #d8e1f4;border-radius:10px;background:#f6f8ff;color:#33456f;font-size:11px;line-height:1.55}
 .practice-leaderboard-item{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px 10px;border:1px solid #dce4f6;border-radius:11px;background:#fff}
 .practice-leaderboard-item.is-mine{border-color:#a4c9b1;background:#f4fbf6}
 .practice-leaderboard-rank{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#e9efff;color:#26499e;font-weight:900;font-size:13px}
 .practice-leaderboard-item b{display:block;font-size:13px;color:#172554}
 .practice-leaderboard-item small{display:block;margin-top:2px;font-size:10px;color:var(--muted);line-height:1.4}
+.practice-leaderboard-metrics{display:flex;flex-wrap:wrap;gap:4px 7px;margin-top:4px}
+.practice-leaderboard-metrics span{display:inline-flex;align-items:center;padding:3px 6px;border-radius:999px;background:#f1f4fb;color:#596579;font-size:10px;line-height:1.35}
+.practice-leaderboard-metrics .practice-leaderboard-minutes{background:#fff4d8;color:#75530b;font-weight:800}
 .practice-leaderboard-feedback{display:block;margin-top:5px;color:#76540d;font-size:10px;font-weight:800;line-height:1.4}
 .practice-leaderboard-item strong{font-size:15px;color:#26499e;white-space:nowrap}
 .practice-leaderboard-mine{margin-top:10px;padding:9px 10px;border-radius:10px;background:#f0f8f1;color:#24583b;font-size:12px;font-weight:800}
