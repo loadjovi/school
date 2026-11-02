@@ -2,6 +2,7 @@ import { app } from "@azure/functions";
 import { getTenantContext, ensureTemporaryCourseAccess, json } from "../lib/auth.js";
 import { ensureTenantTables, table, tenantSchoolPartition, listStudentMaster, listTeacherDirectory } from "../lib/storage.js";
 import { needsTrainingAttendance } from "./calendarEvents.js";
+import { isTrainingEventType } from "../lib/trainingEventTypes.js";
 
 const safe=v=>String(v||"").replaceAll("'","''");
 const dateOk=v=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(String(v||"")))return false;const d=new Date(`${v}T12:00:00Z`);return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===v};
@@ -10,7 +11,7 @@ const normName=v=>String(v||"").trim().replace(/老師$/ ,"").replace(/\s+/g,"")
 const normGroup=v=>String(v||"").trim().replace(/團$/ ,"");
 const allowedStatus=new Set(["present","late","leave","absent"]);
 const recordKey=(eventId,studentId)=>"tr_"+Buffer.from(`${eventId}|${studentId}`,"utf8").toString("base64url");
-const isTraining=e=>String(e.eventType||"")==="competition_training"&&needsTrainingAttendance(e);
+const isTraining=e=>isTrainingEventType(e.eventType)&&needsTrainingAttendance(e);
 const summary=e=>({eventId:String(e.rowKey||""),title:String(e.title||""),eventDate:String(e.eventDate||""),startTime:String(e.startTime||""),endTime:String(e.endTime||""),targetGroups:String(e.targetGroups||""),teacherName:String(e.teacherName||""),location:String(e.location||""),status:String(e.status||"active"),requiresAttendance:true});
 
 function rosterFor(event,masters){
@@ -39,7 +40,7 @@ async function savedRecords(schoolId,eventId){
 app.http("trainingAttendance",{methods:["GET","POST"],authLevel:"anonymous",route:"training-attendance",handler:async request=>{
   const context=await getTenantContext(request);if(context.error)return context.error;
   const {access:a,schoolId}=context;
-  if(a.capabilities?.privateOnly||a.role!=="admin"&&!a.capabilities?.teacherSettings)return json({error:"僅加練授課老師與學校管理員可使用加練點名"},403);
+  if(a.capabilities?.privateOnly||a.role!=="admin"&&!a.capabilities?.teacherSettings)return json({error:"僅訓練授課老師與學校管理員可使用訓練點名"},403);
   await ensureTenantTables();
   const sid=tenantSchoolPartition(schoolId),eventsClient=table("tenantCalendarEvent");
   const teachers=a.role==="admin"?[]:await listTeacherDirectory(schoolId);
@@ -62,10 +63,10 @@ app.http("trainingAttendance",{methods:["GET","POST"],authLevel:"anonymous",rout
 
   const body=request.method==="POST"?await request.json():null;
   const eventId=String(body?.eventId||request.query.get("eventId")||"").trim();
-  if(!eventId||eventId.length>500)return json({error:"缺少有效的加練活動 ID"},400);
-  let event;try{event=await eventsClient.getEntity(sid,eventId)}catch(e){if(e.statusCode===404)return json({error:"找不到加練活動"},404);throw e}
-  if(!isTraining(event))return json({error:"此場加練不需要點名"},400);
-  if(!mayTakeAttendance(a,event,teachers))return json({error:"無此加練的點名權限，請由學校管理員指定授課老師 Gmail"},403);
+  if(!eventId||eventId.length>500)return json({error:"缺少有效的訓練課程 ID"},400);
+  let event;try{event=await eventsClient.getEntity(sid,eventId)}catch(e){if(e.statusCode===404)return json({error:"找不到訓練課程"},404);throw e}
+  if(!isTraining(event))return json({error:"此場訓練不需要點名"},400);
+  if(!mayTakeAttendance(a,event,teachers))return json({error:"無此訓練的點名權限，請由學校管理員指定授課老師 Gmail"},403);
   const masters=await listStudentMaster("active",schoolId),roster=rosterFor(event,masters);
   if(request.method==="GET"){
     const saved=await savedRecords(schoolId,eventId),byId=new Map(saved.map(x=>[String(x.studentId),x]));
@@ -74,11 +75,11 @@ app.http("trainingAttendance",{methods:["GET","POST"],authLevel:"anonymous",rout
     return json({event:summary(event),items,recorded:items.filter(x=>allowedStatus.has(x.status)).length,expected:items.length,lastSavedAt:String(last?.updatedAt||""),lastSavedBy:String(last?.recordedByName||last?.recordedBy||"")});
   }
 
-  if(String(event.status||"active")!=="active")return json({error:"已取消的加練不可點名"},409);
-  if(String(event.eventDate||"")>taipeiDate())return json({error:"加練日期未到，請於當天或之後點名"},409);
+  if(String(event.status||"active")!=="active")return json({error:"已取消的訓練不可點名"},409);
+  if(String(event.eventDate||"")>taipeiDate())return json({error:"訓練日期未到，請於當天或之後點名"},409);
   const items=Array.isArray(body.items)?body.items:[];
   const expected=new Set(roster.map(x=>String(x.rowKey))),received=new Set();
-  if(!expected.size)return json({error:"此場加練沒有符合團別的在籍學生"},400);
+  if(!expected.size)return json({error:"此場訓練沒有符合團別的在籍學生"},400);
   if(items.length!==expected.size)return json({error:"請完成本場所有學生的點名"},400);
   for(const x of items){const id=String(x?.studentId||"");if(!expected.has(id)||received.has(id)||!allowedStatus.has(String(x?.status||"")))return json({error:"學生名單或出勤狀態不正確，請重新整理後再儲存"},400);received.add(id)}
   const statuses=new Map(items.map(x=>[String(x.studentId),String(x.status)])),now=new Date().toISOString();

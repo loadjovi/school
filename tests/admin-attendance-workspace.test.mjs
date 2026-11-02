@@ -17,7 +17,7 @@ test("school-admin attendance uses existing same-record API and does not create 
 });
 test("attendance opens with four plain-language work choices and hides unrelated detail",()=>{
  assert.match(workspace,/一般課程代點名/);
- assert.match(workspace,/週六加練點名/);
+ assert.match(workspace,/加練／訓練點名/);
  assert.match(workspace,/請假／缺席追蹤/);
  assert.match(workspace,/查詢／修正紀錄/);
  assert.match(workspace,/state\.adminAttendanceWorkspaceTask=task/);

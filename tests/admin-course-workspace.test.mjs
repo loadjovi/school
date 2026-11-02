@@ -17,7 +17,7 @@ test("course management JavaScript parses",()=>{
 });
 
 test("course workspace offers five task-first entries",()=>{
-  for(const label of ["固定課表","停課／復課","單日分部併班","新增特殊活動","管理既有行事曆"]){
+  for(const label of ["固定課表","停課／復課","單日分部併班","新增訓練課程","管理訓練行事曆"]){
     assert.match(workspace,new RegExp(label));
   }
   assert.match(workspace,/data-course-work="fixed"/);
@@ -36,18 +36,18 @@ test("fixed schedule, exceptions and merge render as separate workflows",()=>{
   assert.match(schedule,/state\.adminWorkspaceSection="courses"/);
 });
 
-test("special activity creation and management are separate workflows",()=>{
+test("training course creation and management are separate workflows",()=>{
   assert.match(calendar,/state\.specialCalendarTask=state\.specialCalendarTask\|\|"add"/);
   assert.match(calendar,/\["add","manage"\]\.includes\(task\)/);
   assert.match(calendar,/task==="manage"\?manageCard:addCard/);
-  assert.match(calendar,/確認建立活動/);
-  assert.match(calendar,/取消／恢復活動/);
+  assert.match(calendar,/建立訓練課程/);
+  assert.match(calendar,/可取消／恢復/);
   assert.match(calendar,/返回課表與行事曆/);
 });
 
 test("course workflow assets are cache-busted",()=>{
   assert.match(index,/schedule-admin\.js\?v=20261102-course-workflow/);
-  assert.match(index,/special-calendar\.js\?v=20261102-course-workflow/);
-  assert.match(index,/school-admin-workspace\.css\?v=20261102-course-workflow/);
-  assert.match(guard,/school-admin-workspace\.js\?v=20261102-course-workflow/);
+  assert.match(index,/special-calendar\.js\?v=20261102-activity-boundary/);
+  assert.match(index,/school-admin-workspace\.css\?v=20261102-activity-boundary/);
+  assert.match(guard,/school-admin-workspace\.js\?v=20261102-activity-boundary/);
 });

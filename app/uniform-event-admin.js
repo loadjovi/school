@@ -67,11 +67,11 @@ const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 let savedConfigs=[];
 let activeAdminTab="regularUniform";
 const adminTabDescriptions={
- settings:"建立或修改活動，設定對象團別與家長端顯示狀態。",
+ settings:"建立演出、賽事、快閃、交流與聯演；比賽加練、寒訓、暑訓請至課表與行事曆。",
  accounts:"新增或修改收款帳戶，再選擇團 T 或 A 團比賽服套用。",
  regularUniform:"查看團 T 申請、學生領用、採購及庫存。固定開放家長申請。",
  competitionUniform:"查看 A 團比賽服申請、尺寸及領用紀錄。固定開放家長申請。",
- events:"查看交流／快閃活動及期末聚餐的報名與人數。",
+ events:"查看快閃、校際交流、聯演及期末聚餐的報名與人數。",
  requests:"團服申請清單及 CSV 匯出／匯入預覽。",
  inventory:"正式庫存、尺寸盤點及數量調整。"
 };
@@ -257,7 +257,7 @@ function renderConfigSummary(items){
  if(!items.length){target.textContent="目前尚無已儲存的活動。請在上方選擇活動類型並建立。";return}
  const fmtDate=v=>{if(!v)return "未設定";const d=new Date(v);return Number.isNaN(d.getTime())?"日期格式有誤":new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(d)};
  const money=v=>"NT$ "+Number(v||0).toLocaleString("zh-TW");
- const names={yearEndDinner:"期末聚餐",fieldTrip:"交流／快閃活動",calendarActivity:"演出／競賽活動",regularUniform:"團T（T-shirt）",competitionUniform:"A團比賽服"};
+ const names={yearEndDinner:"期末聚餐",fieldTrip:"快閃／校際交流／聯演（需報名）",calendarActivity:"演出／賽事／交流公告",regularUniform:"團T（T-shirt）",competitionUniform:"A團比賽服"};
  const renderCard=x=>{
   const activity=configActivityTypes.has(x.module),calendarOnly=x.module==="calendarActivity";
   const taipeiDay=value=>value?new Date(value).toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"}):"未設定";
@@ -462,7 +462,7 @@ function syncConfig(){
 
  updateActivityConfigClarity();
  el("existingActivityWrap").hidden=!activity;el("activityIdHint").hidden=!activity;
- el("configModeHint").textContent=calendarOnly?"只公告，不需家長報名或繳費；儲存後會同步至對象團別的行事曆。":module==="yearEndDinner"?"期末聚餐需報名及繳費；先建立活動，再設定收款帳戶。":"交流／快閃活動需要家長報名；可先建立活動，再決定何時開放收款。";
+ el("configModeHint").textContent=calendarOnly?"適用演出、賽事當天、快閃、交流與聯演公告；免報名、免繳費，儲存後同步至行事曆。":module==="yearEndDinner"?"期末聚餐需報名及繳費；先建立活動，再設定收款帳戶。":"適用需要家長回覆的快閃、校際交流或聯演；可先建立活動，再決定何時開放報名與收款。";
  updateActivityAudiencePreview();
  const select=el("existingActivity"),old=select.value;
  select.innerHTML="<option value=''>建立新活動</option>"+savedConfigs.filter(x=>x.module===module).map(x=>"<option value='"+esc(x.id)+"'>"+esc(x.title||x.id)+"</option>").join("");
@@ -572,7 +572,7 @@ async function start(){
   if(["activity","guideUniform"].includes(task)){
    if(task==="activity")document.querySelector('[data-admin-tab="settings"]').click();
    const guide=document.createElement("aside");guide.className="notice";guide.style.cssText="padding:14px;margin:12px 0;background:#fff8e7;border:1px solid #e9c972;border-radius:10px";
-   guide.textContent=task==="activity"?"建立活動：① 選活動類型 → ② 填日期、團別與費用 → ③ 核對收款帳戶及家長顯示設定，再儲存。":"團服申請：① 選團 T 或比賽服 → ② 選家長申請 → ③ 核對取得方式、付款與領取進度。";document.querySelector('nav.admin-tabs').after(guide);
+   guide.textContent=task==="activity"?"建立演出／活動：① 選擇免報名公告或需報名活動 → ② 填日期、團別與內容 → ③ 核對家長顯示設定，再儲存。訓練課程請回到「課表與行事曆」。":"團服申請：① 選團 T 或比賽服 → ② 選家長申請 → ③ 核對取得方式、付款與領取進度。";document.querySelector('nav.admin-tabs').after(guide);
   }
   if(finance&&el("inlineFinanceReview").open)await loadInlineFinance();
  }catch(e){setAuthGate("管理員驗證未完成："+(e.message||String(e))+"。請重新檢查登入。")}
@@ -747,7 +747,7 @@ el("config").onsubmit=async e=>{
   if(!persisted)throw Error("API 已回覆，但重新查詢未找到活動，請勿視為儲存成功");
   feedback.textContent=module==="yearEndDinner"&&!persisted.enabled
    ?"活動已建立並確認成功："+(persisted.title||module)+"（暫不顯示）。"+(bankVerifiedOnSave||window.dinnerBankSelection?.()?"收款帳戶已綁定，可將家長端改為「顯示」並儲存。":"請選擇下方收款帳戶並儲存，再將家長端改為「顯示」。")
-   :"設定已儲存並確認成功："+(persisted.title||module)+(["fieldTrip","calendarActivity"].includes(module)?"；已依對象團別同步至行事曆／特殊活動（"+(persisted.enabled?"顯示中":"已取消")+"）。":"。")+(module==="calendarActivity"?"此公告免報名、免收費。":module==="yearEndDinner"?"收款帳戶已綁定；是否可報名依報名期間判定。":bankVerifiedOnSave?"收款帳戶已綁定；開放家長報名後，可再設定第二階段收款。":"是否可報名依活動顯示狀態與報名期間判定；收款需另行開放。");
+   :"設定已儲存並確認成功："+(persisted.title||module)+(["fieldTrip","calendarActivity"].includes(module)?"；已依對象團別同步至家長行事曆（"+(persisted.enabled?"顯示中":"已取消")+"）。":"。")+(module==="calendarActivity"?"此公告免報名、免收費。":module==="yearEndDinner"?"收款帳戶已綁定；是否可報名依報名期間判定。":bankVerifiedOnSave?"收款帳戶已綁定；開放家長報名後，可再設定第二階段收款。":"是否可報名依活動顯示狀態與報名期間判定；收款需另行開放。");
   if(configResult.paymentNotification?.total)feedback.textContent+=" 匯款通知："+(window.paymentEmailSummaryText?.(configResult.paymentNotification)||configResult.paymentNotification.status);
   el("status").textContent=feedback.textContent;
  }catch(err){

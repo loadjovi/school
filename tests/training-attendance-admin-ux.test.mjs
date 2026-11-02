@@ -9,8 +9,8 @@ const backend=readFileSync(new URL("../api/src/functions/trainingAttendance.js",
 
 test("attendance workspace offers a direct rehearsal roll-call entry",()=>{
   assert.match(workspace,/data-workspace-action="trainingAttendance"/);
-  assert.match(workspace,/週六加練點名/);
-  assert.match(workspace,/選場次後標記學生/);
+  assert.match(workspace,/加練／訓練點名/);
+  assert.match(workspace,/比賽加練、寒訓、暑訓場次/);
 });
 
 test("admin rehearsal attendance returns to the attendance workspace",()=>{
@@ -20,7 +20,7 @@ test("admin rehearsal attendance returns to the attendance workspace",()=>{
 });
 
 test("roll call makes progress and final server-confirmed save explicit",()=>{
-  assert.match(attendance,/選擇加練/);
+  assert.match(attendance,/選擇訓練/);
   assert.match(attendance,/先將全員設為出席/);
   assert.match(attendance,/已標記 \$\{count\}\/\$\{total\} 人/);
   assert.match(attendance,/儲存並完成點名/);
@@ -40,7 +40,7 @@ test("teacher assignment and monthly hours are visually secondary to roll call",
 test("cancelled rehearsals never appear as pending attendance",()=>{
   assert.match(attendance,/d\.items\.filter\(x=>String\(x\.status\|\|"active"\)==="active"\)/);
   assert.match(backend,/String\(e\.status\|\|"active"\)!=="active"\|\|!mayTakeAttendance/);
-  assert.match(calendar,/此場加練已取消，不需點名/);
+  assert.match(calendar,/此場訓練已取消，不需點名/);
   const cancelledGuard=calendar.indexOf('if(x.status!=="active")');
   const startButton=calendar.indexOf('>開始點名<');
   assert.ok(cancelledGuard>0&&cancelledGuard<startButton,"cancelled guard must run before rendering the attendance button");

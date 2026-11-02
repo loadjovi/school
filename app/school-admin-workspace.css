@@ -166,6 +166,7 @@
 .aw-course-task-picker{width:100%;padding:20px;border:1px solid var(--aw-line);border-radius:16px;background:#fff}
 .aw-course-task-picker h2{margin:0 0 5px!important;color:var(--aw-ink)}
 .aw-course-task-picker>p{margin:0;color:var(--aw-muted);font-size:14px;line-height:1.7}
+.aw-course-boundary{display:grid;gap:4px;margin-top:14px;padding:12px 14px;border-left:4px solid #3155a4;border-radius:10px;background:#eef3ff;color:#314562;font-size:13px;line-height:1.55}.aw-course-boundary b{color:#19366f;font-size:14px}.aw-course-boundary span{display:block}
 .aw-course-task-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}
 .aw-course-task-grid>button{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%!important;min-height:96px;margin:0!important;padding:15px!important;border:1px solid var(--aw-line)!important;border-radius:14px!important;background:#f8faff!important;color:var(--aw-ink)!important;text-align:left;box-shadow:none!important}
 .aw-course-task-grid>button:last-child{grid-column:1/-1}

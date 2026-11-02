@@ -29,7 +29,7 @@ function validate(data){
   if(data.module==="calendarActivity"){
     if(!cleanText(data.title,120)||!cleanText(data.location,300)||!/^\d{4}-\d{2}-\d{2}$/.test(data.eventDate||"")||!Number.isFinite(Date.parse(data.eventDate)))throw new Error("活動需填名稱、地點及有效日期");
     if(data.endDate&&(!/^\d{4}-\d{2}-\d{2}$/.test(data.endDate)||!Number.isFinite(Date.parse(data.endDate))||data.endDate<data.eventDate))throw new Error("活動結束日期不得早於開始日期");
-    if(!["competition","performance","general"].includes(data.eventType))throw new Error("請選擇活動類型");
+    if(!["competition","performance","exchange","general"].includes(data.eventType))throw new Error("請選擇活動類型");
     if(data.startTime&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(data.startTime)||data.endTime&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(data.endTime))throw new Error("時間格式須為 HH:mm");
     if(!cleanText(data.note||"詳情待公告",1000)||String(data.timeLabel||"").length>80)throw new Error("備註或時間說明過長");
     if(data.openAt||data.closeAt||data.collectionOpen||["studentFee","firstAdultFee","extraAdultFee","extraChildFee"].some(f=>Number(data[f]||0)!==0))throw new Error("演出／競賽公告不接受報名或收費");

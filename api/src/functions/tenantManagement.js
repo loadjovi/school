@@ -6,6 +6,7 @@ import {
   listStudentMaster,listTeacherDirectory,listTeacherSupport,listGlobalTeacherEvents,listUserStudentMappings,listActivityRange,activityStudentId,ensureTenantTables,tenantIdValue,table
 } from "../lib/storage.js";
 import { scanTenantIsolation } from "../lib/tenantIsolation.js";
+import { isTrainingEventType } from "../lib/trainingEventTypes.js";
 
 function clean(v,max=200){return String(v??"").trim().slice(0,max)}
 function isEmail(v){return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v||"").trim())}
@@ -228,7 +229,7 @@ async function confirmedTrainingEvents(schoolId,startDate,endDate){
   const sid=String(schoolId||"").replaceAll("'","''"),items=[];
   const filter=`PartitionKey eq '${sid}' and eventDate ge '${startDate}' and eventDate le '${endDate}'`;
   for await(const e of table("tenantCalendarEvent").listEntities({queryOptions:{filter}})){
-    if(String(e.eventType||"")!=="competition_training"||String(e.status||"active")!=="active")continue;
+    if(!isTrainingEventType(e.eventType)||String(e.status||"active")!=="active")continue;
     const minutes=Number(e.teachingMinutes||0),email=teacherKeyValue(e.teachingTeacherEmail);
     if(!e.teachingConfirmedAt||!email||!Number.isInteger(minutes)||minutes<1||minutes>600)continue;
     items.push(e);

@@ -60,7 +60,7 @@
       "/school-access-audit-admin.js?v=20261017-simple-records",
       "/school-admin-activity.js?v=20261025-restore",
       "/school-access-refresh-fix.js?v=20261015-finance-role",
-      "/training-attendance.js?v=20261102-cancelled-training-filter"
+      "/training-attendance.js?v=20261102-activity-boundary"
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
       "/roster-support.js",
@@ -72,7 +72,7 @@
       "/attendance-edit.js?v=20261002-save-confirm",
       "/practice-progress.js?v=20261003-record-counts",
       "/teacher-navigation.js?v=20261002-teacher-types",
-      "/training-attendance.js?v=20261102-cancelled-training-filter",
+      "/training-attendance.js?v=20261102-activity-boundary",
       "/comprehensive-support.js?v=20261002-save-confirm",
       "/private-lesson-confirmation.js?v=20260929-late10"
     ];
@@ -121,7 +121,7 @@
   async function loadRoleModules(){
     await waitForProfileReady();
     if(typeof state==="undefined"||!state.me)return;
-    const list=[...roleModules(),"/desktop-ui.js?v=20261017-admin-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261102-course-workflow","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
+    const list=[...roleModules(),"/desktop-ui.js?v=20261017-admin-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261102-activity-boundary","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");
