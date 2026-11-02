@@ -76,7 +76,7 @@ test("school course management offers same-group classes and submits a dated ass
   const context={state:{me:{role:"admin"},page:"admin",schoolName:"測試學校"},api:async(url,options)=>{if(options?.method==="POST"){posted=JSON.parse(options.body);return {ok:true}}if(url==="/api/teacher-directory")return {items:teachers};if(url==="/api/section-merge")return {items:[]};return {items:[],exceptions:[],scheduleState:{status:"draft"}}},adminPage:()=>"<div></div>",render:()=>{},esc:v=>String(v),shell:v=>v,toast:()=>{},confirm:()=>true,prompt:()=>"",document:{getElementById:id=>id==="app"?appElement:inputs[id]||null},$:id=>inputs[id]||null};
   context.window=context;
   const src=readFileSync(new URL("../../app/schedule-admin.js",import.meta.url),"utf8");runInNewContext(src,context);
-  await context.openScheduleAdmin();
+  await context.openScheduleAdmin("merge");
   assert.match(appElement.innerHTML,/單日分部併班/);
   assert.match(appElement.innerHTML,/接課老師/);
   await context.createSectionMerge();

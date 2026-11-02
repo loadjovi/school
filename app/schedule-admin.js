@@ -151,6 +151,7 @@
   window.cancelSchedulePrompt=function(encodedId){
     const scheduleId=decodeURIComponent(encodedId);
     if(!(state.schoolSchedule?.items||[]).some(x=>x.scheduleId===scheduleId)){toast("請重新讀取課表");return}
+    state.scheduleAdminTask="exceptions";
     state.scheduleChange={action:"exception",scheduleId,date:new Date().toLocaleDateString("sv-SE"),reason:"學校行程調整"};showScheduleChange();
   };
   window.filterScheduleExceptions=function(){state.scheduleExceptionDate=String($("scheduleExceptionDate")?.value||"");render()};
@@ -160,6 +161,7 @@
     const scheduleId=decodeURIComponent(encodedId),course=(state.schoolSchedule?.items||[]).find(x=>x.scheduleId===scheduleId);
     const previous=(state.schoolSchedule?.exceptions||[]).find(x=>x.scheduleId===scheduleId&&x.sessionDate===date);
     if(!course||previous?.status!=="cancelled"){toast("請重新讀取課表後再操作");return}
+    state.scheduleAdminTask="exceptions";
     state.scheduleChange={action:"restore",scheduleId,date,reason:"原停課安排取消，恢復原訂上課",expectedUpdatedAt:previous.updatedAt};showScheduleChange();
   };
   window.submitScheduleChange=async function(){
