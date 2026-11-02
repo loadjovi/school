@@ -9,16 +9,16 @@ function harness(failure=""){
   return nodes.get(id);
  };
  let csv="",getCount=0;
- const bodies={"student-master":{items:[{studentId:"111001",studentName:"學生甲",groupName:"C",status:"active"}]},"uniform-events/tshirt-historical-size":{items:[{studentId:"111001",historicalIssued:false,size:"10"}]},"uniform-events/requests":{items:[]},"uniform-events/inventory":{items:model.TSHIRT_PLAN_SIZES.map(size=>({key:"regular:"+size,onHand:0,reserved:0,unavailable:0}))},"uniform-events/parent-loans?view=procurement":{items:[],canVerifyFinance:false},"uniform-events/parent-loans":{items:[]},"student-parent-links":{items:[]}};
+ const bodies={"student-master":{items:[{studentId:"111001",studentName:"學生甲",groupName:"C",status:"active"}]},"uniform-events/tshirt-historical-size":{items:[{studentId:"111001",historicalIssued:false,size:"10"}]},"uniform-events/requests":{items:[]},"uniform-events/inventory":{items:model.TSHIRT_PLAN_SIZES.map(size=>({key:"regular:"+size,onHand:0,reserved:0,unavailable:0}))},"uniform-events/parent-loans?view=procurement":{items:[],canVerifyFinance:false},"uniform-events/parent-loans":{items:[]},"uniform-events/tshirt-purchase-orders":{items:[]},"student-parent-links":{items:[]}};
  const window={uniformEventAuthHeaders:()=>({"X-School-Id":"school-a"}),addEventListener(){},dispatchEvent(){}};
- const scope={...model,window,CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail}},document:{getElementById:node,querySelectorAll:()=>[],querySelector:()=>null,createElement:tag=>({click(){},download:"",href:""})},Option:class{constructor(text,value){this.text=text;this.value=value}},Intl,Date,AbortController,setTimeout,clearTimeout,Blob:class{constructor(parts){this.value=parts.join("")}},URL:{createObjectURL:blob=>{csv=blob.value;return "test-blob"},revokeObjectURL(){}},fetch:async(path,options)=>{getCount++;assert.equal(options.cache,"no-store");assert.equal(options.headers["X-School-Id"],"school-a");const key=path.replace("/api/","");return {ok:key!==failure,status:key===failure?500:200,json:async()=>key===failure?{error:"讀取失敗"}:bodies[key]}},console};
+ const scope={...model,window,CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail}},document:{getElementById:node,querySelectorAll:()=>[],querySelector:()=>null,createElement:tag=>({tagName:tag.toUpperCase(),textContent:"",className:"",type:"",disabled:false,children:[],handlers:{},append(...children){this.children.push(...children)},addEventListener(k,fn){this.handlers[k]=fn},click(){},download:"",href:""})},Option:class{constructor(text,value){this.text=text;this.value=value}},Intl,Date,AbortController,setTimeout,clearTimeout,crypto:{randomUUID:()=>"123e4567-e89b-42d3-a456-426614174000"},Blob:class{constructor(parts){this.value=parts.join("")}},URL:{createObjectURL:blob=>{csv=blob.value;return "test-blob"},revokeObjectURL(){}},fetch:async(path,options)=>{getCount++;assert.equal(options.cache,"no-store");assert.equal(options.headers["X-School-Id"],"school-a");const key=path.replace("/api/","");return {ok:key!==failure,status:key===failure?500:200,json:async()=>key===failure?{error:"讀取失敗"}:bodies[key]}},console};
  const source=readFileSync(new URL("../app/tshirt-procurement-admin.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"");
  runInNewContext(source+"\nthis.ui={load,draw};",scope);
  node("tshirtPlanYear").value=115;node("tshirtPlanSemester").value=1;
  return {node,bodies,load:scope.ui.load,csv:()=>csv,getCount:()=>getCount};
 }
 test("procurement view loads all authoritative sources and exports exactly the visible plan",async()=>{
- const h=harness();await h.load();assert.equal(h.getCount(),7);assert.equal(h.node("exportTshirtPlan").disabled,false);assert.match(h.node("tshirtPlanMetrics").innerHTML,/學生首次公費/);assert.match(h.node("tshirtPlanOrderTotal").textContent,/規劃採購 1 件/);
+ const h=harness();await h.load();assert.equal(h.getCount(),8);assert.equal(h.node("exportTshirtPlan").disabled,false);assert.match(h.node("tshirtPlanMetrics").innerHTML,/學生首次公費/);assert.match(h.node("tshirtPlanOrderTotal").textContent,/規劃採購 1 件/);
  h.node("exportTshirtPlan").handlers.click();assert.match(h.csv(),/學生甲/);assert.match(h.csv(),/尺碼彙總/);
  h.node("exportTshirtSupplierPlan").handlers.click();assert.doesNotMatch(h.csv(),/學生甲|111001/);
 });
@@ -31,6 +31,11 @@ test("explicit per-size stock additions flow into the same one-click export",asy
  const h=harness();await h.load();
  const target={dataset:{planExtra:"M"},value:"9",setCustomValidity(){}};h.node("tshirtPlanSizeRows").handlers.change({target});
  assert.match(h.node("tshirtPlanOrderTotal").textContent,/規劃採購 10 件/);h.node("exportTshirtPlan").handlers.click();assert.match(h.csv(),/"M",(?:[^\r\n]*),"9","9"/);
+});
+test("known-size order can be confirmed while an unsized demand remains visibly excluded",async()=>{
+ const h=harness();h.bodies["uniform-events/tshirt-historical-size"].items[0].size=null;await h.load();
+ const target={dataset:{planExtra:"M"},value:"10",setCustomValidity(){}};h.node("tshirtPlanSizeRows").handlers.change({target});
+ assert.equal(h.node("confirmTshirtPurchaseOrder").disabled,false);assert.match(h.node("tshirtPurchaseOrderHint").textContent,/1 件待填尺寸/);assert.match(h.node("tshirtPlanStatus").textContent,/可先建立採購單/);
 });
 test("finance header includes staff demand and does not claim zero before the staff source is available",()=>{
  const source=readFileSync(new URL("../app/uniform-event-admin.js",import.meta.url),"utf8");

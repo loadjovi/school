@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {buildTshirtProcurementPlan as build,tshirtPlanCsv,currentTshirtTerm,tshirtTerm,TSHIRT_PLAN_SIZES} from "../app/tshirt-procurement-plan.mjs";
+import {buildTshirtProcurementPlan as build,tshirtPlanCsv,tshirtPurchaseOrderCsv,currentTshirtTerm,tshirtTerm,TSHIRT_PLAN_SIZES} from "../app/tshirt-procurement-plan.mjs";
 const student=(id,group="C",extra={})=>({studentId:id,studentName:"學生"+id,groupName:group,status:"active",...extra});
 const inventory=()=>TSHIRT_PLAN_SIZES.map(size=>({key:"regular:"+size,onHand:0,reserved:0,unavailable:0}));
 const args=()=>({schoolYear:115,semester:1,students:[student("111001"),student("111002"),student("111003","A")],history:[{studentId:"111001",historicalIssued:false,size:"8"},{studentId:"111002",historicalIssued:false,size:null},{studentId:"111003",historicalIssued:true,size:"M"}],stock:inventory()});
@@ -30,6 +30,12 @@ test("ordered customer pieces and extra stock in flight are not purchased twice"
  const p=build(a);assert.equal(p.totalUnits,3);assert.equal(p.coveredUnits,1);assert.equal(p.sizes[0].incoming,5);assert.equal(p.sizes[1].incoming,4);assert.equal(p.needUnits,0);
  a.requests[0].createdAt="2027-02-01T00:00:00Z";assert.equal(build(a).sizes[0].incoming,0);a.requests[0].createdAt="2026-10-10T04:00:00Z";
  a.requests[0].status="ARRIVED";a.stock[0].onHand=6;assert.equal(build(a).sizes[0].incoming,0);assert.equal(build(a).needUnits,0);
+});
+test("confirmed purchase orders become inbound stock and cancelled orders return quantities to the plan",()=>{
+ const a=args();a.history[1].size="8";a.purchaseOrders=[{schoolYear:115,semester:1,status:"ORDERED",items:[{size:"8",quantity:2}]}];
+ let p=build(a);assert.equal(p.sizes.find(x=>x.size==="8").incoming,2);assert.equal(p.needUnits,0);assert.equal(p.orderUnits,0);
+ a.purchaseOrders[0].status="CANCELLED";p=build(a);assert.equal(p.sizes.find(x=>x.size==="8").incoming,0);assert.equal(p.needUnits,2);
+ a.purchaseOrders[0]={schoolYear:115,semester:2,status:"ORDERED",items:[{size:"8",quantity:2}]};assert.equal(build(a).needUnits,2);
 });
 test("unpaid purchases remain visible in demand but cannot be presented as a final ready order",()=>{
  const a=args();a.history[1].size="10";a.requests=[request({paymentStatus:"AWAITING_TRANSFER"})];
@@ -65,6 +71,10 @@ test("one UTF-8 CSV contains totals, sizes, every demand and unknown-size follow
  assert.equal(csv.charCodeAt(0),0xfeff);assert.match(csv,/需求明細/);assert.match(csv,/尺碼彙總/);assert.match(csv,/待填寫/);assert.match(csv,/"'=HYPERLINK/);assert.match(csv,/"2"/);
  const supplier=tshirtPlanCsv(p,{supplierOnly:true});assert.doesNotMatch(supplier,/111001|111003|HYPERLINK|需求明細/);assert.match(supplier,/資料待補齊/);
  assert.equal(csv.trim().split("\r\n").length,1+1+11+p.rows.length);
+});
+test("saved purchase order CSV is vendor-safe and records an excluded pending size",()=>{
+ const csv=tshirtPurchaseOrderCsv({orderNumber:"T-1151-20261102-ABC123",schoolYear:115,semester:1,createdAt:"2026-11-02T01:00:00Z",status:"ORDERED",items:[{size:"8",quantity:2},{size:"10",quantity:8},{size:"S",quantity:1},{size:"L",quantity:1}],pendingUnknownUnits:1},{exportedAt:"2026-11-02T02:00:00Z"});
+ assert.equal(csv.charCodeAt(0),0xfeff);assert.match(csv,/T-1151-20261102-ABC123/);assert.match(csv,/"合計","12"/);assert.match(csv,/另有 1 件待填尺寸/);assert.match(csv,/不含姓名/);assert.doesNotMatch(csv,/學生甲|111001/);
 });
 
 test("received staff are absent from procurement names, totals and CSV while separate add-ons remain",()=>{

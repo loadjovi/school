@@ -23,7 +23,7 @@ const within=(value,term)=>{const d=day(value);return !!d&&d>=term.start&&d<term
 const outstanding=status=>["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(status);
 
 // A read-only procurement snapshot. Size backfills never become repeat orders.
-export function buildTshirtProcurementPlan({students=[],history=[],requests=[],stock=[],staffDemands=[],parentLoans=[],schoolYear,semester,extraBySize={}}){
+export function buildTshirtProcurementPlan({students=[],history=[],requests=[],stock=[],staffDemands=[],parentLoans=[],purchaseOrders=[],schoolYear,semester,extraBySize={}}){
  const term=tshirtTerm(schoolYear,semester),byHistory=new Map(history.map(x=>[String(x.studentId),x]));
  const current=students.filter(s=>isCurrentTshirtStudent(s)&&["A","B","C"].includes(groupOf(s)));
  const studentMap=new Map(current.map(s=>[String(s.studentId||s.id),s]));
@@ -87,6 +87,13 @@ export function buildTshirtProcurementPlan({students=[],history=[],requests=[],s
    incomingExtras.set(part.size,(incomingExtras.get(part.size)||0)+surplus);
   }
  }
+ for(const order of purchaseOrders){
+  if(order.status!=="ORDERED"||Number(order.schoolYear)!==term.schoolYear||Number(order.semester)!==term.semester)continue;
+  for(const part of order.items||[]){
+   if(!TSHIRT_PLAN_SIZES.includes(part.size))continue;
+   incomingExtras.set(part.size,(incomingExtras.get(part.size)||0)+positive(part.quantity));
+  }
+ }
  const sizes=TSHIRT_PLAN_SIZES.map(size=>{
   const list=rows.filter(x=>x.size===size),inventory=stock.find(x=>x.key==="regular:"+size);
   const validStock=inventory&&[inventory.onHand,inventory.reserved??0,inventory.unavailable??0].every(n=>Number.isSafeInteger(n)&&n>=0)&&inventory.onHand>=(inventory.reserved||0)+(inventory.unavailable||0);
@@ -110,6 +117,17 @@ export function buildTshirtProcurementPlan({students=[],history=[],requests=[],s
  if(waiting)warnings.push(`${waiting} 件待審核、匯款或財務核帳`);
  if(carryover)warnings.push(`${carryover} 筆跨期未結案需求已併入，請核對是否仍需購買`);
  return {term,rows,sizes,warnings:[...new Set(warnings)],currentCount:current.length,reserveCount:current.filter(s=>groupOf(s)==="C").length,firstUnits:sum(x=>x.type==="STUDENT_FIRST"?x.quantity:0),studentExtraUnits:sum(x=>x.type==="STUDENT_EXTRA"?x.quantity:0),staffUnits:sum(x=>STAFF_CATEGORIES[x.type]?x.quantity:0),totalUnits:sum(x=>x.quantity),coveredUnits:sum(x=>x.covered?x.quantity:0),waitingUnits:waiting,unknownUnits,missingStock,needUnits:need,extraUnits,orderUnits:need===null?null:need+extraUnits,canFinalize:!unknownUnits&&!missingStock.length&&!waiting&&!warnings.some(x=>/尚未分配尺碼/.test(x)),excludedRequests,carryover,loans:parentLoans.filter(x=>x.role==="VOLUNTEER"&&["BORROWED","WASHING"].includes(x.status))};
+}
+
+export function tshirtPurchaseOrderCsv(order,{exportedAt=new Date().toISOString()}={}){
+ const items=(order?.items||[]).filter(x=>TSHIRT_PLAN_SIZES.includes(x.size)&&positive(x.quantity));
+ const header=["採購單號","學期","建立時間","尺寸","數量","狀態","備註"],lines=[header];
+ const label=`${order.schoolYear} 學年度${Number(order.semester)===1?"上":"下"}學期`;
+ for(const item of items)lines.push([order.orderNumber,label,order.createdAt,item.size,positive(item.quantity),order.status==="ORDERED"?"已建立／待到貨":order.status,""]);
+ lines.push([order.orderNumber,label,order.createdAt,"合計",items.reduce((n,x)=>n+positive(x.quantity),0),order.status==="ORDERED"?"已建立／待到貨":order.status,Number(order.pendingUnknownUnits)>0?`另有 ${order.pendingUnknownUnits} 件待填尺寸，未列入本採購單`:""]);
+ lines.push([order.orderNumber,label,exportedAt,"匯出時間","",order.status==="ORDERED"?"已建立／待到貨":order.status,"本表不含姓名，供廠商依尺碼備貨"]);
+ const cell=v=>{let s=String(v??"");if(/^[\s]*[=+@\-\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"'};
+ return "\uFEFF"+lines.map(row=>row.map(cell).join(",")).join("\r\n");
 }
 
 export function tshirtPlanCsv(plan,{supplierOnly=false,exportedAt=new Date().toISOString()}={}){
