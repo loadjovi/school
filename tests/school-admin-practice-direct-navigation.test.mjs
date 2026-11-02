@@ -39,7 +39,7 @@ test('learning workspace is mobile friendly and its assets are cache-busted', ()
   assert.match(css, /\.aw-learning-tabs\{display:grid/);
   assert.match(css, /@media\(max-width:600px\)[\s\S]*?\.aw-learning-tabs\{grid-template-columns:1fr/);
   assert.match(index, /school-admin-workspace\.css\?v=20261102-learning-workspace/);
-  assert.match(index, /webview-guard\.js\?v=20261102-learning-workspace/);
+  assert.match(index, /webview-guard\.js\?v=20261103-tshirt-size-reminder/);
   assert.match(guard, /practice-progress\.js\?v=20261102-learning-workspace/);
   assert.match(guard, /desktop-ui\.js\?v=20261102-learning-workspace/);
   assert.match(guard, /school-admin-workspace\.js\?v=20261102-learning-workspace/);

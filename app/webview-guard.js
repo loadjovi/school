@@ -87,7 +87,7 @@
       "/practice-timer.js?v=20261004-manual4h",
       "/private-lesson-confirmation.js?v=20260929-late10",
       "/parent-semester-attendance.js?v=20261003-practice20",
-      "/parent-home-summary.js?v=20261102-leaderboard-minutes",
+      "/parent-home-summary.js?v=20261103-tshirt-size-reminder",
       "/parent-uniform-payment-notice.js?v=20261026-payment-email",
       "/parent-practice-history.js?v=20261003-practice-history-toggle"
     ];
