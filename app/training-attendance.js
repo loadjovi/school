@@ -9,26 +9,37 @@
   function range(){const d=new Date(),from=new Date(d),to=new Date(d);from.setMonth(from.getMonth()-5);to.setMonth(to.getMonth()+5);const fmt=x=>x.toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"});return `from=${encodeURIComponent(fmt(from))}&to=${encodeURIComponent(fmt(to))}`}
   async function loadList(){const d=await api("/api/training-attendance?"+range());state.trainingAttendanceList=Array.isArray(d.items)?d.items:[]}
   async function loadEvent(eventId){const d=await api("/api/training-attendance?eventId="+encodeURIComponent(eventId));state.trainingAttendanceData=d;state.trainingAttendanceStatuses=Object.fromEntries((d.items||[]).map(x=>[String(x.studentId),String(x.status||"")]))}
+  const markedCount=()=>{const rows=state.trainingAttendanceData?.items||[];return rows.filter(x=>labels[state.trainingAttendanceStatuses[String(x.studentId)]]).length};
+  function updateProgress(){
+    const total=state.trainingAttendanceData?.items?.length||0,count=markedCount(),complete=total>0&&count===total;
+    const text=document.getElementById("trainingMarkedCount");if(text)text.textContent=`已標記 ${count}/${total} 人${complete?"，可以儲存":""}`;
+    const button=document.getElementById("trainingSaveButton");if(button&&button.dataset.saving!=="true")button.disabled=!complete;
+    const step=document.getElementById("trainingStepThree");if(step)step.classList.toggle("is-ready",complete);
+  }
   function feedback(eventId){
     const f=state.trainingSaveFeedback?.eventId===eventId?state.trainingSaveFeedback:null;
-    const message=f?.message||"目前選取的狀態尚未儲存；請按「確認儲存」，並等待伺服器確認。";
+    const message=f?.message||"尚未完成：請標記每位學生，再按「儲存並完成點名」。";
     const color=f?.phase==="success"?"#15803d":f?.phase==="saving"?"#3155a4":"#b45309";
     return `<div id="trainingSaveFeedback" class="notice" role="status" aria-live="polite" style="margin-top:10px;border-left:4px solid ${color};font-weight:700">${esc(message)}</div>`;
   }
   function markDirty(){
     if(state.trainingSaveFeedback?.phase==="saving")return;
-    state.trainingSaveFeedback={eventId:state.trainingAttendanceData?.event?.eventId,phase:"dirty",message:"⚠️ 點名狀態已修改，尚未儲存。請再次按「確認儲存」。"};
+    state.trainingSaveFeedback={eventId:state.trainingAttendanceData?.event?.eventId,phase:"dirty",message:"⚠️ 點名狀態已修改，尚未儲存。完成全員標記後，請按「儲存並完成點名」。"};
     const box=document.getElementById("trainingSaveFeedback");if(box){box.textContent=state.trainingSaveFeedback.message;box.style.borderLeftColor="#b45309"}
-    const top=document.getElementById("trainingDraftSummary");if(top){top.textContent="⚠️ 本頁有未儲存的修改，請到頁尾重新按「確認儲存」。";top.style.display=""}
+    const top=document.getElementById("trainingDraftSummary");if(top){top.textContent="⚠️ 本頁有未儲存的修改，請完成全員標記並儲存。";top.style.display=""}
+    updateProgress();
   }
 
   window.openTrainingAttendance=async function(eventId=""){
-    if(state.page!=="trainingAttendance")state.trainingAttendanceReturn=state.page==="specialCalendar"?"specialCalendar":"teacherHome";
+    if(state.page!=="trainingAttendance")state.trainingAttendanceReturn=state.page==="specialCalendar"?"specialCalendar":state.me?.role==="admin"?"adminAttendanceWorkspace":"teacherHome";
     state.page="trainingAttendance";state.trainingAttendanceData=null;state.trainingSaveFeedback=null;render();
-    try{if(eventId)await loadEvent(eventId);else await loadList();render()}catch(e){toast("❌ "+e.message);state.page=state.trainingAttendanceReturn;render()}
+    try{if(eventId)await loadEvent(eventId);else await loadList();render()}catch(e){toast("❌ "+e.message);if(state.trainingAttendanceReturn==="adminAttendanceWorkspace"){state.page="admin";state.adminWorkspaceSection="attendance"}else state.page=state.trainingAttendanceReturn;render()}
   };
   window.trainingAttendanceBack=function(){
     if(state.trainingAttendanceData){state.trainingAttendanceData=null;loadList().then(render).catch(e=>toast("❌ "+e.message));render();return}
+    if(state.trainingAttendanceReturn==="adminAttendanceWorkspace"){
+      state.page="admin";state.adminWorkspaceSection="attendance";render();requestAnimationFrame(()=>window.scrollTo(0,0));return;
+    }
     state.page=state.trainingAttendanceReturn;
     if(state.page==="teacherHome")state.teacherTodayStatusDate="";
     render();
@@ -55,15 +66,25 @@
     }catch(e){state.trainingSaveFeedback={eventId,phase:"warning",message:`⚠️ 尚未確認全部點名已儲存（${e.message}）。請重新按「確認儲存」或請管理員協助核對，勿視為完成。`};toast("⚠️ 點名尚未確認完成")}
     render();
   };
+  function listStatus(x,day){
+    if(Number(x.expected)>0&&Number(x.recorded)>=Number(x.expected))return {label:"已完成",tone:"ok",action:"查看／修正"};
+    if(String(x.eventDate)>day)return {label:"尚未開放",tone:"warn",action:"查看名單"};
+    return {label:"待點名",tone:"bad",action:"開始點名"};
+  }
+  function orderedRows(rows){
+    const day=today(),rank=x=>String(x.eventDate)===day?0:String(x.eventDate)<day&&Number(x.recorded)<Number(x.expected)?1:String(x.eventDate)>day?2:3;
+    return rows.slice().sort((a,b)=>rank(a)-rank(b)||(rank(a)===1||rank(a)===3?String(b.eventDate).localeCompare(String(a.eventDate)):String(a.eventDate).localeCompare(String(b.eventDate)))||String(a.startTime).localeCompare(String(b.startTime)));
+  }
   function page(){
     const d=state.trainingAttendanceData;
     if(!d){
-      const rows=state.trainingAttendanceList||[];
-      return `<div class="card hero"><button class="secondary" style="width:auto;margin:0 0 12px;padding:8px 12px" onclick="trainingAttendanceBack()">← 返回</button><h2>🏆 加練點名</h2><div class="notice">週六加練需點名，早自習加練免點名。加練出勤獨立保存，不列入一般課程出勤 5%；授課工時仍由學校管理員於課後確認。上課開始後超過 10 分鐘才到課記為「遲到」，10 分鐘內到課記為「出席」。</div></div><div class="card"><h2>我的加練場次</h2>${rows.length?rows.map(x=>`<button class="item" style="width:100%;text-align:left;background:#fff;cursor:pointer" onclick="openTrainingAttendance('${esc(x.eventId)}')"><div><b>${esc(x.title)}</b><small>${esc(x.eventDate)}｜${esc(x.startTime)}–${esc(x.endTime)}｜${esc(x.targetGroups)} 團｜${x.recorded}/${x.expected} 已點名</small></div><span style="font-size:22px">›</span></button>`).join(""):'<div class="notice">目前沒有指派給您的需點名加練。若老師姓名無法與 Gmail 對應，請由學校管理員在行事曆指定點名老師。</div>'}</div>`;
+      const day=today(),rows=orderedRows(state.trainingAttendanceList||[]),admin=state.me?.role==="admin";
+      return `<div class="card hero training-attendance-hero"><button class="secondary training-back" onclick="trainingAttendanceBack()">${admin?"← 返回出勤與請假":"← 返回今日教學"}</button><div class="training-title-row"><div><div class="training-admin-kicker">${admin?"幹部代點名":"授課老師點名"}</div><h2>🏆 加練點名</h2></div></div><div class="training-howto" aria-label="加練點名三步驟"><div><span>1</span><b>選擇加練</b></div><div><span>2</span><b>標記學生</b></div><div><span>3</span><b>儲存完成</b></div></div><p class="training-help">週六加練需點名；早自習免點名。學生出缺席與老師月底工時分開，不會混在一起。</p></div><div class="card training-event-list"><h2>${admin?"選擇加練場次":"我的加練場次"}</h2><p class="muted">待點名與最近場次會排在前面。</p>${rows.length?rows.map(x=>{const status=listStatus(x,day);return `<button class="training-event-choice" onclick="openTrainingAttendance('${esc(x.eventId)}')"><span class="training-event-date">${esc(x.eventDate.slice(5).replace("-","/"))}</span><span class="training-event-main"><b>${esc(x.title)}</b><small>${esc(x.startTime)}–${esc(x.endTime)}｜${esc(x.targetGroups)} 團｜已標記 ${Number(x.recorded)}/${Number(x.expected)} 人</small></span><span class="training-event-side"><span class="badge ${status.tone}">${status.label}</span><small>${status.action} ›</small></span></button>`}).join(""):`<div class="notice">目前沒有需點名的加練。${admin?"若要新增場次，請到「課表與行事曆 → 行事曆與加練」。":"若應有場次，請管理員確認是否已指定授課老師。"}</div>`}</div>`;
     }
     const x=d.event,canSave=x.status==="active"&&x.eventDate<=today(),saving=state.trainingSaveFeedback?.eventId===x.eventId&&state.trainingSaveFeedback.phase==="saving";
     const options=v=>`<option value="" ${!v?"selected":""}>尚未點名</option>`+Object.entries(labels).map(([key,label])=>`<option value="${key}" ${v===key?"selected":""}>${label}</option>`).join("");
-    return `<div class="card hero"><button class="secondary" style="width:auto;margin:0 0 12px;padding:8px 12px" onclick="trainingAttendanceBack()" ${saving?"disabled":""}>← 返回場次列表</button><h2>🏆 ${esc(x.title)}</h2><div class="notice">${esc(x.eventDate)}｜${esc(x.startTime)}–${esc(x.endTime)}｜${esc(x.targetGroups)} 團｜${esc(x.teacherName)}<br>${esc(x.location||"")}<br>點名標準：上課開始後超過 10 分鐘才到課記為「遲到」；10 分鐘內到課記為「出席」。<br>已點名 ${d.recorded}/${d.expected}${d.lastSavedAt?`｜最近儲存：${esc(new Date(d.lastSavedAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}))}（${esc(d.lastSavedBy)}）`:""}</div><div id="trainingDraftSummary" class="notice" style="margin-top:10px;${state.trainingSaveFeedback?.phase==="dirty"?"":"display:none"}">${state.trainingSaveFeedback?.phase==="dirty"?"⚠️ 本頁有未儲存的修改，請到頁尾重新按「確認儲存」。":""}</div></div><div class="card"><h2>學生名單</h2>${d.items?.length?d.items.map(s=>`<div class="item"><div><b>${esc(s.name)}</b><small>${esc(s.groupName)} 團｜${esc(s.section||"待確認")}｜${esc(s.grade||"")}</small></div><select class="status-select" data-id="${esc(s.studentId)}" onchange="setTrainingStatus(this.dataset.id,this.value)" ${canSave&&!saving?"":"disabled"}>${options(state.trainingAttendanceStatuses[String(s.studentId)]||"")}</select></div>`).join(""):'<div class="notice">目前此場沒有符合團別的在籍學生。</div>'}${!canSave?'<div class="notice">活動日期未到或已取消，暫時不可儲存點名。</div>':d.items?.length?`<button class="secondary" style="width:100%;margin-top:10px" onclick="markTrainingPresent()" ${saving?"disabled":""}>全員標記出席</button><button class="primary" onclick="saveTrainingAttendance()" ${saving?"disabled":""}>${saving?"⏳ 正在儲存並確認…":"確認儲存加練點名"}</button>${feedback(x.eventId)}`:""}</div>`;
+    const total=d.items?.length||0,count=markedCount(),draftComplete=total>0&&count===total,savedComplete=Number(d.recorded)>0&&Number(d.recorded)>=Number(d.expected);
+    return `<div class="card hero training-attendance-hero"><button class="secondary training-back" onclick="trainingAttendanceBack()" ${saving?"disabled":""}>← 返回場次列表</button><div class="training-title-row"><div><div class="training-admin-kicker">步驟 1｜已選擇場次</div><h2>🏆 ${esc(x.title)}</h2></div><span class="badge ${savedComplete?"ok":"warn"}">${savedComplete?"已完成點名":"尚未完成"}</span></div><div class="training-event-summary"><b>${esc(x.eventDate)}｜${esc(x.startTime)}–${esc(x.endTime)}</b><span>${esc(x.targetGroups)} 團${x.teacherName?"｜"+esc(x.teacherName):""}${x.location?"｜📍 "+esc(x.location):""}</span>${d.lastSavedAt?`<small>最近儲存：${esc(new Date(d.lastSavedAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}))}｜${esc(d.lastSavedBy)}</small>`:""}</div><div class="training-howto training-howto-active" aria-label="目前點名進度"><div class="is-done"><span>1</span><b>場次已選</b></div><div class="${count?"is-done":""}"><span>2</span><b>標記學生</b></div><div id="trainingStepThree" class="${draftComplete?"is-ready":""}"><span>3</span><b>儲存完成</b></div></div><details class="training-rule"><summary>查看出席／遲到判定</summary><p>上課開始後 10 分鐘內到課記「出席」；超過 10 分鐘記「遲到」。</p></details><div id="trainingDraftSummary" class="notice" style="margin-top:10px;${state.trainingSaveFeedback?.phase==="dirty"?"":"display:none"}">${state.trainingSaveFeedback?.phase==="dirty"?"⚠️ 本頁有未儲存的修改，請完成全員標記並儲存。":""}</div></div><div class="card training-roster-card"><div class="training-roster-toolbar"><div><div class="training-admin-kicker">步驟 2｜標記學生</div><h2>學生名單</h2><b id="trainingMarkedCount">已標記 ${count}/${total} 人${draftComplete?"，可以儲存":""}</b></div>${canSave&&total?`<button class="secondary" onclick="markTrainingPresent()" ${saving?"disabled":""}>先將全員設為出席</button>`:""}</div>${total?d.items.map(s=>`<div class="item training-student-row"><div><b>${esc(s.name)}</b><small>${esc(s.groupName)} 團｜${esc(s.section||"待確認")}｜${esc(s.grade||"")}</small></div><select class="status-select" aria-label="${esc(s.name)}出勤狀態" data-id="${esc(s.studentId)}" onchange="setTrainingStatus(this.dataset.id,this.value)" ${canSave&&!saving?"":"disabled"}>${options(state.trainingAttendanceStatuses[String(s.studentId)]||"")}</select></div>`).join(""):'<div class="notice">目前此場沒有符合團別的在籍學生。</div>'}${!canSave?'<div class="notice training-unavailable">活動日期未到或已取消，目前只能查看名單，尚不可儲存點名。</div>':total?`<div class="training-save-bar"><div><b>步驟 3｜儲存完成</b><small>只有出現伺服器確認訊息，才算點名完成。</small></div><button id="trainingSaveButton" class="primary" data-saving="${saving?"true":"false"}" onclick="saveTrainingAttendance()" ${saving||!draftComplete?"disabled":""}>${saving?"⏳ 正在儲存並確認…":savedComplete?"儲存點名修改":"儲存並完成點名"}</button></div>${feedback(x.eventId)}`:""}</div>`;
   }
   const baseRender=render;
   render=function(){
