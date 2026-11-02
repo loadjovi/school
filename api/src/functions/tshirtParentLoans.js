@@ -7,7 +7,7 @@ import {getStudentMaster,ensureTenantTables,table as tenantTable,tenantParentPar
 import {staffProcurement} from "../lib/tshirtStaffProcurement.js";
 
 const sizes=new Set(["8","10","12","XS","S","M","L","XL","2L","3L","5L"]);
-const actions=new Set([...cadreActions,"BORROW_VOLUNTEER","MARK_WASHING","RETURN"]);
+const actions=new Set([...cadreActions,"BORROW_VOLUNTEER","CORRECT_VOLUNTEER_SIZE","MARK_WASHING","RETURN"]);
 let client,audit;
 async function tables(){
  const conn=process.env.STORAGE_CONNECTION_STRING;if(!conn)throw Error("Storage unavailable");
@@ -53,6 +53,13 @@ app.http("tshirtParentLoans",{methods:["GET","POST"],authLevel:"anonymous",route
    if(!sizes.has(size)||!name)return json({error:"Parent name and size required"},400);
    if(old&&old.status!=="RETURNED")return json({error:"Parent has an active loan or lifetime issued shirt"},409);
    next={parentName:name,studentId,role:"VOLUNTEER",size,status:"BORROWED",issuedAt:now,returnedAt:""};
+  }else if(action==="CORRECT_VOLUNTEER_SIZE"){
+   if(!old||old.role!=="VOLUNTEER"||!["BORROWED","WASHING"].includes(old.status))return json({error:"Only an active volunteer loan may be corrected"},409);
+   const reason=clean(data.reason,300);
+   if(!sizes.has(size)||!reason)return json({error:"Correct size and an audit reason are required"},400);
+   if(size===old.size)return json({error:"Size is unchanged"},400);
+   // Keep original issuance date, student, and status unchanged. Only correct the size.
+   next={...previous,size,correctionReason:reason};
   }else{
    if(!old||old.role!=="VOLUNTEER")return json({error:"Volunteer loan not found"},409);
    if(action==="MARK_WASHING"&&old.status!=="BORROWED")return json({error:"Only borrowed shirts can be marked washing"},409);
