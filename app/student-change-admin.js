@@ -14,7 +14,7 @@
         <label>學年度</label><input id="sy_${s.studentId}" value="${esc(s.schoolYear||"")}">
         <button class="primary" onclick="saveStudentChange('${s.studentId}','profile_update')">儲存基本資料</button>
       </details>
-      <details style="margin-top:10px"><summary><b>🔄 學生異動</b></summary>
+      <details style="margin-top:10px"><summary><b>🔄 團別／退團／重新加入</b></summary>
         <label>異動類型</label><select id="schange_${s.studentId}" onchange="studentChangeType('${s.studentId}')">
           <option value="group_change">團別異動</option><option value="leave_or_inactive">退出弦樂團</option><option value="rejoin" ${inactive?"":"disabled"}>重新加入</option>
         </select>
@@ -24,8 +24,8 @@
       </details></div>`;
   }
   function addStudentCard(){
-    return `<div class="card"><details><summary><b>➕ 新增學生並加入本學期</b></summary>
-      <div class="notice" style="margin-top:10px">適合學期中單一新生加入，不需要重新匯入整份 Excel。新增後會同時建立 StudentMaster、SemesterEnrollment 與 StudentHistory。</div>
+    return `<div class="card student-task-panel" data-student-task-panel="add"><h2>➕ 新增單一學生</h2><div class="student-task-steps" aria-label="操作步驟"><span><b>1</b>填基本資料</span><span><b>2</b>確認學期</span><span><b>3</b>新增完成</span></div>
+      <div class="notice">適合學期中加入一位新生，不需要重新匯入整份 Excel。完成後會建立學生主檔、學期名單與異動紀錄。</div>
       <div class="row2"><div><label>6 碼學號</label><input id="newStudentNo" inputmode="numeric" maxlength="6" placeholder="例：123456"></div><div><label>學生姓名</label><input id="newStudentName"></div></div>
       <div class="row2"><div><label>年級</label><select id="newStudentGrade">${opts(grades,"")}</select></div><div><label>團別</label><select id="newStudentGroup">${opts(groups,"儲備")}</select></div></div>
       <div class="row2"><div><label>樂器</label><select id="newStudentInstrument">${opts(instruments,"待確認")}</select></div><div><label>分部</label><select id="newStudentSection">${sectionOptions("待確認")}</select></div></div>
@@ -34,7 +34,7 @@
       <div class="row2"><div><label>加入日期</label><input id="newStudentDate" type="date" value="${today()}"></div><div><label>備註</label><input id="newStudentNote" placeholder="例：學期中新加入儲備團"></div></div>
       <label class="check"><input id="newStudentEnroll" type="checkbox" checked><div>同時加入本學期正式上課名單</div></label>
       <button class="primary" onclick="createSingleStudent()">確認新增學生</button>
-    </details></div>`;
+    </div>`;
   }
   window.createSingleStudent=async function(){
     const no=$("newStudentNo")?.value.trim(),name=$("newStudentName")?.value.trim();
@@ -58,8 +58,5 @@
   };
   if(typeof studentEdit==="function")studentEdit=enhancedStudentEdit;
   const baseStudentsPage=studentsPage;
-  studentsPage=function(){
-    const active=(state.master||[]).filter(s=>s.status!=="inactive").length,inactive=(state.master||[]).length-active;
-    return `<div class="card hero"><h2>👥 學生異動管理</h2><div class="notice"><b>目前在團 ${active} 人｜退出／停用 ${inactive} 人</b><br>學生退出不刪除主檔、家長綁定、點名或練習歷史；重新加入時沿用原學號。團別、分部、班級等資料可直接在既有清冊異動。</div></div>`+addStudentCard()+baseStudentsPage();
-  };
+  studentsPage=function(){return addStudentCard()+baseStudentsPage()};
 })();

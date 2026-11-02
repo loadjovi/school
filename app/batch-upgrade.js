@@ -6,7 +6,7 @@ function mostCommonSchoolYear(){
 function nextSchoolYearValue(y){const n=Number(String(y||"").trim());return Number.isFinite(n)&&n>0?String(n+1):""}
 function batchUpgradeCard(){
   const from=mostCommonSchoolYear(),to=nextSchoolYearValue(from);
-  return `<div class="card hero"><h2>📚 學年度批次升級</h2><div class="notice">建議每學年執行一次。系統只自動更新「學年度＋年級」；<b>團別不自動升降</b>，A／B／儲備團仍依考核結果個別調整。六年級預設標記為停用／畢業。正式執行前一定會先預覽。</div>
+  return `<div class="card hero student-task-panel" data-student-task-panel="upgrade"><h2>📚 學年度批次升級</h2><div class="student-task-steps" aria-label="操作步驟"><span><b>1</b>設定學年度</span><span><b>2</b>預覽名單</span><span><b>3</b>確認執行</span></div><div class="notice">建議每學年執行一次。系統只自動更新「學年度＋年級」；<b>團別不自動升降</b>，A／B／儲備團仍依考核結果個別調整。六年級預設標記為停用／畢業。正式執行前一定會先預覽。</div>
   <div class="row2"><div><label>來源學年度</label><input id="ayFrom" value="${esc(from)}" placeholder="例：115"></div><div><label>目標學年度</label><input id="ayTo" value="${esc(to)}" placeholder="例：116"></div></div>
   <div class="check"><input id="ayPromote" type="checkbox" checked><div>一年級→二年級、二→三、三→四、四→五、五→六</div></div>
   <div class="check"><input id="ayGraduate" type="checkbox" checked><div>六年級於批次後標記為停用／畢業</div></div>

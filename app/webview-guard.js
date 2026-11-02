@@ -44,12 +44,12 @@
     if(role==="admin")return [
       "/roster-support.js",
       "/student-number-support.js?v=20260918-1105",
-      "/student-change-admin.js?v=20260918-1015",
+      "/student-change-admin.js?v=20261102-student-workflow",
       "/parent-link-admin.js?v=20260921-0135",
       "/teacher-settings.js?v=20261002-teacher-types",
       "/teacher-admin.js?v=20261025-parent-review-student",
-      "/batch-upgrade.js",
-      "/roster-import.js?v=20260915-1135",
+      "/batch-upgrade.js?v=20261102-student-workflow",
+      "/roster-import.js?v=20261102-student-workflow",
       "/attendance-support.js?v=20260928-2148",
       "/attendance-edit.js?v=20261002-save-confirm",
       "/practice-progress.js?v=20261003-record-counts",
@@ -121,7 +121,7 @@
   async function loadRoleModules(){
     await waitForProfileReady();
     if(typeof state==="undefined"||!state.me)return;
-    const list=[...roleModules(),"/desktop-ui.js?v=20261017-admin-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261102-attendance-workflow"]:[])];
+    const list=[...roleModules(),"/desktop-ui.js?v=20261017-admin-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261102-attendance-workflow","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");
@@ -135,7 +135,7 @@
   }
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261027-school-followup",()=>{
+    appendScript("/app-v3.js?v=20261102-student-workflow",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
