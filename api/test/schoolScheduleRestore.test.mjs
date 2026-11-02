@@ -63,6 +63,6 @@ test("UI presents a review form and submits only the selected lesson after confi
   const state={me:{role:"admin"},page:"schoolSchedule",schoolSchedule:{items:[course],exceptions:[{scheduleId:"one",sessionDate:"2026-10-30",status:"cancelled",updatedAt:"v1"}],scheduleState:{status:"active"}}};
   const context={state,window:null,adminPage:()=>"",render:()=>{},shell:x=>x,esc:x=>String(x??""),$:id=>({value:id==="scheduleChangeReason"?"校方確認復課":"2026-10-30"}),document:{getElementById:id=>id==="app"?app:{scrollIntoView:()=>{}}},requestAnimationFrame:fn=>fn(),toast:()=>{},api:async(url,options)=>{if(options)sent.push(JSON.parse(options.body));return url==="/api/school-schedule"?state.schoolSchedule:{}}};context.window=context;
   runInNewContext(readFileSync(new URL("../../app/schedule-admin.js",import.meta.url),"utf8"),context);
-  context.restoreSchedulePrompt("one","2026-10-30");assert.equal(sent.length,0);assert.match(app.innerHTML,/確認恢復這堂課/);assert.match(app.innerHTML,/取消停課並復課/);
+  context.restoreSchedulePrompt("one","2026-10-30");assert.equal(sent.length,0);assert.equal(state.scheduleAdminTask,"exceptions");assert.match(app.innerHTML,/確認恢復這堂課/);assert.match(app.innerHTML,/取消停課並復課/);
   await context.submitScheduleChange();assert.equal(sent.length,1);assert.equal(sent[0].action,"restore");assert.equal(sent[0].sessionDate,"2026-10-30");assert.equal(sent[0].expectedUpdatedAt,"v1");assert.equal(sent[0].reason,"校方確認復課");
 });
