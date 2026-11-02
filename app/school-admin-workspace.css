@@ -138,18 +138,29 @@
 #awUniformFrame{display:block;width:100%;height:1250px;border:0;background:transparent}
 @media(max-width:899px){.aw-uniform{margin-bottom:24px}#awUniformFrame{width:100%;min-width:0}}
 
-/* Attendance workspace: make Saturday rehearsal roll call the obvious first action. */
+/* Attendance workspace: choose one job first, then show only its controls. */
 .aw-attendance-links{display:block}
-.aw-training-shortcut{width:100%;margin-bottom:14px;padding:18px;border:2px solid #9eb4e7;border-radius:16px;background:linear-gradient(135deg,#f8faff,#edf3ff)}
-.aw-training-shortcut h2{margin:0 0 6px!important;color:var(--aw-ink)}
-.aw-training-shortcut p{margin:0;color:var(--aw-muted);font-size:14px;line-height:1.7}
-.aw-training-kicker{display:block;margin-bottom:5px;color:var(--primary);font-size:12px;font-weight:900;letter-spacing:.04em}
-.aw-training-shortcut ol{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:13px 0 0;padding:0;list-style:none}
-.aw-training-shortcut li{display:flex;align-items:center;justify-content:center;gap:5px;min-width:0;padding:8px 5px;border:1px solid #cdd8f3;border-radius:10px;background:#fff;color:#3155a4;font-size:12px;font-weight:900;text-align:center}
-.aw-training-shortcut li b{display:grid;place-items:center;width:20px;height:20px;flex:0 0 20px;border-radius:999px;background:#3155a4;color:#fff;font-size:10px}
-.aw-training-shortcut button{width:100%!important;margin:14px 0 0!important;background:var(--primary)!important;color:#fff!important;border:0!important;font-weight:900}
-.aw-attendance-links>.aw-regular-attendance{width:100%;margin:0!important;background:#fff;color:var(--primary);border:1px solid var(--aw-line)}
-@media(max-width:600px){.aw-training-shortcut{padding:15px}.aw-training-shortcut p{font-size:13px}}
+.aw-attendance-task-picker{width:100%;padding:20px;border:1px solid var(--aw-line);border-radius:16px;background:#fff}
+.aw-attendance-task-picker h2{margin:0 0 5px!important;color:var(--aw-ink)}
+.aw-attendance-task-picker>p{margin:0;color:var(--aw-muted);font-size:14px;line-height:1.7}
+.aw-attendance-kicker{display:block;margin-bottom:5px;color:var(--primary);font-size:12px;font-weight:900;letter-spacing:.04em}
+.aw-attendance-task-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}
+.aw-attendance-task-grid>button{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%!important;min-height:96px;margin:0!important;padding:15px!important;border:1px solid var(--aw-line)!important;border-radius:14px!important;background:#f8faff!important;color:var(--aw-ink)!important;text-align:left}
+.aw-attendance-task-grid>button:hover,.aw-attendance-task-grid>button:focus-visible{border-color:var(--primary)!important;background:#eef3ff!important;outline:none;box-shadow:0 0 0 3px rgba(49,85,164,.09)}
+.aw-attendance-task-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:#e8eefc;font-size:23px}
+.aw-attendance-task-grid b{display:block;font-size:16px;line-height:1.35}.aw-attendance-task-grid small{display:block;margin-top:4px;color:var(--aw-muted);font-size:12px;line-height:1.5;font-weight:500}
+.aw-attendance-task-grid>button>span:last-child{color:var(--primary);font-size:20px;font-weight:900}
+.aw-attendance-back{width:auto!important;margin:0 0 14px!important;padding:9px 13px!important;border:1px solid var(--primary)!important;background:#fff!important;color:var(--primary)!important;font-weight:900}
+.aw-attendance-assist-slot{width:100%}.aw-attendance-assist-slot .card{margin-top:0}
+.aw-attendance-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:0 0 12px}
+.aw-attendance-steps>span{display:flex;align-items:center;justify-content:center;gap:5px;min-width:0;padding:8px 5px;border:1px solid #cdd8f3;border-radius:10px;background:#f8faff;color:#3155a4;font-size:12px;font-weight:900;text-align:center}
+.aw-attendance-steps b{display:grid;place-items:center;width:20px;height:20px;flex:0 0 20px;border-radius:999px;background:#3155a4;color:#fff;font-size:10px}
+@media(max-width:600px){
+ .aw-attendance-task-picker{padding:15px}.aw-attendance-task-picker>p{font-size:13px}
+ .aw-attendance-task-grid{gap:9px}.aw-attendance-task-grid>button{grid-template-columns:38px minmax(0,1fr);align-content:center;min-height:112px;padding:12px!important}.aw-attendance-task-grid>button>span:last-child{display:none}
+ .aw-attendance-task-icon{width:38px;height:38px;font-size:20px}.aw-attendance-task-grid b{font-size:14px}.aw-attendance-task-grid small{font-size:11px}
+}
+@media(max-width:380px){.aw-attendance-task-grid{grid-template-columns:1fr}.aw-attendance-task-grid>button{min-height:82px}}
 
 
 /* Embedded unified school 20-point semester report (administrators only). */

@@ -7,12 +7,10 @@ const calendar=readFileSync(new URL("../app/special-calendar.js",import.meta.url
 const workspace=readFileSync(new URL("../app/school-admin-workspace.js",import.meta.url),"utf8");
 const backend=readFileSync(new URL("../api/src/functions/trainingAttendance.js",import.meta.url),"utf8");
 
-test("attendance workspace offers a direct, three-step rehearsal roll-call entry",()=>{
+test("attendance workspace offers a direct rehearsal roll-call entry",()=>{
   assert.match(workspace,/data-workspace-action="trainingAttendance"/);
   assert.match(workspace,/週六加練點名/);
-  assert.match(workspace,/選加練/);
-  assert.match(workspace,/標記狀態/);
-  assert.match(workspace,/儲存完成/);
+  assert.match(workspace,/選場次後標記學生/);
 });
 
 test("admin rehearsal attendance returns to the attendance workspace",()=>{

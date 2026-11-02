@@ -67,6 +67,7 @@ test('empty or invalid report produces no fabricated counts',()=>{
 test('clicking either attendance todo leads to the real attendance followup screen',()=>{
  assert.match(source,/\['absent','unmarked'\]\.includes\(b\.dataset\.adminTodo\)/);
  assert.match(source,/openSchoolAdminWorkspace\('attendance'\)/);
+ assert.match(source,/openSchoolAdminWorkspace\('attendance'\);\s*state\.adminAttendanceWorkspaceTask='followup';organize\(\)/);
  assert.match(source,/todayAdminFollowup/);
 });
 test('attendance load failures are not shown as confirmed zero pending',()=>{

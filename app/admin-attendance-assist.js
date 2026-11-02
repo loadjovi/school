@@ -107,13 +107,14 @@
           <select id="admAtt_${esc(s.studentId)}" class="status-select">
             ${Object.entries(statusText).map(([k,t])=>`<option value="${k}" ${(saved.get(String(s.studentId))||"present")===k?"selected":""}>${t}</option>`).join("")}
           </select></div>`).join("")}
-          <button class="primary" onclick="adminAssistSave()">✅ 儲存行政協助點名</button>
+          <button class="primary" onclick="adminAssistSave()">✅ 儲存並完成一般課程點名</button>
         </div>`
       : a.data?'<div class="notice" style="margin-top:10px">目前條件沒有學生資料。</div>':"";
 
-    return `<div class="card" id="adminAttendanceAssist">
-      <h2>🧑‍💼 行政協助點名</h2>
-      <div class="notice">授課老師臨時來不及操作平台時，學校管理員可在這裡直接代為點名。儲存的是同一份正式出勤紀錄，老師端會自動同步，不會產生第二份資料。</div>
+    return `<div class="card aw-attendance-assist-card" id="adminAttendanceAssist">
+      <span class="aw-attendance-kicker">一般課程</span><h2>📋 幹部代點名</h2>
+      <div class="aw-attendance-steps" aria-label="一般課程代點名三步驟"><span><b>1</b>選課程</span><span><b>2</b>載入學生</span><span><b>3</b>儲存完成</span></div>
+      <div class="notice">老師臨時無法操作時，幹部可代為點名。儲存後會直接同步至老師端，不會產生第二份紀錄。</div>
       <label>課程類型</label>
       <select onchange="adminAssistChange('type',this.value)">
         <option value="section" ${a.type==="section"?"selected":""}>分部課</option>
@@ -123,17 +124,17 @@
       <label>上課日期</label><input type="date" value="${esc(a.date)}" onchange="adminAssistChange('date',this.value)">
       ${a.type!=="comprehensive"?`<label>團別</label><select onchange="adminAssistChange('groupName',this.value)">${groups.map(g=>`<option value="${esc(g)}" ${String(a.groupName)===String(g)?"selected":""}>${esc(g)}團</option>`).join("")}</select>`:""}
       ${a.type==="section"?`<label>分部</label><select onchange="adminAssistChange('section',this.value)">${sections.map(s=>`<option value="${esc(s)}" ${String(a.section)===String(s)?"selected":""}>${esc(s)}</option>`).join("")}</select>`:""}
-      <button class="secondary" style="width:100%;margin-top:10px" onclick="adminAssistLoad()" ${a.loading?"disabled":""}>${a.loading?"⏳ 正在載入":"🔄 載入目前點名／開始點名"}</button>
+      <button class="secondary" style="width:100%;margin-top:10px" onclick="adminAssistLoad()" ${a.loading?"disabled":""}>${a.loading?"⏳ 正在載入":"載入學生名單，開始點名"}</button>
       ${sectionStatus}${recorded}${mergeNotice}${error}${listHtml}
     </div>`;
   }
 
   function mount(){
     if(state.me?.role!=="admin")return;
-    const workspace=state.page==="admin"&&state.adminWorkspaceSection==="attendance";
+    const workspace=state.page==="admin"&&state.adminWorkspaceSection==="attendance"&&state.adminAttendanceWorkspaceTask==="regular";
     if(state.page!=="attendance"&&!workspace)return;
     const main=document.querySelector(".main");if(!main)return;
-    const target=workspace?document.querySelector("#schoolAdminWorkspace .aw-attendance-links"):main;
+    const target=workspace?document.querySelector("#schoolAdminWorkspace .aw-attendance-assist-slot"):main;
     if(!target)return;
     let root=document.getElementById("adminAttendanceAssistRoot");
     if(!root){root=document.createElement("div");root.id="adminAttendanceAssistRoot"}
@@ -144,9 +145,9 @@
   // Expose the existing attendance editor there without duplicating data or APIs.
   window.mountAdminAttendanceAssist=function(){
     if(state.me?.role!=="admin")return;
-    const workspace=state.page==="admin"&&state.adminWorkspaceSection==="attendance";
+    const workspace=state.page==="admin"&&state.adminWorkspaceSection==="attendance"&&state.adminAttendanceWorkspaceTask==="regular";
     if(!workspace)return;
-    const target=document.querySelector("#schoolAdminWorkspace .aw-attendance-links");
+    const target=document.querySelector("#schoolAdminWorkspace .aw-attendance-assist-slot");
     if(!target)return;
     const existing=document.getElementById("adminAttendanceAssistRoot");
     if(existing?.parentElement===target)return;

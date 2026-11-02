@@ -19,7 +19,7 @@
   <title>聖心弦樂成長平台</title>
   <!-- Deploy school workspace account-management navigation fix 2026-10-18 -->
   <link rel="stylesheet" href="/styles.css?v=20261102-training-attendance-ux">
-  <link rel="stylesheet" href="/school-admin-workspace.css?v=20261102-training-attendance-ux">
+  <link rel="stylesheet" href="/school-admin-workspace.css?v=20261102-attendance-workflow">
   <link rel="stylesheet" href="/student-master-compact.css?v=20261017-group-filter">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -77,7 +77,7 @@
         try{
           if(typeof state!=="undefined"&&state.me?.role==="admin"&&typeof window.exportAttendanceReport==="function"&&typeof render==="function"){
             clearInterval(timer);
-            const s=document.createElement("script");s.src="/admin-attendance-assist.js?v=20260930-section-merge";document.body.appendChild(s);
+            const s=document.createElement("script");s.src="/admin-attendance-assist.js?v=20261102-attendance-workflow";document.body.appendChild(s);
           }else if(tries>400)clearInterval(timer);
         }catch(e){if(tries>400)clearInterval(timer)}
       },25);
