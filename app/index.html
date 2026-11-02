@@ -19,14 +19,14 @@
   <title>聖心弦樂成長平台</title>
   <!-- Deploy school workspace account-management navigation fix 2026-10-18 -->
   <link rel="stylesheet" href="/styles.css?v=20261102-training-attendance-ux">
-  <link rel="stylesheet" href="/school-admin-workspace.css?v=20261102-attendance-workflow">
+  <link rel="stylesheet" href="/school-admin-workspace.css?v=20261102-course-workflow">
   <link rel="stylesheet" href="/student-master-compact.css?v=20261102-student-workflow">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <div id="app"><div class="loading">🎻 系統載入中…</div></div>
   <div id="toast" class="toast"></div>
-  <script src="/webview-guard.js?v=20261102-student-workflow" defer></script>
+  <script src="/webview-guard.js?v=20261102-course-workflow" defer></script>
   <script>
     (()=>{
       let tries=0;
@@ -49,7 +49,7 @@
         try{
           if(typeof state!=="undefined"&&state.me?.role==="admin"&&typeof adminPage==="function"&&typeof render==="function"){
             clearInterval(timer);
-            const s=document.createElement("script");s.src="/schedule-admin.js?v=20261025-restore";document.body.appendChild(s);
+            const s=document.createElement("script");s.src="/schedule-admin.js?v=20261102-course-workflow";document.body.appendChild(s);
           }else if(tries>400)clearInterval(timer);
         }catch(e){if(tries>400)clearInterval(timer)}
       },25);
@@ -63,7 +63,7 @@
         try{
           if(typeof state!=="undefined"&&((state.me?.role==="parent"&&window.parentHomeSummaryReady===true)||state.me?.role==="admin")&&typeof home==="function"&&typeof adminPage==="function"&&typeof render==="function"){
             clearInterval(timer);
-            const s=document.createElement("script");s.src="/special-calendar.js?v=20261102-cancelled-training-filter";document.body.appendChild(s);
+            const s=document.createElement("script");s.src="/special-calendar.js?v=20261102-course-workflow";document.body.appendChild(s);
           }else if(tries>400)clearInterval(timer);
         }catch(e){if(tries>400)clearInterval(timer)}
       },25);

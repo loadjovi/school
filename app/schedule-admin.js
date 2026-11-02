@@ -5,6 +5,7 @@
   state.sectionMerges=state.sectionMerges||[];
   state.mergeTeachers=state.mergeTeachers||[];
   state.scheduleExceptionDate=state.scheduleExceptionDate||"";
+  state.scheduleAdminTask=state.scheduleAdminTask||"fixed";
   const encodeId=id=>encodeURIComponent(id).replaceAll("'","%27");
 
   const weekdayText=n=>["週日","週一","週二","週三","週四","週五","週六"][Number(n)]||"";
@@ -16,8 +17,12 @@
     const [merges,teachers]=await Promise.all([api("/api/section-merge"),api("/api/teacher-directory")]);
     state.sectionMerges=merges.items||[];state.mergeTeachers=teachers.items||[];
   }
-  window.openScheduleAdmin=async function(){state.page="schoolSchedule";render();try{await Promise.all([loadSchedule(),loadMergeData()]);render()}catch(e){toast("❌ 課程資料讀取失敗："+e.message)}};
-  window.closeScheduleAdmin=function(){state.page="admin";render()};
+  window.openScheduleAdmin=async function(task="fixed"){
+    state.scheduleAdminTask=["fixed","exceptions","merge"].includes(task)?task:"fixed";
+    state.page="schoolSchedule";render();
+    try{await Promise.all([loadSchedule(),loadMergeData()]);render()}catch(e){toast("❌ 課程資料讀取失敗："+e.message)}
+  };
+  window.closeScheduleAdmin=function(){state.page="admin";state.adminWorkspaceSection="courses";render()};
   window.activateSchoolSchedule=async function(){
     const count=(state.schoolSchedule?.items||[]).filter(x=>x.status==="active").length;
     if(!count){toast("❌ 請先匯入課表");return}
@@ -106,6 +111,15 @@
       ${items||'<div class="notice">此條件沒有課程異動。</div>'}</div>`;
   }
 
+  function scheduleTaskHeading(task,count){
+    const meta={
+      fixed:{icon:"📅",title:"固定課表",description:"匯入、預覽並啟用學期課表。",steps:["下載／編輯","匯入並預覽","正式啟用"]},
+      exceptions:{icon:"🛑",title:"停課／復課",description:"只調整指定日期的一堂課，其他上課日不受影響。",steps:["選擇課程","填日期與原因","確認停課／復課"]},
+      merge:{icon:"🎼",title:"單日分部併班",description:"分部老師請假時，安排同團另一分部老師接課。",steps:["選日期與分部","選接課老師","儲存安排"]}
+    }[task];
+    return `<section class="card course-workflow-heading"><button class="secondary" style="width:auto;margin:0 0 12px;padding:8px 12px" onclick="closeScheduleAdmin()">← 返回課表與行事曆</button><small>課表與行事曆</small><div class="student"><div><h1>${meta.icon} ${meta.title}</h1><p>${meta.description}</p></div><span class="badge ok">${count} 個課程規則</span></div><div class="course-workflow-steps" aria-label="操作步驟">${meta.steps.map((step,index)=>`<span><b>${index+1}</b>${step}</span>`).join("")}</div></section>`;
+  }
+
   function scheduleAdmin(){
     const data=state.schoolSchedule||{items:[],exceptions:[],scheduleState:{status:"draft"}},items=data.items||[],exceptions=data.exceptions||[],scheduleState=data.scheduleState||{status:"draft"};
     const active=items.filter(x=>x.status==="active"),isLive=scheduleState.status==="active",preview=state.schedulePreview;
@@ -123,19 +137,12 @@
       ?`<div class="notice" style="margin-top:12px;border:1px solid #16a34a"><b>🟢 課表已正式啟用</b><br>家長首頁與老師點名都會依此課表執行；非上課日、停課日不可點名。<br><small>啟用時間：${esc(scheduleState.activatedAt||"—")}</small></div><button class="secondary" style="width:100%;margin-top:8px" onclick="setScheduleDraft()">暫停正式課表／切回草稿</button>`
       :`<div class="notice" style="margin-top:12px;border:1px solid #f59e0b"><b>🟡 課表目前為草稿</b><br>可先預覽與核對；尚未套用到家長首頁，也不限制老師點名。確認無誤後再正式啟用。</div><button class="secondary" style="width:100%;margin-top:8px" onclick="previewScheduleDate()">👀 預覽指定日期</button><button class="primary" style="margin-top:8px" onclick="activateSchoolSchedule()">✅ 正式啟用課表</button>`;
     const previewPanel=preview?`<div class="card"><div class="student"><div><h2 style="margin:0">👀 課表預覽｜${esc(preview.date)}</h2><div class="muted">預覽草稿，不影響家長與老師</div></div><button class="secondary" style="width:auto;margin:0;padding:8px 10px" onclick="clearSchedulePreview()">關閉</button></div>${preview.items?.length?preview.items.map(x=>`<div class="item"><div><b>${esc(x.courseName)}</b><small>${esc(x.groupName||"全團")}｜${esc(x.startTime)}–${esc(x.endTime)}${x.location?`｜📍 ${esc(x.location)}`:""}</small></div><span class="badge ${x.effectiveStatus==="cancelled"?"bad":"ok"}">${x.effectiveStatus==="cancelled"?"停課":"上課"}</span></div>`).join(""):'<div class="notice" style="margin-top:10px">此日期沒有排定固定課程。</div>'}</div>`:"";
-    return `<div class="card hero"><button class="secondary" style="width:auto;margin:0 0 12px;padding:8px 12px" onclick="closeScheduleAdmin()">← 回管理員 Dashboard</button><div class="student"><div><h2 style="margin:0">📅 課表管理</h2><div class="muted">學校課表統一管理｜家長與老師同步</div></div><span class="badge ok">${active.length} 個課程規則</span></div>
-      <div class="notice" style="margin-top:12px">每間學校的課表獨立管理。下載的 CSV 可直接用 Excel 編輯；<b>weekday：1=週一、2=週二、3=週三、4=週四、5=週五、6=週六、0=週日</b>。修改星期、日期與時間後再匯入即可。臨時停課直接按「停課」，家長首頁會同步顯示。</div>
-      ${statePanel}
-      ${legacyWarning}
-      <button class="primary" onclick="downloadSchoolScheduleTemplate()">📥 下載本校課表範本（Excel 可編輯）</button>
-      <button class="secondary" style="width:100%;margin-top:8px" onclick="document.getElementById('scheduleCsv').click()">📤 匯入本校課表並取代目前設定</button>
-      <input id="scheduleCsv" type="file" accept=".csv,text/csv" style="display:none" onchange="importScheduleCsv(this.files[0])">
-    </div>
-    ${previewPanel}
-    ${sectionMergeCard()}
-    <div class="card"><h2>目前課表</h2>${active.length?active.map(x=>`<div class="item"><div><b>${esc(x.courseName)}</b><small>${esc(typeText(x.courseType))}｜${esc(x.groupName||"全團")}｜${x.recurrence==="weekly"?esc(weekdayText(x.weekday)):esc(x.sessionDate)}｜${esc(x.startTime)}–${esc(x.endTime)}${x.location?`｜📍 ${esc(x.location)}`:""}</small></div><button class="secondary" style="width:auto;margin:0;padding:8px 10px" onclick="cancelSchedulePrompt('${encodeId(x.scheduleId)}')">停課</button></div>`).join(""):'<div class="notice">尚未建立課表，可先下載「本校課表範本」，用 Excel 編輯後再匯入。</div>'}</div>
-    ${scheduleChangeForm()}
-    ${exceptionHistory(exceptions,scheduleById,exceptionLabel)}`;
+    const task=["fixed","exceptions","merge"].includes(state.scheduleAdminTask)?state.scheduleAdminTask:"fixed";
+    const heading=scheduleTaskHeading(task,active.length);
+    const scheduleList=`<div class="card"><h2>${task==="exceptions"?"選擇要停課的課程":"目前固定課表"}</h2>${task==="exceptions"?'<p>先找到課程並按「設定停課」，下一步再選擇實際停課日期。</p>':""}${active.length?active.map(x=>`<div class="item"><div><b>${esc(x.courseName)}</b><small>${esc(typeText(x.courseType))}｜${esc(x.groupName||"全團")}｜${x.recurrence==="weekly"?esc(weekdayText(x.weekday)):esc(x.sessionDate)}｜${esc(x.startTime)}–${esc(x.endTime)}${x.location?`｜📍 ${esc(x.location)}`:""}</small></div>${task==="exceptions"?`<button class="secondary" style="width:auto;margin:0;padding:8px 10px" onclick="cancelSchedulePrompt('${encodeId(x.scheduleId)}')">設定停課</button>`:'<span class="badge ok">課表項目</span>'}</div>`).join(""):'<div class="notice">尚未建立課表，請先回到「固定課表」匯入並啟用。</div>'}</div>`;
+    if(task==="merge")return heading+sectionMergeCard();
+    if(task==="exceptions")return heading+scheduleList+scheduleChangeForm()+exceptionHistory(exceptions,scheduleById,exceptionLabel);
+    return `${heading}<div class="card hero"><h2>固定課表設定</h2><div class="notice">下載目前課表後可直接用 Excel 編輯，再匯入取代設定。匯入後先預覽，確認無誤再正式啟用。<details style="margin-top:8px"><summary>查看 CSV 星期代碼</summary>weekday：1=週一、2=週二、3=週三、4=週四、5=週五、6=週六、0=週日。</details></div>${statePanel}${legacyWarning}<button class="primary" onclick="downloadSchoolScheduleTemplate()">📥 下載本校課表範本</button><button class="secondary" style="width:100%;margin-top:8px" onclick="document.getElementById('scheduleCsv').click()">📤 匯入課表並預覽</button><input id="scheduleCsv" type="file" accept=".csv,text/csv" style="display:none" onchange="importScheduleCsv(this.files[0])"></div>${previewPanel}${scheduleList}`;
   }
 
   function showScheduleChange(){
