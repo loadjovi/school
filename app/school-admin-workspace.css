@@ -162,6 +162,27 @@
 }
 @media(max-width:380px){.aw-attendance-task-grid{grid-template-columns:1fr}.aw-attendance-task-grid>button{min-height:82px}}
 
+/* Account workspace: select the account type first, then show only that workflow. */
+.aw-account-task-picker{width:100%;padding:20px;border:1px solid var(--aw-line);border-radius:16px;background:#fff}
+.aw-account-task-picker h2,.aw-account-work-heading h2{margin:0 0 5px!important;color:var(--aw-ink)}
+.aw-account-task-picker>p,.aw-account-work-heading>p{margin:0;color:var(--aw-muted);font-size:14px;line-height:1.7}
+.aw-account-kicker{display:block;margin-bottom:5px;color:var(--primary);font-size:12px;font-weight:900;letter-spacing:.04em}
+.aw-account-task-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}
+.aw-account-task-grid>button{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:10px;width:100%!important;min-height:106px;margin:0!important;padding:15px!important;border:1px solid var(--aw-line)!important;border-radius:14px!important;background:#f8faff!important;color:var(--aw-ink)!important;text-align:left;box-shadow:none!important}
+.aw-account-task-grid>button:hover,.aw-account-task-grid>button:focus-visible{border-color:var(--primary)!important;background:#eef3ff!important;outline:none;box-shadow:0 0 0 3px rgba(49,85,164,.09)!important}
+.aw-account-task-icon{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:#e8eefc;font-size:23px}
+.aw-account-task-grid b{display:block;font-size:16px;line-height:1.35}.aw-account-task-grid small{display:block;margin-top:4px;color:var(--aw-muted);font-size:12px;line-height:1.5;font-weight:500}
+.aw-account-task-grid em{display:inline-block;margin-top:7px;padding:3px 8px;border-radius:999px;background:#eaf3ed;color:#2f6745;font-size:11px;font-style:normal;font-weight:900}
+.aw-account-task-grid>button>span:last-child{color:var(--primary);font-size:20px;font-weight:900}
+.aw-account-back{width:auto!important;margin:0 0 12px!important;padding:9px 13px!important;border:1px solid var(--primary)!important;background:#fff!important;color:var(--primary)!important;font-weight:900}
+.aw-account-work-heading{margin:0 0 14px;padding:16px;border:1px solid #cdd8f3;border-radius:14px;background:#f8faff}
+.aw-account-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:12px}
+.aw-account-steps>span{display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;padding:8px 5px;border-radius:10px;background:#edf2fb;color:#40536e;font-size:12px;font-weight:900;text-align:center}
+.aw-account-steps b{display:grid;place-items:center;flex:0 0 22px;width:22px;height:22px;border-radius:50%;background:#3155a4;color:#fff;font-size:11px}
+.aw-account-panels,.aw-account-pending,.aw-account-school,.aw-account-family,.aw-teacher-details{min-width:0;max-width:100%}
+@media(max-width:600px){.aw-account-task-picker{padding:15px}.aw-account-task-picker>p,.aw-account-work-heading>p{font-size:13px}.aw-account-task-grid{grid-template-columns:1fr;gap:9px}.aw-account-task-grid>button{grid-template-columns:38px minmax(0,1fr);align-content:center;min-height:88px;padding:12px!important}.aw-account-task-grid>button>span:last-child{display:none}.aw-account-task-icon{width:38px;height:38px;font-size:20px}.aw-account-task-grid b{font-size:14px}.aw-account-task-grid small{font-size:11px}.aw-account-steps span{display:grid;justify-items:center;font-size:11px}}
+@media(max-width:380px){.aw-account-steps{grid-template-columns:1fr}.aw-account-steps>span{display:flex;justify-content:flex-start}}
+
 /* Course workspace: fixed schedules, exceptions and special events are separate jobs. */
 .aw-course-task-picker{width:100%;padding:20px;border:1px solid var(--aw-line);border-radius:16px;background:#fff}
 .aw-course-task-picker h2{margin:0 0 5px!important;color:var(--aw-ink)}
