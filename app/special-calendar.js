@@ -23,6 +23,7 @@
   }
   function trainingAttendanceControls(x){
     if(x.eventType!=="competition_training")return "";
+    if(x.status!=="active")return '<div class="notice training-unavailable" style="margin-top:9px"><b>🚫 此場加練已取消，不需點名。</b></div>';
     if(!x.requiresAttendance)return '<div class="muted" style="margin-top:8px">免點名（早自習加練）</div>';
     const teachers=state.specialCalendar?.teachers||[];
     const named=String(x.teacherName||"").replace(/老師$/ ,"");

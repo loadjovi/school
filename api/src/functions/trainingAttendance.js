@@ -49,7 +49,7 @@ app.http("trainingAttendance",{methods:["GET","POST"],authLevel:"anonymous",rout
     if(!dateOk(from)||!dateOk(to)||to<from||(Date.parse(to)-Date.parse(from))/86400000>370)return json({error:"日期區間須為 370 天以內"},400);
     const filter=`PartitionKey eq '${safe(sid)}' and eventDate ge '${safe(from)}' and eventDate le '${safe(to)}'`,items=[];
     for await(const e of eventsClient.listEntities({queryOptions:{filter}})){
-      if(!isTraining(e)||!mayTakeAttendance(a,e,teachers))continue;
+      if(!isTraining(e)||String(e.status||"active")!=="active"||!mayTakeAttendance(a,e,teachers))continue;
       items.push(summary(e));
     }
     const masters=await listStudentMaster("active",schoolId);

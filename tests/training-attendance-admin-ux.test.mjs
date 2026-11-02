@@ -39,6 +39,15 @@ test("teacher assignment and monthly hours are visually secondary to roll call",
   assert.match(calendar,/這裡只計算老師工時，不會儲存學生出缺席/);
 });
 
+test("cancelled rehearsals never appear as pending attendance",()=>{
+  assert.match(attendance,/d\.items\.filter\(x=>String\(x\.status\|\|"active"\)==="active"\)/);
+  assert.match(backend,/String\(e\.status\|\|"active"\)!=="active"\|\|!mayTakeAttendance/);
+  assert.match(calendar,/此場加練已取消，不需點名/);
+  const cancelledGuard=calendar.indexOf('if(x.status!=="active")');
+  const startButton=calendar.indexOf('>開始點名<');
+  assert.ok(cancelledGuard>0&&cancelledGuard<startButton,"cancelled guard must run before rendering the attendance button");
+});
+
 test("UI still writes the existing tenant-isolated rehearsal attendance record",()=>{
   assert.match(attendance,/api\("\/api\/training-attendance",\{method:"POST"/);
   assert.match(backend,/tenantTrainingAttendance/);

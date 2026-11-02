@@ -7,7 +7,7 @@
   const labels={present:"出席",late:"遲到",leave:"請假",absent:"缺席"};
   const today=()=>new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"});
   function range(){const d=new Date(),from=new Date(d),to=new Date(d);from.setMonth(from.getMonth()-5);to.setMonth(to.getMonth()+5);const fmt=x=>x.toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"});return `from=${encodeURIComponent(fmt(from))}&to=${encodeURIComponent(fmt(to))}`}
-  async function loadList(){const d=await api("/api/training-attendance?"+range());state.trainingAttendanceList=Array.isArray(d.items)?d.items:[]}
+  async function loadList(){const d=await api("/api/training-attendance?"+range());state.trainingAttendanceList=Array.isArray(d.items)?d.items.filter(x=>String(x.status||"active")==="active"):[]}
   async function loadEvent(eventId){const d=await api("/api/training-attendance?eventId="+encodeURIComponent(eventId));state.trainingAttendanceData=d;state.trainingAttendanceStatuses=Object.fromEntries((d.items||[]).map(x=>[String(x.studentId),String(x.status||"")]))}
   const markedCount=()=>{const rows=state.trainingAttendanceData?.items||[];return rows.filter(x=>labels[state.trainingAttendanceStatuses[String(x.studentId)]]).length};
   function updateProgress(){
