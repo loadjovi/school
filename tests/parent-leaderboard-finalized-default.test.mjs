@@ -87,7 +87,7 @@ test("monthly fetch uses only the selected historical month; earlier response is
  assert.doesNotMatch(code,/setParentPracticeLeaderboardMode/);
 });
 test("leaderboard minute UI assets are cache-busted",()=>{
- assert.match(index,/styles\.css\?v=20261102-account-workflow/);
- assert.match(index,/webview-guard\.js\?v=20261103-tshirt-size-reminder/);
+ assert.match(index,/styles\.css\?v=20261104-practice-filter-anchor/);
+ assert.match(index,/webview-guard\.js\?v=20261104-practice-filter-anchor/);
  assert.match(guard,/parent-home-summary\.js\?v=20261103-tshirt-size-reminder/);
 });

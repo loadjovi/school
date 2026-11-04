@@ -43,8 +43,8 @@ test("account jobs explain three steps and stay mobile friendly",()=>{
 });
 
 test("account workflow assets are cache-busted",()=>{
-  assert.match(index,/styles\.css\?v=20261102-account-workflow/);
+  assert.match(index,/styles\.css\?v=20261104-practice-filter-anchor/);
   assert.match(index,/school-admin-workspace\.css\?v=20261102-learning-workspace/);
-  assert.match(index,/webview-guard\.js\?v=20261103-tshirt-size-reminder/);
+  assert.match(index,/webview-guard\.js\?v=20261104-practice-filter-anchor/);
   assert.match(guard,/school-admin-workspace\.js\?v=20261102-learning-workspace/);
 });

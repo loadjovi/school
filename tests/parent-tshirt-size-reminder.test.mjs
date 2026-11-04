@@ -40,5 +40,5 @@ test("parent reminder is first on home and school roster counts the same missing
  assert.match(admin,/const size=historicalSizes\.get\([\s\S]*?if\(size\)counts\.set\(size,[\s\S]*?else missing\.push/);
  assert.match(admin,/"待填寫 "\)\+missing\.length\+" 人"/);
  assert.match(guard,/parent-home-summary\.js\?v=20261103-tshirt-size-reminder/);
- assert.match(index,/webview-guard\.js\?v=20261103-tshirt-size-reminder/);
+ assert.match(index,/webview-guard\.js\?v=20261104-practice-filter-anchor/);
 });
