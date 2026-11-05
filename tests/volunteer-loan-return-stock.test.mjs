@@ -21,7 +21,7 @@ test("active volunteer loan has one direct clean-return action instead of a hidd
  assert.match(panel,/使用後由家長洗淨再交回/);
  assert.match(panel,/同尺寸庫存才會加回 1 件/);
  assert.match(html,/tshirt-parent-loans\.js\?v=20261105-volunteer-return-stock/);
- assert.match(html,/uniform-event-admin\.js\?v=20261105-receiving-draft/);
+ assert.match(html,/uniform-event-admin\.js\?v=20261105-existing-stock-direct/);
  assert.match(admin,/addEventListener\("tshirtParentLoansChanged",\(\)=>load\(\)\)/);
 });
 

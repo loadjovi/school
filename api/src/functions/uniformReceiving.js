@@ -64,7 +64,6 @@ app.http("uniformReceiving",{methods:["GET","POST"],authLevel:"anonymous",route:
   let ledger=await get(inventory,schoolId,ledgerKey);
   if(!ledger){
    if(before.kind==="regularUniform"&&!validBreakdown(breakdown,before,procurementQuantity))return fail("舊採購紀錄尚未分配各尺碼，請先使用『更正採購尺碼』填寫廠商採購明細",409);
-   if(!sameBreakdown(input.receivedBreakdown,breakdown))return fail("實際到貨的各尺碼件數須與採購明細一致；若有差異，請先更正採購尺碼再驗收",409);
    if(input.etag!==order.etag)return fail("申請資料已更新，請重新整理後再入庫",409);
    const changes=[];
    const stocks=await Promise.all(breakdown.map(part=>get(inventory,schoolId,before.kind==="regularUniform"?"regular:"+part.size:key)));

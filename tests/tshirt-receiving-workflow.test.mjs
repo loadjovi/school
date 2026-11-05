@@ -27,15 +27,19 @@ test("receiving form keeps an active draft during background status redraws",()=
  assert.match(source,/activeReceivingForm\?\.isConnected&&activeReceivingTab===activeAdminTab\)return/);
  assert.match(source,/form\.addEventListener\("input",saveDraft\)/);
  assert.match(source,/receivingDrafts\.set\(requestKey,\{mode:mode\.value,receivedDate:date\.value,note:note\.value/);
- assert.match(source,/draft\.quantities&&draft\.quantities\[part\.size\]!==undefined/);
 });
 
-test("existing-stock mode hides and disables arrival-only fields",()=>{
+test("neither receiving source asks the operator to re-enter procurement quantity",()=>{
  const frontend=readFileSync(new URL("../app/uniform-event-admin.js",import.meta.url),"utf8");
  const backend=readFileSync(new URL("../api/src/functions/uniformReceiving.js",import.meta.url),"utf8");
+ const start=frontend.indexOf('if(e.target.dataset.receive!==undefined)'),end=frontend.indexOf('const i=e.target.dataset.update',start),receiving=frontend.slice(start,end);
  assert.match(frontend,/dateWrap\.hidden=existing;noteWrap\.hidden=existing;date\.disabled=existing;note\.disabled=existing/);
+ assert.match(frontend,/save\.textContent=existing\?"確認使用現有庫存":"確認驗收入庫"/);
  assert.match(frontend,/date\.required=mode\.value==="new";note\.required=mode\.value==="new"/);
+ assert.match(receiving,/const receiptSummary=breakdown\.map/);
+ assert.doesNotMatch(receiving,/實際件數|receivedFields|input\.type="number"|payload\.receivedBreakdown/);
  assert.match(frontend,/if\(!useExistingStock\)\{payload\.receivedDate=date\.value;payload\.note=note\.value\.trim\(\)\}/);
  assert.match(backend,/normalizeReceivingDetails\(input\)/);
+ assert.doesNotMatch(backend,/input\.receivedBreakdown/);
  assert.match(backend,/source:receiptDetails\.useExistingStock\?"existing_stock":"new_arrival"/);
 });
