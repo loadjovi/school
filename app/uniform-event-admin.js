@@ -1,4 +1,6 @@
 const el=id=>document.getElementById(id);
+const uniformRequestFlowHint=el("uniformRequestsHeading")?.nextElementSibling;
+if(uniformRequestFlowHint)uniformRequestFlowHint.textContent="依序完成核准、財務核帳、採購與驗收入庫；選擇「新貨到校」或「使用現有庫存」確認後，系統會自動開放領取並通知家長。實際交付時再按「確認實際發放」。";
 let adminAuthenticated=false,hasFinanceAccess=false;
 function setAuthGate(reason=""){
  adminAuthenticated=!reason;
@@ -938,12 +940,12 @@ el("requests").addEventListener("click",async e=>{
   const row=visibleModuleRequests[Number(e.target.dataset.receive)];if(!row||pendingRequestIds.has(row.id))return;
   const cell=e.target.closest("td"),button=e.target;
   if(receivedRequestIds.has(row.id)){
-   if(!confirm("這筆申請已有驗收入庫紀錄。確認只同步申請的『已到貨』狀態，不會再次增加庫存？"))return;
+   if(!confirm("這筆申請已有驗收入庫紀錄。確認同步為『可以領取』並通知家長？不會再次增加庫存或重複通知。"))return;
    pendingRequestIds.add(row.id);renderModuleRequests();
    try{
     const date=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
     await api("uniform-events/receiving",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,quantity:row.kind==="regularUniform"?row.quantity:1,receivedDate:date,note:"同步既有驗收入庫紀錄"})});
-    el("status").textContent="已同步到貨狀態，庫存沒有重複增加";
+    el("status").textContent="已同步為可以領取，庫存沒有重複增加";
    }catch(error){issueErrors.set(row.id,"同步到貨狀態失敗："+error.message)}
    finally{pendingRequestIds.delete(row.id);await load();renderModuleRequests()}
    return;
@@ -978,10 +980,10 @@ el("requests").addEventListener("click",async e=>{
   const syncArrivalFields=()=>{
    const existing=mode.value==="existing";
    dateWrap.hidden=existing;noteWrap.hidden=existing;date.disabled=existing;note.disabled=existing;date.required=mode.value==="new";note.required=mode.value==="new";
-   save.textContent=existing?"確認使用現有庫存":"確認驗收入庫";
+   save.textContent=existing?"確認現有庫存並開放領取":"驗收入庫並開放領取";
    detail.textContent=existing
-    ?"本次使用現有庫存："+receiptSummary+"。確認後只建立現有庫存使用紀錄，不需再次驗收到貨，也不會重複增加庫存。"
-    :"本次新貨入庫："+receiptSummary+"。件數依採購紀錄帶入，不需重複輸入；若實物不同，請先更正採購尺碼與件數。";
+    ?"本次使用現有庫存："+receiptSummary+"。確認後會自動開放家長領取並寄送通知；不會重複增加庫存，實際交付時才扣除庫存。"
+    :"本次新貨入庫："+receiptSummary+"。確認後會自動開放家長領取並寄送通知；件數依採購紀錄帶入，若實物不同請先更正採購尺碼與件數。";
   };
   form.addEventListener("input",saveDraft);
   form.addEventListener("change",saveDraft);
@@ -996,15 +998,15 @@ el("requests").addEventListener("click",async e=>{
    const useExistingStock=mode.value==="existing";
    if(!useExistingStock&&(!date.value||!note.value.trim())){message.textContent="新貨到校時，請填寫實際到貨日期與驗收備註。";return}
    const confirmation=useExistingStock
-    ?"確認改用已盤點的現有庫存供應 "+receiptSummary+"？不會增加庫存，實際交付時才會扣除庫存。"
-    :"確認驗收 "+receiptSummary+"，合計 "+procurementQuantity+" 件？新貨到校後，將依採購紀錄增加正式庫存。";
+    ?"確認改用已盤點的現有庫存供應 "+receiptSummary+"？確認後會自動開放家長領取並寄送通知；不會增加庫存，實際交付時才會扣除庫存。"
+    :"確認驗收 "+receiptSummary+"，合計 "+procurementQuantity+" 件？系統將依採購紀錄增加正式庫存，並自動開放家長領取及寄送通知。";
    if(!confirm(confirmation))return;
    save.disabled=true;message.textContent="入庫中…";pendingRequestIds.add(row.id);
    try{
     const payload={id:row.id,etag:row.etag,quantity,procurementQuantity,useExistingStock};
     if(!useExistingStock){payload.receivedDate=date.value;payload.note=note.value.trim()}
-    await api("uniform-events/receiving",{method:"POST",body:JSON.stringify(payload)});
-    receivingDrafts.delete(requestKey);activeReceivingForm=null;activeReceivingRequestId="";activeReceivingTab="";el("status").textContent="已依各尺碼驗收入庫並更新申請進度";await load();
+    const result=await api("uniform-events/receiving",{method:"POST",body:JSON.stringify(payload)});
+    receivingDrafts.delete(requestKey);activeReceivingForm=null;activeReceivingRequestId="";activeReceivingTab="";el("status").textContent=result.notificationStatus==="sent"?"已完成入庫、自動開放領取並寄送家長通知":"已完成入庫並自動開放領取；家長通知未完整送達，請查核家長 Email 或寄信設定";await load();
    }
    catch(error){
     message.textContent="正在查核入庫紀錄…";

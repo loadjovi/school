@@ -3,7 +3,7 @@ import {TableClient} from "@azure/data-tables";
 import {getTenantContext,getStudentAliasInfo,json} from "../lib/auth.js";
 import {getStudentMaster,listUserStudentMappings} from "../lib/storage.js";
 import {sendUniformRequestStatusEmail} from "../lib/email.js";
-import {normalizeReceivingDetails} from "../lib/uniformReceivingRules.mjs";
+import {normalizeReceivingDetails,statusAfterReceiving} from "../lib/uniformReceivingRules.mjs";
 
 const fail=(error,status=400)=>json({error},status);
 const validId=value=>typeof value==="string"&&/^[a-zA-Z0-9_-]{1,100}$/.test(value);
@@ -91,13 +91,13 @@ app.http("uniformReceiving",{methods:["GET","POST"],authLevel:"anonymous",route:
    ledger=ledger||await get(inventory,schoolId,ledgerKey);
   }
   if(!ledger||ledger.requestId!==input.id||ledger.quantity!==quantity||(ledger.procurementQuantity||ledger.quantity)!==procurementQuantity||ledger.breakdown&&(!Array.isArray(breakdown)||!sameBreakdown(JSON.parse(ledger.breakdown),breakdown)))return fail("入庫紀錄與申請或採購尺碼不一致，請人工核對",409);
-  if(before.status==="ORDERED"||!before.stockReceivedAt){
+  if(before.status!=="READY_FOR_PICKUP"||!before.stockReceivedAt){
    const stamp=new Date().toISOString();
-   const next={...before,status:before.status==="ORDERED"?"ARRIVED":before.status,stockReceivedAt:ledger.receivedAt,stockReceivedDate:ledger.receivedDate,updatedAt:stamp};
+   const next={...before,status:statusAfterReceiving(before.status),stockReceivedAt:ledger.receivedAt,stockReceivedDate:ledger.receivedDate,updatedAt:stamp};
    try{await orders.updateEntity({partitionKey:schoolId,rowKey:input.id,payload:JSON.stringify(next),updatedAt:stamp},"Replace",{etag:order.etag})}
-   catch(error){if(error.statusCode===412)return fail("已入庫但申請進度未同步；請重新整理並再按一次入庫（不會重複增加庫存）",409);throw error}
+   catch(error){if(error.statusCode===412)return fail("已入庫但開放領取進度未同步；請重新整理並再按一次入庫（不會重複增加庫存或通知）",409);throw error}
    let notificationStatus="not_attempted";
-   if(before.status==="ORDERED")try{
+   if(before.status!=="READY_FOR_PICKUP"&&next.status==="READY_FOR_PICKUP")try{
     const mappings=await listUserStudentMappings("active",schoolId),recipients=new Set();
     for(const mapping of mappings){
      if(!mapping.parentEmail)continue;
@@ -105,7 +105,7 @@ app.http("uniformReceiving",{methods:["GET","POST"],authLevel:"anonymous",route:
      if(String(alias?.canonicalStudentId||mapping.studentId)===String(next.studentId))recipients.add(mapping.parentEmail);
     }
     const student=await getStudentMaster(next.studentId,schoolId);
-    const result=await sendUniformRequestStatusEmail({recipients:[...recipients],studentName:student?.studentName||"學生",kind:next.kind,status:"ARRIVED",size:next.size,quantity:next.quantity});
+    const result=await sendUniformRequestStatusEmail({recipients:[...recipients],studentName:student?.studentName||"學生",kind:next.kind,status:"READY_FOR_PICKUP",size:next.size,quantity:next.quantity});
     notificationStatus=result.status;
    }catch(error){notificationStatus="failed";console.error("uniform receiving notification",error)}
    return json({item:{...next,id:input.id},quantity,procurementQuantity,notificationStatus});

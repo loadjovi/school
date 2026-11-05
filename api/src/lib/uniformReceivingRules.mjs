@@ -4,6 +4,10 @@ export function taipeiReceiptDate(now=new Date()){
  return new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(now));
 }
 
+export function statusAfterReceiving(status){
+ return ["ORDERED","ARRIVED"].includes(status)?"READY_FOR_PICKUP":status;
+}
+
 export function normalizeReceivingDetails(input,now=new Date()){
  const useExistingStock=input?.useExistingStock===true;
  if(useExistingStock)return {
