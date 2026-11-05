@@ -62,6 +62,8 @@ window.addEventListener("tshirtStaffDemandsLoaded",event=>{cachedStaffFinanceIte
 let visibleModuleRequests=[],moduleRequestsAll=[],showRequestHistory=false;
 const pendingRequestIds=new Set();
 const issueErrors=new Map();
+const receivingDrafts=new Map();
+let activeReceivingForm=null,activeReceivingRequestId="",activeReceivingTab="";
 let uniformStudentNames=new Map();
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let savedConfigs=[];
@@ -112,7 +114,9 @@ function renderUniformRequestAlerts(){
   row.append(description,btn);host.append(row);
  }
 }
-function renderModuleRequests(){
+function renderModuleRequests(options={}){
+ if(options.force!==true&&activeReceivingForm?.isConnected&&activeReceivingTab===activeAdminTab)return;
+ if(activeReceivingForm&&!activeReceivingForm.isConnected){activeReceivingForm=null;activeReceivingRequestId="";activeReceivingTab=""}
  const rows=cachedRequests.filter(x=>{
   const kind=String(x.kind||x.type||"");
   return activeAdminTab==="regularUniform"?/regular|tshirt|t-shirt/i.test(kind):/competition/i.test(kind);
@@ -948,40 +952,72 @@ el("requests").addEventListener("click",async e=>{
    issueErrors.set(row.id,"原採購件數尚未分配尺碼。請先點『更正採購尺碼與件數』，依廠商採購單填寫每個尺碼，再驗收入庫。");renderModuleRequests();return;
   }
   if(cell.querySelector("form"))return;
-  const form=document.createElement("form"),date=document.createElement("input"),note=document.createElement("textarea"),save=document.createElement("button"),message=document.createElement("p"),mode=document.createElement("select");
-  form.className="receiving-form";date.type="date";date.required=true;date.value=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
-  note.required=true;note.maxLength=300;note.rows=2;note.placeholder="例：核對女款 S 號 1 套，外觀與數量無誤";
-  for(const [label,input] of [["實際到貨日期",date],["驗收備註",note]]){const wrap=document.createElement("label");wrap.textContent=label;wrap.append(input);form.append(wrap)}
+  if(activeReceivingForm?.isConnected&&activeReceivingRequestId!==String(row.id)){
+   el("status").textContent="另一筆驗收資料仍在編輯中，請先完成或取消該筆輸入。";activeReceivingForm.scrollIntoView({behavior:"smooth",block:"center"});return;
+  }
+  const requestKey=String(row.id),today=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+  const draft=receivingDrafts.get(requestKey)||{mode:"",receivedDate:today,note:"",quantities:{}};
+  const form=document.createElement("form"),date=document.createElement("input"),note=document.createElement("textarea"),save=document.createElement("button"),cancel=document.createElement("button"),message=document.createElement("p"),mode=document.createElement("select");
+  form.className="receiving-form";form.dataset.receivingRequest=requestKey;date.type="date";date.value=draft.receivedDate||today;
+  note.maxLength=300;note.rows=2;note.placeholder="例：核對女款 S 號 1 套，外觀與數量無誤";note.value=draft.note||"";
+  const dateWrap=document.createElement("label");dateWrap.textContent="實際到貨日期";dateWrap.append(date);form.append(dateWrap);
+  const noteWrap=document.createElement("label");noteWrap.textContent="驗收備註";noteWrap.append(note);form.append(noteWrap);
   const quantity=row.kind==="regularUniform"?row.quantity:1,procurementQuantity=row.kind==="regularUniform"?(row.procurementQuantity??quantity):1;
   const breakdown=row.kind==="regularUniform"?(row.procurementBreakdown||[{size:row.size,quantity}]):[{size:row.size,quantity:1}];
   const stockKey=row.kind==="competitionUniform"?"competition:"+row.style+":"+row.size:"regular:"+row.size;
   const stock=cachedStock.find(item=>item.key===stockKey);
   mode.required=true;mode.add(new Option("請選擇這件衣服如何入庫",""));mode.add(new Option("新貨到校：增加正式庫存","new"));
   if(breakdown.every(part=>{const item=cachedStock.find(x=>x.key===(row.kind==="regularUniform"?"regular:"+part.size:stockKey));return item&&Number(item.onHand)-Number(item.reserved||0)-Number(item.unavailable||0)>=part.quantity}))mode.add(new Option("先前已盤點：使用現有庫存，不重複增加","existing"));
+  mode.value=[...mode.options].some(option=>option.value===draft.mode)?draft.mode:"";
   const modeLabel=document.createElement("label");modeLabel.textContent="庫存來源";modeLabel.append(mode);form.prepend(modeLabel);
   const detail=document.createElement("p");detail.textContent="採購合計 "+procurementQuantity+" 件；家長申請 "+row.size+" 號 "+quantity+" 件。請逐尺碼核對實際到貨；若與採購明細不同，先更正採購尺碼。";
   const checks=document.createElement("div");checks.className="procurement-size-grid";
   const receivedFields=new Map();
   for(const part of breakdown){
    const label=document.createElement("label"),input=document.createElement("input");input.type="number";input.min="0";input.max="100";input.step="1";input.required=true;input.inputMode="numeric";input.placeholder="實際件數";
+   if(draft.quantities&&draft.quantities[part.size]!==undefined)input.value=String(draft.quantities[part.size]);
    label.textContent=(row.kind==="competitionUniform"?row.style+"款 ":"")+part.size+"｜應到 "+part.quantity+" 件";label.append(input);checks.append(label);receivedFields.set(part.size,input);
   }
-  save.type="submit";save.textContent="確認驗收入庫";message.setAttribute("role","status");form.prepend(detail);form.append(save,message);cell.append(form);button.hidden=true;
+  save.type="submit";save.textContent="確認驗收入庫";cancel.type="button";cancel.className="secondary";cancel.textContent="取消本次輸入";message.setAttribute("role","status");form.prepend(detail);form.append(save,cancel,message);cell.append(form);button.hidden=true;
   form.insertBefore(checks,save);
+  activeReceivingForm=form;activeReceivingRequestId=requestKey;activeReceivingTab=activeAdminTab;
+  const saveDraft=()=>receivingDrafts.set(requestKey,{mode:mode.value,receivedDate:date.value,note:note.value,quantities:Object.fromEntries([...receivedFields].map(([size,input])=>[size,input.value]))});
+  const syncArrivalFields=()=>{
+   const existing=mode.value==="existing";
+   dateWrap.hidden=existing;noteWrap.hidden=existing;date.disabled=existing;note.disabled=existing;date.required=mode.value==="new";note.required=mode.value==="new";
+   detail.textContent=existing
+    ?"使用先前已盤點的現有庫存，不會重複增加庫存；只需核對下方各尺碼實際件數。"
+    :"採購合計 "+procurementQuantity+" 件；家長申請 "+row.size+" 號 "+quantity+" 件。請逐尺碼核對實際到貨；若與採購明細不同，先更正採購尺碼。";
+  };
+  form.addEventListener("input",saveDraft);
+  form.addEventListener("change",saveDraft);
+  mode.addEventListener("change",syncArrivalFields);
+  cancel.addEventListener("click",()=>{
+   receivingDrafts.delete(requestKey);activeReceivingForm=null;activeReceivingRequestId="";activeReceivingTab="";renderModuleRequests({force:true});
+  });
+  syncArrivalFields();saveDraft();
   form.addEventListener("submit",async event=>{
-   event.preventDefault();if(!note.value.trim()){message.textContent="請填寫驗收備註。";return}
+   event.preventDefault();
+   if(!mode.value){message.textContent="請選擇庫存來源。";return}
+   const useExistingStock=mode.value==="existing";
+   if(!useExistingStock&&(!date.value||!note.value.trim())){message.textContent="新貨到校時，請填寫實際到貨日期與驗收備註。";return}
    const receivedBreakdown=breakdown.map(part=>({size:part.size,quantity:Number(receivedFields.get(part.size).value)}));
    if(receivedBreakdown.some((part,i)=>part.quantity!==breakdown[i].quantity)){message.textContent="實際到貨尺碼與採購明細不一致。請核對實物；若採購明細錯誤，先更正採購尺碼後再入庫。";return}
-   if(!mode.value){message.textContent="請選擇庫存來源。";return}
    if(!confirm("確認驗收 "+receivedBreakdown.map(p=>p.size+" "+p.quantity+" 件").join("、")+"，合計 "+procurementQuantity+" 件？"+(mode.value==="existing"?"將使用現有盤點庫存，不增加庫存。":"新貨到校，將依各尺碼增加正式庫存。")))return;
    save.disabled=true;message.textContent="入庫中…";pendingRequestIds.add(row.id);
-   try{await api("uniform-events/receiving",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,quantity,procurementQuantity,receivedBreakdown,receivedDate:date.value,note:note.value.trim(),useExistingStock:mode.value==="existing"})});el("status").textContent="已依各尺碼驗收入庫並更新申請進度";await load()}
+   try{
+    const payload={id:row.id,etag:row.etag,quantity,procurementQuantity,receivedBreakdown,useExistingStock};
+    if(!useExistingStock){payload.receivedDate=date.value;payload.note=note.value.trim()}
+    await api("uniform-events/receiving",{method:"POST",body:JSON.stringify(payload)});
+    receivingDrafts.delete(requestKey);activeReceivingForm=null;activeReceivingRequestId="";activeReceivingTab="";el("status").textContent="已依各尺碼驗收入庫並更新申請進度";await load();
+   }
    catch(error){
     message.textContent="正在查核入庫紀錄…";
     try{
      const receipts=await api("uniform-events/receiving");
      if((receipts.items||[]).some(item=>String(item.requestId)===String(row.id))){
       message.textContent="已找到這筆入庫紀錄，正在同步申請狀態；不會重複增加庫存。";
+      receivingDrafts.delete(requestKey);activeReceivingForm=null;activeReceivingRequestId="";activeReceivingTab="";
       await load();
      }else{message.textContent="入庫結果尚未確認："+error.message+"。目前未查到入庫紀錄，請稍後重新整理再核對，勿直接重複提交。";save.disabled=false}
     }catch(checkError){message.textContent="入庫結果尚未確認："+error.message+"。查核暫時失敗，請稍後重新整理申請與庫存，再決定是否重試。";save.disabled=false}

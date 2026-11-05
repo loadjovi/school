@@ -3,6 +3,7 @@ import {TableClient} from "@azure/data-tables";
 import {getTenantContext,getStudentAliasInfo,json} from "../lib/auth.js";
 import {getStudentMaster,listUserStudentMappings} from "../lib/storage.js";
 import {sendUniformRequestStatusEmail} from "../lib/email.js";
+import {normalizeReceivingDetails} from "../lib/uniformReceivingRules.mjs";
 
 const fail=(error,status=400)=>json({error},status);
 const validId=value=>typeof value==="string"&&/^[a-zA-Z0-9_-]{1,100}$/.test(value);
@@ -47,10 +48,9 @@ app.http("uniformReceiving",{methods:["GET","POST"],authLevel:"anonymous",route:
    return json({items});
   }
   const input=await request.json();
-  if(!validId(input?.id)||typeof input.etag!=="string"||input.etag.length>200||
-   typeof input.note!=="string"||!input.note.trim()||input.note.length>300||
-   typeof input.receivedDate!=="string"||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(input.receivedDate)||
-   !Number.isFinite(Date.parse(input.receivedDate)))return fail("請填寫實際到貨日期與驗收備註，並重新載入申請資料");
+  if(!validId(input?.id)||typeof input.etag!=="string"||input.etag.length>200)return fail("申請資料不完整，請重新載入後再試");
+  let receiptDetails;
+  try{receiptDetails=normalizeReceivingDetails(input)}catch(error){return fail(error.message)}
   const orders=TableClient.fromConnectionString(conn,"TenantUniformEventRequest");
   const order=await get(orders,schoolId,input.id);if(!order)return fail("找不到申請",404);
   const before=JSON.parse(order.payload||"{}");
@@ -72,17 +72,17 @@ app.http("uniformReceiving",{methods:["GET","POST"],authLevel:"anonymous",route:
     const sizeKey=before.kind==="regularUniform"?"regular:"+part.size:key;
     const stock=stocks[index];
     const onHand=stock?.onHand??0,reserved=stock?.reserved??0,unavailable=stock?.unavailable??0;
-    if(![onHand,reserved,unavailable].every(n=>Number.isSafeInteger(n)&&n>=0)||onHand+(input.useExistingStock===true?0:part.quantity)>100000)return fail("庫存數量有誤，請先核對盤點資料",409);
-    if(input.useExistingStock===true&&onHand-reserved-unavailable<part.quantity)return fail("部分尺碼的現有可用庫存不足，請先核對盤點數量",409);
-    if(input.useExistingStock!==true){
+    if(![onHand,reserved,unavailable].every(n=>Number.isSafeInteger(n)&&n>=0)||onHand+(receiptDetails.useExistingStock?0:part.quantity)>100000)return fail("庫存數量有誤，請先核對盤點資料",409);
+    if(receiptDetails.useExistingStock&&onHand-reserved-unavailable<part.quantity)return fail("部分尺碼的現有可用庫存不足，請先核對盤點數量",409);
+    if(!receiptDetails.useExistingStock){
      const next={partitionKey:schoolId,rowKey:sizeKey,onHand:onHand+part.quantity,reserved,unavailable};
      changes.push(stock?["update",next,"Replace",{etag:stock.etag}]:["create",next]);
     }
    }
    const stamp=new Date().toISOString();
    const receipt={partitionKey:schoolId,rowKey:ledgerKey,requestId:input.id,studentId:before.studentId,kind:before.kind,
-    style:before.style||"",size:before.size,quantity,procurementQuantity,receivedDate:input.receivedDate,receivedAt:stamp,
-    breakdown:JSON.stringify(breakdown),receivedBy:String(ctx.access.email||"admin"),note:input.note.trim(),source:input.useExistingStock===true?"existing_stock":"new_arrival"};
+    style:before.style||"",size:before.size,quantity,procurementQuantity,receivedDate:receiptDetails.receivedDate,receivedAt:stamp,
+    breakdown:JSON.stringify(breakdown),receivedBy:String(ctx.access.email||"admin"),note:receiptDetails.note,source:receiptDetails.useExistingStock?"existing_stock":"new_arrival"};
    try{
     await inventory.submitTransaction([...changes,["create",receipt]]);
    }catch(error){
