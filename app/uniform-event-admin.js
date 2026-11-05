@@ -1073,4 +1073,5 @@ function setupImport(inputId,previewId,required){
 }
 setupImport("importRequests","previewRequests",["kind","studentId"]);
 setupImport("importStock","previewStock",["key","onHand"]);
+window.addEventListener("tshirtParentLoansChanged",()=>load());
 

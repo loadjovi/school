@@ -53,7 +53,7 @@ jobs:
       - name: T-shirt semester procurement and staff demand regression tests
         run: node --test tests/tshirt-procurement-plan.test.mjs tests/tshirt-cadre-application.test.mjs tests/tshirt-procurement-admin.test.mjs api/test/tshirtStaffDemand.test.mjs api/test/tshirtPurchaseOrderRules.test.mjs
       - name: Volunteer loan size correction audit regression tests
-        run: node --test tests/volunteer-loan-size-correction.test.mjs
+        run: node --test tests/volunteer-loan-size-correction.test.mjs tests/volunteer-loan-return-stock.test.mjs
       - name: First-time T-shirt receipt regression tests
         run: node --test tests/tshirt-first-receipt.test.mjs
 

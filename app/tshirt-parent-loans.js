@@ -9,7 +9,7 @@ async function call(path,options={}){
  return d;
 }
 function displayTime(value){if(!value)return "—";const date=new Date(value);return Number.isNaN(date.getTime())?String(value):new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(date)}
-const loanStatus=x=>({REQUESTED:"已申請，尚未領取",ISSUED_LIFETIME:"已領取（終身一次）",BORROWED:"借用中",WASHING:"送洗中",RETURNED:"已歸還"})[x.status]||x.status;
+const loanStatus=x=>({REQUESTED:"已申請，尚未領取",ISSUED_LIFETIME:"已領取（終身一次）",BORROWED:"借用中｜待洗淨歸還",WASHING:"家長送洗中｜待洗淨歸還",RETURNED:"已洗淨歸還｜已回庫存"})[x.status]||x.status;
 function drawRecords(){
  const container=$("tshirtParentRecords");container.replaceChildren();
  const toolbar=document.createElement("div");toolbar.className="parent-loan-toolbar";
@@ -54,9 +54,20 @@ function drawRecords(){
     }
    }
    if(x.role==="VOLUNTEER"&&["BORROWED","WASHING"].includes(x.status)){
-    const button=document.createElement("button");button.type="button";
-    button.textContent="✏️ 更正志工團 T 尺寸";
-    button.addEventListener("click",async()=>{
+    const actions=document.createElement("div");actions.className="parent-loan-actions";
+    const returnButton=document.createElement("button");returnButton.type="button";
+    returnButton.textContent="📦 確認洗淨歸還並回庫存";
+    returnButton.addEventListener("click",async()=>{
+     if(!confirm("確認已收到「"+(x.parentName||x.parentEmail)+"」洗淨歸還的團 T（"+x.size+"）？\n\n完成後，同尺寸可用庫存會增加 1 件；每次借用只能回庫存一次。"))return;
+     returnButton.disabled=true;
+     try{
+      await call("uniform-events/parent-loans",{method:"POST",body:JSON.stringify({parentEmail:x.parentEmail,studentId:x.studentId,action:"RETURN",etag:x.etag})});
+      await reload();window.dispatchEvent(new CustomEvent("tshirtParentLoansChanged"));
+     }catch(err){alert("歸還入庫失敗："+err.message);returnButton.disabled=false}
+    });
+    const correctionButton=document.createElement("button");correctionButton.type="button";
+    correctionButton.textContent="✏️ 更正志工團 T 尺寸";
+    correctionButton.addEventListener("click",async()=>{
      const input=prompt("更正志工團 T 尺寸（請確認實際申請／領用的尺寸）",x.size);
      if(input===null)return;
      const size=input.trim().toUpperCase();
@@ -64,14 +75,14 @@ function drawRecords(){
      if(size===x.size){alert("尺寸沒有變更");return}
      const reason=prompt("請填寫更正原因，供後台稽核查詢（不可留空）","原申請為 "+size+"，原紀錄為 "+x.size+"，管理員核實更正");
      if(!reason?.trim())return;
-     if(!confirm("確定更正「"+(x.parentName||x.parentEmail)+"」團 T 尺寸："+x.size+" → "+size+"？借用中狀態與原始領取時間不變，並保留異動紀錄。"))return;
-     button.disabled=true;
+     if(!confirm("確定更正「"+(x.parentName||x.parentEmail)+"」團 T 尺寸："+x.size+" → "+size+"？系統會同步更正借出庫存尺寸，並保留異動紀錄。"))return;
+     correctionButton.disabled=true;
      try{
       await call("uniform-events/parent-loans",{method:"POST",body:JSON.stringify({parentEmail:x.parentEmail,studentId:x.studentId,action:"CORRECT_VOLUNTEER_SIZE",size,reason:reason.trim(),etag:x.etag})});
       await reload();window.dispatchEvent(new CustomEvent("tshirtParentLoansChanged"));
-     }catch(err){alert("尺寸更正失敗："+err.message);button.disabled=false}
+     }catch(err){alert("尺寸更正失敗："+err.message);correctionButton.disabled=false}
     });
-    details.append(button);
+    actions.append(returnButton,correctionButton);details.append(actions);
    }
    list.append(details)
   }
@@ -96,7 +107,7 @@ function drawParents(){
  for(const [email,l] of found)parent.add(new Option((l.parentName||l.relationship||"家長")+"（"+email+"）",email));
  if([...parent.options].some(o=>o.value===before))parent.value=before;
  const record=records.find(x=>x.parentEmail===parent.value);
- if(record)$("tshirtParentFeedback").textContent="此家長現有紀錄："+({REQUESTED:"已申請，尚未領取；請在下方紀錄確認發放或更改尺寸",ISSUED_LIFETIME:"幹部終身已領取，不可重複",BORROWED:"志工借用中",WASHING:"志工送洗中",RETURNED:"志工已歸還，可再次借用"})[record.status];
+ if(record)$("tshirtParentFeedback").textContent="此家長現有紀錄："+({REQUESTED:"已申請，尚未領取；請在下方紀錄確認發放或更改尺寸",ISSUED_LIFETIME:"幹部終身已領取，不可重複",BORROWED:"志工借用中；家長洗淨歸還後，請由下方紀錄確認回庫存",WASHING:"家長送洗中；收到洗淨團 T 後，請由下方紀錄確認回庫存",RETURNED:"已洗淨歸還並回庫存，可再次借用"})[record.status];
  else $("tshirtParentFeedback").textContent=studentId?(parent.value?"請確認家長本人尺寸與操作後儲存。":found.size?"請選擇家長 Gmail。":"此學生尚無已核准的家長 Gmail 綁定。"):"請先選擇學生。";
 }
 
