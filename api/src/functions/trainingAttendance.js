@@ -3,6 +3,7 @@ import { getTenantContext, ensureTemporaryCourseAccess, json } from "../lib/auth
 import { ensureTenantTables, table, tenantSchoolPartition, listStudentMaster, listTeacherDirectory } from "../lib/storage.js";
 import { needsTrainingAttendance } from "./calendarEvents.js";
 import { isTrainingEventType } from "../lib/trainingEventTypes.js";
+import { dispatchLineAbsenceNotifications } from "../lib/lineAbsenceNotification.mjs";
 
 const safe=v=>String(v||"").replaceAll("'","''");
 const dateOk=v=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(String(v||"")))return false;const d=new Date(`${v}T12:00:00Z`);return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===v};
@@ -82,10 +83,13 @@ app.http("trainingAttendance",{methods:["GET","POST"],authLevel:"anonymous",rout
   if(!expected.size)return json({error:"此場訓練沒有符合團別的在籍學生"},400);
   if(items.length!==expected.size)return json({error:"請完成本場所有學生的點名"},400);
   for(const x of items){const id=String(x?.studentId||"");if(!expected.has(id)||received.has(id)||!allowedStatus.has(String(x?.status||"")))return json({error:"學生名單或出勤狀態不正確，請重新整理後再儲存"},400);received.add(id)}
-  const statuses=new Map(items.map(x=>[String(x.studentId),String(x.status)])),now=new Date().toISOString();
+  const statuses=new Map(items.map(x=>[String(x.studentId),String(x.status)])),previousById=new Map((await savedRecords(schoolId,eventId)).map(x=>[String(x.studentId),x])),newAbsences=[],now=new Date().toISOString();
   for(const s of roster){
     const studentId=String(s.rowKey);
+    if(statuses.get(studentId)==="absent"&&String(previousById.get(studentId)?.status||"")!=="absent")newAbsences.push({status:"absent",date:String(event.eventDate||""),classType:"training",eventId,eventTitle:String(event.title||"訓練／加練"),studentId,name:String(s.studentName||""),groupName:String(s.groupName||""),section:String(s.section||"")});
     await table("tenantTrainingAttendance").upsertEntity({partitionKey:sid,rowKey:recordKey(eventId,studentId),schoolId:sid,eventId,eventDate:String(event.eventDate),studentId,studentName:String(s.studentName||""),groupName:String(s.groupName||""),section:String(s.section||""),status:statuses.get(studentId),recordedBy:String(a.email||""),recordedByName:String(a.displayName||a.email||""),updatedAt:now},"Replace");
   }
+  try{await dispatchLineAbsenceNotifications({schoolId,date:String(event.eventDate||""),items:newAbsences,actorName:String(a.displayName||a.email||"")})}
+  catch(error){console.error("LINE training absence notification failed",{schoolId,eventId,error:String(error?.message||error)})}
   return json({ok:true,recorded:roster.length,expected:roster.length,lastSavedAt:now});
 }});

@@ -3,6 +3,7 @@ import { getTenantContext, ensureComprehensiveAccess, ensureTemporaryCourseAcces
 import { ensureTenantTables, table, rowKey, getStudentMaster, getTeacherProfile, tenantStudentPartition, listActivityRange, activityStudentId } from "../lib/storage.js";
 import { enforceScheduledCourse } from "./schoolSchedule.js";
 import { dispatchSchoolAbsenceEmails } from "../lib/schoolAbsenceMail.mjs";
+import { dispatchLineAbsenceNotifications } from "../lib/lineAbsenceNotification.mjs";
 
 const allowedGroups=new Set(["A","B","儲備"]);
 const safe=v=>String(v||"").replaceAll("'","''");
@@ -77,6 +78,8 @@ app.http("comprehensiveAttendance",{
       });
       if(status==="absent"&&!oldRows.some(x=>x.status==="absent"))newAbsences.push({date:sessionDate,classType:"comprehensive",studentId:String(item.studentId),name:String(master.studentName||""),groupName:String(master.groupName||""),section:String(master.section||"")});
     }
+    try{await dispatchLineAbsenceNotifications({schoolId,date:sessionDate,items:newAbsences.map(x=>({...x,status:"absent"})),actorName:String(access.displayName||access.email||"")})}
+    catch(error){console.error("LINE absence notification failed",{schoolId,sessionDate,error:String(error?.message||error)})}
     try{await dispatchSchoolAbsenceEmails({schoolId,date:sessionDate,items:newAbsences,actor:access.email})}
     catch(error){console.error("school absence mail audit failed",{schoolId,sessionDate,error:String(error?.message||error)})}
     return json({ok:true,count:items.length,sessionDate},200);

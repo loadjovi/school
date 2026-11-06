@@ -104,6 +104,25 @@
       state.adminOps.lineSettingsError="";mountAdminOps();toast("✅ 已解除 LINE 群組綁定");
     }catch(e){toast("❌ "+e.message)}
   };
+  window.createLineAbsenceBindingCode=async function(){
+    try{
+      state.adminOps.lineSettings=await api("/api/line/settings",{method:"POST",body:JSON.stringify({action:"create_absence_binding_code"})});
+      state.adminOps.lineSettingsError="";mountAdminOps();toast("✅ 已產生學生缺席群組綁定碼");
+    }catch(e){toast("❌ "+e.message)}
+  };
+  window.testLineAbsenceNotification=async function(){
+    try{
+      state.adminOps.lineSettings=await api("/api/line/settings",{method:"POST",body:JSON.stringify({action:"test_absence"})});
+      state.adminOps.lineSettingsError="";mountAdminOps();toast("✅ 缺席測試通知已送到 LINE 群組");
+    }catch(e){toast("❌ "+e.message)}
+  };
+  window.unbindLineAbsenceNotification=async function(){
+    if(!confirm("確定解除目前的學生缺席即時通知群組？"))return;
+    try{
+      state.adminOps.lineSettings=await api("/api/line/settings",{method:"POST",body:JSON.stringify({action:"unbind_absence"})});
+      state.adminOps.lineSettingsError="";mountAdminOps();toast("✅ 已解除學生缺席通知群組");
+    }catch(e){toast("❌ "+e.message)}
+  };
   window.retryLineSettings=async function(){state.adminOps.lineSettingsError="";state.adminOps.lineSettings=null;mountAdminOps();await loadLineSettings()};
   window.changeAdminFollowupDate=async function(v){
     const next=String(v||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(next))return;
@@ -188,7 +207,13 @@
     const boundAt=s.lineTargetBoundAt?`<small>綁定時間：${esc(new Date(s.lineTargetBoundAt).toLocaleString("zh-TW"))}</small>`:"";
     const testAt=s.lineLastTestAt?`<small>最近測試：${esc(new Date(s.lineLastTestAt).toLocaleString("zh-TW"))}</small>`:"";
     const binding=code?`<div class="notice" style="margin-top:12px"><b>LINE 綁定碼：<span style="font-size:1.35rem;letter-spacing:.12em">${esc(code)}</span></b><br><small>15 分鐘內，請在要接收通知的 LINE 幹部群組輸入：</small><br><code>#綁定通知 ${esc(code)}</code></div>`:"";
-    return `<div class="card"><h2>💬 LINE 後台待辦通知</h2><div class="notice"><b>正式 Webhook：</b><br><small>${esc(s.webhookUrl||"")}</small><br>Messaging API：<b>${configured?"✅ 已連線":"⚠️ 尚未完成 Azure 密鑰設定"}</b></div><label for="lineNotificationMode">發送方式</label><select id="lineNotificationMode" onchange="changeLineNotificationMode(this.value)">${options.map(([value,label])=>`<option value="${value}" ${mode===value?"selected":""}>${label}</option>`).join("")}</select><div class="notice" style="margin-top:10px"><b>通知群組：${bound?`✅ ${esc(s.lineTargetLabel||"已綁定")}`:"尚未綁定"}</b>${boundAt}${testAt}</div>${configured?(bound?`<div class="row2" style="margin-top:10px"><button class="primary" style="margin:0" onclick="testLineNotification()">發送測試通知</button><button class="secondary" style="margin:0" onclick="unbindLineNotification()">解除綁定</button></div>`:`<button class="primary" style="width:100%;margin-top:10px" onclick="createLineBindingCode()">產生群組綁定碼</button>${binding}`):`<div class="notice" style="margin-top:10px"><small>請先在 Azure Static Web App 的環境變數設定 LINE_CHANNEL_SECRET 與 LINE_CHANNEL_ACCESS_TOKEN；密鑰不會顯示在本頁。</small></div>`}</div>`;
+    const absenceBound=!!s.lineAbsenceTargetBound,absenceCode=String(s.absenceBindingCode||"");
+    const absenceBoundAt=s.lineAbsenceTargetBoundAt?`<small>綁定時間：${esc(new Date(s.lineAbsenceTargetBoundAt).toLocaleString("zh-TW"))}</small>`:"";
+    const absenceTestAt=s.lineAbsenceLastTestAt?`<small>最近測試：${esc(new Date(s.lineAbsenceLastTestAt).toLocaleString("zh-TW"))}</small>`:"";
+    const absenceBinding=absenceCode?`<div class="notice" style="margin-top:12px"><b>缺席群組綁定碼：<span style="font-size:1.35rem;letter-spacing:.12em">${esc(absenceCode)}</span></b><br><small>15 分鐘內，請在「學生缺席通知群組」輸入：</small><br><code>#綁定通知 ${esc(absenceCode)}</code></div>`:"";
+    const generalControls=configured?(bound?`<div class="row2" style="margin-top:10px"><button class="primary" style="margin:0" onclick="testLineNotification()">發送測試通知</button><button class="secondary" style="margin:0" onclick="unbindLineNotification()">解除綁定</button></div>`:`<button class="primary" style="width:100%;margin-top:10px" onclick="createLineBindingCode()">產生群組綁定碼</button>${binding}`):`<div class="notice" style="margin-top:10px"><small>請先在 Azure Static Web App 的環境變數設定 LINE_CHANNEL_SECRET 與 LINE_CHANNEL_ACCESS_TOKEN；密鑰不會顯示在本頁。</small></div>`;
+    const absenceControls=configured?(absenceBound?`<div class="row2" style="margin-top:10px"><button class="primary" style="margin:0" onclick="testLineAbsenceNotification()">發送缺席測試通知</button><button class="secondary" style="margin:0" onclick="unbindLineAbsenceNotification()">解除缺席群組</button></div>`:`<button class="primary" style="width:100%;margin-top:10px" onclick="createLineAbsenceBindingCode()">產生缺席群組綁定碼</button>${absenceBinding}`):"";
+    return `<div class="card"><h2>💬 LINE 後台待辦通知</h2><div class="notice"><b>正式 Webhook：</b><br><small>${esc(s.webhookUrl||"")}</small><br>Messaging API：<b>${configured?"✅ 已連線":"⚠️ 尚未完成 Azure 密鑰設定"}</b></div><label for="lineNotificationMode">發送方式</label><select id="lineNotificationMode" onchange="changeLineNotificationMode(this.value)">${options.map(([value,label])=>`<option value="${value}" ${mode===value?"selected":""}>${label}</option>`).join("")}</select><div class="notice" style="margin-top:10px"><b>一般待辦通知群組：${bound?`✅ ${esc(s.lineTargetLabel||"已綁定")}`:"尚未綁定"}</b>${boundAt}${testAt}</div>${generalControls}<hr style="margin:22px 0;border:0;border-top:1px solid #d8dfec"><h3 style="margin:0 0 8px">🔴 學生缺席即時通知群組</h3><div class="notice"><b>固定規則：只有學生新標記為「缺席」時即時通知。</b><br><small>包含分部課、合奏課、綜合課與訓練／加練；請假、遲到及重複儲存不發送。此群組與上方一般待辦群組分開綁定。</small></div><div class="notice" style="margin-top:10px"><b>缺席通知群組：${absenceBound?`✅ ${esc(s.lineAbsenceTargetLabel||"已綁定")}`:"尚未綁定"}</b>${absenceBoundAt}${absenceTestAt}</div>${absenceControls}</div>`;
   }
 
   function dateControls(){

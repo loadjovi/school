@@ -4,6 +4,7 @@ import { ensureTenantTables, table, rowKey, getStudentMaster, listStudentMaster,
 import { enforceScheduledCourse } from "./schoolSchedule.js";
 import { listSectionMerges, receivingMerges, validMergeDate } from "../lib/sectionMerge.js";
 import { dispatchSchoolAbsenceEmails } from "../lib/schoolAbsenceMail.mjs";
+import { dispatchLineAbsenceNotifications } from "../lib/lineAbsenceNotification.mjs";
 
 const taipeiDate=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 
@@ -99,6 +100,8 @@ app.http("sectionAttendance",{
       savedItems.push(saved);
       if(saved.status==="absent"&&!oldRows.some(x=>x.status==="absent"))newAbsences.push({date:sessionDate,classType:"section",studentId:saved.studentId,name:String(master.studentName||""),groupName,section});
     }
+    try{await dispatchLineAbsenceNotifications({schoolId,date:sessionDate,items:newAbsences.map(x=>({...x,status:"absent"})),actorName:String(a.displayName||a.email||"")})}
+    catch(error){console.error("LINE absence notification failed",{schoolId,sessionDate,error:String(error?.message||error)})}
     try{await dispatchSchoolAbsenceEmails({schoolId,date:sessionDate,items:newAbsences,actor:a.email})}
     catch(error){console.error("school absence mail audit failed",{schoolId,sessionDate,error:String(error?.message||error)})}
     return json({ok:true,count:savedItems.length,sessionDate,groupName:requestedGroup,section:requestedSection,roster,merges:merge.received,recordedBy:String(a.displayName||a.email||""),recordedByEmail:String(a.email||""),recordedByRole:a.role==="admin"?"admin":"teacher",lastSavedAt:now,items:savedItems},200);

@@ -43,12 +43,14 @@ app.http("lineWebhook",{
         if(!code)continue;
         const replyToken=String(event.replyToken||"");
         const groupId=String(event.source?.groupId||"");
-        if(!groupId){await replyLineMessage(replyToken,"請在要接收後台待辦的 LINE 幹部群組內輸入綁定指令。");continue}
+        if(!groupId){await replyLineMessage(replyToken,"請在要接收通知的 LINE 群組內輸入綁定指令。");continue}
         const requestRow=await findLineBindingRequest(lineBindingCodeHash(code,secret));
         if(!requestRow){await replyLineMessage(replyToken,"綁定碼不正確或已逾時，請回到平台「更多 → 平台設定」重新產生。");continue}
-        const group=await getLineGroupSummary(groupId),label=String(group?.groupName||"LINE 幹部群組");
-        const saved=await bindLineNotificationTarget({schoolId:requestRow.schoolId,targetId:groupId,targetType:"group",targetLabel:label});
-        await replyLineMessage(replyToken,`✅ 已完成後台待辦通知綁定\n群組：${label}\n模式：${lineNotificationModeLabel(saved.lineNotificationMode)}\n\n可回到平台按「發送測試通知」確認。`);
+        const absence=requestRow.purpose==="absence";
+        const group=await getLineGroupSummary(groupId),label=String(group?.groupName||(absence?"學生缺席通知群組":"LINE 幹部群組"));
+        const saved=await bindLineNotificationTarget({schoolId:requestRow.schoolId,targetId:groupId,targetType:"group",targetLabel:label,purpose:requestRow.purpose});
+        const detail=absence?"規則：只有學生新標記為缺席才會即時通知；請假、遲到與重複儲存不通知。":`模式：${lineNotificationModeLabel(saved.lineNotificationMode)}`;
+        await replyLineMessage(replyToken,`✅ 已完成${absence?"學生缺席即時":"後台待辦"}通知綁定\n群組：${label}\n${detail}\n\n可回到平台按「發送測試通知」確認。`);
       }catch(error){console.error("LINE webhook event processing failed",error?.message||String(error))}
     }
     return json({ok:true});
@@ -77,6 +79,13 @@ app.http("lineNotificationSettings",{
           const settings=await getSystemSettings(schoolId);
           return json(lineSettingsResponse(settings,request,{bindingCode:code,bindingCodeExpiresAt:expiresAt}));
         }
+        if(action==="create_absence_binding_code"){
+          if(!serviceConfigured())return json({error:"請先在 Azure 設定 LINE_CHANNEL_SECRET 與 LINE_CHANNEL_ACCESS_TOKEN"},409);
+          const code=String(randomInt(100000,1000000)),expiresAt=new Date(Date.now()+15*60*1000).toISOString();
+          await createLineBindingRequest({schoolId,codeHash:lineBindingCodeHash(code,lineSecret()),expiresAt,purpose:"absence",updatedBy:access.email});
+          const settings=await getSystemSettings(schoolId);
+          return json(lineSettingsResponse(settings,request,{absenceBindingCode:code,absenceBindingCodeExpiresAt:expiresAt}));
+        }
         if(action==="test"){
           if(!serviceConfigured())return json({error:"LINE Messaging API 尚未完成設定"},409);
           const target=await getLineNotificationTarget(schoolId);
@@ -87,8 +96,22 @@ app.http("lineNotificationSettings",{
           const settings=await getSystemSettings(schoolId);
           return json(lineSettingsResponse(settings,request,{testSent:true}));
         }
+        if(action==="test_absence"){
+          if(!serviceConfigured())return json({error:"LINE Messaging API 尚未完成設定"},409);
+          const target=await getLineNotificationTarget(schoolId,"absence");
+          if(!target.targetId)return json({error:"請先綁定學生缺席通知群組"},409);
+          const sentAt=new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",dateStyle:"medium",timeStyle:"short"}).format(new Date());
+          await pushLineMessage(target.targetId,`✅ 學生缺席即時通知群組測試成功\n時間：${sentAt}\n\n之後只有學生被新標記為「缺席」時會通知本群組；請假、遲到與重複儲存不通知。`);
+          await recordLineTest({schoolId,purpose:"absence",updatedBy:access.email});
+          const settings=await getSystemSettings(schoolId);
+          return json(lineSettingsResponse(settings,request,{absenceTestSent:true}));
+        }
         if(action==="unbind"){
           const settings=await clearLineNotificationTarget({schoolId,updatedBy:access.email});
+          return json(lineSettingsResponse(settings,request));
+        }
+        if(action==="unbind_absence"){
+          const settings=await clearLineNotificationTarget({schoolId,purpose:"absence",updatedBy:access.email});
           return json(lineSettingsResponse(settings,request));
         }
         return json({error:"不支援的操作"},400);
