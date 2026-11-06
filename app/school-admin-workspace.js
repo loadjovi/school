@@ -169,7 +169,11 @@
  function classify(main){
   for(const [id,group] of Object.entries(rootGroups)){const node=document.getElementById(id);if(node&&main.contains(node))setGroup(node,group)}
   const ops=document.getElementById('adminOperations');
-  if(ops)for(const child of ops.children)setGroup(child,child.querySelector('h2')?.textContent.includes('通知設定')?'settings':'attendance');
+  if(ops)for(const child of ops.children){
+   const operationTitle=child.querySelector('h2')?.textContent||'';
+   const isSettings=operationTitle.includes('通知設定')||operationTitle.includes('LINE 後台待辦通知');
+   setGroup(child,isSettings?'settings':'attendance');
+  }
   const content=main.querySelector('.desktop-content')||main;
   for(const node of [...new Set([...main.children,...content.children])]){
    if(node.id==='adminTaskGuide'||node.id==='schoolAdminWorkspace'||node.id==='adminOperations'||node===content||node.dataset.adminGroup)continue;

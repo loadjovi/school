@@ -46,10 +46,13 @@ test("webhook endpoint never trusts JSON before validating LINE signature",()=>{
 
 test("admin UI exposes mode, secure binding and test controls without rendering secrets",()=>{
   const source=readFileSync(new URL("../app/admin-operations.js",import.meta.url),"utf8");
+  const workspace=readFileSync(new URL("../app/school-admin-workspace.js",import.meta.url),"utf8");
   assert.match(source,/重要即時＋每日摘要/);
   assert.match(source,/只有即時/);
   assert.match(source,/只有每日摘要/);
   assert.match(source,/產生群組綁定碼/);
   assert.match(source,/發送測試通知/);
   assert.doesNotMatch(source,/lineChannelSecret|lineAccessToken/);
+  assert.match(workspace,/operationTitle\.includes\('LINE 後台待辦通知'\)/);
+  assert.match(workspace,/setGroup\(child,isSettings\?'settings':'attendance'\)/);
 });

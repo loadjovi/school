@@ -88,6 +88,6 @@ test("monthly fetch uses only the selected historical month; earlier response is
 });
 test("leaderboard minute UI assets are cache-busted",()=>{
  assert.match(index,/styles\.css\?v=20261104-practice-filter-anchor/);
-  assert.match(index,/webview-guard\.js\?v=20261107-line-settings/);
+  assert.match(index,/webview-guard\.js\?v=20261107-line-settings-group/);
  assert.match(guard,/parent-home-summary\.js\?v=20261103-tshirt-size-reminder/);
 });
