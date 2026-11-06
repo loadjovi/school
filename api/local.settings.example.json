@@ -11,6 +11,8 @@
     "PRACTICE_TARGET_DAYS": "30",
     "PRACTICE_TABLE": "PracticeLog",
     "SECTION_TABLE": "SectionAttendance",
-    "PRIVATE_TABLE": "PrivateLesson"
+    "PRIVATE_TABLE": "PrivateLesson",
+    "LINE_CHANNEL_SECRET": "<LINE Messaging API channel secret>",
+    "LINE_CHANNEL_ACCESS_TOKEN": "<LINE Messaging API channel access token>"
   }
 }

@@ -53,7 +53,7 @@
       "/attendance-support.js?v=20260928-2148",
       "/attendance-edit.js?v=20261002-save-confirm",
       "/practice-progress.js?v=20261104-practice-filter-anchor",
-      "/admin-operations.js?v=20261027-school-followup",
+      "/admin-operations.js?v=20261106-line-webhook",
       "/admin-followup-summary-fix.js?v=20260917-1320",
       "/system-backup.js?v=20261003-practice20",
       "/school-access.js?v=20261027-school-followup",

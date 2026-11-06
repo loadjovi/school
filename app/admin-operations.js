@@ -4,9 +4,9 @@
   const classText={section:"分部課",ensemble:"合奏課",comprehensive:"綜合課"};
   const SETTINGS_URL="/api/daily-followup?mode=settings";
   state.adminOps=state.adminOps||{
-    date:localDate(),settings:null,followup:null,
-    loadingSettings:false,loadingFollowup:false,
-    settingsError:"",followupError:""
+    date:localDate(),settings:null,lineSettings:null,followup:null,
+    loadingSettings:false,loadingLineSettings:false,loadingFollowup:false,
+    settingsError:"",lineSettingsError:"",followupError:""
   };
   state.adminOps.sectionMonth=state.adminOps.sectionMonth||localDate().slice(0,7);
   state.adminOps.sectionSummaryOpen=!!state.adminOps.sectionSummaryOpen;
@@ -34,6 +34,14 @@
     state.adminOps.loadingSettings=false;mountAdminOps();
   }
 
+  async function loadLineSettings(){
+    if(state.me?.role!=="admin"||state.adminOps.loadingLineSettings)return;
+    state.adminOps.loadingLineSettings=true;state.adminOps.lineSettingsError="";mountAdminOps();
+    try{state.adminOps.lineSettings=await api("/api/line/settings")}
+    catch(e){state.adminOps.lineSettingsError=e.message||String(e)}
+    state.adminOps.loadingLineSettings=false;mountAdminOps();
+  }
+
   async function loadDaily(){
     if(state.me?.role!=="admin"||state.adminOps.loadingFollowup)return;
     state.adminOps.loadingFollowup=true;state.adminOps.followupError="";mountAdminOps();
@@ -58,6 +66,7 @@
   function ensureLoads(){
     if(state.me?.role!=="admin")return;
     if(!state.adminOps.settings&&!state.adminOps.loadingSettings&&!state.adminOps.settingsError)loadSettings();
+    if(!state.adminOps.lineSettings&&!state.adminOps.loadingLineSettings&&!state.adminOps.lineSettingsError)loadLineSettings();
     if(!state.adminOps.followup&&!state.adminOps.loadingFollowup&&!state.adminOps.followupError)loadDaily();
     if(state.adminOps.sectionSummaryOpen&&!state.adminOps.sectionSummary&&!state.adminOps.loadingSectionSummary&&!state.adminOps.sectionSummaryError)loadSectionSummary();
   }
@@ -70,6 +79,32 @@
       else toast(d.emailNotificationsEnabled?"✅ 個別課 Email 通知已開啟":"✅ 個別課 Email 通知已關閉");
     }catch(e){toast("❌ "+e.message);mountAdminOps()}
   };
+  window.changeLineNotificationMode=async function(mode){
+    try{
+      state.adminOps.lineSettings=await api("/api/line/settings",{method:"PATCH",body:JSON.stringify({lineNotificationMode:String(mode||"")})});
+      state.adminOps.lineSettingsError="";mountAdminOps();toast("✅ LINE 通知模式已更新");
+    }catch(e){toast("❌ "+e.message);state.adminOps.lineSettings=null;mountAdminOps();loadLineSettings()}
+  };
+  window.createLineBindingCode=async function(){
+    try{
+      state.adminOps.lineSettings=await api("/api/line/settings",{method:"POST",body:JSON.stringify({action:"create_binding_code"})});
+      state.adminOps.lineSettingsError="";mountAdminOps();toast("✅ 已產生 15 分鐘有效的 LINE 綁定碼");
+    }catch(e){toast("❌ "+e.message)}
+  };
+  window.testLineNotification=async function(){
+    try{
+      state.adminOps.lineSettings=await api("/api/line/settings",{method:"POST",body:JSON.stringify({action:"test"})});
+      state.adminOps.lineSettingsError="";mountAdminOps();toast("✅ 測試通知已送到 LINE 群組");
+    }catch(e){toast("❌ "+e.message)}
+  };
+  window.unbindLineNotification=async function(){
+    if(!confirm("確定解除目前的 LINE 待辦通知群組？"))return;
+    try{
+      state.adminOps.lineSettings=await api("/api/line/settings",{method:"POST",body:JSON.stringify({action:"unbind"})});
+      state.adminOps.lineSettingsError="";mountAdminOps();toast("✅ 已解除 LINE 群組綁定");
+    }catch(e){toast("❌ "+e.message)}
+  };
+  window.retryLineSettings=async function(){state.adminOps.lineSettingsError="";state.adminOps.lineSettings=null;mountAdminOps();await loadLineSettings()};
   window.changeAdminFollowupDate=async function(v){
     const next=String(v||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(next))return;
     state.adminOps.date=next;state.adminOps.followup=null;state.adminOps.followupError="";mountAdminOps();await loadDaily();
@@ -141,7 +176,19 @@
     if(!s)return `<div class="card"><h2>⚙️ 系統通知設定</h2><div class="notice">${state.adminOps.loadingSettings?"正在讀取通知設定…":"準備讀取通知設定…"}</div></div>`;
     const enabled=!!s.emailNotificationsEnabled,configured=!!s.emailServiceConfigured;
     const effective=enabled&&configured;
-    return `<div class="card"><h2>⚙️ 系統通知設定</h2><div class="item"><div><b>個別課流程 Email 通知</b><small>預約、改期、停課、老師完課及家長確認時，依操作對象通知家長或老師；平台內的同步紀錄不受此開關影響。</small></div><label style="display:flex;align-items:center;gap:8px;margin:0;white-space:nowrap"><input type="checkbox" style="width:22px;height:22px" ${enabled?"checked":""} onchange="toggleAdminEmail(this.checked)"><b>${enabled?"開啟":"關閉"}</b></label></div><div class="notice" style="margin-top:10px">Azure Email 服務：<b>${configured?"✅ 已設定":"⚠️ 尚未設定"}</b><br>目前實際寄信：<b>${effective?"✅ 啟用":"⏸️ 停用"}</b><br><small>連線字串與寄件地址仍保存在 Azure 環境變數，不會顯示在後台。</small></div></div>`;
+    return `<div class="card"><h2>⚙️ 系統通知設定</h2><div class="item"><div><b>個別課流程 Email 通知</b><small>預約、改期、停課、老師完課及家長確認時，依操作對象通知家長或老師；平台內的同步紀錄不受此開關影響。</small></div><label style="display:flex;align-items:center;gap:8px;margin:0;white-space:nowrap"><input type="checkbox" style="width:22px;height:22px" ${enabled?"checked":""} onchange="toggleAdminEmail(this.checked)"><b>${enabled?"開啟":"關閉"}</b></label></div><div class="notice" style="margin-top:10px">Azure Email 服務：<b>${configured?"✅ 已設定":"⚠️ 尚未設定"}</b><br>目前實際寄信：<b>${effective?"✅ 啟用":"⏸️ 停用"}</b><br><small>連線字串與寄件地址仍保存在 Azure 環境變數，不會顯示在後台。</small></div></div>${lineSettingsHtml()}`;
+  }
+
+  function lineSettingsHtml(){
+    if(state.adminOps.lineSettingsError)return `<div class="card"><h2>💬 LINE 後台待辦通知</h2><div class="error">讀取失敗：${esc(state.adminOps.lineSettingsError)}</div><button class="secondary" style="width:100%;margin-top:10px" onclick="retryLineSettings()">🔄 重新讀取設定</button></div>`;
+    const s=state.adminOps.lineSettings;
+    if(!s)return `<div class="card"><h2>💬 LINE 後台待辦通知</h2><div class="notice">${state.adminOps.loadingLineSettings?"正在讀取 LINE 設定…":"準備讀取 LINE 設定…"}</div></div>`;
+    const mode=String(s.lineNotificationMode||"important_and_daily"),options=[["important_and_daily","重要即時＋每日摘要"],["instant_only","只有即時"],["daily_only","只有每日摘要"],["off","關閉"]];
+    const configured=!!s.lineServiceConfigured,bound=!!s.lineTargetBound,code=String(s.bindingCode||"");
+    const boundAt=s.lineTargetBoundAt?`<small>綁定時間：${esc(new Date(s.lineTargetBoundAt).toLocaleString("zh-TW"))}</small>`:"";
+    const testAt=s.lineLastTestAt?`<small>最近測試：${esc(new Date(s.lineLastTestAt).toLocaleString("zh-TW"))}</small>`:"";
+    const binding=code?`<div class="notice" style="margin-top:12px"><b>LINE 綁定碼：<span style="font-size:1.35rem;letter-spacing:.12em">${esc(code)}</span></b><br><small>15 分鐘內，請在要接收通知的 LINE 幹部群組輸入：</small><br><code>#綁定通知 ${esc(code)}</code></div>`:"";
+    return `<div class="card"><h2>💬 LINE 後台待辦通知</h2><div class="notice"><b>正式 Webhook：</b><br><small>${esc(s.webhookUrl||"")}</small><br>Messaging API：<b>${configured?"✅ 已連線":"⚠️ 尚未完成 Azure 密鑰設定"}</b></div><label for="lineNotificationMode">發送方式</label><select id="lineNotificationMode" onchange="changeLineNotificationMode(this.value)">${options.map(([value,label])=>`<option value="${value}" ${mode===value?"selected":""}>${label}</option>`).join("")}</select><div class="notice" style="margin-top:10px"><b>通知群組：${bound?`✅ ${esc(s.lineTargetLabel||"已綁定")}`:"尚未綁定"}</b>${boundAt}${testAt}</div>${configured?(bound?`<div class="row2" style="margin-top:10px"><button class="primary" style="margin:0" onclick="testLineNotification()">發送測試通知</button><button class="secondary" style="margin:0" onclick="unbindLineNotification()">解除綁定</button></div>`:`<button class="primary" style="width:100%;margin-top:10px" onclick="createLineBindingCode()">產生群組綁定碼</button>${binding}`):`<div class="notice" style="margin-top:10px"><small>請先在 Azure Static Web App 的環境變數設定 LINE_CHANNEL_SECRET 與 LINE_CHANNEL_ACCESS_TOKEN；密鑰不會顯示在本頁。</small></div>`}</div>`;
   }
 
   function dateControls(){
