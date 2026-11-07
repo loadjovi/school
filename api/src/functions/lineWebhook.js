@@ -7,8 +7,12 @@ import {
 } from "../lib/settings.js";
 import {
   getLineGroupSummary,lineBindingCodeHash,lineNotificationModeLabel,normalizeLineNotificationMode,
-  parseLineBindingCommand,pushLineMessage,replyLineMessage,verifyLineSignature
+  getLineUserProfile,parseLineAccountBindingCommand,parseLineBindingCommand,pushLineMessage,replyLineMessage,verifyLineSignature
 } from "../lib/lineMessaging.mjs";
+import {
+  bindLineAccount,createLineAccountBindingRequest,findLineAccountBindingRequest,
+  getLineAccountBinding,unbindLineAccount
+} from "../lib/lineAccountBinding.js";
 
 const lineSecret=()=>String(process.env.LINE_CHANNEL_SECRET||"").trim();
 const lineToken=()=>String(process.env.LINE_CHANNEL_ACCESS_TOKEN||"").trim();
@@ -39,6 +43,17 @@ app.http("lineWebhook",{
     for(const event of events){
       try{
         if(event?.type!=="message"||event?.message?.type!=="text")continue;
+        const accountCode=parseLineAccountBindingCommand(event.message.text);
+        if(accountCode){
+          const replyToken=String(event.replyToken||""),lineUserId=String(event.source?.userId||"");
+          if(event.source?.type!=="user"||!lineUserId){await replyLineMessage(replyToken,"請在聖心弦樂成長平台 LINE 官方帳號的一對一聊天室輸入帳號綁定指令，請勿貼在群組中。");continue}
+          const codeHash=lineBindingCodeHash(accountCode,secret),requestRow=await findLineAccountBindingRequest(codeHash);
+          if(!requestRow){await replyLineMessage(replyToken,"帳號綁定碼不正確或已逾時，請回到平台「收費與匯款」重新產生。");continue}
+          const profile=await getLineUserProfile(lineUserId),result=await bindLineAccount({codeHash,lineUserId,lineDisplayName:profile?.displayName||""});
+          if(!result.ok){await replyLineMessage(replyToken,result.reason==="already_bound"?"此 LINE 帳號已綁定同校的其他家長帳號，請先聯絡幹部協助確認。":"帳號綁定碼已使用或逾時，請回到平台重新產生。");continue}
+          await replyLineMessage(replyToken,`✅ LINE 帳號綁定完成\n平台帳號：${result.parentEmail}\n\n之後只會私訊與您家庭相關的繳費狀態，不會在群組公開個人付款資料。`);
+          continue;
+        }
         const code=parseLineBindingCommand(event.message.text);
         if(!code)continue;
         const replyToken=String(event.replyToken||"");
@@ -54,6 +69,29 @@ app.http("lineWebhook",{
       }catch(error){console.error("LINE webhook event processing failed",error?.message||String(error))}
     }
     return json({ok:true});
+  }
+});
+
+app.http("lineAccountBinding",{
+  methods:["GET","POST","DELETE"],authLevel:"anonymous",route:"line/account-binding",
+  handler:async request=>{
+    const context=await getTenantContext(request);if(context.error)return context.error;
+    const {access,schoolId}=context;
+    if(access.role!=="parent")return json({error:"僅家長帳號可綁定個人 LINE"},403);
+    try{
+      if(request.method==="GET"){
+        const binding=await getLineAccountBinding(schoolId,access.email);
+        return json({configured:serviceConfigured(),bound:!!binding,lineDisplayName:binding?.lineDisplayName||"",boundAt:binding?.boundAt||"",officialAccountUrl:String(process.env.LINE_OFFICIAL_ACCOUNT_URL||"").trim()});
+      }
+      if(request.method==="DELETE"){
+        await unbindLineAccount(schoolId,access.email);
+        return json({bound:false});
+      }
+      if(!serviceConfigured())return json({error:"LINE Messaging API 尚未完成設定"},409);
+      const code=String(randomInt(100000,1000000)),expiresAt=new Date(Date.now()+15*60*1000).toISOString();
+      await createLineAccountBindingRequest({schoolId,email:access.email,codeHash:lineBindingCodeHash(code,lineSecret()),expiresAt});
+      return json({bound:false,bindingCode:code,bindingCodeExpiresAt:expiresAt,officialAccountUrl:String(process.env.LINE_OFFICIAL_ACCOUNT_URL||"").trim()});
+    }catch(error){console.error("LINE account binding failed",error?.message||String(error));return json({error:"LINE 帳號綁定處理失敗"},500)}
   }
 });
 
