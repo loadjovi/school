@@ -50,3 +50,15 @@ test("the role-aware workspace entry links parents and admins to phase one",()=>
   assert.match(page,/確認已入帳/);
   assert.match(page,/退回家長補正/);
 });
+
+test("first-time LINE onboarding has a verified friend link and refresh action",()=>{
+  assert.match(page,/加入／開啟 LINE 官方帳號/);
+  assert.match(page,/取得 6 位數綁定碼/);
+  assert.match(page,/完整指令/);
+  assert.match(page,/refresh-line-binding/);
+  assert.match(page,/api\("line\/account-binding"\)/);
+  assert.match(page,/尚未提供 LINE 官方帳號加入好友連結/);
+  assert.match(page,/hasOfficialUrl=/);
+  assert.match(webhook,/const officialAccountUrl=/);
+  assert.match(webhook,/officialAccountUrl:officialAccountUrl\(\)/);
+});

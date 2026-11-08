@@ -129,6 +129,26 @@ def prepare(output: Path) -> None:
     storage.write_text('import {assertLabIsolation} from "./labIsolation.mjs";\n'+
         original.replace(marker,'const conn=()=>{assertLabIsolation();return process.env.STORAGE_CONNECTION_STRING;};'),
         encoding="utf-8")
+    # LAB must never call the real LINE Messaging API, even with Production secrets.
+    # Webhook requests are rejected, parent binding stays unconfigured, and
+    # outbound LINE API calls fail closed. Mock tests run without external traffic.
+    line_webhook=fn_dir/"lineWebhook.js"
+    webhook_source=line_webhook.read_text(encoding="utf-8")
+    secret_expr='const lineSecret=()=>String(process.env.LINE_CHANNEL_SECRET||"").trim();'
+    token_expr='const lineToken=()=>String(process.env.LINE_CHANNEL_ACCESS_TOKEN||"").trim();'
+    if secret_expr not in webhook_source or token_expr not in webhook_source:
+        raise RuntimeError("LINE webhook structure changed; review LAB isolation before deploying")
+    line_webhook.write_text(webhook_source.replace(secret_expr,'const lineSecret=()=>""; // LAB: reject real LINE webhook')
+        .replace(token_expr,'const lineToken=()=>""; // LAB: no real LINE channel')
+        .replace('const url=String(process.env.LINE_OFFICIAL_ACCOUNT_URL||"").trim();',
+                 'const url=""; // LAB: never link to the Production LINE account'),encoding="utf-8")
+    messaging=lib/"lineMessaging.mjs"
+    messaging_source=messaging.read_text(encoding="utf-8")
+    api_guard='async function lineApi(path,{method="POST",body}={}){'
+    if api_guard not in messaging_source:
+        raise RuntimeError("LINE Messaging API structure changed; review LAB isolation before deploying")
+    messaging.write_text(messaging_source.replace(api_guard,
+        api_guard+chr(10)+'  throw new Error("LAB LINE external messaging is disabled");'),encoding="utf-8")
     # Never deliver emails from tests, even if somebody accidentally configures ACS.
     email=lib/"email.js"
     text=email.read_text(encoding="utf-8")

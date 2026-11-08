@@ -17,6 +17,10 @@ import {
 const lineSecret=()=>String(process.env.LINE_CHANNEL_SECRET||"").trim();
 const lineToken=()=>String(process.env.LINE_CHANNEL_ACCESS_TOKEN||"").trim();
 const serviceConfigured=()=>!!(lineSecret()&&lineToken());
+const officialAccountUrl=()=>{
+  const url=String(process.env.LINE_OFFICIAL_ACCOUNT_URL||"").trim();
+  return /^https:\/\/(?:line\.me\/R\/ti\/p\/@[A-Za-z0-9._-]+|lin\.ee\/[A-Za-z0-9_-]+)$/.test(url)?url:"";
+};
 
 function lineSettingsResponse(settings,request,extra={}){
   return {
@@ -81,7 +85,7 @@ app.http("lineAccountBinding",{
     try{
       if(request.method==="GET"){
         const binding=await getLineAccountBinding(schoolId,access.email);
-        return json({configured:serviceConfigured(),bound:!!binding,lineDisplayName:binding?.lineDisplayName||"",boundAt:binding?.boundAt||"",officialAccountUrl:String(process.env.LINE_OFFICIAL_ACCOUNT_URL||"").trim()});
+        return json({configured:serviceConfigured(),bound:!!binding,lineDisplayName:binding?.lineDisplayName||"",boundAt:binding?.boundAt||"",officialAccountUrl:officialAccountUrl()});
       }
       if(request.method==="DELETE"){
         await unbindLineAccount(schoolId,access.email);
@@ -90,7 +94,7 @@ app.http("lineAccountBinding",{
       if(!serviceConfigured())return json({error:"LINE Messaging API 尚未完成設定"},409);
       const code=String(randomInt(100000,1000000)),expiresAt=new Date(Date.now()+15*60*1000).toISOString();
       await createLineAccountBindingRequest({schoolId,email:access.email,codeHash:lineBindingCodeHash(code,lineSecret()),expiresAt});
-      return json({bound:false,bindingCode:code,bindingCodeExpiresAt:expiresAt,officialAccountUrl:String(process.env.LINE_OFFICIAL_ACCOUNT_URL||"").trim()});
+      return json({bound:false,bindingCode:code,bindingCodeExpiresAt:expiresAt,officialAccountUrl:officialAccountUrl()});
     }catch(error){console.error("LINE account binding failed",error?.message||String(error));return json({error:"LINE 帳號綁定處理失敗"},500)}
   }
 });

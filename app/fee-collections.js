@@ -22,8 +22,11 @@ function renderLineBinding(){
   if(bound){
     $("lineBinding").innerHTML=`<div class="card"><h2>🔔 LINE 個人通知已開啟</h2><div class="notice"><b>✅ ${esc(line.lineDisplayName||"已完成綁定")}</b><br><span class="muted">綁定時間：${esc(dateTime(line.boundAt))}</span></div><p>您已完成 LINE 通知身分綁定。本階段可接收團 T、期末餐費與匯款核帳結果；後續將逐步整合弦樂團課程、活動及其他重要提醒。個人資訊只會私訊本人，不會公開在群組。</p><div class="actions"><button class="secondary" data-action="unbind-line">關閉 LINE 個人通知</button></div></div>`;return;
   }
-  const code=state.bindingCode?`<div class="notice"><p>請於 15 分鐘內，在 LINE 官方帳號的<b>一對一聊天室</b>輸入：</p><div class="code">${esc(state.bindingCode)}</div><p style="text-align:center"><code>#綁定帳號 ${esc(state.bindingCode)}</code></p><div class="actions"><button class="secondary" data-action="copy-code">複製綁定指令</button>${line.officialAccountUrl?`<a class="button" target="_blank" rel="noopener" href="${esc(line.officialAccountUrl)}">開啟 LINE 官方帳號</a>`:""}</div></div>`:"";
-  $("lineBinding").innerHTML=`<div class="card"><h2>🔔 開啟 LINE 個人通知</h2><div class="steps"><span>1 登入平台</span><span>2 取得一次性碼</span><span>3 私訊官方帳號</span></div><p>完成綁定後，系統可透過 LINE 私訊提供弦樂團課程、活動與重要提醒。本階段先提供團 T、期末餐費及匯款核帳通知，後續再逐步擴充。綁定碼不可貼到群組，也不要轉傳給他人。</p>${configured?`<button data-action="create-line-code">${state.bindingCode?"重新產生綁定碼":"開始綁定 LINE 通知"}</button>${code}`:`<div class="notice warn">LINE 通知服務尚未完成設定，請聯絡系統管理員。</div>`}</div>`;
+  const officialUrl=String(line.officialAccountUrl||"");
+  const hasOfficialUrl=/^https:\/\/(?:line\.me\/R\/ti\/p\/@[A-Za-z0-9._-]+|lin\.ee\/[A-Za-z0-9_-]+)$/.test(officialUrl);
+  const addFriend=hasOfficialUrl?`<a class="button" href="${esc(officialUrl)}" target="_blank" rel="noopener noreferrer">① 加入／開啟 LINE 官方帳號</a>`:`<div class="notice warn" role="status">目前尚未提供 LINE 官方帳號加入好友連結。請聯絡學校管理員設定官方帳號連結後，再完成綁定；請勿將綁定碼傳送至任何不明帳號或群組。</div>`;
+  const code=state.bindingCode?`<div class="notice"><p>② 請於 15 分鐘內，將以下<b>完整指令</b>傳送到官方帳號的<b>一對一聊天室</b>：</p><div class="code">${esc(state.bindingCode)}</div><p style="text-align:center"><code>#綁定帳號 ${esc(state.bindingCode)}</code></p><div class="actions"><button class="secondary" data-action="copy-code">複製完整綁定指令</button><button class="secondary" data-action="refresh-line-binding">③ 我已傳送，確認綁定狀態</button></div></div>`:"";
+  $("lineBinding").innerHTML=`<div class="card"><h2>🔔 開啟 LINE 個人通知</h2><div class="steps"><span>1 加入官方帳號</span><span>2 取得並傳送一次性碼</span><span>3 確認綁定成功</span></div><p>完成綁定後，可透過 LINE 私訊接收弦樂團通知。本階段先提供團 T、期末餐費及匯款核帳通知，後續再逐步擴充。綁定碼不可貼到群組，也不要轉傳給他人。</p>${configured?`<div class="actions">${addFriend}</div><div class="actions"><button data-action="create-line-code">${state.bindingCode?"重新產生綁定碼":"② 取得 6 位數綁定碼"}</button></div>${code}`:`<div class="notice warn">LINE 通知服務尚未完成設定，請聯絡系統管理員。</div>`}</div>`;
 }
 
 function renderAdminCreate(){
@@ -128,6 +131,7 @@ document.addEventListener("click",async event=>{
   if(action==="open")return mutateProject(target.dataset.id,"OPEN");
   if(action==="close")return mutateProject(target.dataset.id,"CLOSE");
   if(action==="reopen")return mutateProject(target.dataset.id,"REOPEN");
+  if(action==="refresh-line-binding")try{showStatus("正在確認 LINE 綁定狀態…");const result=await api("line/account-binding");state.line=result;if(result.bound){state.bindingCode="";renderLineBinding();showStatus("✅ LINE 個人通知已綁定成功。")}else{renderLineBinding();showStatus("尚未收到綁定成功紀錄，請確認已將完整指令傳送至官方帳號的一對一聊天室。","warn")}}catch(error){showStatus(error.message,"error")}
   if(action==="create-line-code")try{showStatus("正在產生一次性綁定碼…");const result=await api("line/account-binding",{method:"POST",body:"{}"});state.bindingCode=result.bindingCode||"";state.line={...(state.line||{}),...result,configured:true};renderLineBinding();showStatus("綁定碼已產生，請在 15 分鐘內私訊 LINE 官方帳號。") }catch(error){showStatus(error.message,"error")}
   if(action==="copy-code"){const command=`#綁定帳號 ${state.bindingCode}`;try{await navigator.clipboard.writeText(command);showStatus("綁定指令已複製。") }catch{showStatus(`請手動複製：${command}`,"warn")}}
   if(action==="unbind-line"&&confirm("確定解除個人 LINE 綁定？之後將不再收到個人核帳通知。"))try{await api("line/account-binding",{method:"DELETE"});state.bindingCode="";state.line={...(state.line||{}),bound:false,lineDisplayName:"",boundAt:""};renderLineBinding();showStatus("已解除個人 LINE 綁定。") }catch(error){showStatus(error.message,"error")}
