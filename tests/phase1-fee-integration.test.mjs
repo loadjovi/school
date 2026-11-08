@@ -58,7 +58,7 @@ test("first-time LINE onboarding has a verified friend link and refresh action",
   assert.match(page,/refresh-line-binding/);
   assert.match(page,/api\("line\/account-binding"\)/);
   assert.match(page,/尚未提供 LINE 官方帳號加入好友連結/);
-  assert.match(page,/https:/);
+  assert.match(page,/hasOfficialUrl=/);
   assert.match(webhook,/const officialAccountUrl=/);
   assert.match(webhook,/officialAccountUrl:officialAccountUrl\(\)/);
 });
