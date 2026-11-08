@@ -61,6 +61,17 @@ app.http("lineWebhook",{
     for(const event of events){
       try{
         if(event?.type!=="message"||event?.message?.type!=="text")continue;
+        if(String(event.message.text||"").trim()==="#LAB身分確認"){
+          // Opt-in diagnostic only. The user ID is returned solely to the same
+          // signed, one-to-one LINE conversation; never placed in logs/storage.
+          if(process.env.LINE_LAB_IDENTITY_LOOKUP_ENABLED==="true"&&
+             event.source?.type==="user"&&/^U[0-9a-f]{32}$/i.test(String(event.source?.userId||""))){
+            await replyLineMessage(String(event.replyToken||""),
+              "LAB 身分確認\\nMessaging API User ID："+event.source.userId+
+              "\\n請勿將此識別碼貼到公開群組；此操作不會綁定或修改任何家長資料。");
+          }
+          continue;
+        }
         const labCode=labBindingCommand(event.message.text);
         if(labCode){
           // Intentionally do not process or log the LAB code until the isolated,
