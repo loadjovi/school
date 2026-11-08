@@ -1,5 +1,5 @@
 import {app} from "@azure/functions";
-import {randomInt} from "node:crypto";
+import {randomInt,timingSafeEqual} from "node:crypto";
 import {getTenantContext,json} from "../lib/auth.js";
 import {
   bindLineNotificationTarget,clearLineNotificationTarget,createLineBindingRequest,findLineBindingRequest,
@@ -21,6 +21,20 @@ const officialAccountUrl=()=>{
   const url=String(process.env.LINE_OFFICIAL_ACCOUNT_URL||"").trim();
   return /^https:\/\/(?:line\.me\/R\/ti\/p\/@[A-Za-z0-9._-]+|lin\.ee\/[A-Za-z0-9_-]+)$/.test(url)?url:"";
 };
+
+// Fail-closed, opt-in LAB identity command. No LAB data or token is accessed here.
+// The LINE public profile ID (e.g. roy.lin) is NOT a Messaging API user ID.
+function labTesterAllowed(userId){
+  if(process.env.LINE_LAB_RELAY_ENABLED!=="true")return false;
+  const id=String(userId||"");
+  const allowed=String(process.env.LINE_LAB_TEST_USER_ID||"").trim();
+  if(!/^U[0-9a-f]{32}$/i.test(id)||!/^U[0-9a-f]{32}$/i.test(allowed))return false;
+  return timingSafeEqual(Buffer.from(id.toLowerCase()),Buffer.from(allowed.toLowerCase()));
+}
+function labBindingCommand(text){
+  const match=/^#LAB綁定\\s+([0-9]{6})$/.exec(String(text||"").trim());
+  return match?.[1]||"";
+}
 
 function lineSettingsResponse(settings,request,extra={}){
   return {
@@ -47,6 +61,15 @@ app.http("lineWebhook",{
     for(const event of events){
       try{
         if(event?.type!=="message"||event?.message?.type!=="text")continue;
+        const labCode=labBindingCommand(event.message.text);
+        if(labCode){
+          // Intentionally do not process or log the LAB code until the isolated,
+          // authenticated LAB relay is implemented and separately approved.
+          if(event.source?.type==="user"&&labTesterAllowed(event.source?.userId)){
+            await replyLineMessage(String(event.replyToken||""),"LAB 真實綁定尚未啟用，請先使用 LAB 模擬綁定功能。");
+          }
+          continue; // Never interpret a LAB command as a production binding.
+        }
         const accountCode=parseLineAccountBindingCommand(event.message.text);
         if(accountCode){
           const replyToken=String(event.replyToken||""),lineUserId=String(event.source?.userId||"");
