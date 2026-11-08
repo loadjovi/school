@@ -20,10 +20,10 @@ function renderLineBinding(){
   if(state.me?.role!=="parent"){$("lineBinding").innerHTML="";return}
   const line=state.line||{},configured=line.configured===true,bound=line.bound===true;
   if(bound){
-    $("lineBinding").innerHTML=`<div class="card"><h2>💬 個人 LINE 已綁定</h2><div class="notice"><b>✅ ${esc(line.lineDisplayName||"已完成綁定")}</b><br><span class="muted">綁定時間：${esc(dateTime(line.boundAt))}</span></div><p>核帳完成或匯款資料需補正時，系統會私訊通知本人；不會在家長群組公開付款資訊。</p><div class="actions"><button class="secondary" data-action="unbind-line">解除個人 LINE 綁定</button></div></div>`;return;
+    $("lineBinding").innerHTML=`<div class="card"><h2>🔔 LINE 個人通知已開啟</h2><div class="notice"><b>✅ ${esc(line.lineDisplayName||"已完成綁定")}</b><br><span class="muted">綁定時間：${esc(dateTime(line.boundAt))}</span></div><p>您已完成 LINE 通知身分綁定。本階段可接收團 T、期末餐費與匯款核帳結果；後續將逐步整合弦樂團課程、活動及其他重要提醒。個人資訊只會私訊本人，不會公開在群組。</p><div class="actions"><button class="secondary" data-action="unbind-line">關閉 LINE 個人通知</button></div></div>`;return;
   }
   const code=state.bindingCode?`<div class="notice"><p>請於 15 分鐘內，在 LINE 官方帳號的<b>一對一聊天室</b>輸入：</p><div class="code">${esc(state.bindingCode)}</div><p style="text-align:center"><code>#綁定帳號 ${esc(state.bindingCode)}</code></p><div class="actions"><button class="secondary" data-action="copy-code">複製綁定指令</button>${line.officialAccountUrl?`<a class="button" target="_blank" rel="noopener" href="${esc(line.officialAccountUrl)}">開啟 LINE 官方帳號</a>`:""}</div></div>`:"";
-  $("lineBinding").innerHTML=`<div class="card"><h2>💬 綁定個人 LINE 帳號</h2><div class="steps"><span>1 登入平台</span><span>2 產生一次性碼</span><span>3 私訊官方帳號</span></div><p>綁定後可收到本人家庭的匯款核帳結果。綁定碼不可貼到群組，也不要轉傳給他人。</p>${configured?`<button data-action="create-line-code">${state.bindingCode?"重新產生綁定碼":"產生 6 位數綁定碼"}</button>${code}`:`<div class="notice warn">LINE Messaging API 尚未完成設定，請聯絡系統管理員。</div>`}</div>`;
+  $("lineBinding").innerHTML=`<div class="card"><h2>🔔 開啟 LINE 個人通知</h2><div class="steps"><span>1 登入平台</span><span>2 取得一次性碼</span><span>3 私訊官方帳號</span></div><p>完成綁定後，系統可透過 LINE 私訊提供弦樂團課程、活動與重要提醒。本階段先提供團 T、期末餐費及匯款核帳通知，後續再逐步擴充。綁定碼不可貼到群組，也不要轉傳給他人。</p>${configured?`<button data-action="create-line-code">${state.bindingCode?"重新產生綁定碼":"開始綁定 LINE 通知"}</button>${code}`:`<div class="notice warn">LINE 通知服務尚未完成設定，請聯絡系統管理員。</div>`}</div>`;
 }
 
 function renderAdminCreate(){
@@ -69,8 +69,8 @@ function adminProject(project){
 }
 
 function renderProjects(){
-  if(!state.projects.length){$("projects").innerHTML=`<div class="card"><h2>目前沒有收費專案</h2><p class="muted">${state.me?.role==="admin"?"請先建立草稿，再同步團 T 或期末聚餐的既有資料。":"校方尚未開放需要您處理的款項。"}</p></div>`;return}
-  $("projects").innerHTML=`<h2>${state.me?.role==="admin"?"收費專案與核帳":"我的收費專案"}</h2>${state.projects.map(project=>state.me.role==="admin"?adminProject(project):parentProject(project)).join("")}`;
+  if(!state.projects.length){$("projects").innerHTML=`<div class="card"><h2>${state.me?.role==="admin"?"目前沒有收費專案":"目前沒有需要處理的費用"}</h2><p class="muted">${state.me?.role==="admin"?"請先建立草稿，再同步團 T 或期末聚餐的既有資料。":"目前沒有需要您繳費或回報的項目；仍可先完成 LINE 通知綁定，方便日後接收弦樂團的重要資訊。"}</p></div>`;return}
+  $("projects").innerHTML=`<h2>${state.me?.role==="admin"?"收費專案與核帳":"家庭費用資訊"}</h2>${state.projects.map(project=>state.me.role==="admin"?adminProject(project):parentProject(project)).join("")}`;
   document.querySelectorAll(".transfer-form").forEach(form=>form.addEventListener("submit",reportTransfer));
   document.querySelectorAll(".verify-form").forEach(form=>form.addEventListener("submit",verifyTransfer));
   document.querySelectorAll(".correction-form").forEach(form=>form.addEventListener("submit",requestCorrection));
@@ -111,13 +111,14 @@ async function loadProjects(){const data=await api("fee-collections/projects");s
 async function load(){
   try{
     state.me=await api("me");if(!["admin","parent"].includes(state.me.role))throw new Error("請切換至家長或學校管理員身分。");
-    $("roleIntro").textContent=state.me.role==="admin"?"建立團 T／期末聚餐收費專案，同步既有需求並由指定財務人員核帳。":"綁定個人 LINE、查看本人家庭應繳款項，完成匯款後回報末五碼。";
+    $("roleTitle").textContent=state.me.role==="admin"?"收費專案與匯款核帳":"LINE 通知與家長服務";
+    $("roleIntro").textContent=state.me.role==="admin"?"建立團 T／期末聚餐收費專案，同步既有需求並由指定財務人員核帳。":"先完成個人 LINE 通知綁定，方便後續整合弦樂團課程、活動與重要提醒；本階段也可查看本人家庭的團 T、期末餐費與匯款核帳進度。";
     if(state.me.role==="admin"){
       const [templates,projects]=await Promise.all([api("uniform-events/payment-account-templates"),api("fee-collections/projects")]);state.templates=templates.items||[];state.projects=projects.items||[];state.activities=projects.dinnerActivities||[];
     }else{
       const [line,projects]=await Promise.all([api("line/account-binding"),api("fee-collections/projects")]);state.line=line;state.projects=projects.items||[];
     }
-    renderLineBinding();renderAdminCreate();renderProjects();showStatus(state.me.role==="admin"?`已載入 ${state.projects.length} 個收費專案。`:`目前有 ${state.projects.length} 個與您家庭相關的收費專案。`);
+    renderLineBinding();renderAdminCreate();renderProjects();showStatus(state.me.role==="admin"?`已載入 ${state.projects.length} 個收費專案。`:state.projects.length?`目前有 ${state.projects.length} 個與您家庭相關的費用項目。`:"目前沒有需要您處理的費用項目。");
   }catch(error){showStatus(error.message,"error");$("projects").innerHTML=""}
 }
 
