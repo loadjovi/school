@@ -19,7 +19,7 @@ const lineToken=()=>String(process.env.LINE_CHANNEL_ACCESS_TOKEN||"").trim();
 const serviceConfigured=()=>!!(lineSecret()&&lineToken());
 const officialAccountUrl=()=>{
   const url=String(process.env.LINE_OFFICIAL_ACCOUNT_URL||"").trim();
-  return /^https:\/\/(?:line\.me\/R\/ti\/p\/@[A-Za-z0-9._-]+|lin\.ee\/[A-Za-z0-9_-]+)(?:[/?#][^"<>]*)?$/i.test(url)?url:"";
+  return /^https:\/\/(?:line\.me\/R\/ti\/p\/@[A-Za-z0-9._-]+|lin\.ee\/[A-Za-z0-9_-]+)$/.test(url)?url:"";
 };
 
 function lineSettingsResponse(settings,request,extra={}){
