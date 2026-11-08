@@ -21,3 +21,10 @@ The existing production webhook currently interprets `#綁定帳號 123456` agai
 
 ## Current status
 This is a design and safety checklist, **not** an operational relay. No production LINE settings, webhook, channel token or data have been changed.
+
+## Updated product requirement: first-time parent onboarding (2026-11-09)
+The intended UAT begins with a parent who has **not yet followed** the existing Official Account. From the authenticated parent portal, provide one coherent flow: start LINE connection, authorize via LINE Login with the add-friend option, return to the portal, confirm verified identity, and display binding/friendship status. The parent must not manually retrieve a Messaging API user ID or paste a binding command.
+
+This requires a LINE Login channel and verified server-side OAuth callback (state, nonce, PKCE where supported, token verification, redirect URI allowlist) under the **same LINE Developers provider** as the existing Messaging API channel for user ID correspondence. LINE friend-add is user-controlled; distinguish followed, blocked and unknown status. Never claim successful follow solely because the add-friend screen was opened. Use a backend-verified identity and LAB-only parent/session/tenant authorization before writing the LAB binding. Protect against account takeover and replay. Keep secrets in environment settings, never frontend JS.
+
+The shared production Official Account must retain its existing webhook and notification flow. This design replaces the earlier manual #LAB command as the preferred onboarding UX; the draft diagnostic commands remain disabled and must not be advertised to parents. Do not deploy or enable anything in production before verifying provider/channel configuration, redirect URIs and isolation, and approving the minimal changes.
