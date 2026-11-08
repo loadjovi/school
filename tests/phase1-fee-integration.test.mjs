@@ -39,10 +39,13 @@ test("only assigned finance staff can open projects and verify bank deposits",()
 });
 
 test("the role-aware workspace entry links parents and admins to phase one",()=>{
-  assert.match(app,/fee-collection-entry\.js\?v=20261107-phase1/);
+  assert.match(app,/fee-collection-entry\.js\?v=20261108-line-notice/);
   assert.match(entry,/收費專案與匯款核帳/);
-  assert.match(entry,/查看我的收費專案/);
-  assert.match(page,/綁定個人 LINE/);
+  assert.match(entry,/LINE 通知與家長服務/);
+  assert.match(entry,/課程、活動與重要提醒/);
+  assert.match(page,/開啟 LINE 個人通知/);
+  assert.match(page,/本階段先提供團 T、期末餐費及匯款核帳通知/);
+  assert.match(page,/目前沒有需要您繳費或回報的項目/);
   assert.match(page,/同步收費對象/);
   assert.match(page,/確認已入帳/);
   assert.match(page,/退回家長補正/);
