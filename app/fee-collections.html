@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#234f3f">
+  <title>LINE 通知與收費服務｜聖心弦樂成長平台</title>
+  <style>
+    :root{--main:#245c48;--deep:#153c2f;--soft:#edf6f1;--line:#d5e2da;--warn:#9a5510;--danger:#9b3326;--blue:#3856a6}
+    *{box-sizing:border-box}body{margin:0;background:#f4f7f5;color:#17372b;font:16px/1.6 system-ui,-apple-system,"Noto Sans TC",sans-serif}button,input,select,textarea{font:inherit}
+    header{background:linear-gradient(135deg,#245c48,#173f32);color:#fff;padding:18px max(18px,calc((100% - 1040px)/2));position:sticky;top:0;z-index:4;box-shadow:0 3px 12px #17372b25}header strong{font-size:20px}header small{display:block;opacity:.85}
+    main{max-width:1040px;margin:auto;padding:18px 16px 80px}.back{display:inline-block;color:var(--main);font-weight:700;text-decoration:none;margin-bottom:10px}.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 2px 8px #17372b0b}.hero{background:linear-gradient(150deg,#fff,#edf6f1)}h1{font-size:26px;margin:0 0 6px}h2{font-size:21px;margin:0 0 10px}h3{font-size:18px;margin:12px 0 6px}.muted{color:#5d6e66}.notice{padding:12px;border-radius:10px;background:var(--soft);margin:10px 0}.warn{background:#fff5df;color:#77400b}.error{background:#fff0ed;color:var(--danger)}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.metric{padding:12px;border:1px solid var(--line);border-radius:11px;background:#fafcfb}.metric b,.metric span{display:block}.metric b{font-size:21px}.metric span{font-size:13px;color:#53675d}
+    label{display:block;font-weight:700;margin:10px 0 4px}input,select,textarea{display:block;width:100%;padding:11px 12px;border:1px solid #9fb5a9;border-radius:9px;background:#fff;color:#17372b}textarea{min-height:80px;resize:vertical}.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}button,.button{border:0;border-radius:9px;background:var(--main);color:#fff;padding:10px 14px;font-weight:750;cursor:pointer;text-decoration:none;text-align:center}button.secondary,.button.secondary{background:#fff;color:var(--main);border:1px solid var(--main)}button.warn-action{background:#9a5510}button.danger{background:#9b3326}button:disabled{opacity:.5;cursor:not-allowed}
+    .project{border-left:5px solid var(--main)}.project[data-status="DRAFT"]{border-left-color:#7b8790}.project[data-status="CLOSED"]{border-left-color:#9a5510}.status{display:inline-block;padding:3px 9px;border-radius:999px;background:#dff3e7;color:#17653e;font-size:13px;font-weight:750}.status.reported{background:#fff0c8;color:#7e5000}.status.closed{background:#e9edef;color:#56616a}.bank{padding:12px;border:1px dashed #8aab9b;border-radius:10px;background:#f8fbf9;overflow-wrap:anywhere}.charge{padding:13px 0;border-top:1px solid #e2eae5}.charge:first-child{border-top:0}.charge-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.charge strong{overflow-wrap:anywhere}.code{font-size:28px;font-weight:800;letter-spacing:.18em;color:var(--blue);text-align:center;padding:10px;border:2px dashed #8da0d5;border-radius:11px;background:#f4f6ff}.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}.steps span{padding:9px;border-radius:9px;background:#edf2fb;text-align:center;font-weight:700;font-size:14px}.divider{border:0;border-top:1px solid var(--line);margin:18px 0}.loading{text-align:center;padding:48px;color:#5d6e66}.hidden{display:none!important}
+    @media(max-width:720px){header{position:static}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.row{grid-template-columns:1fr}.steps{grid-template-columns:1fr}.charge-head{display:block}.charge-head .status{margin-top:5px}.actions button{flex:1 1 145px}h1{font-size:23px}}
+  </style>
+</head>
+<body>
+  <header><strong>🎻 聖心弦樂成長平台</strong><small>第一階段｜LINE 通知服務・團 T／餐費資訊・匯款核帳</small></header>
+  <main>
+    <a class="back" href="/">← 返回工作首頁</a>
+    <section class="card hero"><h1 id="roleTitle">LINE 通知與家長服務</h1><p id="roleIntro" class="muted">正在確認帳號與通知服務…</p></section>
+    <div id="status" class="notice">資料載入中…</div>
+    <section id="lineBinding"></section>
+    <section id="adminCreate"></section>
+    <section id="projects"><div class="loading">正在讀取收費專案…</div></section>
+  </main>
+  <script type="module" src="/fee-collections.js?v=20261108-line-first-onboarding"></script>
+</body>
+</html>
