@@ -148,7 +148,7 @@ def prepare(output: Path) -> None:
     if api_guard not in messaging_source:
         raise RuntimeError("LINE Messaging API structure changed; review LAB isolation before deploying")
     messaging.write_text(messaging_source.replace(api_guard,
-        api_guard+'\\n  throw new Error("LAB LINE external messaging is disabled");'),encoding="utf-8")
+        api_guard+chr(10)+'  throw new Error("LAB LINE external messaging is disabled");'),encoding="utf-8")
     # Never deliver emails from tests, even if somebody accidentally configures ACS.
     email=lib/"email.js"
     text=email.read_text(encoding="utf-8")
