@@ -149,8 +149,8 @@ def prepare(output: Path) -> None:
         'const lineSecret=()=>"LAB_ONLY_MOCK_BINDING_SECRET"; // never Production secret')
     mock_source=mock_source.replace('const serviceConfigured=()=>!!(lineSecret()&&lineToken());',
         'const serviceConfigured=()=>true; // LAB simulation only; outbound LINE remains blocked')
-    mock_source=mock_source.replace('const secret=lineSecret();\\n    if(!secret)',
-        'return json({error:"LAB: real LINE webhook is disabled"},503);\\n    const secret=lineSecret();\\n    if(!secret)')
+    mock_source=mock_source.replace('const secret=lineSecret();\n    if(!secret)',
+        'return json({error:"LAB: real LINE webhook is disabled"},503);\n    const secret=lineSecret();\n    if(!secret)')
     get_response='officialAccountUrl:officialAccountUrl()});'
     if get_response not in mock_source:
         raise RuntimeError("LINE account GET response changed; review mock integration")
@@ -158,7 +158,7 @@ def prepare(output: Path) -> None:
         'officialAccountUrl:officialAccountUrl(),mockMode:true});',1)
     if 'if(!serviceConfigured())return json({error:"LINE Messaging API 尚未完成設定"},409);' not in mock_source:
         raise RuntimeError("LINE account POST guard changed; review mock integration")
-    mock_source += r'''\n// Only present in generated functional UAT LAB API; never shipped to Production.\napp.http("functionalLabMockLineBind",{methods:["POST"],authLevel:"anonymous",route:"lab/line/mock-bind",handler:async request=>{\n  const context=await getTenantContext(request);if(context.error)return context.error;\n  const {access,schoolId}=context;\n  if(access.role!=="parent")return json({error:"僅 LAB 家長帳號可執行模擬綁定"},403);\n  try{\n    const body=await request.json();\n    const code=String(body?.bindingCode||"").trim();\n    if(!/^\\d{6}$/.test(code))return json({error:"請輸入有效的六位數 LAB 綁定碼"},400);\n    const codeHash=lineBindingCodeHash(code,lineSecret());\n    const pending=await findLineAccountBindingRequest(codeHash);\n    if(!pending||pending.schoolId!==schoolId||pending.parentEmail!==access.email)return json({error:"LAB 綁定碼無效、已使用或逾時"},409);\n    const mockUserId="lab-mock-"+lineBindingCodeHash(code, "LAB_MOCK_USER_ID").slice(0,24);\n    const result=await bindLineAccount({codeHash,lineUserId:mockUserId,lineDisplayName:"LAB 模擬家長"});\n    if(!result.ok)return json({error:"LAB 模擬綁定失敗："+String(result.reason||"unknown")},409);\n    return json({bound:true,mockMode:true,lineDisplayName:"LAB 模擬家長"});\n  }catch(error){console.error("LAB mock LINE binding failed",error?.message||String(error));return json({error:"LAB 模擬綁定處理失敗"},500)}\n}});\n'''
+    mock_source += r'''\n// Only present in generated functional UAT LAB API; never shipped to Production.\napp.http("functionalLabMockLineBind",{methods:["POST"],authLevel:"anonymous",route:"lab/line/mock-bind",handler:async request=>{\n  const context=await getTenantContext(request);if(context.error)return context.error;\n  const {access,schoolId}=context;\n  if(access.role!=="parent")return json({error:"僅 LAB 家長帳號可執行模擬綁定"},403);\n  try{\n    const body=await request.json();\n    const code=String(body?.bindingCode||"").trim();\n    if(!/^\d{6}$/.test(code))return json({error:"請輸入有效的六位數 LAB 綁定碼"},400);\n    const codeHash=lineBindingCodeHash(code,lineSecret());\n    const pending=await findLineAccountBindingRequest(codeHash);\n    if(!pending||pending.schoolId!==schoolId||pending.parentEmail!==access.email)return json({error:"LAB 綁定碼無效、已使用或逾時"},409);\n    const mockUserId="lab-mock-"+lineBindingCodeHash(code, "LAB_MOCK_USER_ID").slice(0,24);\n    const result=await bindLineAccount({codeHash,lineUserId:mockUserId,lineDisplayName:"LAB 模擬家長"});\n    if(!result.ok)return json({error:"LAB 模擬綁定失敗："+String(result.reason||"unknown")},409);\n    return json({bound:true,mockMode:true,lineDisplayName:"LAB 模擬家長"});\n  }catch(error){console.error("LAB mock LINE binding failed",error?.message||String(error));return json({error:"LAB 模擬綁定處理失敗"},500)}\n}});\n'''
     line_webhook.write_text(mock_source,encoding="utf-8")
     # The LAB-only action is inserted into the copied frontend, not Production source.
     fee=output/"app"/"fee-collections.js"
@@ -166,7 +166,7 @@ def prepare(output: Path) -> None:
     target='const addFriend=hasOfficialUrl?'
     if target not in fee_source:raise RuntimeError("LINE frontend structure changed; review LAB mock UI")
     fee_source=fee_source.replace(target,
-        'const labMock=Boolean(line.mockMode);\\n  '+target,1)
+        'const labMock=Boolean(line.mockMode);\n  '+target,1)
     fee_source=fee_source.replace('${configured?`<div class="actions">${addFriend}</div>',
         '${configured?`<div class="actions">${labMock?`<div class="notice">🧪 LAB 模擬模式：不會連線正式 LINE 官方帳號。</div>`:addFriend}</div>',1)
     fee_source=fee_source.replace('${code}`:`<div class="notice warn">',
@@ -174,7 +174,7 @@ def prepare(output: Path) -> None:
     action_marker='  if(action==="refresh-line-binding")'
     if action_marker not in fee_source:raise RuntimeError("LINE frontend action structure changed")
     fee_source=fee_source.replace(action_marker,
-        '  if(action==="lab-mock-line-bind")try{if(!state.line?.mockMode||!state.bindingCode)throw Error("LAB 模擬綁定尚未就緒");const result=await api("lab/line/mock-bind",{method:"POST",body:JSON.stringify({bindingCode:state.bindingCode})});state.line={...state.line,...result};state.bindingCode="";renderLineBinding();showStatus("✅ LAB 模擬 LINE 綁定成功（未傳送真實 LINE 訊息）。")}catch(error){showStatus(error.message,"error")}\\n'+action_marker,1)
+        '  if(action==="lab-mock-line-bind")try{if(!state.line?.mockMode||!state.bindingCode)throw Error("LAB 模擬綁定尚未就緒");const result=await api("lab/line/mock-bind",{method:"POST",body:JSON.stringify({bindingCode:state.bindingCode})});state.line={...state.line,...result};state.bindingCode="";renderLineBinding();showStatus("✅ LAB 模擬 LINE 綁定成功（未傳送真實 LINE 訊息）。")}catch(error){showStatus(error.message,"error")}\n'+action_marker,1)
     if 'lab-mock-line-bind' not in fee_source or 'mockMode' not in fee_source:
         raise RuntimeError("LAB mock UI insertion failed")
     fee.write_text(fee_source,encoding="utf-8")
