@@ -91,7 +91,9 @@ app.http("labLineLoginFinish",{methods:["POST"],authLevel:"anonymous",route:"lin
     const row=await getRow(ticket);
     if(!row||row.kind!=="TICKET"||row.status!=="ACTIVE"||Number(row.expiresAt)<Date.now()||row.schoolId!==ctx.schoolId||row.parentEmail!==ctx.access.email)return response({error:"LINE 授權已過期或不屬於目前家長"},403);
     await consume(row);
-    // Legacy binding storage requires a six-digit code; generate it server-side only.\n    const code=String(randomInt(0,1000000)).padStart(6,"0"),codeHash=lineBindingCodeHash(code,config().secret);\n    if(!codeHash)throw Error("LAB internal binding hash unavailable");
+    // Legacy binding storage requires a six-digit code; generate it server-side only.
+    const code=String(randomInt(0,1000000)).padStart(6,"0"),codeHash=lineBindingCodeHash(code,config().secret);
+    if(!codeHash)throw Error("LAB internal binding hash unavailable");
     await createLineAccountBindingRequest({schoolId:ctx.schoolId,email:ctx.access.email,codeHash,expiresAt:new Date(Date.now()+60000).toISOString()});
     const result=await bindLineAccount({codeHash,lineUserId:row.lineUserId,lineDisplayName:row.lineDisplayName});
     if(!result.ok)return response({error:"綁定失敗："+result.reason},409);
