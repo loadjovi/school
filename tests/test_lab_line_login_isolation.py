@@ -22,6 +22,16 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertNotIn('LINE_CHANNEL_ACCESS_TOKEN',oauth)
         self.assertFalse((ROOT/"api/src/functions/labLineLogin.js").exists())
         self.assertIn('lab-line-login',builder)
+        self.assertIn('route:"line/lab-send-test"',oauth)
+        self.assertIn('LAB_LINE_TEST_PARENT_EMAIL',oauth)
+        self.assertIn('LAB_LINE_TEST_USER_ID',oauth)
+        self.assertIn('LAB_LINE_MESSAGING_ACCESS_TOKEN',oauth)
+        self.assertIn('binding.lineUserId!==allowedId',oauth)
+        self.assertIn('email!==allowedEmail',oauth)
+        self.assertIn('messages:[{type:"text",text:message}]',oauth)
+        self.assertNotIn('message:body.message',oauth)
+        self.assertIn('lab-line-test-send',builder)
+
 
 if __name__=="__main__":
     unittest.main()
