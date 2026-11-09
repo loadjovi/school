@@ -45,7 +45,7 @@ async function parent(request){
 }
 function enabled(){
   const c=config();
-  return process.env.LAB_ENVIRONMENT==="true"&&c.id==="2012482463"&&!!c.secret&&c.uri===CALLBACK;
+  return process.env.LAB_ENVIRONMENT==="functional-uat"&&c.id==="2012482463"&&!!c.secret&&c.uri===CALLBACK;
 }
 app.http("labLineLoginStart",{methods:["POST"],authLevel:"anonymous",route:"line/login/start",handler:async request=>{
   try{
