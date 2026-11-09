@@ -180,17 +180,18 @@ def prepare(output: Path) -> None:
         '  if(action==="lab-mock-line-bind")try{if(!state.line?.mockMode||!state.bindingCode)throw Error("LAB 模擬綁定尚未就緒");const result=await api("lab/line/mock-bind",{method:"POST",body:JSON.stringify({bindingCode:state.bindingCode})});state.line={...state.line,...result};state.bindingCode="";renderLineBinding();showStatus("✅ LAB 模擬 LINE 綁定成功（未傳送真實 LINE 訊息）。")}catch(error){showStatus(error.message,"error")}\n'+action_marker,1)
     if 'lab-mock-line-bind' not in fee_source or 'mockMode' not in fee_source:
         raise RuntimeError("LAB mock UI insertion failed")
-    # LAB-only parent-facing LINE Login; the production page remains untouched.
-    fee_source=fee_source.replace('const line=state.line||{},configured=',
-        'const line=state.line||{},configured=',1)
+    # Only the generated LAB frontend exposes the OAuth action.
     fee_source=fee_source.replace('  const officialUrl=String(line.officialAccountUrl||"");',
-        '  const labLoginButton=\x60<div class="actions"><button data-action="lab-line-login">連結 LINE 並加入官方帳號</button></div><p class="muted">完成 LINE 授權後將自動返回本頁。好友加入由您自行確認。</p>\x60;\\n  const officialUrl=String(line.officialAccountUrl||"");',1)
-    fee_source=fee_source.replace('\\u0024{configured?\x60<div class="actions">',
-        '\\u0024{labLoginButton}\\u0024{configured?\x60<div class="actions">',1)
+        '  const labLoginButton=\x60<div class="actions"><button data-action="lab-line-login">連結 LINE 並加入官方帳號</button></div><p class="muted">完成授權後自動返回本頁，加入好友由家長確認。</p>\x60;'+chr(10)+'  const officialUrl=String(line.officialAccountUrl||"");',1)
+    fee_source=fee_source.replace('${configured?\x60<div class="actions">',
+        '${labLoginButton}${configured?\x60<div class="actions">',1)
     fee_source=fee_source.replace('  if(action==="refresh-line-binding")',
-        '  if(action==="lab-line-login")try{showStatus("正在連接 LINE…");const result=await api("line/login/start",{method:"POST",body:"{}"});if(!/^https:\\\\/\\\\/access\\\\.line\\\\.me\\\\/oauth2\\\\/v2\\\\.1\\\\/authorize\\\\?/.test(result.authorizationUrl||""))throw Error("LINE 授權網址無效");window.location.assign(result.authorizationUrl)}catch(error){showStatus(error.message,"error")}\\n  if(action==="refresh-line-binding")',1)
+        '  if(action==="lab-line-login")try{showStatus("正在連接 LINE…");const result=await api("line/login/start",{method:"POST",body:"{}"});if(!result.authorizationUrl||!result.authorizationUrl.startsWith("https://access.line.me/oauth2/v2.1/authorize?"))throw Error("LINE 授權網址無效");window.location.assign(result.authorizationUrl)}catch(error){showStatus(error.message,"error")}'+chr(10)+'  if(action==="refresh-line-binding")',1)
     fee_source=fee_source.replace('    renderLineBinding();renderAdminCreate();renderProjects();showStatus(',
-        '    const oauthResult=new URLSearchParams(location.search).get("line_lab_result");if(oauthResult){history.replaceState(null,"",location.pathname);if(oauthResult.startsWith("ok.")){try{const linked=await api("line/login/finish",{method:"POST",body:JSON.stringify({ticket:oauthResult.slice(3)})});state.line={...state.line,...linked};state.bindingCode="";showStatus(linked.friendStatus==="friend"?"LINE 已綁定並加入官方帳號。":"LINE 已綁定；請確認是否加入官方帳號。")}catch(e){showStatus(e.message,"error")}}else showStatus("LINE 授權未完成："+oauthResult,"warn")}\\n    renderLineBinding();renderAdminCreate();renderProjects();showStatus(',1)
+        '    renderLineBinding();renderAdminCreate();renderProjects();showStatus(',1)
+    fee_source=fee_source.replace('  }catch(error){showStatus(error.message,"error");$("projects").innerHTML=""}',
+        '    const oauthResult=new URLSearchParams(location.search).get("line_lab_result");if(oauthResult){history.replaceState(null,"",location.pathname);if(oauthResult.startsWith("ok.")){try{const linked=await api("line/login/finish",{method:"POST",body:JSON.stringify({ticket:oauthResult.slice(3)})});state.line={...state.line,...linked};state.bindingCode="";renderLineBinding();showStatus(linked.friendStatus==="friend"?"LINE 已綁定並加入官方帳號。":"LINE 已綁定；請確認是否加入官方帳號。")}catch(e){showStatus(e.message,"error")}}else showStatus("LINE 授權未完成："+oauthResult,"warn")}'+chr(10)+'  }catch(error){showStatus(error.message,"error");$("projects").innerHTML=""}',1)
+    if 'lab-line-login' not in fee_source or 'line/login/finish' not in fee_source:raise RuntimeError("LAB LINE OAuth UI insertion failed")
     fee.write_text(fee_source,encoding="utf-8")
     messaging=lib/"lineMessaging.mjs"
     messaging_source=messaging.read_text(encoding="utf-8")
