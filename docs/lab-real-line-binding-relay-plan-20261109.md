@@ -28,3 +28,12 @@ The intended UAT begins with a parent who has **not yet followed** the existing 
 This requires a LINE Login channel and verified server-side OAuth callback (state, nonce, PKCE where supported, token verification, redirect URI allowlist) under the **same LINE Developers provider** as the existing Messaging API channel for user ID correspondence. LINE friend-add is user-controlled; distinguish followed, blocked and unknown status. Never claim successful follow solely because the add-friend screen was opened. Use a backend-verified identity and LAB-only parent/session/tenant authorization before writing the LAB binding. Protect against account takeover and replay. Keep secrets in environment settings, never frontend JS.
 
 The shared production Official Account must retain its existing webhook and notification flow. This design replaces the earlier manual #LAB command as the preferred onboarding UX; the draft diagnostic commands remain disabled and must not be advertised to parents. Do not deploy or enable anything in production before verifying provider/channel configuration, redirect URIs and isolation, and approving the minimal changes.
+
+## Confirmed LAB origin and planned callback (2026-11-09)
+- User-confirmed isolated Functional UAT LAB origin: `https://icy-ocean-0a2602100.6.azurestaticapps.net`.
+- Planned exact LINE Login redirect URI: `https://icy-ocean-0a2602100.6.azurestaticapps.net/api/line/login/callback`.
+- LINE Login Channel ID: `2012482463` (public identifier, not a secret).
+- Provider: 聖心弦樂團家長服務台; linked Official Account selected: 聖心弦樂成長平台.
+- **This callback route is not yet implemented or deployed.** Do not begin end-to-end login or assume that entering the URL in LINE Developers activates it.
+- LAB-only environment variables to provision securely after implementation: LINE_LOGIN_CHANNEL_ID, LINE_LOGIN_CHANNEL_SECRET, LINE_LOGIN_REDIRECT_URI. Do not reuse production Messaging API secrets or expose them to the browser.
+- Before enablement: implement state/nonce persistence and one-time use, token exchange and ID token verification, server-side linkage to an authenticated LAB parent, CSRF and session-binding protections, friendship check, safe redirect and failure recovery; test callback and isolation.
