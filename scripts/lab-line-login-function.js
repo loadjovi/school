@@ -135,7 +135,7 @@ app.http("labLineSendTestNotification",{
         try{await db.createEntity({partitionKey:"LAB",rowKey:key,sentAt:now})}
         catch(e){if(e.statusCode===409)return response({error:"請稍後重試"},429);throw e}
       }
-      const message="🎻【LAB 測試通知】\\n聖心弦樂成長平台 LINE 單人通知驗證。\\n此訊息僅發送至指定測試家長，不代表正式活動通知。";
+      const message=["🎻【LAB 測試通知】","聖心弦樂成長平台 LINE 單人通知驗證。","此訊息僅發送至指定測試家長，不代表正式活動通知。"].join(String.fromCharCode(10));
       const sent=await fetch("https://api.line.me/v2/bot/message/push",{
         method:"POST",
         headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},
