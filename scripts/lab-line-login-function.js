@@ -6,7 +6,6 @@ import {TableClient,TableServiceClient} from "@azure/data-tables";
 import {getTenantContext,json} from "../lib/auth.js";
 import {createLineAccountBindingRequest,bindLineAccount} from "../lib/lineAccountBinding.js";
 import {lineBindingCodeHash} from "../lib/lineMessaging.mjs";
-import {assertLabIsolation} from "../lib/labIsolation.mjs";
 
 const ORIGIN="https://icy-ocean-0a2602100.6.azurestaticapps.net";
 const CALLBACK=ORIGIN+"/api/line/login/callback";
