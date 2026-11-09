@@ -192,6 +192,13 @@ def prepare(output: Path) -> None:
     fee_source=fee_source.replace('  }catch(error){showStatus(error.message,"error");$("projects").innerHTML=""}',
         '    const oauthResult=new URLSearchParams(location.search).get("line_lab_result");if(oauthResult){history.replaceState(null,"",location.pathname);if(oauthResult.startsWith("ok.")){try{const linked=await api("line/login/finish",{method:"POST",body:JSON.stringify({ticket:oauthResult.slice(3)})});state.line={...state.line,...linked};state.bindingCode="";renderLineBinding();showStatus(linked.friendStatus==="friend"?"LINE 已綁定並加入官方帳號。":"LINE 已綁定；請確認是否加入官方帳號。")}catch(e){showStatus(e.message,"error")}}else showStatus("LINE 授權未完成："+oauthResult,"warn")}'+chr(10)+'  }catch(error){showStatus(error.message,"error");$("projects").innerHTML=""}',1)
     if 'lab-line-login' not in fee_source or 'line/login/finish' not in fee_source:raise RuntimeError("LAB LINE OAuth UI insertion failed")
+    # LAB-only test-send control appears only for a bound parent. The API
+    # independently enforces exact email and LINE User ID allowlists.
+    fee_source=fee_source.replace('<div class="actions"><button class="secondary" data-action="unbind-line">',
+        '<div class="actions"><button class="secondary" data-action="lab-line-test-send">🧪 發送 LINE 單人測試通知</button></div><div class="actions"><button class="secondary" data-action="unbind-line">',1)
+    fee_source=fee_source.replace('  if(action==="refresh-line-binding")',
+        '  if(action==="lab-line-test-send")try{if(!confirm("只發送一則 LAB 測試訊息至指定測試家長的 LINE，是否繼續？"))return;showStatus("正在送出 LAB 測試通知…");const result=await api("line/lab-send-test",{method:"POST",body:"{}"});showStatus(result.message||"LINE 已接受測試訊息，請檢查手機。")}catch(error){showStatus(error.message,"error")}'+chr(10)+'  if(action==="refresh-line-binding")',1)
+    if 'lab-line-test-send' not in fee_source or 'line/lab-send-test' not in fee_source:raise RuntimeError("LAB test send UI insertion failed")
     fee.write_text(fee_source,encoding="utf-8")
     messaging=lib/"lineMessaging.mjs"
     messaging_source=messaging.read_text(encoding="utf-8")
