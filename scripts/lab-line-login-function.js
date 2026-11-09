@@ -4,7 +4,7 @@ import {app} from "@azure/functions";
 import {randomBytes,randomInt,createHash} from "node:crypto";
 import {TableClient,TableServiceClient} from "@azure/data-tables";
 import {getTenantContext,json} from "../lib/auth.js";
-import {createLineAccountBindingRequest,bindLineAccount} from "../lib/lineAccountBinding.js";
+import {createLineAccountBindingRequest,bindLineAccount,getLineAccountBinding} from "../lib/lineAccountBinding.js";
 import {lineBindingCodeHash} from "../lib/lineMessaging.mjs";
 
 const ORIGIN="https://icy-ocean-0a2602100.6.azurestaticapps.net";
@@ -100,3 +100,55 @@ app.http("labLineLoginFinish",{methods:["POST"],authLevel:"anonymous",route:"lin
     return response({bound:true,friendStatus:row.friendStatus,lineDisplayName:row.lineDisplayName});
   }catch(e){console.error("LAB LINE finish failed",e?.message);return response({error:"LAB LINE 綁定失敗（請由管理員檢查後端日誌）"},500)}
 }});
+
+/**
+ * Functional UAT ONLY: single recipient, fixed-content LINE test.
+ * Disabled until both LAB_LINE_TEST_USER_ID and LAB_LINE_MESSAGING_ACCESS_TOKEN
+ * are set in the isolated Azure Static Web App settings.
+ * Never accepts a target or message body from the browser.
+ */
+app.http("labLineSendTestNotification",{
+  methods:["POST"],authLevel:"anonymous",route:"line/lab-send-test",
+  handler:async request=>{
+    try{
+      if(!enabled())return response({error:"LAB LINE Login 未啟用"},503);
+      assertLabIsolation();
+      const ctx=await parent(request);if(ctx.error)return ctx.error;
+      const email=String(ctx.access.email||"").trim().toLowerCase();
+      const allowedEmail=String(process.env.LAB_LINE_TEST_PARENT_EMAIL||"").trim().toLowerCase();
+      const allowedId=String(process.env.LAB_LINE_TEST_USER_ID||"").trim();
+      const token=String(process.env.LAB_LINE_MESSAGING_ACCESS_TOKEN||"").trim();
+      if(!allowedEmail||email!==allowedEmail)return response({error:"只有指定 LAB 測試家長可以發送"},403);
+      if(!/^U[0-9a-f]{32}$/i.test(allowedId)||!token)return response({error:"LAB 單人發送尚未設定；未發送訊息"},503);
+      const binding=await getLineAccountBinding(ctx.schoolId,email,{includeTarget:true});
+      if(!binding?.bound||binding.lineUserId!==allowedId)return response({error:"LINE 綁定與指定測試帳號不符；未發送訊息"},403);
+      // Per-parent throttling stored in LAB-only table; fail closed on errors.
+      const key="SEND_"+hash(ctx.schoolId+":"+email);
+      const now=Date.now(),db=await storage();
+      let old=null;
+      try{old=await db.getEntity("LAB",key)}catch(e){if(e.statusCode!==404)throw e}
+      if(old&&Number(old.sentAt||0)>now-60000)return response({error:"請至少間隔 60 秒再測試"},429);
+      // Reserve a slot before calling LINE to prevent repeated clicks.
+      if(old){
+        await db.updateEntity({partitionKey:"LAB",rowKey:key,sentAt:now},"Merge",{etag:old.etag});
+      }else{
+        try{await db.createEntity({partitionKey:"LAB",rowKey:key,sentAt:now})}
+        catch(e){if(e.statusCode===409)return response({error:"請稍後重試"},429);throw e}
+      }
+      const message="🎻【LAB 測試通知】\\n聖心弦樂成長平台 LINE 單人通知驗證。\\n此訊息僅發送至指定測試家長，不代表正式活動通知。";
+      const sent=await fetch("https://api.line.me/v2/bot/message/push",{
+        method:"POST",
+        headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},
+        body:JSON.stringify({to:allowedId,messages:[{type:"text",text:message}]})
+      });
+      if(!sent.ok){
+        console.error("LAB LINE single push failed",sent.status);
+        return response({error:"LINE 發送失敗，HTTP "+sent.status+"；請檢查 LAB 設定與官方帳號權限"},502);
+      }
+      return response({accepted:true,message:"LINE 已接受單人測試訊息；請在手機確認實際收到"});
+    }catch(e){
+      console.error("LAB LINE test send error",e?.message);
+      return response({error:"LAB 單人測試發送失敗；未確認訊息送達"},500);
+    }
+  }
+});
