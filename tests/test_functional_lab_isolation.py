@@ -30,6 +30,29 @@ class FunctionalUATIsolationTests(unittest.TestCase):
     def test_original_main_modules_not_modified(self):
         self.assertNotIn('assertLabIsolation();',(ROOT/"api/src/functions/config.js").read_text())
         self.assertIn('assertLabIsolation();',(self.lab/"api/src/functions/config.js").read_text())
+    def test_line_send_safety_and_masked_admin_log_are_generated_lab_only(self):
+        function=self.lab/"api/src/functions/labLineLogin.js"
+        rules=self.lab/"api/src/lib/labLineNotificationSafety.mjs"
+        panel=self.lab/"app/lab-line-notification-log.js"
+        page=(self.lab/"app/fee-collections.html").read_text(encoding="utf-8")
+        self.assertTrue(function.is_file())
+        self.assertTrue(rules.is_file())
+        self.assertTrue(panel.is_file())
+        self.assertFalse((ROOT/"api/src/functions/labLineLogin.js").exists())
+        self.assertFalse((ROOT/"api/src/lib/labLineNotificationSafety.mjs").exists())
+        self.assertFalse((ROOT/"app/lab-line-notification-log.js").exists())
+        source=function.read_text(encoding="utf-8")
+        self.assertIn('route:"line/lab-send-test"',source)
+        self.assertIn('route:"line/lab-notification-log"',source)
+        self.assertIn('ctx.access.role!=="admin"',source)
+        self.assertIn('lineUserIdMasked:maskLineUserId',source)
+        self.assertIn('partitionKey:"LAB_SEND_RATE"',source)
+        self.assertIn('X-Line-Retry-Key',source)
+        self.assertIn('id="labLineNotificationLog"',page)
+        self.assertIn('/lab-line-notification-log.js',page)
+        for file in (function,rules,panel):
+            result=subprocess.run(["node","--check",str(file)],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
     def test_storage_guard_present(self):
         s=(self.lab/"api/src/lib/storage.js").read_text()
         self.assertIn('assertLabIsolation();return process.env.STORAGE_CONNECTION_STRING',s)

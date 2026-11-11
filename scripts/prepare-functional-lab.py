@@ -129,9 +129,10 @@ def prepare(output: Path) -> None:
     storage.write_text('import {assertLabIsolation} from "./labIsolation.mjs";\n'+
         original.replace(marker,'const conn=()=>{assertLabIsolation();return process.env.STORAGE_CONNECTION_STRING;};'),
         encoding="utf-8")
-    # LAB must never call the real LINE Messaging API, even with Production secrets.
-    # Webhook requests are rejected, parent binding stays unconfigured, and
-    # outbound LINE API calls fail closed. Mock tests run without external traffic.
+    # Shared Production LINE modules must never call the real Messaging API from
+    # LAB. The separately generated allowlisted single-recipient endpoint below
+    # is the only outbound exception; webhook and shared notification paths stay
+    # disabled even when Production secrets accidentally exist in the LAB app.
     line_webhook=fn_dir/"lineWebhook.js"
     webhook_source=line_webhook.read_text(encoding="utf-8")
     secret_expr='const lineSecret=()=>String(process.env.LINE_CHANNEL_SECRET||"").trim();'
@@ -142,7 +143,10 @@ def prepare(output: Path) -> None:
         .replace(token_expr,'const lineToken=()=>""; // LAB: no real LINE channel')
         .replace('const url=String(process.env.LINE_OFFICIAL_ACCOUNT_URL||"").trim();',
                  'const url=""; // LAB: never link to the Production LINE account'),encoding="utf-8")
-    # LINE Login OAuth exists ONLY in the isolated generated LAB API.
+    # LINE Login OAuth and its pure safety rules exist ONLY in the isolated
+    # generated LAB API.
+    safety_source=(ROOT/"scripts"/"lab-line-notification-safety.mjs").read_text(encoding="utf-8")
+    lib.joinpath("labLineNotificationSafety.mjs").write_text(safety_source,encoding="utf-8")
     oauth_source=(ROOT/"scripts"/"lab-line-login-function.js").read_text(encoding="utf-8")
     fn_dir.joinpath("labLineLogin.js").write_text(prefix+oauth_source,encoding="utf-8")
     # LAB-only simulated parent binding. Never registered in Production source.
@@ -161,7 +165,7 @@ def prepare(output: Path) -> None:
         'officialAccountUrl:officialAccountUrl(),mockMode:true});',1)
     if 'if(!serviceConfigured())return json({error:"LINE Messaging API 尚未完成設定"},409);' not in mock_source:
         raise RuntimeError("LINE account POST guard changed; review mock integration")
-    mock_source += '''\n// Only present in generated functional UAT LAB API; never shipped to Production.\napp.http("functionalLabMockLineBind",{methods:["POST"],authLevel:"anonymous",route:"lab/line/mock-bind",handler:async request=>{\n  const context=await getTenantContext(request);if(context.error)return context.error;\n  const {access,schoolId}=context;\n  if(access.role!=="parent")return json({error:"僅 LAB 家長帳號可執行模擬綁定"},403);\n  try{\n    const body=await request.json();\n    const code=String(body?.bindingCode||"").trim();\n    if(!/^\d{6}$/.test(code))return json({error:"請輸入有效的六位數 LAB 綁定碼"},400);\n    const codeHash=lineBindingCodeHash(code,lineSecret());\n    const pending=await findLineAccountBindingRequest(codeHash);\n    if(!pending||pending.schoolId!==schoolId||pending.parentEmail!==access.email)return json({error:"LAB 綁定碼無效、已使用或逾時"},409);\n    const mockUserId="lab-mock-"+lineBindingCodeHash(code, "LAB_MOCK_USER_ID").slice(0,24);\n    const result=await bindLineAccount({codeHash,lineUserId:mockUserId,lineDisplayName:"LAB 模擬家長"});\n    if(!result.ok)return json({error:"LAB 模擬綁定失敗："+String(result.reason||"unknown")},409);\n    return json({bound:true,mockMode:true,lineDisplayName:"LAB 模擬家長"});\n  }catch(error){console.error("LAB mock LINE binding failed",error?.message||String(error));return json({error:"LAB 模擬綁定處理失敗"},500)}\n}});\n'''
+    mock_source += '''\n// Only present in generated functional UAT LAB API; never shipped to Production.\napp.http("functionalLabMockLineBind",{methods:["POST"],authLevel:"anonymous",route:"lab/line/mock-bind",handler:async request=>{\n  const context=await getTenantContext(request);if(context.error)return context.error;\n  const {access,schoolId}=context;\n  if(access.role!=="parent")return json({error:"僅 LAB 家長帳號可執行模擬綁定"},403);\n  try{\n    const body=await request.json();\n    const code=String(body?.bindingCode||"").trim();\n    if(!/^\\d{6}$/.test(code))return json({error:"請輸入有效的六位數 LAB 綁定碼"},400);\n    const codeHash=lineBindingCodeHash(code,lineSecret());\n    const pending=await findLineAccountBindingRequest(codeHash);\n    if(!pending||pending.schoolId!==schoolId||pending.parentEmail!==access.email)return json({error:"LAB 綁定碼無效、已使用或逾時"},409);\n    const mockUserId="lab-mock-"+lineBindingCodeHash(code, "LAB_MOCK_USER_ID").slice(0,24);\n    const result=await bindLineAccount({codeHash,lineUserId:mockUserId,lineDisplayName:"LAB 模擬家長"});\n    if(!result.ok)return json({error:"LAB 模擬綁定失敗："+String(result.reason||"unknown")},409);\n    return json({bound:true,mockMode:true,lineDisplayName:"LAB 模擬家長"});\n  }catch(error){console.error("LAB mock LINE binding failed",error?.message||String(error));return json({error:"LAB 模擬綁定處理失敗"},500)}\n}});\n'''
     line_webhook.write_text(mock_source,encoding="utf-8")
     # The LAB-only action is inserted into the copied frontend, not Production source.
     fee=output/"app"/"fee-collections.js"
@@ -200,6 +204,18 @@ def prepare(output: Path) -> None:
         '  if(action==="lab-line-test-send")try{if(!confirm("只發送一則 LAB 測試訊息至指定測試家長的 LINE，是否繼續？"))return;showStatus("正在送出 LAB 測試通知…");const result=await api("line/lab-send-test",{method:"POST",body:"{}"});showStatus(result.message||"LINE 已接受測試訊息，請檢查手機。")}catch(error){showStatus(error.message,"error")}'+chr(10)+'  if(action==="refresh-line-binding")',1)
     if 'lab-line-test-send' not in fee_source or 'line/lab-send-test' not in fee_source:raise RuntimeError("LAB test send UI insertion failed")
     fee.write_text(fee_source,encoding="utf-8")
+    # LAB-only masked notification ledger. The endpoint independently requires
+    # an authenticated tenant admin; the browser panel removes itself for every
+    # other role and is never copied into Production app/.
+    log_ui=(ROOT/"scripts"/"lab-line-notification-log.js").read_text(encoding="utf-8")
+    (output/"app"/"lab-line-notification-log.js").write_text(log_ui,encoding="utf-8")
+    fee_page=output/"app"/"fee-collections.html"
+    fee_html=fee_page.read_text(encoding="utf-8")
+    admin_marker='<section id="adminCreate"></section>'
+    if admin_marker not in fee_html or "</body>" not in fee_html:raise RuntimeError("Fee collection LAB ledger insertion point changed")
+    fee_html=fee_html.replace(admin_marker,admin_marker+'<section id="labLineNotificationLog"></section>',1)
+    fee_html=fee_html.replace("</body>",'<script type="module" src="/lab-line-notification-log.js"></script></body>',1)
+    fee_page.write_text(fee_html,encoding="utf-8")
     messaging=lib/"lineMessaging.mjs"
     messaging_source=messaging.read_text(encoding="utf-8")
     api_guard='async function lineApi(path,{method="POST",body}={}){'

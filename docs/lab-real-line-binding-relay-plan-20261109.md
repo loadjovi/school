@@ -1,39 +1,69 @@
-# LAB real LINE binding using the existing production Official Account (draft, disabled)
+# Functional UAT LAB｜LINE Login、單人測試通知與發送稽核
 
-## Safety boundary
-The production LINE Official Account is shared. Its Messaging API webhook URL must remain unchanged. A production-channel event must never be forwarded to the LAB by merely changing LINE Developers settings.
+更新日期：2026-11-11
 
-The existing production webhook currently interprets `#綁定帳號 123456` against the production binding table. **Do not send a LAB code using this command**. The separate LAB simulation endpoint is not a real LINE webhook.
+## 安全邊界
 
-## Proposed opt-in relay (not enabled or deployed)
-1. A verified LINE webhook receives a one-to-one message beginning with `#LAB綁定`. All normal commands continue unchanged.
-2. Check an exact allowlist of LINE user IDs, with a persistent but revocable LAB tester authorization. Default off; unknown users are never forwarded. Authorization does not expire after one test, while binding codes remain short-lived and single-use. Do not log LINE user IDs, tokens or codes in plain text.
-3. Forward only the minimal signed test payload over HTTPS to an allowlisted LAB API origin using a separate shared secret, timestamp, nonce and replay protection. The relay must reject arbitrary URLs and fail closed.
-4. The LAB verifies the relay signature, freshness, replay protection, tenant, parent identity, binding-code expiry and one-time use. It uses LAB-only Azure Storage. Production storage is never queried or written by the test route.
-5. Reply with a short, non-sensitive LAB-only confirmation. The production LINE channel token is used solely by the production reply handler; LAB must never receive that token or issue LINE API requests.
-6. Provide an explicit kill switch for the allowlist, plus a manual disable control. Persistent authorization must not imply perpetual exposure of the relay. Disable immediately after validation.
+- 功能只由 `scripts/prepare-functional-lab.py` 產生到獨立 Functional UAT LAB，不會在 Production `app/` 或 `api/` 註冊。
+- LAB 使用獨立 Azure Static Web App 與獨立 Storage；`LAB_ENVIRONMENT`、`LAB_EXPECTED_STORAGE_ACCOUNT` 與 Connection String 的 AccountName 任一不符即停止服務。
+- 正式 LINE Official Account 的 Webhook、正式家長綁定資料與正式通知流程不變。
+- 共用 Production LINE 模組在 LAB 一律停用外部發送。唯一例外是 LAB 產生的單一測試 API，而且只能送給環境設定中的同一位測試家長與 LINE User ID。
+- 不接受瀏覽器指定收件者或任意訊息；訊息內容固定於伺服器端。
+- Token、Secret、完整 LINE User ID 與完整 Connection String 不得出現在前端、API 回應、稽核表或應用程式日誌。
 
-## Before any production rollout
-- Confirm LAB Azure Storage account and LAB API origin are distinct from production.
-- Confirm the specific test LINE user ID via an authenticated verification method once, and pair it with one LAB-only parent account. The public LINE ID `roy.lin` is not the Messaging API user ID and must not be used as an allowlist key. Do not assume a display name identifies a user.
-- Implement automated tests: disabled/default, allowlist miss, non-user source, wrong command, invalid relay signature, replay, expiry, duplicate binding, cross-tenant, wrong parent, LAB storage mismatch, no normal-command regression.
-- Run LAB-only tests and review production webhook changes separately. Obtain explicit approval before deploying a production webhook relay.
+## 已完成
 
-## Current status
-This is a design and safety checklist, **not** an operational relay. No production LINE settings, webhook, channel token or data have been changed.
+1. LINE Login 採 state、nonce、PKCE、一次性交易與 ETag 防重放。
+2. OAuth Callback 驗證 ID token、audience、nonce 與 LINE User ID 格式，再綁定目前已登入的 LAB 家長。
+3. `POST /api/line/lab-send-test` 依序驗證：
+   - Functional UAT LAB 設定；
+   - 已登入家長身分；
+   - 指定測試家長 Email；
+   - 指定 LINE User ID；
+   - 實際綁定目標完全相符；
+   - 伺服器端 Messaging Access Token 已設定；
+   - 原子化 rolling 60 秒發送限制。
+4. 60 秒限制使用固定 Row Key、Create conflict 與 ETag Replace；同時請求只會有一個取得發送權。
+5. LINE Push 設定 10 秒逾時與 `X-Line-Retry-Key`；HTTP 拒絕與網路／逾時未知分開記錄。
+6. 建立 LAB 專用 `LabLineNotificationLog`，僅授權 School Admin 可查詢遮罩後資料。
+7. 管理員頁面明確標示「LINE API 已接受」不代表家長已讀或實際送達。
 
-## Updated product requirement: first-time parent onboarding (2026-11-09)
-The intended UAT begins with a parent who has **not yet followed** the existing Official Account. From the authenticated parent portal, provide one coherent flow: start LINE connection, authorize via LINE Login with the add-friend option, return to the portal, confirm verified identity, and display binding/friendship status. The parent must not manually retrieve a Messaging API user ID or paste a binding command.
+## 發送狀態
 
-This requires a LINE Login channel and verified server-side OAuth callback (state, nonce, PKCE where supported, token verification, redirect URI allowlist) under the **same LINE Developers provider** as the existing Messaging API channel for user ID correspondence. LINE friend-add is user-controlled; distinguish followed, blocked and unknown status. Never claim successful follow solely because the add-friend screen was opened. Use a backend-verified identity and LAB-only parent/session/tenant authorization before writing the LAB binding. Protect against account takeover and replay. Keep secrets in environment settings, never frontend JS.
+| 狀態 | 意義 |
+| --- | --- |
+| `CREATED` | 已建立 LAB 發送紀錄，尚未呼叫 LINE |
+| `SENDING` | 即將或正在呼叫 LINE API |
+| `ACCEPTED` | LINE API 回傳 2xx；只代表受理 |
+| `FAILED` | LINE API 明確回傳非 2xx |
+| `UNKNOWN` | 網路逾時、例外或紀錄更新異常，不能判定 LINE 是否受理 |
 
-The shared production Official Account must retain its existing webhook and notification flow. This design replaces the earlier manual #LAB command as the preferred onboarding UX; the draft diagnostic commands remain disabled and must not be advertised to parents. Do not deploy or enable anything in production before verifying provider/channel configuration, redirect URIs and isolation, and approving the minimal changes.
+稽核資料包含內部 Request ID、通知類型、遮罩家長、遮罩 LINE User ID、來源、狀態、LINE HTTP 狀態、錯誤代碼及時間；不保存 Token 或完整 LINE User ID。
 
-## Confirmed LAB origin and planned callback (2026-11-09)
-- User-confirmed isolated Functional UAT LAB origin: `https://icy-ocean-0a2602100.6.azurestaticapps.net`.
-- Planned exact LINE Login redirect URI: `https://icy-ocean-0a2602100.6.azurestaticapps.net/api/line/login/callback`.
-- LINE Login Channel ID: `2012482463` (public identifier, not a secret).
-- Provider: 聖心弦樂團家長服務台; linked Official Account selected: 聖心弦樂成長平台.
-- **This callback route is not yet implemented or deployed.** Do not begin end-to-end login or assume that entering the URL in LINE Developers activates it.
-- LAB-only environment variables to provision securely after implementation: LINE_LOGIN_CHANNEL_ID, LINE_LOGIN_CHANNEL_SECRET, LINE_LOGIN_REDIRECT_URI. Do not reuse production Messaging API secrets or expose them to the browser.
-- Before enablement: implement state/nonce persistence and one-time use, token exchange and ID token verification, server-side linkage to an authenticated LAB parent, CSRF and session-binding protections, friendship check, safe redirect and failure recovery; test callback and isolation.
+## LAB 環境變數（只記名稱，不記值）
+
+- `LAB_ENVIRONMENT`
+- `LAB_EXPECTED_STORAGE_ACCOUNT`
+- `STORAGE_CONNECTION_STRING`
+- `LINE_LOGIN_CHANNEL_ID`
+- `LINE_LOGIN_CHANNEL_SECRET`
+- `LINE_LOGIN_REDIRECT_URI`
+- `LAB_LINE_TEST_PARENT_EMAIL`
+- `LAB_LINE_TEST_USER_ID`
+- `LAB_LINE_MESSAGING_ACCESS_TOKEN`
+
+## 驗證方式
+
+- 靜態隔離測試：確認按鈕、OAuth、發送 API、稽核 API 與管理員畫面只存在於生成的 LAB Bundle。
+- 安全規則測試：非白名單、未綁定、LINE User ID 不符、Token 未設定全部 fail closed。
+- 並行測試：同一個全新或已過期的限流 Row 同時提出 12 個請求，只允許 1 個取得發送權。
+- 結果測試：2xx＝`ACCEPTED`、非 2xx＝`FAILED`、逾時／網路例外＝`UNKNOWN`。
+- CI 與模擬測試不呼叫真實 LINE；真實單人測試仍須另行取得授權，且只能使用指定 Roy 測試帳號。
+
+## 尚未啟用
+
+- 課程異動、加練、缺席、活動、團服、收費與每日摘要等正式業務通知。
+- 廣播、群組通知或其他家長通知。
+- Production 部署、PR 合併或正式 Webhook 變更。
+
+上述項目必須另行完成通知偏好、去重、重試、退訂、權限與業務驗收後，才可提出上線評估。
