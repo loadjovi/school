@@ -4,6 +4,8 @@ import {pushLineMessage} from "./lineMessaging.mjs";
 const allowed=new Set(["section","ensemble","comprehensive","training"]);
 const classLabel={section:"分部課",ensemble:"合奏課",comprehensive:"綜合課",training:"訓練／加練"};
 const clean=(value,max=100)=>String(value||"").trim().slice(0,max);
+// Normalize the confirmed duplicated teacher name in notification output only.
+const cleanActorName=value=>clean(value,80).replace(/^陳宣文文$/u,"陳宣文");
 
 export function lineAbsenceCandidates(items=[]){
   const unique=new Map();
@@ -29,7 +31,7 @@ export function lineAbsenceMessage({date,items=[],actorName="",appUrl=""}={}){
     const parts=[clean(item.name,60),item.groupName?`${clean(item.groupName,20)}團`:"",clean(item.section,40),course].filter(Boolean);
     lines.push(`${index+1}. ${parts.join("｜")}`);
   });
-  if(actorName)lines.push("",`點名人員：${clean(actorName,80)}`);
+  if(actorName)lines.push("",`點名人員：${cleanActorName(actorName)}`);
   lines.push("","請登入「聖心弦樂成長平台 → 出勤與請假」確認學生狀況。","本通知只在學生新標記為缺席時發送；請假、遲到與重複儲存不通知。");
   if(appUrl)lines.push(`平台：${clean(appUrl,350)}`);
   return lines.join("\n").slice(0,5000);
