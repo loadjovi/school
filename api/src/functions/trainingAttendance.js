@@ -4,6 +4,7 @@ import { ensureTenantTables, table, tenantSchoolPartition, listStudentMaster, li
 import { needsTrainingAttendance } from "./calendarEvents.js";
 import { isTrainingEventType } from "../lib/trainingEventTypes.js";
 import { dispatchLineAbsenceNotifications } from "../lib/lineAbsenceNotification.mjs";
+import { sortTrainingRoster } from "../lib/trainingRosterOrder.mjs";
 
 const safe=v=>String(v||"").replaceAll("'","''");
 const dateOk=v=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(String(v||"")))return false;const d=new Date(`${v}T12:00:00Z`);return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===v};
@@ -17,7 +18,7 @@ const summary=e=>({eventId:String(e.rowKey||""),title:String(e.title||""),eventD
 
 function rosterFor(event,masters){
   const groups=String(event.targetGroups||"ALL").split(",").map(normGroup).filter(Boolean);
-  return masters.filter(s=>String(s.status||"active")==="active"&&(!groups.length||groups.includes("ALL")||groups.includes(normGroup(s.groupName))));
+  return sortTrainingRoster(masters.filter(s=>String(s.status||"active")==="active"&&(!groups.length||groups.includes("ALL")||groups.includes(normGroup(s.groupName)))));
 }
 
 function mayTakeAttendance(access,event,teachers){

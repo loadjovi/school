@@ -1,11 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
+import {sortTrainingRoster} from "../api/src/lib/trainingRosterOrder.mjs";
 
 const attendance=readFileSync(new URL("../app/training-attendance.js",import.meta.url),"utf8");
 const calendar=readFileSync(new URL("../app/special-calendar.js",import.meta.url),"utf8");
 const workspace=readFileSync(new URL("../app/school-admin-workspace.js",import.meta.url),"utf8");
 const backend=readFileSync(new URL("../api/src/functions/trainingAttendance.js",import.meta.url),"utf8");
+
+test("rehearsal roster follows section, grade, and student-name order",()=>{
+  const rows=[
+    {rowKey:"8",studentName:"大提甲",section:"大提",grade:"六年級"},
+    {rowKey:"6",studentName:"小一六",section:"小提一部",grade:"六年級"},
+    {rowKey:"4",studentName:"中提甲",section:"中提",grade:"四年級"},
+    {rowKey:"5",studentName:"小二甲",section:"小提二部",grade:"五年級"},
+    {rowKey:"2",studentName:"小一乙",section:"小提一部",grade:"四年級"},
+    {rowKey:"1",studentName:"小一甲",section:"小提一部",grade:"四年級"},
+    {rowKey:"9",studentName:"低音甲",section:"低音提",grade:"五年級"},
+    {rowKey:"10",studentName:"待確認甲",section:"待確認",grade:"三年級"}
+  ];
+
+  assert.deepEqual(sortTrainingRoster(rows).map(x=>x.studentName),[
+    "小一乙","小一甲","小一六","小二甲","中提甲","大提甲","低音甲","待確認甲"
+  ]);
+  assert.equal(rows[0].studentName,"大提甲","sorting must not mutate the student master list");
+});
 
 test("attendance workspace offers a direct rehearsal roll-call entry",()=>{
   assert.match(workspace,/data-workspace-action="trainingAttendance"/);
