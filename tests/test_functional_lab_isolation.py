@@ -53,6 +53,38 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         for file in (function,rules,panel):
             result=subprocess.run(["node","--check",str(file)],capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr)
+    def test_line_student_coverage_is_generated_lab_only_and_admin_only(self):
+        function=self.lab/"api/src/functions/labLineStudentCoverage.js"
+        model=self.lab/"api/src/lib/labLineStudentCoverage.mjs"
+        panel=self.lab/"app/lab-line-student-coverage.js"
+        page=(self.lab/"app/index.html").read_text(encoding="utf-8")
+        for file in (function,model,panel):self.assertTrue(file.is_file(),file)
+        self.assertFalse((ROOT/"api/src/functions/labLineStudentCoverage.js").exists())
+        self.assertFalse((ROOT/"api/src/lib/labLineStudentCoverage.mjs").exists())
+        self.assertFalse((ROOT/"app/lab-line-student-coverage.js").exists())
+        source=function.read_text(encoding="utf-8")
+        read_model=model.read_text(encoding="utf-8")
+        browser=panel.read_text(encoding="utf-8")
+        self.assertIn('route:"line/lab-student-coverage"',source)
+        self.assertIn('access.role!=="admin"',source)
+        self.assertIn('access.capabilities?.tenantAdmin!==true',source)
+        self.assertIn('getLineAccountBinding(schoolId,email)',source)
+        self.assertNotIn('includeTarget:true',source)
+        self.assertNotIn('lineUserId:',read_model)
+        self.assertNotIn('parentKey:',read_model)
+        self.assertIn('學生作為查詢主軸',source)
+        self.assertIn('同一家長若有兩名子女',browser)
+        self.assertIn('已綁定」不等於已讀',browser)
+        self.assertIn('data-workspace-action="students"',browser)
+        self.assertIn('lab-line-shortcut-count',browser)
+        self.assertIn('/lab-line-student-coverage.js',page)
+        self.assertIn('/api/line/lab-student-coverage',browser)
+        login=(self.lab/"api/src/functions/labLineLogin.js").read_text(encoding="utf-8")
+        self.assertIn('friendStatusTableName="LabLineFriendStatus"',login)
+        self.assertIn('await saveFriendStatus',login)
+        for file in (function,model,panel):
+            result=subprocess.run(["node","--check",str(file)],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
     def test_storage_guard_present(self):
         s=(self.lab/"api/src/lib/storage.js").read_text()
         self.assertIn('assertLabIsolation();return process.env.STORAGE_CONNECTION_STRING',s)

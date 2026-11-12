@@ -19,6 +19,9 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('row.parentEmail!==ctx.access.email',oauth)
         self.assertIn('row.schoolId!==ctx.schoolId',oauth)
         self.assertIn('https://api.line.me/friendship/v1/status',oauth)
+        self.assertIn('friendStatusTableName="LabLineFriendStatus"',oauth)
+        self.assertIn('parentCoverageKey',oauth)
+        self.assertIn('await saveFriendStatus',oauth)
         self.assertNotIn('LINE_CHANNEL_ACCESS_TOKEN',oauth)
         self.assertFalse((ROOT/"api/src/functions/labLineLogin.js").exists())
         self.assertIn('lab-line-login',builder)
@@ -30,6 +33,8 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('messages:[{type:"text",text:labSingleTestMessage()}]',oauth)
         self.assertNotIn('message:body.message',oauth)
         self.assertIn('lab-line-test-send',builder)
+        self.assertIn('labLineStudentCoverage.js',builder)
+        self.assertIn('lab-line-student-coverage.js',builder)
 
     def test_single_recipient_endpoint_never_accepts_browser_target_or_message(self):
         oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()

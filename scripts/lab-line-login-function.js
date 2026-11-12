@@ -4,8 +4,10 @@ import {app} from "@azure/functions";
 import {randomBytes,randomInt,randomUUID,createHash} from "node:crypto";
 import {TableClient,TableServiceClient} from "@azure/data-tables";
 import {getTenantContext,json} from "../lib/auth.js";
+import {tenantSchoolPartition} from "../lib/storage.js";
 import {createLineAccountBindingRequest,bindLineAccount,getLineAccountBinding} from "../lib/lineAccountBinding.js";
 import {lineBindingCodeHash} from "../lib/lineMessaging.mjs";
+import {parentCoverageKey} from "../lib/labLineStudentCoverage.mjs";
 import {
   LAB_LINE_NOTIFICATION_STATES,
   classifyLinePushResult,
@@ -21,6 +23,7 @@ const CALLBACK=ORIGIN+"/api/line/login/callback";
 const PAGE=ORIGIN+"/fee-collections.html";
 const oauthTableName="LabLineOAuthTransactions";
 const notificationTableName="LabLineNotificationLog";
+const friendStatusTableName="LabLineFriendStatus";
 const hash=v=>createHash("sha256").update(String(v)).digest("hex");
 const random=()=>randomBytes(32).toString("base64url");
 const response=(body,status=200)=>({status,jsonBody:body,headers:{"Cache-Control":"no-store","Content-Type":"application/json; charset=utf-8"}});
@@ -42,6 +45,14 @@ async function storageTable(name){
 }
 const storage=()=>storageTable(oauthTableName);
 const notificationStorage=()=>storageTable(notificationTableName);
+const friendStatusStorage=()=>storageTable(friendStatusTableName);
+async function saveFriendStatus({schoolId,email,friendStatus}){
+  const status=["friend","not_friend","unknown"].includes(String(friendStatus||""))?String(friendStatus):"unknown";
+  await (await friendStatusStorage()).upsertEntity({
+    partitionKey:tenantSchoolPartition(schoolId),rowKey:parentCoverageKey(schoolId,email),
+    friendStatus:status,checkedAt:new Date().toISOString()
+  },"Replace");
+}
 async function getRow(key){
   try{return await (await storage()).getEntity("LAB",hash(key))}
   catch(e){if(e.statusCode===404)return null;throw e}
@@ -147,6 +158,8 @@ app.http("labLineLoginFinish",{methods:["POST"],authLevel:"anonymous",route:"lin
     await createLineAccountBindingRequest({schoolId:ctx.schoolId,email:ctx.access.email,codeHash,expiresAt:new Date(Date.now()+60000).toISOString()});
     const result=await bindLineAccount({codeHash,lineUserId:row.lineUserId,lineDisplayName:row.lineDisplayName});
     if(!result.ok)return response({error:"綁定失敗："+result.reason},409);
+    try{await saveFriendStatus({schoolId:ctx.schoolId,email:ctx.access.email,friendStatus:row.friendStatus})}
+    catch(error){console.error("LAB LINE friend-status persistence failed",String(error?.name||"Error").slice(0,40))}
     return response({bound:true,friendStatus:row.friendStatus,lineDisplayName:row.lineDisplayName});
   }catch(e){console.error("LAB LINE finish failed",e?.message);return response({error:"LAB LINE 綁定失敗（請由管理員檢查後端日誌）"},500)}
 }});

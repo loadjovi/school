@@ -147,8 +147,12 @@ def prepare(output: Path) -> None:
     # generated LAB API.
     safety_source=(ROOT/"scripts"/"lab-line-notification-safety.mjs").read_text(encoding="utf-8")
     lib.joinpath("labLineNotificationSafety.mjs").write_text(safety_source,encoding="utf-8")
+    coverage_model=(ROOT/"scripts"/"lab-line-student-coverage-model.mjs").read_text(encoding="utf-8")
+    lib.joinpath("labLineStudentCoverage.mjs").write_text(coverage_model,encoding="utf-8")
     oauth_source=(ROOT/"scripts"/"lab-line-login-function.js").read_text(encoding="utf-8")
     fn_dir.joinpath("labLineLogin.js").write_text(prefix+oauth_source,encoding="utf-8")
+    coverage_function=(ROOT/"scripts"/"lab-line-student-coverage-function.js").read_text(encoding="utf-8")
+    fn_dir.joinpath("labLineStudentCoverage.js").write_text(prefix+coverage_function,encoding="utf-8")
     # LAB-only simulated parent binding. Never registered in Production source.
     # Real LINE webhook is explicitly rejected; simulated requests require parent auth.
     mock_source=line_webhook.read_text(encoding="utf-8")
@@ -232,6 +236,12 @@ def prepare(output: Path) -> None:
                      encoding="utf-8")
     app=output/"app"
     app.joinpath("functional-lab-banner.js").write_text(BANNER.lstrip(),encoding="utf-8")
+    coverage_ui=(ROOT/"scripts"/"lab-line-student-coverage.js").read_text(encoding="utf-8")
+    app.joinpath("lab-line-student-coverage.js").write_text(coverage_ui,encoding="utf-8")
+    home_page=app/"index.html"
+    home_html=home_page.read_text(encoding="utf-8")
+    if "</body>" not in home_html:raise RuntimeError("LAB LINE student coverage insertion point changed")
+    home_page.write_text(home_html.replace("</body>",'<script defer src="/lab-line-student-coverage.js?v=20261112"></script></body>',1),encoding="utf-8")
     count=0
     for page in app.rglob("*.html"):
         text=page.read_text(encoding="utf-8")
