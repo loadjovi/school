@@ -108,11 +108,14 @@ function cookieValue(request){
 }
 
 export function labLineSessionCookie(token){
-  return `${cookieName}=${encodeURIComponent(String(token||""))}; Path=/; Max-Age=${Math.floor(sessionLifetimeMs/1000)}; HttpOnly; Secure; SameSite=Lax`;
+  return {
+    name:cookieName,value:String(token||""),path:"/",
+    maxAge:Math.floor(sessionLifetimeMs/1000),httpOnly:true,secure:true,sameSite:"Lax"
+  };
 }
 
 export function clearLabLineSessionCookie(){
-  return `${cookieName}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
+  return {name:cookieName,value:"",path:"/",maxAge:0,httpOnly:true,secure:true,sameSite:"Lax"};
 }
 
 async function sessionRow(request){

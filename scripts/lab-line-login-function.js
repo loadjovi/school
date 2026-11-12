@@ -37,7 +37,10 @@ const notificationTableName="LabLineNotificationLog";
 const friendStatusTableName="LabLineFriendStatus";
 const hash=v=>createHash("sha256").update(String(v)).digest("hex");
 const random=()=>randomBytes(32).toString("base64url");
-const response=(body,status=200,headers={})=>({status,jsonBody:body,headers:{"Cache-Control":"no-store","Content-Type":"application/json; charset=utf-8",...headers}});
+const response=(body,status=200,headers={},cookies=[])=>({
+  status,jsonBody:body,headers:{"Cache-Control":"no-store","Content-Type":"application/json; charset=utf-8",...headers},
+  ...(cookies.length?{cookies}:{})
+});
 const redirect=(result,returnTo="fees")=>({status:303,headers:{"Location":(returnTo==="home"?LOGIN_PAGE+"?line_lab_link=":PAGE+"?line_lab_result=")+encodeURIComponent(result),"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
 const authRedirect=(result)=>({status:303,headers:{"Location":LOGIN_PAGE+"?line_lab_auth="+encodeURIComponent(result),"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
 const config=()=>({id:String(process.env.LINE_LOGIN_CHANNEL_ID||""),secret:String(process.env.LINE_LOGIN_CHANNEL_SECRET||""),uri:String(process.env.LINE_LOGIN_REDIRECT_URI||"")});
@@ -200,7 +203,7 @@ app.http("labLineAuthFinish",{methods:["POST"],authLevel:"anonymous",route:"line
     if(!row||row.kind!=="AUTH_TICKET"||row.status!=="ACTIVE"||Number(row.expiresAt)<Date.now())return response({error:"LINE 授權已過期，請重新登入"},403);
     await consume(row);
     const session=await createLabLineSession({lineUserId:row.lineUserId,lineDisplayName:row.lineDisplayName});
-    return response({authenticated:true,authProvider:"line",displayName:session.displayName,linkedExisting:session.linkedExisting},200,{"Set-Cookie":labLineSessionCookie(session.token)});
+    return response({authenticated:true,authProvider:"line",displayName:session.displayName,linkedExisting:session.linkedExisting},200,{},[labLineSessionCookie(session.token)]);
   }catch(error){
     const conflict=error?.code==="IDENTITY_CONFLICT";
     console.error("LAB LINE auth finish failed",String(error?.code||error?.name||"Error"));
@@ -217,7 +220,7 @@ app.http("labLineAuthSession",{methods:["GET"],authLevel:"anonymous",route:"line
 }});
 app.http("labLineAuthLogout",{methods:["POST"],authLevel:"anonymous",route:"line/auth/logout",handler:async request=>{
   try{await endLabLineSession(request)}catch(error){console.error("LAB LINE logout failed",String(error?.name||"Error"))}
-  return response({ok:true},200,{"Set-Cookie":clearLabLineSessionCookie()});
+  return response({ok:true},200,{},[clearLabLineSessionCookie()]);
 }});
 app.http("labLineAccountStatus",{methods:["GET"],authLevel:"anonymous",route:"line/account/status",handler:async request=>{
   try{

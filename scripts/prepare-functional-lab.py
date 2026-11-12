@@ -325,20 +325,27 @@ async function restoreLabLineSession(){
     query.delete("line_lab_auth");history.replaceState(null,"",location.pathname+(query.toString()?"?"+query.toString():"")+location.hash);
     if(!result.startsWith("ok.")){labLineBootError="LINE 授權未完成，請重新操作";return false}
     try{
-      const response=await fetch("/api/line/auth/finish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:result.slice(3)})});
+      const response=await fetch("/api/line/auth/finish",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:result.slice(3)})});
       const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"LINE 登入失敗");
+      const session=await fetch("/api/line/auth/session",{cache:"no-store",credentials:"same-origin"});
+      if(!session.ok)throw Error("LINE 登入狀態未建立，請重新操作");
       state.token="cookie-session";sessionStorage.setItem("google_id_token",state.token);return true;
     }catch(error){labLineBootError=error.message||"LINE 登入失敗";return false}
   }
   try{
-    const response=await fetch("/api/line/auth/session",{cache:"no-store"});
+    const response=await fetch("/api/line/auth/session",{cache:"no-store",credentials:"same-origin"});
     if(response.ok){state.token="cookie-session";sessionStorage.setItem("google_id_token",state.token);return true}
   }catch{}
   return false;
 }
 async function boot(){
   if(!await finishLabLineAccountLink()){renderLogin(labLineBootError);return}
-  if(!state.token){const restored=await restoreLabLineSession();if(!restored){renderLogin(labLineBootError);return}}
+  const hasLineAuthResult=new URLSearchParams(location.search).has("line_lab_auth");
+  if(hasLineAuthResult){state.token="";sessionStorage.removeItem("google_id_token")}
+  if(hasLineAuthResult||!state.token||state.token==="cookie-session"){
+    const restored=await restoreLabLineSession();
+    if(!restored){state.token="";sessionStorage.removeItem("google_id_token");renderLogin(labLineBootError);return}
+  }
   try{await loadProfile();if(labLineBootNotice)setTimeout(()=>toast(labLineBootNotice),100)}catch(e){renderLogin(e.message)}
 }
 window.startLabLineAuth=async function(){
@@ -349,6 +356,11 @@ window.startLabLineAuth=async function(){
     location.assign(data.authorizationUrl);
   }catch(error){renderLogin(error.message||"無法啟動 LINE 登入")}
 };''',1)
+    logout_marker='function logout(reload=true){state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}'
+    if logout_marker not in app_source:
+        raise RuntimeError("Frontend logout flow changed; review LAB LINE session cleanup")
+    app_source=app_source.replace(logout_marker,
+        'function logout(reload=true){const lineSession=state.token==="cookie-session";state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(lineSession)fetch("/api/line/auth/logout",{method:"POST",credentials:"same-origin",keepalive:true}).catch(()=>{});if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}',1)
     app_source=app_source.replace('登入已失效，請重新使用 Google 登入','登入已失效，請重新使用 Gmail 或 LINE 登入')
     app_source=app_source.replace('Google Gmail 登入版 v3<br>家長、老師與管理員共用入口',
         '家長可使用 Gmail 或 LINE 登入<br>老師與管理員請使用 Gmail',1)
