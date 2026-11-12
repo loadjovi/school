@@ -9,6 +9,13 @@ import {createLineAccountBindingRequest,bindLineAccount,getLineAccountBinding} f
 import {lineBindingCodeHash} from "../lib/lineMessaging.mjs";
 import {parentCoverageKey} from "../lib/labLineStudentCoverage.mjs";
 import {
+  clearLabLineSessionCookie,
+  createLabLineSession,
+  endLabLineSession,
+  getLabLineIdentity,
+  labLineSessionCookie
+} from "../lib/labLineSession.mjs";
+import {
   LAB_LINE_NOTIFICATION_STATES,
   classifyLinePushResult,
   labSingleTestMessage,
@@ -21,13 +28,15 @@ import {
 const ORIGIN="https://icy-ocean-0a2602100.6.azurestaticapps.net";
 const CALLBACK=ORIGIN+"/api/line/login/callback";
 const PAGE=ORIGIN+"/fee-collections.html";
+const LOGIN_PAGE=ORIGIN+"/";
 const oauthTableName="LabLineOAuthTransactions";
 const notificationTableName="LabLineNotificationLog";
 const friendStatusTableName="LabLineFriendStatus";
 const hash=v=>createHash("sha256").update(String(v)).digest("hex");
 const random=()=>randomBytes(32).toString("base64url");
-const response=(body,status=200)=>({status,jsonBody:body,headers:{"Cache-Control":"no-store","Content-Type":"application/json; charset=utf-8"}});
+const response=(body,status=200,headers={})=>({status,jsonBody:body,headers:{"Cache-Control":"no-store","Content-Type":"application/json; charset=utf-8",...headers}});
 const redirect=(result)=>({status:303,headers:{"Location":PAGE+"?line_lab_result="+encodeURIComponent(result),"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
+const authRedirect=(result)=>({status:303,headers:{"Location":LOGIN_PAGE+"?line_lab_auth="+encodeURIComponent(result),"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
 const config=()=>({id:String(process.env.LINE_LOGIN_CHANNEL_ID||""),secret:String(process.env.LINE_LOGIN_CHANNEL_SECRET||""),uri:String(process.env.LINE_LOGIN_REDIRECT_URI||"")});
 const tableClients=new Map();
 async function storageTable(name){
@@ -112,36 +121,80 @@ app.http("labLineLoginStart",{methods:["POST"],authLevel:"anonymous",route:"line
     if(!enabled())return response({error:"LAB LINE Login 尚未啟用或設定不完整"},503);
     const ctx=await parent(request);if(ctx.error)return ctx.error;
     const state=random(),nonce=random(),verifier=random(),challenge=createHash("sha256").update(verifier).digest("base64url");
-    await (await storage()).createEntity({partitionKey:"LAB",rowKey:hash(state),kind:"STATE",status:"ACTIVE",nonce,verifier,schoolId:ctx.schoolId,parentEmail:ctx.access.email,expiresAt:Date.now()+600000});
+    await (await storage()).createEntity({partitionKey:"LAB",rowKey:hash(state),kind:"STATE",flow:"LINK",status:"ACTIVE",nonce,verifier,schoolId:ctx.schoolId,parentEmail:ctx.access.email,expiresAt:Date.now()+600000});
     const q=new URLSearchParams({response_type:"code",client_id:config().id,redirect_uri:CALLBACK,state,nonce,scope:"profile openid",bot_prompt:"aggressive",code_challenge:challenge,code_challenge_method:"S256"});
     return response({authorizationUrl:"https://access.line.me/oauth2/v2.1/authorize?"+q.toString()});
   }catch(e){console.error("LAB LINE start error",e?.message);return response({error:"無法啟動 LINE 連結"},500)}
 }});
+app.http("labLineAuthStart",{methods:["POST"],authLevel:"anonymous",route:"line/auth/start",handler:async()=>{
+  try{
+    if(!enabled())return response({error:"LAB LINE Login 尚未啟用或設定不完整"},503);
+    assertLabIsolation();
+    const state=random(),nonce=random(),verifier=random(),challenge=createHash("sha256").update(verifier).digest("base64url");
+    await (await storage()).createEntity({partitionKey:"LAB",rowKey:hash(state),kind:"STATE",flow:"AUTH",status:"ACTIVE",nonce,verifier,expiresAt:Date.now()+600000});
+    const q=new URLSearchParams({response_type:"code",client_id:config().id,redirect_uri:CALLBACK,state,nonce,scope:"profile openid",bot_prompt:"aggressive",code_challenge:challenge,code_challenge_method:"S256"});
+    return response({authorizationUrl:"https://access.line.me/oauth2/v2.1/authorize?"+q.toString()});
+  }catch(error){console.error("LAB LINE auth start error",String(error?.name||"Error"));return response({error:"無法啟動 LINE 登入"},500)}
+}});
 app.http("labLineLoginCallback",{methods:["GET"],authLevel:"anonymous",route:"line/login/callback",handler:async request=>{
   const url=new URL(request.url),state=url.searchParams.get("state")||"",code=url.searchParams.get("code")||"";
+  let callbackIsAuth=false;
   try{
-    if(!enabled()||!state||!code||url.searchParams.has("error"))return redirect("cancelled");
+    if(!enabled()||!state)return redirect("cancelled");
     const row=await getRow(state);
-    if(!row||row.kind!=="STATE"||row.status!=="ACTIVE"||Number(row.expiresAt)<Date.now())return redirect("expired");
+    const isAuth=row?.flow==="AUTH";
+    callbackIsAuth=isAuth;
+    const sendResult=result=>isAuth?authRedirect(result):redirect(result);
+    if(!row||row.kind!=="STATE"||row.status!=="ACTIVE"||Number(row.expiresAt)<Date.now())return sendResult("expired");
+    if(!code||url.searchParams.has("error")){await consume(row);return sendResult("cancelled")}
     await consume(row); // burn state before any external request
     const form=new URLSearchParams({grant_type:"authorization_code",code,redirect_uri:CALLBACK,client_id:config().id,client_secret:config().secret,code_verifier:row.verifier});
     const tokenRes=await fetch("https://api.line.me/oauth2/v2.1/token",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:form});
-    if(!tokenRes.ok)return redirect("token_error");
+    if(!tokenRes.ok)return sendResult("token_error");
     const token=await tokenRes.json();
-    if(!token.id_token||!token.access_token)return redirect("token_error");
+    if(!token.id_token||!token.access_token)return sendResult("token_error");
     const verifyRes=await fetch("https://api.line.me/oauth2/v2.1/verify",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:new URLSearchParams({id_token:token.id_token,client_id:config().id,nonce:row.nonce})});
-    if(!verifyRes.ok)return redirect("identity_error");
+    if(!verifyRes.ok)return sendResult("identity_error");
     const identity=await verifyRes.json();
-    if(identity.aud!==config().id||!/^U[0-9a-f]{32}$/i.test(String(identity.sub||""))||identity.nonce!==row.nonce)return redirect("identity_error");
+    if(identity.aud!==config().id||!/^U[0-9a-f]{32}$/i.test(String(identity.sub||""))||identity.nonce!==row.nonce)return sendResult("identity_error");
     let friend="unknown";
     try{
       const fr=await fetch("https://api.line.me/friendship/v1/status",{headers:{Authorization:"Bearer "+token.access_token}});
       if(fr.ok){const data=await fr.json();friend=data.friendFlag===true?"friend":"not_friend"}
     }catch{}
     const ticket=random();
-    await (await storage()).createEntity({partitionKey:"LAB",rowKey:hash(ticket),kind:"TICKET",status:"ACTIVE",schoolId:row.schoolId,parentEmail:row.parentEmail,lineUserId:identity.sub,lineDisplayName:String(identity.name||"LINE 家長").slice(0,100),friendStatus:friend,expiresAt:Date.now()+180000});
-    return redirect("ok."+ticket);
-  }catch(e){console.error("LAB LINE callback failed",e?.message);return redirect("failed")}
+    await (await storage()).createEntity({partitionKey:"LAB",rowKey:hash(ticket),kind:isAuth?"AUTH_TICKET":"TICKET",status:"ACTIVE",schoolId:row.schoolId||"",parentEmail:row.parentEmail||"",lineUserId:identity.sub,lineDisplayName:String(identity.name||"LINE 家長").slice(0,100),friendStatus:friend,expiresAt:Date.now()+180000});
+    return sendResult("ok."+ticket);
+  }catch(e){console.error("LAB LINE callback failed",String(e?.name||"Error"));return callbackIsAuth?authRedirect("failed"):redirect("failed")}
+}});
+app.http("labLineAuthFinish",{methods:["POST"],authLevel:"anonymous",route:"line/auth/finish",handler:async request=>{
+  try{
+    if(!enabled())return response({error:"LAB LINE Login 未啟用"},503);
+    assertLabIsolation();
+    const body=await request.json(),ticket=String(body.ticket||"");
+    if(!/^[A-Za-z0-9_-]{32,64}$/.test(ticket))return response({error:"無效的 LINE 授權結果"},400);
+    const row=await getRow(ticket);
+    if(!row||row.kind!=="AUTH_TICKET"||row.status!=="ACTIVE"||Number(row.expiresAt)<Date.now())return response({error:"LINE 授權已過期，請重新登入"},403);
+    await consume(row);
+    const session=await createLabLineSession({lineUserId:row.lineUserId,lineDisplayName:row.lineDisplayName});
+    return response({authenticated:true,authProvider:"line",displayName:session.displayName,linkedExisting:session.linkedExisting},200,{"Set-Cookie":labLineSessionCookie(session.token)});
+  }catch(error){
+    const conflict=error?.code==="IDENTITY_CONFLICT";
+    console.error("LAB LINE auth finish failed",String(error?.code||error?.name||"Error"));
+    return response({error:conflict?"此 LINE 帳號對應多個既有家長身分，請由管理員確認":"LAB LINE 登入失敗，請重新操作"},conflict?409:500);
+  }
+}});
+app.http("labLineAuthSession",{methods:["GET"],authLevel:"anonymous",route:"line/auth/session",handler:async request=>{
+  try{
+    if(!enabled())return response({authenticated:false},401);
+    const identity=await getLabLineIdentity(request);
+    if(!identity)return response({authenticated:false},401);
+    return response({authenticated:true,authProvider:"line",displayName:identity.displayName});
+  }catch(error){console.error("LAB LINE session check failed",String(error?.name||"Error"));return response({authenticated:false},401)}
+}});
+app.http("labLineAuthLogout",{methods:["POST"],authLevel:"anonymous",route:"line/auth/logout",handler:async request=>{
+  try{await endLabLineSession(request)}catch(error){console.error("LAB LINE logout failed",String(error?.name||"Error"))}
+  return response({ok:true},200,{"Set-Cookie":clearLabLineSessionCookie()});
 }});
 app.http("labLineLoginFinish",{methods:["POST"],authLevel:"anonymous",route:"line/login/finish",handler:async request=>{
   try{

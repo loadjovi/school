@@ -36,6 +36,48 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('labLineStudentCoverage.js',builder)
         self.assertIn('lab-line-student-coverage.js',builder)
 
+    def test_line_can_authenticate_parent_without_a_binding_code(self):
+        oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
+        session=(ROOT/"scripts/lab-line-session.mjs").read_text()
+        builder=(ROOT/"scripts/prepare-functional-lab.py").read_text()
+        self.assertIn('route:"line/auth/start"',oauth)
+        self.assertIn('route:"line/auth/finish"',oauth)
+        self.assertIn('route:"line/auth/session"',oauth)
+        self.assertIn('route:"line/auth/logout"',oauth)
+        self.assertIn('kind:isAuth?"AUTH_TICKET":"TICKET"',oauth)
+        self.assertIn('HttpOnly; Secure; SameSite=Lax',session)
+        self.assertIn('tableName="LabLineAuthSessions"',session)
+        self.assertIn('getLabLineIdentity(request)',builder)
+        self.assertIn('lineParentOnly=identity.authProvider==="line"',builder)
+        self.assertIn('使用 LINE 登入（家長）',builder)
+        production="\n".join(path.read_text() for path in (ROOT/"api/src").rglob("*.js"))
+        self.assertNotIn('route:"line/auth/start"',production)
+        self.assertFalse((ROOT/"api/src/functions/labLineLogin.js").exists())
+        self.assertFalse((ROOT/"api/src/lib/labLineSession.mjs").exists())
+
+    def test_line_student_binding_reuses_exact_gmail_match_and_approval_flow(self):
+        registration=(ROOT/"api/src/functions/studentRegistration.js").read_text()
+        builder=(ROOT/"scripts/prepare-functional-lab.py").read_text()
+        self.assertIn('if(!/^\\d{6}$/.test(studentNo))',registration)
+        self.assertIn('if(clean(matched.studentName,40)!==studentName)',registration)
+        self.assertIn('status:"pending"',registration)
+        self.assertIn('if(access.role!=="admin")',registration)
+        self.assertIn('ensureLabLineParentBinding({request,schoolId,parentEmail:access.email})',builder)
+        self.assertNotIn('ensureLabLineParentBinding',registration)
+        self.assertIn('LINE（${esc(state.me.displayName||"家長")}）',builder)
+        self.assertIn('學生綁定申請已送出 ✅',builder)
+        self.assertIn('核准前不會開放學生資料',builder)
+        self.assertIn('authProvider:e.authProvider||"google"',builder)
+        self.assertIn('學號需為 6 碼數字',registration)
+
+    def test_line_parent_login_cannot_gain_teacher_or_admin_contexts(self):
+        builder=(ROOT/"scripts/prepare-functional-lab.py").read_text()
+        self.assertIn('if(!lineParentOnly&&(globalRole||schoolRoles.length))',builder)
+        self.assertIn('const directory=!lineParentOnly&&roleTenantAvailable?',builder)
+        self.assertIn('if(a.authProvider==="line")return;',builder)
+        self.assertIn('if(a.authProvider!=="line")try{tenantRoles=',builder)
+        self.assertIn('if(a.authProvider!=="line")try{await saveUserIdentity(a)}',builder)
+
     def test_single_recipient_endpoint_never_accepts_browser_target_or_message(self):
         oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
         send=oauth.split('app.http("labLineSendTestNotification"',1)[1]
@@ -111,6 +153,7 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn("test_lab_line_login_isolation.py",flow)
         self.assertIn("lab-line-notification-safety.test.mjs",flow)
         self.assertIn("phase1-fee-integration.test.mjs",flow)
+        self.assertIn("lab-line-auth-rules.test.mjs",flow)
 
 
 if __name__=="__main__":

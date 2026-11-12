@@ -149,6 +149,74 @@ def prepare(output: Path) -> None:
     lib.joinpath("labLineNotificationSafety.mjs").write_text(safety_source,encoding="utf-8")
     coverage_model=(ROOT/"scripts"/"lab-line-student-coverage-model.mjs").read_text(encoding="utf-8")
     lib.joinpath("labLineStudentCoverage.mjs").write_text(coverage_model,encoding="utf-8")
+    line_auth_rules=(ROOT/"scripts"/"lab-line-auth-rules.mjs").read_text(encoding="utf-8")
+    lib.joinpath("labLineAuthRules.mjs").write_text(line_auth_rules,encoding="utf-8")
+    line_session=(ROOT/"scripts"/"lab-line-session.mjs").read_text(encoding="utf-8")
+    lib.joinpath("labLineSession.mjs").write_text(line_session,encoding="utf-8")
+    # LAB accepts either Google or a server-side LINE Login session. The LINE
+    # identity is parent-only: it can never inherit teacher/admin capabilities,
+    # even when the same email has additional platform roles.
+    auth=lib/"auth.js"
+    auth_source=auth.read_text(encoding="utf-8")
+    verify_google='export async function verifyGoogle(request){return verifyGoogleToken(googleToken(request))}'
+    identity_marker='  const identity=await verifyGoogle(request);\n  if(!identity)return {authenticated:false};\n  const email=identity.email;'
+    if verify_google not in auth_source or identity_marker not in auth_source:
+        raise RuntimeError("Authentication structure changed; review LAB LINE session integration")
+    auth_source='import {getLabLineIdentity} from "./labLineSession.mjs";\n'+auth_source
+    auth_source=auth_source.replace(verify_google,
+        'export async function verifyGoogle(request){return (await getLabLineIdentity(request))||verifyGoogleToken(googleToken(request))}',1)
+    auth_source=auth_source.replace(identity_marker,
+        identity_marker+'\n  const lineParentOnly=identity.authProvider==="line";',1)
+    auth_source=auth_source.replace('  if(globalRole||schoolRoles.length){',
+        '  if(!lineParentOnly&&(globalRole||schoolRoles.length)){',1)
+    auth_source=auth_source.replace('  const directory=roleTenantAvailable?await getTeacherDirectory(email,roleSchoolId):null;',
+        '  const directory=!lineParentOnly&&roleTenantAvailable?await getTeacherDirectory(email,roleSchoolId):null;',1)
+    auth_source=auth_source.replace('  const temporary=roleTenantAvailable&&!directory?await activeTeacherSupport(email,roleSchoolId,supportDay):null;',
+        '  const temporary=!lineParentOnly&&roleTenantAvailable&&!directory?await activeTeacherSupport(email,roleSchoolId,supportDay):null;',1)
+    if 'const lineParentOnly=identity.authProvider==="line";' not in auth_source:
+        raise RuntimeError("LAB LINE parent-only auth insertion failed")
+    auth.write_text(auth_source,encoding="utf-8")
+    # Preserve provider information for the LAB UI while excluding teacher and
+    # administrative contexts from LINE-authenticated sessions.
+    me=fn_dir/"me.js"
+    me_source=me.read_text(encoding="utf-8")
+    tenant_lookup='  let tenantRoles=[];\n  try{tenantRoles=await listTenantRolesByEmail(a.email,"active")}catch(e){console.warn("context tenant role lookup failed",e)}'
+    teacher_lookup='    const teacherLookup=(async()=>{\n    try{'
+    if tenant_lookup not in me_source or teacher_lookup not in me_source:
+        raise RuntimeError("Identity context structure changed; review LAB LINE restrictions")
+    me_source=me_source.replace(tenant_lookup,
+        '  let tenantRoles=[];\n  if(a.authProvider!=="line")try{tenantRoles=await listTenantRolesByEmail(a.email,"active")}catch(e){console.warn("context tenant role lookup failed",e)}',1)
+    me_source=me_source.replace(teacher_lookup,
+        '    const teacherLookup=(async()=>{\n    if(a.authProvider==="line")return;\n    try{',1)
+    me_source=me_source.replace('  try{await saveUserIdentity(a)}catch(e){console.warn("user identity registry update failed",e)}',
+        '  if(a.authProvider!=="line")try{await saveUserIdentity(a)}catch(e){console.warn("user identity registry update failed",e)}',1)
+    me_source=me_source.replace('    identityId:a.sub||"",email:a.email,displayName:a.displayName,role:a.role,section:a.section||null,picture:a.picture||null,',
+        '    identityId:a.sub||"",email:a.email,displayName:a.displayName,authProvider:a.authProvider||"google",role:a.role,section:a.section||null,picture:a.picture||null,',1)
+    if 'authProvider:a.authProvider||"google"' not in me_source:
+        raise RuntimeError("LAB identity provider response insertion failed")
+    me.write_text(me_source,encoding="utf-8")
+    # Reuse the existing student name + six-digit student number comparison and
+    # school-admin approval flow. Only after an exact match is the LINE identity
+    # registered as this LAB parent's notification identity.
+    registration=fn_dir/"studentRegistration.js"
+    registration_source=registration.read_text(encoding="utf-8")
+    registration_source=registration_source.replace('import { app } from "@azure/functions";',
+        'import { app } from "@azure/functions";\nimport {ensureLabLineParentBinding} from "../lib/labLineSession.mjs";',1)
+    registration_source=registration_source.replace('registrationId:e.rowKey,parentEmail:e.parentEmail,parentName:e.parentName,relationship:e.relationship,',
+        'registrationId:e.rowKey,parentEmail:e.parentEmail,parentName:e.parentName,relationship:e.relationship,authProvider:e.authProvider||"google",',1)
+    registration_marker='      const grade=clean(matched.grade,20),groupName=clean(matched.groupName,10),instrument=clean(matched.instrument,20),schoolYear=clean(matched.schoolYear,20);\n      await ensureTenantTables();'
+    if registration_marker not in registration_source:
+        raise RuntimeError("Student registration match flow changed; review LAB LINE binding")
+    registration_source=registration_source.replace(registration_marker,
+        '      const grade=clean(matched.grade,20),groupName=clean(matched.groupName,10),instrument=clean(matched.instrument,20),schoolYear=clean(matched.schoolYear,20);\n'
+        '      try{await ensureLabLineParentBinding({request,schoolId,parentEmail:access.email})}\n'
+        '      catch(error){console.error("LAB LINE parent binding failed",String(error?.name||"Error"));return json({error:"LINE 家長身分綁定失敗，請重新登入後再試"},409)}\n'
+        '      await ensureTenantTables();',1)
+    registration_source=registration_source.replace('googleSub:access.sub||"",matchedStudentId:',
+        'googleSub:access.authProvider==="google"?(access.sub||""):"",identitySub:access.sub||"",authProvider:access.authProvider||"google",matchedStudentId:',1)
+    if 'ensureLabLineParentBinding({request,schoolId,parentEmail:access.email})' not in registration_source:
+        raise RuntimeError("LAB LINE student registration insertion failed")
+    registration.write_text(registration_source,encoding="utf-8")
     oauth_source=(ROOT/"scripts"/"lab-line-login-function.js").read_text(encoding="utf-8")
     fn_dir.joinpath("labLineLogin.js").write_text(prefix+oauth_source,encoding="utf-8")
     coverage_function=(ROOT/"scripts"/"lab-line-student-coverage-function.js").read_text(encoding="utf-8")
@@ -235,6 +303,85 @@ def prepare(output: Path) -> None:
     email.write_text(text.replace(expected,'connectionString:"", // LAB: external email permanently disabled'),
                      encoding="utf-8")
     app=output/"app"
+    app_v3=app/"app-v3.js"
+    app_source=app_v3.read_text(encoding="utf-8")
+    boot_marker='async function boot(){if(!state.token){renderLogin();return}try{await loadProfile()}catch(e){renderLogin(e.message)}}'
+    if boot_marker not in app_source:
+        raise RuntimeError("Frontend boot flow changed; review LAB LINE Login integration")
+    app_source=app_source.replace(boot_marker,r'''let labLineBootError="";
+async function restoreLabLineSession(){
+  const query=new URLSearchParams(location.search),result=String(query.get("line_lab_auth")||"");
+  if(result){
+    query.delete("line_lab_auth");history.replaceState(null,"",location.pathname+(query.toString()?"?"+query.toString():"")+location.hash);
+    if(!result.startsWith("ok.")){labLineBootError="LINE 授權未完成，請重新操作";return false}
+    try{
+      const response=await fetch("/api/line/auth/finish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:result.slice(3)})});
+      const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"LINE 登入失敗");
+      state.token="cookie-session";sessionStorage.setItem("google_id_token",state.token);return true;
+    }catch(error){labLineBootError=error.message||"LINE 登入失敗";return false}
+  }
+  try{
+    const response=await fetch("/api/line/auth/session",{cache:"no-store"});
+    if(response.ok){state.token="cookie-session";sessionStorage.setItem("google_id_token",state.token);return true}
+  }catch{}
+  return false;
+}
+async function boot(){if(!state.token){const restored=await restoreLabLineSession();if(!restored){renderLogin(labLineBootError);return}}try{await loadProfile()}catch(e){renderLogin(e.message)}}
+window.startLabLineAuth=async function(){
+  try{
+    const response=await fetch("/api/line/auth/start",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+    const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"無法啟動 LINE 登入");
+    if(!String(data.authorizationUrl||"").startsWith("https://access.line.me/oauth2/v2.1/authorize?"))throw Error("LINE 授權網址無效");
+    location.assign(data.authorizationUrl);
+  }catch(error){renderLogin(error.message||"無法啟動 LINE 登入")}
+};''',1)
+    app_source=app_source.replace('登入已失效，請重新使用 Google 登入','登入已失效，請重新使用 Gmail 或 LINE 登入')
+    app_source=app_source.replace('Google Gmail 登入版 v3<br>家長、老師與管理員共用入口',
+        '家長可使用 Gmail 或 LINE 登入<br>老師與管理員請使用 Gmail',1)
+    google_button='<div id="googleBtn" style="display:flex;justify-content:center;margin-top:18px"></div>'
+    if google_button not in app_source:
+        raise RuntimeError("Google login button structure changed; review LAB LINE button")
+    app_source=app_source.replace(google_button,google_button+'<div class="muted" style="text-align:center;margin:14px 0 8px">或</div><button type="button" class="primary" style="width:100%;background:#06c755" onclick="startLabLineAuth()">使用 LINE 登入（家長）</button>',1)
+    app_source=app_source.replace('Google Gmail 登入版 v3</div>',
+        '${state.me?.authProvider==="line"?"LINE 登入":"Gmail 登入"}</div>',1)
+    app_source=app_source.replace('<br>登入 Gmail：${esc(state.me.email)}<br>',
+        '<br>登入方式：${state.me?.authProvider==="line"?`LINE（${esc(state.me.displayName||"家長")}）`:`Gmail（${esc(state.me.email)}）`}<br>',1)
+    app_source=app_source.replace('我確認此 Google 帳號為上述學生之家長／監護人，並同意建立家長存取權限。',
+        '我確認此${state.me?.authProvider==="line"?" LINE":" Gmail"}帳號為上述學生之家長／監護人，並同意建立家長存取權限。',1)
+    app_source=app_source.replace('同一個 Google 帳號可以同時具有 Global、學校管理員、老師與家長身分。',
+        '同一個登入帳號可以具有一個或多個已核准身分。',1)
+    app_source=app_source.replace('Gmail 只用來辨識家長／老師／管理員；學生資料存在 StudentMaster。',
+        'Gmail 或 LINE 只用來辨識登入者；學生資料存在 StudentMaster。',1)
+    profile_marker='  if(state.me.role==="admin"){\n    state.page="admin";'
+    if profile_marker not in app_source:
+        raise RuntimeError("Frontend profile role flow changed; review pending LINE registration state")
+    app_source=app_source.replace(profile_marker,
+        '  if(state.me.role==="unassigned"){\n'
+        '    const pending=await api("/api/student-registration");state.registrations=pending.items||[];\n'
+        '    state.students=[];state.student=null;state.page="home";render();return;\n'
+        '  }\n'+profile_marker,1)
+    registration_form='function registrationForm(){return `<div class="card"><h2>第一次登入｜綁定學生</h2>'
+    if registration_form not in app_source:
+        raise RuntimeError("Frontend registration form changed; review LINE pending-state UI")
+    app_source=app_source.replace(registration_form,
+        'function registrationForm(){const pending=(state.registrations||[]).find(x=>x.status==="pending");if(pending)return `<div class="card hero"><h2>學生綁定申請已送出 ✅</h2><div class="notice">${state.me?.authProvider==="line"?"LINE":"Gmail"} 身分已完成驗證；學生 ${esc(pending.studentName||"")}（學號 ${esc(pending.studentNo||"")}）正在等待校方管理員確認。核准前不會開放學生資料。</div></div>`;return `<div class="card"><h2>第一次登入｜綁定學生</h2>',1)
+    app_source=app_source.replace('await api("/api/student-registration",{method:"POST",body:JSON.stringify(body)});toast("✅ 已送出，等待管理員確認");state.page="home";render()',
+        'await api("/api/student-registration",{method:"POST",body:JSON.stringify(body)});const pending=await api("/api/student-registration");state.registrations=pending.items||[];toast("✅ 已送出，等待管理員確認");state.page="home";render()',1)
+    app_source=app_source.replace('申請 Gmail：${esc(r.parentEmail)}<br>家長填寫：',
+        '${r.authProvider==="line"?`登入方式：LINE（${esc(r.parentName||"家長")}）`:`申請 Gmail：${esc(r.parentEmail)}`}<br>家長填寫：',1)
+    if '使用 LINE 登入（家長）' not in app_source or 'line/auth/finish' not in app_source:
+        raise RuntimeError("LAB LINE Login frontend insertion failed")
+    app_v3.write_text(app_source,encoding="utf-8")
+    webview=app/"webview-guard.js"
+    webview_source=webview.read_text(encoding="utf-8")
+    webview_source=webview_source.replace('  if(embedded){const platform=',
+        '  if(embedded&&!isLine){const platform=',1)
+    logout_call='try{await fetch("/api/google-logout",{method:"POST"})}catch{}'
+    if logout_call not in webview_source:
+        raise RuntimeError("Frontend logout flow changed; review LAB LINE session cleanup")
+    webview_source=webview_source.replace(logout_call,
+        'try{await Promise.allSettled([fetch("/api/google-logout",{method:"POST"}),fetch("/api/line/auth/logout",{method:"POST"})])}catch{}',1)
+    webview.write_text(webview_source,encoding="utf-8")
     app.joinpath("functional-lab-banner.js").write_text(BANNER.lstrip(),encoding="utf-8")
     coverage_ui=(ROOT/"scripts"/"lab-line-student-coverage.js").read_text(encoding="utf-8")
     app.joinpath("lab-line-student-coverage.js").write_text(coverage_ui,encoding="utf-8")

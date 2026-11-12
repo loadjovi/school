@@ -76,6 +76,24 @@ export async function getLineAccountBinding(schoolId,email,{includeTarget=false}
   }catch(error){if(error.statusCode===404)return null;throw error}
 }
 
+export async function getLineAccountBindingsByUserId(lineUserId,{includeTarget=false}={}){
+  await ensureTable();
+  const userId=String(lineUserId||"").trim(),lineUserIdHash=userHash(userId);
+  if(!userId)return [];
+  const items=[];
+  for await(const row of client().listEntities({queryOptions:{filter:`lineUserIdHash eq '${lineUserIdHash}' and status eq 'ACTIVE'`}})){
+    items.push({
+      bound:true,
+      schoolId:String(row.schoolId||row.partitionKey||""),
+      parentEmail:emailValue(row.parentEmail),
+      lineDisplayName:String(row.lineDisplayName||""),
+      boundAt:String(row.boundAt||""),
+      ...(includeTarget?{lineUserId:String(row.lineUserId||"")}:{})
+    });
+  }
+  return items;
+}
+
 export async function unbindLineAccount(schoolId,email){
   await ensureTable();
   const sid=tenantSchoolPartition(schoolId),parentEmail=emailValue(email),now=new Date().toISOString();

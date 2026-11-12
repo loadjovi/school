@@ -184,6 +184,22 @@ class FunctionalUATIsolationTests(unittest.TestCase):
                 self.assertNotIn('lab-mock-line-bind',prod_text)
                 self.assertIn('lab/line/mock-bind',lab_text)
                 continue
+            if original.name=="app-v3.js":
+                lab_text=actual.read_text(encoding="utf-8")
+                prod_text=original.read_text(encoding="utf-8")
+                for expected in ('使用 LINE 登入（家長）','/api/line/auth/start','/api/line/auth/finish',
+                                 '學生綁定申請已送出 ✅','核准前不會開放學生資料'):
+                    self.assertIn(expected,lab_text)
+                    self.assertNotIn(expected,prod_text)
+                self.assertIn('請輸入 6 碼學生學號',lab_text)
+                continue
+            if original.name=="webview-guard.js":
+                lab_text=actual.read_text(encoding="utf-8")
+                prod_text=original.read_text(encoding="utf-8")
+                self.assertIn('embedded&&!isLine',lab_text)
+                self.assertIn('/api/line/auth/logout',lab_text)
+                self.assertNotIn('/api/line/auth/logout',prod_text)
+                continue
             self.assertEqual(actual.read_bytes(),original.read_bytes(),
                              "SOP LAB must not repaint the production view: "+str(original))
     def test_sop_lab_source_manifest_is_reproducible(self):
