@@ -203,7 +203,7 @@ app.http("labLineAuthFinish",{methods:["POST"],authLevel:"anonymous",route:"line
     if(!row||row.kind!=="AUTH_TICKET"||row.status!=="ACTIVE"||Number(row.expiresAt)<Date.now())return response({error:"LINE 授權已過期，請重新登入"},403);
     await consume(row);
     const session=await createLabLineSession({lineUserId:row.lineUserId,lineDisplayName:row.lineDisplayName});
-    return response({authenticated:true,authProvider:"line",displayName:session.displayName,linkedExisting:session.linkedExisting},200,{},[labLineSessionCookie(session.token)]);
+    return response({authenticated:true,authProvider:"line",displayName:session.displayName,linkedExisting:session.linkedExisting,sessionToken:session.token},200,{},[labLineSessionCookie(session.token)]);
   }catch(error){
     const conflict=error?.code==="IDENTITY_CONFLICT";
     console.error("LAB LINE auth finish failed",String(error?.code||error?.name||"Error"));

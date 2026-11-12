@@ -305,10 +305,24 @@ def prepare(output: Path) -> None:
     app=output/"app"
     app_v3=app/"app-v3.js"
     app_source=app_v3.read_text(encoding="utf-8")
+    api_token_marker='if(state.token)h["X-Google-ID-Token"]=state.token;'
+    if api_token_marker not in app_source:
+        raise RuntimeError("Frontend API authentication structure changed; review LAB LINE session integration")
+    app_source=app_source.replace(api_token_marker,
+        'if(String(state.token||"").startsWith("line-session."))h["X-Lab-Line-Session"]=state.token.slice(13);else if(state.token)h["X-Google-ID-Token"]=state.token;',1)
     boot_marker='async function boot(){if(!state.token){renderLogin();return}try{await loadProfile()}catch(e){renderLogin(e.message)}}'
     if boot_marker not in app_source:
         raise RuntimeError("Frontend boot flow changed; review LAB LINE Login integration")
     app_source=app_source.replace(boot_marker,r'''let labLineBootError="",labLineBootNotice="";
+function labLineSessionHeaders(token=state.token){
+  const value=String(token||"");
+  return value.startsWith("line-session.")?{"X-Lab-Line-Session":value.slice(13)}:{};
+}
+async function verifyLabLineSession(token=state.token){
+  const response=await fetch("/api/line/auth/session",{cache:"no-store",credentials:"same-origin",headers:labLineSessionHeaders(token)});
+  const data=await response.json().catch(()=>({}));
+  return response.ok&&data.authenticated===true&&data.authProvider==="line";
+}
 async function finishLabLineAccountLink(){
   const query=new URLSearchParams(location.search),result=String(query.get("line_lab_link")||"");
   if(!result)return true;
@@ -327,14 +341,15 @@ async function restoreLabLineSession(){
     try{
       const response=await fetch("/api/line/auth/finish",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:result.slice(3)})});
       const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"LINE 登入失敗");
-      const session=await fetch("/api/line/auth/session",{cache:"no-store",credentials:"same-origin"});
-      if(!session.ok)throw Error("LINE 登入狀態未建立，請重新操作");
-      state.token="cookie-session";sessionStorage.setItem("google_id_token",state.token);return true;
+      if(!/^[A-Za-z0-9_-]{32,64}$/.test(String(data.sessionToken||"")))throw Error("LINE 登入憑證未建立，請重新操作");
+      state.token="line-session."+data.sessionToken;
+      if(!await verifyLabLineSession(state.token))throw Error("LINE 登入狀態未建立，請重新操作");
+      sessionStorage.setItem("google_id_token",state.token);return true;
     }catch(error){labLineBootError=error.message||"LINE 登入失敗";return false}
   }
   try{
-    const response=await fetch("/api/line/auth/session",{cache:"no-store",credentials:"same-origin"});
-    if(response.ok){state.token="cookie-session";sessionStorage.setItem("google_id_token",state.token);return true}
+    if(String(state.token||"").startsWith("line-session.")&&await verifyLabLineSession(state.token)){sessionStorage.setItem("google_id_token",state.token);return true}
+    if(await verifyLabLineSession("")){state.token="cookie-session";sessionStorage.setItem("google_id_token",state.token);return true}
   }catch{}
   return false;
 }
@@ -342,7 +357,7 @@ async function boot(){
   if(!await finishLabLineAccountLink()){renderLogin(labLineBootError);return}
   const hasLineAuthResult=new URLSearchParams(location.search).has("line_lab_auth");
   if(hasLineAuthResult){state.token="";sessionStorage.removeItem("google_id_token")}
-  if(hasLineAuthResult||!state.token||state.token==="cookie-session"){
+  if(hasLineAuthResult||!state.token||state.token==="cookie-session"||String(state.token).startsWith("line-session.")){
     const restored=await restoreLabLineSession();
     if(!restored){state.token="";sessionStorage.removeItem("google_id_token");renderLogin(labLineBootError);return}
   }
@@ -360,7 +375,7 @@ window.startLabLineAuth=async function(){
     if logout_marker not in app_source:
         raise RuntimeError("Frontend logout flow changed; review LAB LINE session cleanup")
     app_source=app_source.replace(logout_marker,
-        'function logout(reload=true){const lineSession=state.token==="cookie-session";state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(lineSession)fetch("/api/line/auth/logout",{method:"POST",credentials:"same-origin",keepalive:true}).catch(()=>{});if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}',1)
+        'function logout(reload=true){const previousToken=String(state.token||"");const lineSession=previousToken==="cookie-session"||previousToken.startsWith("line-session.");const lineHeaders=previousToken.startsWith("line-session.")?{"X-Lab-Line-Session":previousToken.slice(13)}:{};state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(lineSession)fetch("/api/line/auth/logout",{method:"POST",credentials:"same-origin",headers:lineHeaders,keepalive:true}).catch(()=>{});if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}',1)
     app_source=app_source.replace('登入已失效，請重新使用 Google 登入','登入已失效，請重新使用 Gmail 或 LINE 登入')
     app_source=app_source.replace('Google Gmail 登入版 v3<br>家長、老師與管理員共用入口',
         '家長可使用 Gmail 或 LINE 登入<br>老師與管理員請使用 Gmail',1)

@@ -107,6 +107,15 @@ function cookieValue(request){
   return "";
 }
 
+function sessionToken(request){
+  // Keep the HttpOnly cookie, but also accept the same opaque LAB session
+  // handle in a dedicated header. This is never a LINE access token or user
+  // ID; it only identifies the short-lived server-side LAB session.
+  const header=String(request.headers.get("x-lab-line-session")||"").trim();
+  if(/^[A-Za-z0-9_-]{32,64}$/.test(header))return header;
+  return cookieValue(request);
+}
+
 export function labLineSessionCookie(token){
   return {
     name:cookieName,value:String(token||""),path:"/",
@@ -119,7 +128,7 @@ export function clearLabLineSessionCookie(){
 }
 
 async function sessionRow(request){
-  const token=cookieValue(request);
+  const token=sessionToken(request);
   if(!/^[A-Za-z0-9_-]{32,64}$/.test(token))return null;
   try{
     const row=await (await client()).getEntity("SESSION",hash(token));
