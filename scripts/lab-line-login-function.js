@@ -3,7 +3,7 @@
 import {app} from "@azure/functions";
 import {randomBytes,randomInt,randomUUID,createHash} from "node:crypto";
 import {TableClient,TableServiceClient} from "@azure/data-tables";
-import {getTenantContext,json} from "../lib/auth.js";
+import {getTenantContext,json,verifyGoogleToken} from "../lib/auth.js";
 import {tenantSchoolPartition} from "../lib/storage.js";
 import {createLineAccountBindingRequest,bindLineAccount,getLineAccountBinding} from "../lib/lineAccountBinding.js";
 import {lineBindingCodeHash} from "../lib/lineMessaging.mjs";
@@ -12,8 +12,11 @@ import {
   clearLabLineSessionCookie,
   createLabLineSession,
   endLabLineSession,
+  getLabParentAccountLinkStatus,
   getLabLineIdentity,
-  labLineSessionCookie
+  labLineSessionCookie,
+  linkLabLineIdentityToGmail,
+  registerLabParentIdentityLink
 } from "../lib/labLineSession.mjs";
 import {
   LAB_LINE_NOTIFICATION_STATES,
@@ -35,7 +38,7 @@ const friendStatusTableName="LabLineFriendStatus";
 const hash=v=>createHash("sha256").update(String(v)).digest("hex");
 const random=()=>randomBytes(32).toString("base64url");
 const response=(body,status=200,headers={})=>({status,jsonBody:body,headers:{"Cache-Control":"no-store","Content-Type":"application/json; charset=utf-8",...headers}});
-const redirect=(result)=>({status:303,headers:{"Location":PAGE+"?line_lab_result="+encodeURIComponent(result),"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
+const redirect=(result,returnTo="fees")=>({status:303,headers:{"Location":(returnTo==="home"?LOGIN_PAGE+"?line_lab_link=":PAGE+"?line_lab_result=")+encodeURIComponent(result),"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
 const authRedirect=(result)=>({status:303,headers:{"Location":LOGIN_PAGE+"?line_lab_auth="+encodeURIComponent(result),"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
 const config=()=>({id:String(process.env.LINE_LOGIN_CHANNEL_ID||""),secret:String(process.env.LINE_LOGIN_CHANNEL_SECRET||""),uri:String(process.env.LINE_LOGIN_REDIRECT_URI||"")});
 const tableClients=new Map();
@@ -61,6 +64,17 @@ async function saveFriendStatus({schoolId,email,friendStatus}){
     partitionKey:tenantSchoolPartition(schoolId),rowKey:parentCoverageKey(schoolId,email),
     friendStatus:status,checkedAt:new Date().toISOString()
   },"Replace");
+}
+async function migrateFriendStatus({schoolIds=[],sourceEmail,targetEmail}){
+  if(!sourceEmail||!targetEmail||sourceEmail===targetEmail)return;
+  const db=await friendStatusStorage();
+  for(const schoolId of schoolIds){
+    const sid=tenantSchoolPartition(schoolId),sourceKey=parentCoverageKey(sid,sourceEmail),targetKey=parentCoverageKey(sid,targetEmail);
+    try{
+      const row=await db.getEntity(sid,sourceKey);
+      await db.upsertEntity({partitionKey:sid,rowKey:targetKey,friendStatus:String(row.friendStatus||"unknown"),checkedAt:String(row.checkedAt||new Date().toISOString()),identityMergedAt:new Date().toISOString()},"Replace");
+    }catch(error){if(error.statusCode!==404)throw error}
+  }
 }
 async function getRow(key){
   try{return await (await storage()).getEntity("LAB",hash(key))}
@@ -112,6 +126,12 @@ async function parent(request){
   if(ctx.access.role!=="parent")return {error:response({error:"LAB 家長帳號限定"},403)};
   return ctx;
 }
+async function parentAccount(request){
+  const ctx=await getTenantContext(request,{allowUnassigned:true});
+  if(ctx.error)return {error:ctx.error};
+  if(!["parent","unassigned"].includes(ctx.access.role))return {error:response({error:"僅家長帳號可設定登入方式"},403)};
+  return ctx;
+}
 function enabled(){
   const c=config();
   return process.env.LAB_ENVIRONMENT==="functional-uat"&&c.id==="2012482463"&&!!c.secret&&c.uri===CALLBACK;
@@ -119,9 +139,11 @@ function enabled(){
 app.http("labLineLoginStart",{methods:["POST"],authLevel:"anonymous",route:"line/login/start",handler:async request=>{
   try{
     if(!enabled())return response({error:"LAB LINE Login 尚未啟用或設定不完整"},503);
-    const ctx=await parent(request);if(ctx.error)return ctx.error;
+    const ctx=await parentAccount(request);if(ctx.error)return ctx.error;
+    let input={};try{input=await request.json()}catch{}
+    const returnTo=input?.returnTo==="home"?"home":"fees";
     const state=random(),nonce=random(),verifier=random(),challenge=createHash("sha256").update(verifier).digest("base64url");
-    await (await storage()).createEntity({partitionKey:"LAB",rowKey:hash(state),kind:"STATE",flow:"LINK",status:"ACTIVE",nonce,verifier,schoolId:ctx.schoolId,parentEmail:ctx.access.email,expiresAt:Date.now()+600000});
+    await (await storage()).createEntity({partitionKey:"LAB",rowKey:hash(state),kind:"STATE",flow:"LINK",returnTo,status:"ACTIVE",nonce,verifier,schoolId:ctx.schoolId,parentEmail:ctx.access.email,expiresAt:Date.now()+600000});
     const q=new URLSearchParams({response_type:"code",client_id:config().id,redirect_uri:CALLBACK,state,nonce,scope:"profile openid",bot_prompt:"aggressive",code_challenge:challenge,code_challenge_method:"S256"});
     return response({authorizationUrl:"https://access.line.me/oauth2/v2.1/authorize?"+q.toString()});
   }catch(e){console.error("LAB LINE start error",e?.message);return response({error:"無法啟動 LINE 連結"},500)}
@@ -138,13 +160,14 @@ app.http("labLineAuthStart",{methods:["POST"],authLevel:"anonymous",route:"line/
 }});
 app.http("labLineLoginCallback",{methods:["GET"],authLevel:"anonymous",route:"line/login/callback",handler:async request=>{
   const url=new URL(request.url),state=url.searchParams.get("state")||"",code=url.searchParams.get("code")||"";
-  let callbackIsAuth=false;
+  let callbackIsAuth=false,callbackReturnTo="fees";
   try{
     if(!enabled()||!state)return redirect("cancelled");
     const row=await getRow(state);
     const isAuth=row?.flow==="AUTH";
     callbackIsAuth=isAuth;
-    const sendResult=result=>isAuth?authRedirect(result):redirect(result);
+    callbackReturnTo=row?.returnTo==="home"?"home":"fees";
+    const sendResult=result=>isAuth?authRedirect(result):redirect(result,callbackReturnTo);
     if(!row||row.kind!=="STATE"||row.status!=="ACTIVE"||Number(row.expiresAt)<Date.now())return sendResult("expired");
     if(!code||url.searchParams.has("error")){await consume(row);return sendResult("cancelled")}
     await consume(row); // burn state before any external request
@@ -163,9 +186,9 @@ app.http("labLineLoginCallback",{methods:["GET"],authLevel:"anonymous",route:"li
       if(fr.ok){const data=await fr.json();friend=data.friendFlag===true?"friend":"not_friend"}
     }catch{}
     const ticket=random();
-    await (await storage()).createEntity({partitionKey:"LAB",rowKey:hash(ticket),kind:isAuth?"AUTH_TICKET":"TICKET",status:"ACTIVE",schoolId:row.schoolId||"",parentEmail:row.parentEmail||"",lineUserId:identity.sub,lineDisplayName:String(identity.name||"LINE 家長").slice(0,100),friendStatus:friend,expiresAt:Date.now()+180000});
+    await (await storage()).createEntity({partitionKey:"LAB",rowKey:hash(ticket),kind:isAuth?"AUTH_TICKET":"TICKET",status:"ACTIVE",returnTo:callbackReturnTo,schoolId:row.schoolId||"",parentEmail:row.parentEmail||"",lineUserId:identity.sub,lineDisplayName:String(identity.name||"LINE 家長").slice(0,100),friendStatus:friend,expiresAt:Date.now()+180000});
     return sendResult("ok."+ticket);
-  }catch(e){console.error("LAB LINE callback failed",String(e?.name||"Error"));return callbackIsAuth?authRedirect("failed"):redirect("failed")}
+  }catch(e){console.error("LAB LINE callback failed",String(e?.name||"Error"));return callbackIsAuth?authRedirect("failed"):redirect("failed",callbackReturnTo)}
 }});
 app.http("labLineAuthFinish",{methods:["POST"],authLevel:"anonymous",route:"line/auth/finish",handler:async request=>{
   try{
@@ -196,15 +219,44 @@ app.http("labLineAuthLogout",{methods:["POST"],authLevel:"anonymous",route:"line
   try{await endLabLineSession(request)}catch(error){console.error("LAB LINE logout failed",String(error?.name||"Error"))}
   return response({ok:true},200,{"Set-Cookie":clearLabLineSessionCookie()});
 }});
+app.http("labLineAccountStatus",{methods:["GET"],authLevel:"anonymous",route:"line/account/status",handler:async request=>{
+  try{
+    if(!enabled())return response({error:"LAB 帳號綁定未啟用"},503);
+    const ctx=await getTenantContext(request,{allowUnassigned:true});if(ctx.error)return ctx.error;
+    if(!["parent","unassigned"].includes(ctx.access.role))return response({error:"僅家長帳號可查看登入綁定狀態"},403);
+    const status=await getLabParentAccountLinkStatus({request,schoolId:ctx.schoolId,parentEmail:ctx.access.email,authProvider:ctx.access.authProvider||"google"});
+    return response({authProvider:status.authProvider,gmailLinked:status.gmailLinked,gmailMasked:status.gmailLinked?maskEmail(status.gmailEmail):"",lineLinked:status.lineLinked,lineDisplayName:status.lineLinked?status.lineDisplayName:""});
+  }catch(error){console.error("LAB account link status failed",String(error?.code||error?.name||"Error"));return response({error:"無法讀取登入方式綁定狀態"},500)}
+}});
+app.http("labLineLinkGoogle",{methods:["POST"],authLevel:"anonymous",route:"line/account/link-google",handler:async request=>{
+  try{
+    if(!enabled())return response({error:"LAB 帳號綁定未啟用"},503);
+    const lineIdentity=await getLabLineIdentity(request);
+    if(!lineIdentity)return response({error:"請先使用 LINE 登入"},401);
+    const body=await request.json(),credential=String(body?.credential||"").trim();
+    if(!credential||credential.length>10000)return response({error:"Google 授權憑證無效"},400);
+    const googleIdentity=await verifyGoogleToken(credential);
+    if(!googleIdentity)return response({error:"Gmail 驗證失敗，請重新選擇 Google 帳號"},401);
+    const result=await linkLabLineIdentityToGmail({request,gmailEmail:googleIdentity.email});
+    await migrateFriendStatus({schoolIds:result.schoolIds,sourceEmail:result.sourceEmail,targetEmail:result.gmailEmail});
+    return response({linked:true,gmailMasked:maskEmail(result.gmailEmail),migratedStudents:result.migratedMappings,migratedRegistrations:result.migratedRegistrations});
+  }catch(error){
+    const code=String(error?.code||"");
+    const conflict=code.includes("LINKED")||code.includes("CONFLICT")||code.includes("MISMATCH");
+    console.error("LAB Gmail link failed",code||String(error?.name||"Error"));
+    return response({error:conflict?"此 Gmail 或 LINE 已連結其他家長身分，請由管理員確認":"Gmail 綁定失敗，請重新操作"},conflict?409:500);
+  }
+}});
 app.http("labLineLoginFinish",{methods:["POST"],authLevel:"anonymous",route:"line/login/finish",handler:async request=>{
   try{
     if(!enabled())return response({error:"LAB LINE Login 未啟用"},503);
-    const ctx=await parent(request);if(ctx.error)return ctx.error;
+    const ctx=await parentAccount(request);if(ctx.error)return ctx.error;
     const body=await request.json(),ticket=String(body.ticket||"");
     if(!/^[A-Za-z0-9_-]{32,64}$/.test(ticket))return response({error:"無效的 LINE 授權結果"},400);
     const row=await getRow(ticket);
     if(!row||row.kind!=="TICKET"||row.status!=="ACTIVE"||Number(row.expiresAt)<Date.now()||row.schoolId!==ctx.schoolId||row.parentEmail!==ctx.access.email)return response({error:"LINE 授權已過期或不屬於目前家長"},403);
     await consume(row);
+    await registerLabParentIdentityLink({lineUserId:row.lineUserId,gmailEmail:ctx.access.email});
     // Legacy binding storage requires a six-digit code; generate it server-side only.
     const code=String(randomInt(0,1000000)).padStart(6,"0"),codeHash=lineBindingCodeHash(code,config().secret);
     if(!codeHash)throw Error("LAB internal binding hash unavailable");
@@ -214,7 +266,12 @@ app.http("labLineLoginFinish",{methods:["POST"],authLevel:"anonymous",route:"lin
     try{await saveFriendStatus({schoolId:ctx.schoolId,email:ctx.access.email,friendStatus:row.friendStatus})}
     catch(error){console.error("LAB LINE friend-status persistence failed",String(error?.name||"Error").slice(0,40))}
     return response({bound:true,friendStatus:row.friendStatus,lineDisplayName:row.lineDisplayName});
-  }catch(e){console.error("LAB LINE finish failed",e?.message);return response({error:"LAB LINE 綁定失敗（請由管理員檢查後端日誌）"},500)}
+  }catch(e){
+    const code=String(e?.code||"");
+    const conflict=code.includes("LINKED")||code.includes("CONFLICT")||code.includes("MISMATCH");
+    console.error("LAB LINE finish failed",code||String(e?.name||"Error"));
+    return response({error:conflict?"此 Gmail 或 LINE 已連結其他家長身分，請由管理員確認":"LAB LINE 綁定失敗（請由管理員檢查後端日誌）"},conflict?409:500)
+  }
 }});
 
 /** Functional UAT ONLY: masked delivery-attempt ledger for authorized admins. */

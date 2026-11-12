@@ -94,6 +94,61 @@ export async function getLineAccountBindingsByUserId(lineUserId,{includeTarget=f
   return items;
 }
 
+export async function getLineAccountBindingsByEmail(email,{includeTarget=false}={}){
+  await ensureTable();
+  const parentEmail=emailValue(email);if(!parentEmail)return [];
+  const safe=parentEmail.replaceAll("'","''"),items=[];
+  for await(const row of client().listEntities({queryOptions:{filter:`parentEmail eq '${safe}' and status eq 'ACTIVE'`}})){
+    items.push({
+      bound:true,
+      schoolId:String(row.schoolId||row.partitionKey||""),
+      parentEmail,
+      lineDisplayName:String(row.lineDisplayName||""),
+      boundAt:String(row.boundAt||""),
+      lineUserIdHash:String(row.lineUserIdHash||""),
+      ...(includeTarget?{lineUserId:String(row.lineUserId||"")}:{})
+    });
+  }
+  return items;
+}
+
+export async function moveLineAccountBinding({schoolId,fromEmail,toEmail,lineUserId}={}){
+  await ensureTable();
+  const sid=tenantSchoolPartition(schoolId),sourceEmail=emailValue(fromEmail),targetEmail=emailValue(toEmail);
+  const userId=String(lineUserId||"").trim(),lineUserIdHash=userHash(userId);
+  if(!sourceEmail||!targetEmail||!userId)throw new Error("LINE 帳號移轉資料不完整");
+  if(sourceEmail===targetEmail)return {ok:true,moved:false,schoolId:sid,parentEmail:targetEmail};
+  let source,target;
+  try{source=await client().getEntity(sid,emailRowKey(sourceEmail))}catch(error){if(error.statusCode!==404)throw error}
+  try{target=await client().getEntity(sid,emailRowKey(targetEmail))}catch(error){if(error.statusCode!==404)throw error}
+  if(target?.status==="ACTIVE"){
+    if(String(target.lineUserIdHash||"")!==lineUserIdHash)return {ok:false,reason:"target_already_bound"};
+    if(source?.status==="ACTIVE"){
+      if(String(source.lineUserIdHash||"")!==lineUserIdHash)return {ok:false,reason:"source_mismatch"};
+      await client().updateEntity({partitionKey:sid,rowKey:source.rowKey,status:"MOVED",lineUserId:"",lineUserIdHash:"",movedToEmailHash:digest(targetEmail),movedAt:new Date().toISOString(),updatedAt:new Date().toISOString()},"Merge",{etag:source.etag});
+    }
+    return {ok:true,moved:Boolean(source?.status==="ACTIVE"),schoolId:sid,parentEmail:targetEmail};
+  }
+  if(!source||source.status!=="ACTIVE")return {ok:false,reason:"source_not_bound"};
+  if(String(source.lineUserIdHash||"")!==lineUserIdHash)return {ok:false,reason:"source_mismatch"};
+  const now=new Date().toISOString(),next={
+    partitionKey:sid,rowKey:emailRowKey(targetEmail),schoolId:sid,parentEmail:targetEmail,
+    lineUserId:userId,lineUserIdHash,lineDisplayName:String(source.lineDisplayName||"").slice(0,120),
+    status:"ACTIVE",boundAt:String(source.boundAt||now),updatedAt:now,movedFromEmailHash:digest(sourceEmail)
+  };
+  const deactivate={partitionKey:sid,rowKey:source.rowKey,status:"MOVED",lineUserId:"",lineUserIdHash:"",movedToEmailHash:digest(targetEmail),movedAt:now,updatedAt:now};
+  try{
+    await client().submitTransaction([
+      ["update",deactivate,"Merge",{etag:source.etag}],
+      target?["update",next,"Replace",{etag:target.etag}]:["create",next]
+    ]);
+  }catch(error){
+    if([409,412].includes(error.statusCode))return {ok:false,reason:"concurrent_change"};
+    throw error;
+  }
+  return {ok:true,moved:true,schoolId:sid,parentEmail:targetEmail};
+}
+
 export async function unbindLineAccount(schoolId,email){
   await ensureTable();
   const sid=tenantSchoolPartition(schoolId),parentEmail=emailValue(email),now=new Date().toISOString();

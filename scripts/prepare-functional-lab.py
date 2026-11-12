@@ -164,7 +164,7 @@ def prepare(output: Path) -> None:
         raise RuntimeError("Authentication structure changed; review LAB LINE session integration")
     auth_source='import {getLabLineIdentity} from "./labLineSession.mjs";\n'+auth_source
     auth_source=auth_source.replace(verify_google,
-        'export async function verifyGoogle(request){return (await getLabLineIdentity(request))||verifyGoogleToken(googleToken(request))}',1)
+        'export async function verifyGoogle(request){return verifyGoogleToken(googleToken(request))||(await getLabLineIdentity(request))}',1)
     auth_source=auth_source.replace(identity_marker,
         identity_marker+'\n  const lineParentOnly=identity.authProvider==="line";',1)
     auth_source=auth_source.replace('  if(globalRole||schoolRoles.length){',
@@ -308,7 +308,17 @@ def prepare(output: Path) -> None:
     boot_marker='async function boot(){if(!state.token){renderLogin();return}try{await loadProfile()}catch(e){renderLogin(e.message)}}'
     if boot_marker not in app_source:
         raise RuntimeError("Frontend boot flow changed; review LAB LINE Login integration")
-    app_source=app_source.replace(boot_marker,r'''let labLineBootError="";
+    app_source=app_source.replace(boot_marker,r'''let labLineBootError="",labLineBootNotice="";
+async function finishLabLineAccountLink(){
+  const query=new URLSearchParams(location.search),result=String(query.get("line_lab_link")||"");
+  if(!result)return true;
+  query.delete("line_lab_link");history.replaceState(null,"",location.pathname+(query.toString()?"?"+query.toString():"")+location.hash);
+  if(!result.startsWith("ok.")){labLineBootError="LINE 綁定授權未完成，原帳號不受影響";return false}
+  try{
+    await api("/api/line/login/finish",{method:"POST",body:JSON.stringify({ticket:result.slice(3)})});
+    labLineBootNotice="✅ LINE 已併入目前家長帳號";return true;
+  }catch(error){labLineBootError=error.message||"LINE 綁定失敗";return false}
+}
 async function restoreLabLineSession(){
   const query=new URLSearchParams(location.search),result=String(query.get("line_lab_auth")||"");
   if(result){
@@ -326,7 +336,11 @@ async function restoreLabLineSession(){
   }catch{}
   return false;
 }
-async function boot(){if(!state.token){const restored=await restoreLabLineSession();if(!restored){renderLogin(labLineBootError);return}}try{await loadProfile()}catch(e){renderLogin(e.message)}}
+async function boot(){
+  if(!await finishLabLineAccountLink()){renderLogin(labLineBootError);return}
+  if(!state.token){const restored=await restoreLabLineSession();if(!restored){renderLogin(labLineBootError);return}}
+  try{await loadProfile();if(labLineBootNotice)setTimeout(()=>toast(labLineBootNotice),100)}catch(e){renderLogin(e.message)}
+}
 window.startLabLineAuth=async function(){
   try{
     const response=await fetch("/api/line/auth/start",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
@@ -369,6 +383,58 @@ window.startLabLineAuth=async function(){
         'await api("/api/student-registration",{method:"POST",body:JSON.stringify(body)});const pending=await api("/api/student-registration");state.registrations=pending.items||[];toast("✅ 已送出，等待管理員確認");state.page="home";render()',1)
     app_source=app_source.replace('申請 Gmail：${esc(r.parentEmail)}<br>家長填寫：',
         '${r.authProvider==="line"?`登入方式：LINE（${esc(r.parentName||"家長")}）`:`申請 Gmail：${esc(r.parentEmail)}`}<br>家長填寫：',1)
+    account_marker='\nboot();\n'
+    if account_marker not in app_source:
+        raise RuntimeError("Frontend boot invocation changed; review LAB account-link panel")
+    account_ui=r'''
+const labOriginalLoadProfile=loadProfile;
+loadProfile=async function(){
+  await labOriginalLoadProfile();
+  if(!["parent","unassigned"].includes(state.me?.role))return;
+  try{state.labAccountLinkStatus=await api("/api/line/account/status")}catch(error){state.labAccountLinkStatus={error:error.message||"無法讀取綁定狀態"}}
+  render();
+};
+function labAccountLinkCard(){
+  const status=state.labAccountLinkStatus;
+  if(!status)return `<div class="card"><h2>🔐 登入方式</h2><div class="notice">正在確認 Gmail 與 LINE 綁定狀態…</div></div>`;
+  if(status.error)return `<div class="card"><h2>🔐 登入方式</h2><div class="error">${esc(status.error)}</div></div>`;
+  const gmail=status.gmailLinked?`<span class="badge ok">✅ Gmail 已綁定</span>${status.gmailMasked?`<div class="muted">${esc(status.gmailMasked)}</div>`:""}`:`<span class="badge warn">尚未綁定 Gmail</span>`;
+  const line=status.lineLinked?`<span class="badge ok">✅ LINE 已綁定</span>${status.lineDisplayName?`<div class="muted">${esc(status.lineDisplayName)}</div>`:""}`:`<span class="badge warn">尚未綁定 LINE</span>`;
+  const action=!status.lineLinked?`<button class="primary" style="background:#06c755" onclick="startLabAccountLineLink()">綁定 LINE（免輸入驗證碼）</button>`:!status.gmailLinked?`<div class="notice" style="margin-top:14px">請選擇 Gmail 完成綁定，不需重新輸入學生姓名與學號。</div><div id="labGmailLinkButton" style="display:flex;justify-content:center;margin-top:14px"></div>`:`<div class="notice" style="margin-top:14px"><b>雙重登入已完成</b><br>之後可使用 Gmail 或 LINE 登入同一個家長帳號。</div>`;
+  return `<div class="card"><h2>🔐 登入與通知帳號</h2><div class="notice">增加登入方式不會重複建立家長或學生資料；兩種登入會共用同一組孩子與紀錄。</div><div class="row2" style="margin-top:14px"><div class="item" style="display:block">${gmail}</div><div class="item" style="display:block">${line}</div></div>${action}</div>`;
+}
+window.startLabAccountLineLink=async function(){
+  try{
+    const data=await api("/api/line/login/start",{method:"POST",body:JSON.stringify({returnTo:"home"})});
+    if(!String(data.authorizationUrl||"").startsWith("https://access.line.me/oauth2/v2.1/authorize?"))throw Error("LINE 授權網址無效");
+    location.assign(data.authorizationUrl);
+  }catch(error){toast("❌ "+(error.message||"無法啟動 LINE 綁定"))}
+};
+async function mountLabGmailLinkButton(){
+  const target=$("labGmailLinkButton");if(!target||target.dataset.ready==="1")return;
+  target.dataset.ready="1";
+  try{
+    const cfg=await fetch("/api/config",{cache:"no-store"}).then(response=>response.json());
+    if(!cfg.googleClientId)throw Error("LAB 尚未設定 Google Client ID");
+    for(let count=0;count<100&&!window.google?.accounts?.id;count++)await new Promise(resolve=>setTimeout(resolve,50));
+    if(!window.google?.accounts?.id)throw Error("Google 登入元件載入失敗");
+    google.accounts.id.initialize({client_id:cfg.googleClientId,callback:async result=>{
+      try{
+        const linked=await api("/api/line/account/link-google",{method:"POST",body:JSON.stringify({credential:result.credential})});
+        toast("✅ Gmail 已併入目前家長帳號");
+        state.labAccountLinkStatus={authProvider:"line",gmailLinked:true,gmailMasked:linked.gmailMasked,lineLinked:true,lineDisplayName:state.labAccountLinkStatus?.lineDisplayName||"LINE 家長"};
+        await loadProfile();
+      }catch(error){toast("❌ "+(error.message||"Gmail 綁定失敗"))}
+    }});
+    google.accounts.id.renderButton(target,{theme:"outline",size:"large",shape:"pill",text:"continue_with",locale:"zh_TW",width:Math.min(320,Math.max(220,target.clientWidth||280))});
+  }catch(error){target.innerHTML=`<div class="error">${esc(error.message||"無法載入 Gmail 綁定")}</div>`}
+}
+const labOriginalHome=home;
+home=function(){const content=labOriginalHome();return ["parent","unassigned"].includes(state.me?.role)?content+labAccountLinkCard():content};
+const labOriginalRender=render;
+render=function(){labOriginalRender();if($("labGmailLinkButton"))setTimeout(mountLabGmailLinkButton,0)};
+'''
+    app_source=app_source.replace(account_marker,'\n'+account_ui+account_marker,1)
     if '使用 LINE 登入（家長）' not in app_source or 'line/auth/finish' not in app_source:
         raise RuntimeError("LAB LINE Login frontend insertion failed")
     app_v3.write_text(app_source,encoding="utf-8")

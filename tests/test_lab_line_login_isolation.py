@@ -70,6 +70,46 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('authProvider:e.authProvider||"google"',builder)
         self.assertIn('學號需為 6 碼數字',registration)
 
+    def test_parent_can_add_the_second_login_method_without_duplicate_student_registration(self):
+        oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
+        session=(ROOT/"scripts/lab-line-session.mjs").read_text()
+        builder=(ROOT/"scripts/prepare-functional-lab.py").read_text()
+        bindings=(ROOT/"api/src/lib/lineAccountBinding.js").read_text()
+        self.assertIn('route:"line/account/status"',oauth)
+        self.assertIn('route:"line/account/link-google"',oauth)
+        self.assertIn('getTenantContext(request,{allowUnassigned:true})',oauth)
+        self.assertIn('["parent","unassigned"].includes(ctx.access.role)',oauth)
+        self.assertIn('verifyGoogleToken(googleToken(request))||(await getLabLineIdentity(request))',builder)
+        self.assertIn('verifyGoogleToken(credential)',oauth)
+        self.assertIn('registerLabParentIdentityLink({lineUserId:row.lineUserId,gmailEmail:ctx.access.email})',oauth)
+        self.assertIn('returnTo:callbackReturnTo',oauth)
+        self.assertIn('identityTableName="LabParentIdentityLinks"',session)
+        self.assertIn('migrateParentStudentAccess(sourceEmail,targetEmail)',session)
+        self.assertIn('moveLineAccountBinding({schoolId,fromEmail:sourceEmail,toEmail:targetEmail,lineUserId})',session)
+        self.assertIn('status:"merged"',session)
+        self.assertIn('export async function moveLineAccountBinding',bindings)
+        self.assertIn('綁定 LINE',builder)
+        self.assertIn('labGmailLinkButton',builder)
+        self.assertIn('雙重登入已完成',builder)
+        self.assertIn('增加登入方式不會重複建立家長或學生資料',builder)
+        self.assertIn('綁定 LINE（免輸入驗證碼）',builder)
+        self.assertIn('不需重新輸入學生姓名與學號',builder)
+        self.assertIn('["parent","unassigned"].includes(state.me?.role)',builder)
+        self.assertNotIn('route:"line/account/link-google"',(ROOT/"api/src/functions/lineWebhook.js").read_text())
+        self.assertFalse((ROOT/"api/src/lib/labLineSession.mjs").exists())
+
+    def test_identity_link_conflicts_fail_closed_and_secrets_stay_server_side(self):
+        rules=(ROOT/"scripts/lab-line-auth-rules.mjs").read_text()
+        session=(ROOT/"scripts/lab-line-session.mjs").read_text()
+        oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
+        for code in ("LINE_ALREADY_LINKED","GMAIL_ALREADY_LINKED","LINE_BINDING_CONFLICT","GMAIL_BINDING_CONFLICT"):
+            self.assertIn(code,rules)
+        self.assertIn('HttpOnly; Secure; SameSite=Lax',session)
+        self.assertNotIn('lineUserId:pair.',session)
+        link_google=oauth.split('app.http("labLineLinkGoogle"',1)[1].split('app.http("labLineLoginFinish"',1)[0]
+        self.assertNotIn('lineUserId:',link_google)
+        self.assertNotIn('credential:',link_google.split('return response',1)[-1])
+
     def test_line_parent_login_cannot_gain_teacher_or_admin_contexts(self):
         builder=(ROOT/"scripts/prepare-functional-lab.py").read_text()
         self.assertIn('if(!lineParentOnly&&(globalRole||schoolRoles.length))',builder)
