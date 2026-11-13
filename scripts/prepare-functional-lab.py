@@ -231,60 +231,55 @@ def prepare(output: Path) -> None:
     fn_dir.joinpath("labLineLogin.js").write_text(prefix+oauth_source,encoding="utf-8")
     coverage_function=(ROOT/"scripts"/"lab-line-student-coverage-function.js").read_text(encoding="utf-8")
     fn_dir.joinpath("labLineStudentCoverage.js").write_text(prefix+coverage_function,encoding="utf-8")
-    # LAB-only simulated parent binding. Never registered in Production source.
-    # Real LINE webhook is explicitly rejected; simulated requests require parent auth.
-    mock_source=line_webhook.read_text(encoding="utf-8")
-    mock_source=mock_source.replace('const lineSecret=()=>""; // LAB: reject real LINE webhook',
-        'const lineSecret=()=>"LAB_ONLY_MOCK_BINDING_SECRET"; // never Production secret')
-    mock_source=mock_source.replace('const serviceConfigured=()=>!!(lineSecret()&&lineToken());',
-        'const serviceConfigured=()=>true; // LAB simulation only; outbound LINE remains blocked')
-    mock_source=mock_source.replace('const secret=lineSecret();\n    if(!secret)',
-        'return json({error:"LAB: real LINE webhook is disabled"},503);\n    const secret=lineSecret();\n    if(!secret)')
-    get_response='officialAccountUrl:officialAccountUrl()});'
-    if get_response not in mock_source:
-        raise RuntimeError("LINE account GET response changed; review mock integration")
-    mock_source=mock_source.replace(get_response,
-        'officialAccountUrl:officialAccountUrl(),mockMode:true});',1)
-    if 'if(!serviceConfigured())return json({error:"LINE Messaging API 尚未完成設定"},409);' not in mock_source:
-        raise RuntimeError("LINE account POST guard changed; review mock integration")
-    mock_source += '''\n// Only present in generated functional UAT LAB API; never shipped to Production.\napp.http("functionalLabMockLineBind",{methods:["POST"],authLevel:"anonymous",route:"lab/line/mock-bind",handler:async request=>{\n  const context=await getTenantContext(request);if(context.error)return context.error;\n  const {access,schoolId}=context;\n  if(access.role!=="parent")return json({error:"僅 LAB 家長帳號可執行模擬綁定"},403);\n  try{\n    const body=await request.json();\n    const code=String(body?.bindingCode||"").trim();\n    if(!/^\\d{6}$/.test(code))return json({error:"請輸入有效的六位數 LAB 綁定碼"},400);\n    const codeHash=lineBindingCodeHash(code,lineSecret());\n    const pending=await findLineAccountBindingRequest(codeHash);\n    if(!pending||pending.schoolId!==schoolId||pending.parentEmail!==access.email)return json({error:"LAB 綁定碼無效、已使用或逾時"},409);\n    const mockUserId="lab-mock-"+lineBindingCodeHash(code, "LAB_MOCK_USER_ID").slice(0,24);\n    const result=await bindLineAccount({codeHash,lineUserId:mockUserId,lineDisplayName:"LAB 模擬家長"});\n    if(!result.ok)return json({error:"LAB 模擬綁定失敗："+String(result.reason||"unknown")},409);\n    return json({bound:true,mockMode:true,lineDisplayName:"LAB 模擬家長"});\n  }catch(error){console.error("LAB mock LINE binding failed",error?.message||String(error));return json({error:"LAB 模擬綁定處理失敗"},500)}\n}});\n'''
-    line_webhook.write_text(mock_source,encoding="utf-8")
-    # The LAB-only action is inserted into the copied frontend, not Production source.
+    # The copied Production webhook stays fail-closed in LAB. Parent account
+    # linking uses the dedicated OAuth endpoints above and never exposes the
+    # legacy six-digit private-chat binding flow.
     fee=output/"app"/"fee-collections.js"
     fee_source=fee.read_text(encoding="utf-8")
-    target='const addFriend=hasOfficialUrl?'
-    if target not in fee_source:raise RuntimeError("LINE frontend structure changed; review LAB mock UI")
-    fee_source=fee_source.replace(target,
-        'const labMock=Boolean(line.mockMode);\n  '+target,1)
-    fee_source=fee_source.replace('${configured?`<div class="actions">${addFriend}</div>',
-        '${configured?`<div class="actions">${labMock?`<div class="notice">🧪 LAB 模擬模式：不會連線正式 LINE 官方帳號。</div>`:addFriend}</div>',1)
-    fee_source=fee_source.replace('${code}`:`<div class="notice warn">',
-        '${code}${labMock&&state.bindingCode?`<div class="actions"><button data-action="lab-mock-line-bind">🧪 模擬 LINE 綁定成功</button></div>`:""}`:`<div class="notice warn">',1)
-    action_marker='  if(action==="refresh-line-binding")'
-    if action_marker not in fee_source:raise RuntimeError("LINE frontend action structure changed")
-    fee_source=fee_source.replace(action_marker,
-        '  if(action==="lab-mock-line-bind")try{if(!state.line?.mockMode||!state.bindingCode)throw Error("LAB 模擬綁定尚未就緒");const result=await api("lab/line/mock-bind",{method:"POST",body:JSON.stringify({bindingCode:state.bindingCode})});state.line={...state.line,...result};state.bindingCode="";renderLineBinding();showStatus("✅ LAB 模擬 LINE 綁定成功（未傳送真實 LINE 訊息）。")}catch(error){showStatus(error.message,"error")}\n'+action_marker,1)
-    if 'lab-mock-line-bind' not in fee_source or 'mockMode' not in fee_source:
-        raise RuntimeError("LAB mock UI insertion failed")
-    # Only the generated LAB frontend exposes the OAuth action.
-    fee_source=fee_source.replace('  const officialUrl=String(line.officialAccountUrl||"");',
-        '  const labLoginButton=\x60<div class="actions"><button data-action="lab-line-login">連結 LINE 並加入官方帳號</button></div><p class="muted">完成授權後自動返回本頁，加入好友由家長確認。</p>\x60;'+chr(10)+'  const officialUrl=String(line.officialAccountUrl||"");',1)
-    fee_source=fee_source.replace('${configured?\x60<div class="actions">',
-        '${labLoginButton}${configured?\x60<div class="actions">',1)
-    fee_source=fee_source.replace('  if(action==="refresh-line-binding")',
-        '  if(action==="lab-line-login")try{showStatus("正在連接 LINE…");const result=await api("line/login/start",{method:"POST",body:"{}"});if(!result.authorizationUrl||!result.authorizationUrl.startsWith("https://access.line.me/oauth2/v2.1/authorize?"))throw Error("LINE 授權網址無效");window.location.assign(result.authorizationUrl)}catch(error){showStatus(error.message,"error")}'+chr(10)+'  if(action==="refresh-line-binding")',1)
-    fee_source=fee_source.replace('    renderLineBinding();renderAdminCreate();renderProjects();showStatus(',
-        '    renderLineBinding();renderAdminCreate();renderProjects();showStatus(',1)
-    fee_source=fee_source.replace('  }catch(error){showStatus(error.message,"error");$("projects").innerHTML=""}',
-        '    const oauthResult=new URLSearchParams(location.search).get("line_lab_result");if(oauthResult){history.replaceState(null,"",location.pathname);if(oauthResult.startsWith("ok.")){try{const linked=await api("line/login/finish",{method:"POST",body:JSON.stringify({ticket:oauthResult.slice(3)})});state.line={...state.line,...linked};state.bindingCode="";renderLineBinding();showStatus(linked.friendStatus==="friend"?"LINE 已綁定並加入官方帳號。":"LINE 已綁定；請確認是否加入官方帳號。")}catch(e){showStatus(e.message,"error")}}else showStatus("LINE 授權未完成："+oauthResult,"warn")}'+chr(10)+'  }catch(error){showStatus(error.message,"error");$("projects").innerHTML=""}',1)
-    if 'lab-line-login' not in fee_source or 'line/login/finish' not in fee_source:raise RuntimeError("LAB LINE OAuth UI insertion failed")
-    # LAB-only test-send control appears only for a bound parent. The API
-    # independently enforces exact email and LINE User ID allowlists.
-    fee_source=fee_source.replace('<div class="actions"><button class="secondary" data-action="unbind-line">',
-        '<div class="actions"><button class="secondary" data-action="lab-line-test-send">🧪 發送 LINE 單人測試通知</button></div><div class="actions"><button class="secondary" data-action="unbind-line">',1)
-    fee_source=fee_source.replace('  if(action==="refresh-line-binding")',
-        '  if(action==="lab-line-test-send")try{if(!confirm("只發送一則 LAB 測試訊息至指定測試家長的 LINE，是否繼續？"))return;showStatus("正在送出 LAB 測試通知…");const result=await api("line/lab-send-test",{method:"POST",body:"{}"});showStatus(result.message||"LINE 已接受測試訊息，請檢查手機。")}catch(error){showStatus(error.message,"error")}'+chr(10)+'  if(action==="refresh-line-binding")',1)
-    if 'lab-line-test-send' not in fee_source or 'line/lab-send-test' not in fee_source:raise RuntimeError("LAB test send UI insertion failed")
+    render_start=fee_source.find('function renderLineBinding(){')
+    render_end=fee_source.find('\nfunction renderAdminCreate(){',render_start)
+    if render_start<0 or render_end<0:raise RuntimeError("LINE frontend render structure changed")
+    lab_line_render=r'''function renderLineBinding(){
+  if(state.me?.role!=="parent"){$("lineBinding").innerHTML="";return}
+  const account=state.line||{},gmailLinked=account.gmailLinked===true,lineLinked=account.lineLinked===true;
+  const gmail=gmailLinked?`<span class="badge ok">✅ Gmail 已綁定</span>${account.gmailMasked?`<div class="muted">${esc(account.gmailMasked)}</div>`:""}`:`<span class="badge warn">Gmail 尚未綁定</span>`;
+  const line=lineLinked?`<span class="badge ok">✅ LINE 已綁定</span>${account.lineDisplayName?`<div class="muted">${esc(account.lineDisplayName)}</div>`:""}`:`<span class="badge warn">LINE 尚未綁定</span>`;
+  if(lineLinked){
+    $("lineBinding").innerHTML=`<div class="card"><h2>🔐 LINE／Gmail 雙向綁定已完成</h2><div class="notice">兩種登入方式會進入同一個家長帳號，共用相同的學生與家庭資料。</div><div class="row" style="margin-top:14px"><div class="notice">${gmail}</div><div class="notice">${line}</div></div><p>LINE 私訊可接收弦樂團活動、團 T、期末餐費及匯款核帳等通知。LINE API 接受測試訊息不代表已讀或實際送達。</p><div class="actions"><button class="secondary" data-action="lab-line-test-send">🧪 發送 LINE 單人測試通知</button></div></div>`;return;
+  }
+  $("lineBinding").innerHTML=`<div class="card"><h2>🔔 追加綁定 LINE</h2><div class="notice">${gmail}</div><div class="steps"><span>1 使用既有 Gmail 家長身分</span><span>2 授權 LINE</span><span>3 自動完成追加綁定</span></div><p>目前的 Gmail 家長帳號與學生關聯會完整保留。直接完成 LINE 授權即可，不需再次輸入學生姓名、學號或額外綁定碼。</p><div class="actions"><button data-action="lab-line-login" style="background:#06c755">追加綁定 LINE</button></div><p class="muted">完成後可使用 Gmail 或 LINE 登入同一個家長帳號；加入官方帳號仍由家長於 LINE 授權畫面確認。</p></div>`;
+}'''
+    fee_source=fee_source[:render_start]+lab_line_render+fee_source[render_end:]
+    parent_load='      const [line,projects]=await Promise.all([api("line/account-binding"),api("fee-collections/projects")]);state.line=line;state.projects=projects.items||[];'
+    if parent_load not in fee_source:raise RuntimeError("LINE frontend parent load structure changed")
+    lab_parent_load=r'''      const oauthResult=new URLSearchParams(location.search).get("line_lab_result");
+      if(oauthResult){
+        history.replaceState(null,"",location.pathname);
+        if(oauthResult.startsWith("ok.")){
+          await api("line/login/finish",{method:"POST",body:JSON.stringify({ticket:oauthResult.slice(3)})});
+          state.lineNotice="✅ LINE 已追加綁定至目前 Gmail 家長帳號。";
+        }else state.lineNotice="LINE 授權未完成，原 Gmail 與學生資料未變更。";
+      }
+      const [line,projects]=await Promise.all([api("line/account/status"),api("fee-collections/projects")]);state.line=line;state.projects=projects.items||[];'''
+    fee_source=fee_source.replace(parent_load,lab_parent_load,1)
+    normal_status='renderLineBinding();renderAdminCreate();renderProjects();showStatus(state.me.role==="admin"?`已載入 ${state.projects.length} 個收費專案。`:state.projects.length?`目前有 ${state.projects.length} 個與您家庭相關的費用項目。`:"目前沒有需要您處理的費用項目。");'
+    if normal_status not in fee_source:raise RuntimeError("LINE frontend status structure changed")
+    fee_source=fee_source.replace(normal_status,
+        'renderLineBinding();renderAdminCreate();renderProjects();showStatus(state.lineNotice||(state.me.role==="admin"?`已載入 ${state.projects.length} 個收費專案。`:state.projects.length?`目前有 ${state.projects.length} 個與您家庭相關的費用項目。`:"目前沒有需要您處理的費用項目。"));',1)
+    legacy_actions='''  if(action==="refresh-line-binding")try{showStatus("正在確認 LINE 綁定狀態…");const result=await api("line/account-binding");state.line=result;if(result.bound){state.bindingCode="";renderLineBinding();showStatus("✅ LINE 個人通知已綁定成功。")}else{renderLineBinding();showStatus("尚未收到綁定成功紀錄，請確認已將完整指令傳送至官方帳號的一對一聊天室。","warn")}}catch(error){showStatus(error.message,"error")}
+  if(action==="create-line-code")try{showStatus("正在產生一次性綁定碼…");const result=await api("line/account-binding",{method:"POST",body:"{}"});state.bindingCode=result.bindingCode||"";state.line={...(state.line||{}),...result,configured:true};renderLineBinding();showStatus("綁定碼已產生，請在 15 分鐘內私訊 LINE 官方帳號。") }catch(error){showStatus(error.message,"error")}
+  if(action==="copy-code"){const command=`#綁定帳號 ${state.bindingCode}`;try{await navigator.clipboard.writeText(command);showStatus("綁定指令已複製。") }catch{showStatus(`請手動複製：${command}`,"warn")}}
+  if(action==="unbind-line"&&confirm("確定解除個人 LINE 綁定？之後將不再收到個人核帳通知。"))try{await api("line/account-binding",{method:"DELETE"});state.bindingCode="";state.line={...(state.line||{}),bound:false,lineDisplayName:"",boundAt:""};renderLineBinding();showStatus("已解除個人 LINE 綁定。") }catch(error){showStatus(error.message,"error")}
+'''
+    if legacy_actions not in fee_source:raise RuntimeError("LINE frontend legacy actions changed")
+    lab_actions='''  if(action==="lab-line-login")try{showStatus("正在前往 LINE 授權…");const result=await api("line/login/start",{method:"POST",body:JSON.stringify({returnTo:"fees"})});if(!String(result.authorizationUrl||"").startsWith("https://access.line.me/oauth2/v2.1/authorize?"))throw Error("LINE 授權網址無效");window.location.assign(result.authorizationUrl)}catch(error){showStatus(error.message,"error")}
+  if(action==="lab-line-test-send")try{if(!confirm("只發送一則 LAB 測試訊息至指定測試家長的 LINE，是否繼續？"))return;showStatus("正在送出 LAB 測試通知…");const result=await api("line/lab-send-test",{method:"POST",body:"{}"});showStatus(result.message||"LINE 已接受測試訊息，請檢查手機。")}catch(error){showStatus(error.message,"error")}
+'''
+    fee_source=fee_source.replace(legacy_actions,lab_actions,1)
+    for required in ('追加綁定 LINE','LINE／Gmail 雙向綁定已完成','api("line/account/status")','line/login/finish','line/lab-send-test'):
+        if required not in fee_source:raise RuntimeError("LAB direct LINE account-link UI insertion failed: "+required)
+    for forbidden in ('取得 6 位數綁定碼','create-line-code','copy-code','refresh-line-binding','lab-mock-line-bind'):
+        if forbidden in fee_source:raise RuntimeError("LAB legacy LINE binding UI remained: "+forbidden)
     fee.write_text(fee_source,encoding="utf-8")
     # LAB-only masked notification ledger. The endpoint independently requires
     # an authenticated tenant admin; the browser panel removes itself for every
@@ -453,7 +448,7 @@ function labAccountLinkCard(){
   if(status.error)return `<div class="card"><h2>🔐 登入方式</h2><div class="error">${esc(status.error)}</div></div>`;
   const gmail=status.gmailLinked?`<span class="badge ok">✅ Gmail 已綁定</span>${status.gmailMasked?`<div class="muted">${esc(status.gmailMasked)}</div>`:""}`:`<span class="badge warn">尚未綁定 Gmail</span>`;
   const line=status.lineLinked?`<span class="badge ok">✅ LINE 已綁定</span>${status.lineDisplayName?`<div class="muted">${esc(status.lineDisplayName)}</div>`:""}`:`<span class="badge warn">尚未綁定 LINE</span>`;
-  const action=!status.lineLinked?`<button class="primary" style="background:#06c755" onclick="startLabAccountLineLink()">綁定 LINE（免輸入驗證碼）</button>`:!status.gmailLinked?`<div class="notice" style="margin-top:14px">請選擇 Gmail 完成綁定，不需重新輸入學生姓名與學號。</div><div id="labGmailLinkButton" style="display:flex;justify-content:center;margin-top:14px"></div>`:`<div class="notice" style="margin-top:14px"><b>雙重登入已完成</b><br>之後可使用 Gmail 或 LINE 登入同一個家長帳號。</div>`;
+  const action=!status.lineLinked?`<div class="notice" style="margin-top:14px">直接完成 LINE 授權即可，不需再次輸入學生姓名、學號或額外綁定碼。</div><button class="primary" style="background:#06c755" onclick="startLabAccountLineLink()">追加綁定 LINE</button>`:!status.gmailLinked?`<div class="notice" style="margin-top:14px">選擇既有 Gmail 完成追加綁定，不需重新輸入學生姓名與學號。</div><div id="labGmailLinkButton" style="display:flex;justify-content:center;margin-top:14px"></div>`:`<div class="notice" style="margin-top:14px"><b>雙重登入已完成</b><br>之後可使用 Gmail 或 LINE 登入同一個家長帳號。</div>`;
   return `<div class="card"><h2>🔐 登入與通知帳號</h2><div class="notice">增加登入方式不會重複建立家長或學生資料；兩種登入會共用同一組孩子與紀錄。</div><div class="row2" style="margin-top:14px"><div class="item" style="display:block">${gmail}</div><div class="item" style="display:block">${line}</div></div>${action}</div>`;
 }
 window.startLabAccountLineLink=async function(){

@@ -176,13 +176,19 @@ class FunctionalUATIsolationTests(unittest.TestCase):
                 continue
             actual=self.lab/"app"/original.relative_to(ROOT/"app")
             if original.name=="fee-collections.js":
-                # The only permitted LAB frontend change is a tightly scoped mock binding UI.
+                # LAB replaces only the legacy parent binding-code panel with
+                # the isolated Gmail/LINE OAuth account-link flow.
                 lab_text=actual.read_text(encoding="utf-8")
                 prod_text=original.read_text(encoding="utf-8")
-                self.assertIn('lab-mock-line-bind',lab_text)
-                self.assertIn('LAB 模擬模式',lab_text)
-                self.assertNotIn('lab-mock-line-bind',prod_text)
-                self.assertIn('lab/line/mock-bind',lab_text)
+                for marker in ('追加綁定 LINE','LINE／Gmail 雙向綁定已完成',
+                               'api("line/account/status")','line/login/finish'):
+                    self.assertIn(marker,lab_text)
+                    self.assertNotIn(marker,prod_text)
+                for legacy in ('取得 6 位數綁定碼','create-line-code','copy-code',
+                               'refresh-line-binding','lab-mock-line-bind'):
+                    self.assertNotIn(legacy,lab_text)
+                self.assertIn('取得 6 位數綁定碼',prod_text)
+                self.assertIn('不需再次輸入學生姓名、學號或額外綁定碼',lab_text)
                 continue
             if original.name=="app-v3.js":
                 lab_text=actual.read_text(encoding="utf-8")
