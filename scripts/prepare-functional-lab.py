@@ -171,8 +171,10 @@ def prepare(output: Path) -> None:
         '  if(custom&&custom!=="cookie-session"&&!custom.startsWith("line-session.")&&!custom.startsWith("lab-line-assertion."))return custom;',1)
     auth_source=auth_source.replace(google_bearer_token,
         '  const bearer=auth.slice(7).trim();\n  if(bearer.startsWith("line-session.")||bearer.startsWith("lab-line-assertion."))return "";\n  return bearer;',1)
+    # Await the Google verifier before evaluating the LINE fallbacks. An
+    # unresolved Promise is truthy and would otherwise bypass LINE entirely.
     auth_source=auth_source.replace(verify_google,
-        'export async function verifyGoogle(request){return verifyGoogleToken(googleToken(request))||(await getLabLineAssertionIdentity(request))||(await getLabLineIdentity(request))}',1)
+        'export async function verifyGoogle(request){return (await verifyGoogleToken(googleToken(request)))||(await getLabLineAssertionIdentity(request))||(await getLabLineIdentity(request))}',1)
     auth_source=auth_source.replace(identity_marker,
         identity_marker+'\n  const lineParentOnly=identity.authProvider==="line";',1)
     auth_source=auth_source.replace('  if(globalRole||schoolRoles.length){',
