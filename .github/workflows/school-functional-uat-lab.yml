@@ -58,6 +58,11 @@ jobs:
       - name: Verify LAB isolation, generated API, and frontend
         run: |
           python3 -m unittest discover -s tests -p 'test_functional_lab_isolation.py' -v
+          python3 -m unittest discover -s tests -p 'test_lab_line_login_isolation.py' -v
+          node --test tests/lab-line-notification-safety.test.mjs
+          node --test tests/lab-line-auth-rules.test.mjs tests/lab-line-api-assertion.test.mjs
+          node --test tests/lab-line-student-coverage.test.mjs
+          node --test tests/phase1-fee-integration.test.mjs
           node --test tests/admin-semester-scores.test.mjs tests/admin-score-quick-filters.test.mjs tests/admin-attendance-todos.test.mjs tests/tshirt-first-receipt.test.mjs
           node --test tests/admin-private-followup.test.mjs api/test/privateLessonFollowup.test.mjs
           node --test tests/music-learning-journey.test.mjs

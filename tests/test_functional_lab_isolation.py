@@ -30,6 +30,61 @@ class FunctionalUATIsolationTests(unittest.TestCase):
     def test_original_main_modules_not_modified(self):
         self.assertNotIn('assertLabIsolation();',(ROOT/"api/src/functions/config.js").read_text())
         self.assertIn('assertLabIsolation();',(self.lab/"api/src/functions/config.js").read_text())
+    def test_line_send_safety_and_masked_admin_log_are_generated_lab_only(self):
+        function=self.lab/"api/src/functions/labLineLogin.js"
+        rules=self.lab/"api/src/lib/labLineNotificationSafety.mjs"
+        panel=self.lab/"app/lab-line-notification-log.js"
+        page=(self.lab/"app/fee-collections.html").read_text(encoding="utf-8")
+        self.assertTrue(function.is_file())
+        self.assertTrue(rules.is_file())
+        self.assertTrue(panel.is_file())
+        self.assertFalse((ROOT/"api/src/functions/labLineLogin.js").exists())
+        self.assertFalse((ROOT/"api/src/lib/labLineNotificationSafety.mjs").exists())
+        self.assertFalse((ROOT/"app/lab-line-notification-log.js").exists())
+        source=function.read_text(encoding="utf-8")
+        self.assertIn('route:"line/lab-send-test"',source)
+        self.assertIn('route:"line/lab-notification-log"',source)
+        self.assertIn('ctx.access.role!=="admin"',source)
+        self.assertIn('lineUserIdMasked:maskLineUserId',source)
+        self.assertIn('partitionKey:"LAB_SEND_RATE"',source)
+        self.assertIn('X-Line-Retry-Key',source)
+        self.assertIn('id="labLineNotificationLog"',page)
+        self.assertIn('/lab-line-notification-log.js',page)
+        for file in (function,rules,panel):
+            result=subprocess.run(["node","--check",str(file)],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+    def test_line_student_coverage_is_generated_lab_only_and_admin_only(self):
+        function=self.lab/"api/src/functions/labLineStudentCoverage.js"
+        model=self.lab/"api/src/lib/labLineStudentCoverage.mjs"
+        panel=self.lab/"app/lab-line-student-coverage.js"
+        page=(self.lab/"app/index.html").read_text(encoding="utf-8")
+        for file in (function,model,panel):self.assertTrue(file.is_file(),file)
+        self.assertFalse((ROOT/"api/src/functions/labLineStudentCoverage.js").exists())
+        self.assertFalse((ROOT/"api/src/lib/labLineStudentCoverage.mjs").exists())
+        self.assertFalse((ROOT/"app/lab-line-student-coverage.js").exists())
+        source=function.read_text(encoding="utf-8")
+        read_model=model.read_text(encoding="utf-8")
+        browser=panel.read_text(encoding="utf-8")
+        self.assertIn('route:"line/lab-student-coverage"',source)
+        self.assertIn('access.role!=="admin"',source)
+        self.assertIn('access.capabilities?.tenantAdmin!==true',source)
+        self.assertIn('getLineAccountBinding(schoolId,email)',source)
+        self.assertNotIn('includeTarget:true',source)
+        self.assertNotIn('lineUserId:',read_model)
+        self.assertNotIn('parentKey:',read_model)
+        self.assertIn('學生作為查詢主軸',source)
+        self.assertIn('同一家長若有兩名子女',browser)
+        self.assertIn('已綁定」不等於已讀',browser)
+        self.assertIn('data-workspace-action="students"',browser)
+        self.assertIn('lab-line-shortcut-count',browser)
+        self.assertIn('/lab-line-student-coverage.js',page)
+        self.assertIn('/api/line/lab-student-coverage',browser)
+        login=(self.lab/"api/src/functions/labLineLogin.js").read_text(encoding="utf-8")
+        self.assertIn('friendStatusTableName="LabLineFriendStatus"',login)
+        self.assertIn('await saveFriendStatus',login)
+        for file in (function,model,panel):
+            result=subprocess.run(["node","--check",str(file)],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
     def test_storage_guard_present(self):
         s=(self.lab/"api/src/lib/storage.js").read_text()
         self.assertIn('assertLabIsolation();return process.env.STORAGE_CONNECTION_STRING',s)
@@ -121,13 +176,37 @@ class FunctionalUATIsolationTests(unittest.TestCase):
                 continue
             actual=self.lab/"app"/original.relative_to(ROOT/"app")
             if original.name=="fee-collections.js":
-                # The only permitted LAB frontend change is a tightly scoped mock binding UI.
+                # LAB replaces only the legacy parent binding-code panel with
+                # the isolated Gmail/LINE OAuth account-link flow.
                 lab_text=actual.read_text(encoding="utf-8")
                 prod_text=original.read_text(encoding="utf-8")
-                self.assertIn('lab-mock-line-bind',lab_text)
-                self.assertIn('LAB 模擬模式',lab_text)
-                self.assertNotIn('lab-mock-line-bind',prod_text)
-                self.assertIn('lab/line/mock-bind',lab_text)
+                for marker in ('追加綁定 LINE','LINE／Gmail 雙向綁定已完成',
+                               'api("line/account/status")','line/login/finish'):
+                    self.assertIn(marker,lab_text)
+                    self.assertNotIn(marker,prod_text)
+                for legacy in ('取得 6 位數綁定碼','create-line-code','copy-code',
+                               'refresh-line-binding','lab-mock-line-bind'):
+                    self.assertNotIn(legacy,lab_text)
+                self.assertIn('取得 6 位數綁定碼',prod_text)
+                self.assertIn('不需再次輸入學生姓名、學號或額外綁定碼',lab_text)
+                continue
+            if original.name=="app-v3.js":
+                lab_text=actual.read_text(encoding="utf-8")
+                prod_text=original.read_text(encoding="utf-8")
+                for expected in ('使用 LINE 登入（家長）','/api/line/auth/start','/api/line/auth/finish',
+                                 '學生綁定申請已送出 ✅','核准前不會開放學生資料',
+                                 '/api/line/account/status','/api/line/account/link-google',
+                                 '綁定 LINE','雙重登入已完成'):
+                    self.assertIn(expected,lab_text)
+                    self.assertNotIn(expected,prod_text)
+                self.assertIn('請輸入 6 碼學生學號',lab_text)
+                continue
+            if original.name=="webview-guard.js":
+                lab_text=actual.read_text(encoding="utf-8")
+                prod_text=original.read_text(encoding="utf-8")
+                self.assertIn('embedded&&!isLine',lab_text)
+                self.assertIn('/api/line/auth/logout',lab_text)
+                self.assertNotIn('/api/line/auth/logout',prod_text)
                 continue
             self.assertEqual(actual.read_bytes(),original.read_bytes(),
                              "SOP LAB must not repaint the production view: "+str(original))
