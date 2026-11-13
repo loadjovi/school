@@ -12,6 +12,7 @@ import {
   clearLabLineSessionCookie,
   createLabLineSession,
   endLabLineSession,
+  issueLabLineApiAssertion,
   getLabParentAccountLinkStatus,
   getLabLineIdentity,
   labLineSessionCookie,
@@ -203,7 +204,7 @@ app.http("labLineAuthFinish",{methods:["POST"],authLevel:"anonymous",route:"line
     if(!row||row.kind!=="AUTH_TICKET"||row.status!=="ACTIVE"||Number(row.expiresAt)<Date.now())return response({error:"LINE 授權已過期，請重新登入"},403);
     await consume(row);
     const session=await createLabLineSession({lineUserId:row.lineUserId,lineDisplayName:row.lineDisplayName});
-    return response({authenticated:true,authProvider:"line",displayName:session.displayName,linkedExisting:session.linkedExisting,sessionToken:session.token},200,{},[labLineSessionCookie(session.token)]);
+    return response({authenticated:true,authProvider:"line",displayName:session.displayName,linkedExisting:session.linkedExisting,sessionToken:session.token,apiToken:session.apiToken},200,{},[labLineSessionCookie(session.token)]);
   }catch(error){
     const conflict=error?.code==="IDENTITY_CONFLICT";
     console.error("LAB LINE auth finish failed",String(error?.code||error?.name||"Error"));
@@ -215,7 +216,9 @@ app.http("labLineAuthSession",{methods:["GET"],authLevel:"anonymous",route:"line
     if(!enabled())return response({authenticated:false},401);
     const identity=await getLabLineIdentity(request);
     if(!identity)return response({authenticated:false},401);
-    return response({authenticated:true,authProvider:"line",displayName:identity.displayName});
+    const apiToken=await issueLabLineApiAssertion(request);
+    if(!apiToken)return response({authenticated:false},401);
+    return response({authenticated:true,authProvider:"line",displayName:identity.displayName,apiToken});
   }catch(error){console.error("LAB LINE session check failed",String(error?.name||"Error"));return response({authenticated:false},401)}
 }});
 app.http("labLineAuthLogout",{methods:["POST"],authLevel:"anonymous",route:"line/auth/logout",handler:async request=>{

@@ -4,6 +4,7 @@
 import {createHash,randomBytes,randomInt} from "node:crypto";
 import {TableClient,TableServiceClient} from "@azure/data-tables";
 import {assertLabIsolation} from "./labIsolation.mjs";
+import {createLabLineApiAssertion,LAB_LINE_ASSERTION_PREFIX,verifyLabLineApiAssertion} from "./labLineApiAssertion.mjs";
 import {
   bindLineAccount,
   createLineAccountBindingRequest,
@@ -122,7 +123,41 @@ function sessionToken(request){
     const handle=compatibility.slice(13);
     if(/^[A-Za-z0-9_-]{32,64}$/.test(handle))return handle;
   }
+  const authorization=String(request.headers.get("authorization")||"").trim();
+  if(authorization.toLowerCase().startsWith("bearer line-session.")){
+    const handle=authorization.slice("Bearer line-session.".length);
+    if(/^[A-Za-z0-9_-]{32,64}$/.test(handle))return handle;
+  }
   return cookieValue(request);
+}
+
+function assertionValue(request){
+  const dedicated=String(request.headers.get("x-lab-line-assertion")||"").trim();
+  if(dedicated.startsWith(LAB_LINE_ASSERTION_PREFIX))return dedicated.slice(LAB_LINE_ASSERTION_PREFIX.length);
+  const compatibility=String(request.headers.get("x-google-id-token")||"").trim();
+  if(compatibility.startsWith(LAB_LINE_ASSERTION_PREFIX))return compatibility.slice(LAB_LINE_ASSERTION_PREFIX.length);
+  const authorization=String(request.headers.get("authorization")||"").trim();
+  if(authorization.toLowerCase().startsWith("bearer ")){
+    const bearer=authorization.slice(7).trim();
+    if(bearer.startsWith(LAB_LINE_ASSERTION_PREFIX))return bearer.slice(LAB_LINE_ASSERTION_PREFIX.length);
+  }
+  return "";
+}
+
+function signAssertion(row){
+  assertLabIsolation();
+  return createLabLineApiAssertion({sessionId:row.rowKey,expiresAt:row.expiresAt,secret:process.env.LINE_LOGIN_CHANNEL_SECRET});
+}
+
+async function assertionRow(request){
+  assertLabIsolation();
+  const verified=verifyLabLineApiAssertion({token:assertionValue(request),secret:process.env.LINE_LOGIN_CHANNEL_SECRET});
+  if(!verified)return null;
+  try{
+    const row=await (await client()).getEntity("SESSION",verified.sessionId);
+    if(row.status!=="ACTIVE"||Date.parse(String(row.expiresAt||""))<=Date.now())return null;
+    return row;
+  }catch(error){if(error.statusCode===404)return null;throw error}
 }
 
 export function labLineSessionCookie(token){
@@ -158,17 +193,16 @@ export async function createLabLineSession({lineUserId,lineDisplayName}={}){
   }
   const token=randomBytes(32).toString("base64url"),now=new Date(),expiresAt=new Date(now.getTime()+sessionLifetimeMs).toISOString();
   const displayName=safeLabLineDisplayName(lineDisplayName);
-  await (await client()).createEntity({
+  const entity={
     partitionKey:"SESSION",rowKey:hash(token),status:"ACTIVE",
     lineUserId:String(lineUserId),lineDisplayName:displayName,parentEmail:resolved.parentEmail,
     linkedExisting:resolved.linkedExisting,gmailLinked:Boolean(identityLink)||!isLabSyntheticParentEmail(resolved.parentEmail),createdAt:now.toISOString(),expiresAt
-  });
-  return {token,displayName,parentEmail:resolved.parentEmail,linkedExisting:resolved.linkedExisting,gmailLinked:Boolean(identityLink)||!isLabSyntheticParentEmail(resolved.parentEmail),expiresAt};
+  };
+  await (await client()).createEntity(entity);
+  return {token,apiToken:signAssertion(entity),displayName,parentEmail:resolved.parentEmail,linkedExisting:resolved.linkedExisting,gmailLinked:Boolean(identityLink)||!isLabSyntheticParentEmail(resolved.parentEmail),expiresAt};
 }
 
-export async function getLabLineIdentity(request){
-  const row=await sessionRow(request);
-  if(!row)return null;
+function identityFromRow(row){
   return {
     sub:"line:"+hash(String(row.lineUserId||"")),
     email:String(row.parentEmail||"").trim().toLowerCase(),
@@ -176,6 +210,21 @@ export async function getLabLineIdentity(request){
     authSessionId:"line-session:"+String(row.rowKey),authProvider:"line",
     lineUserId:String(row.lineUserId||""),gmailLinked:row.gmailLinked===true||!isLabSyntheticParentEmail(row.parentEmail)
   };
+}
+
+export async function getLabLineIdentity(request){
+  const row=await sessionRow(request);
+  return row?identityFromRow(row):null;
+}
+
+export async function getLabLineAssertionIdentity(request){
+  const row=await assertionRow(request);
+  return row?identityFromRow(row):null;
+}
+
+export async function issueLabLineApiAssertion(request){
+  const row=await sessionRow(request);
+  return row?signAssertion(row):"";
 }
 
 export async function endLabLineSession(request){

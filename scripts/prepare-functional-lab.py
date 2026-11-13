@@ -151,6 +151,8 @@ def prepare(output: Path) -> None:
     lib.joinpath("labLineStudentCoverage.mjs").write_text(coverage_model,encoding="utf-8")
     line_auth_rules=(ROOT/"scripts"/"lab-line-auth-rules.mjs").read_text(encoding="utf-8")
     lib.joinpath("labLineAuthRules.mjs").write_text(line_auth_rules,encoding="utf-8")
+    line_assertion=(ROOT/"scripts"/"lab-line-api-assertion.mjs").read_text(encoding="utf-8")
+    lib.joinpath("labLineApiAssertion.mjs").write_text(line_assertion,encoding="utf-8")
     line_session=(ROOT/"scripts"/"lab-line-session.mjs").read_text(encoding="utf-8")
     lib.joinpath("labLineSession.mjs").write_text(line_session,encoding="utf-8")
     # LAB accepts either Google or a server-side LINE Login session. The LINE
@@ -160,14 +162,17 @@ def prepare(output: Path) -> None:
     auth_source=auth.read_text(encoding="utf-8")
     verify_google='export async function verifyGoogle(request){return verifyGoogleToken(googleToken(request))}'
     google_custom_token='  if(custom&&custom!=="cookie-session")return custom;'
+    google_bearer_token='  return auth.slice(7).trim();'
     identity_marker='  const identity=await verifyGoogle(request);\n  if(!identity)return {authenticated:false};\n  const email=identity.email;'
-    if verify_google not in auth_source or google_custom_token not in auth_source or identity_marker not in auth_source:
+    if verify_google not in auth_source or google_custom_token not in auth_source or google_bearer_token not in auth_source or identity_marker not in auth_source:
         raise RuntimeError("Authentication structure changed; review LAB LINE session integration")
-    auth_source='import {getLabLineIdentity} from "./labLineSession.mjs";\n'+auth_source
+    auth_source='import {getLabLineAssertionIdentity,getLabLineIdentity} from "./labLineSession.mjs";\n'+auth_source
     auth_source=auth_source.replace(google_custom_token,
-        '  if(custom&&custom!=="cookie-session"&&!custom.startsWith("line-session."))return custom;',1)
+        '  if(custom&&custom!=="cookie-session"&&!custom.startsWith("line-session.")&&!custom.startsWith("lab-line-assertion."))return custom;',1)
+    auth_source=auth_source.replace(google_bearer_token,
+        '  const bearer=auth.slice(7).trim();\n  if(bearer.startsWith("line-session.")||bearer.startsWith("lab-line-assertion."))return "";\n  return bearer;',1)
     auth_source=auth_source.replace(verify_google,
-        'export async function verifyGoogle(request){return verifyGoogleToken(googleToken(request))||(await getLabLineIdentity(request))}',1)
+        'export async function verifyGoogle(request){return verifyGoogleToken(googleToken(request))||(await getLabLineAssertionIdentity(request))||(await getLabLineIdentity(request))}',1)
     auth_source=auth_source.replace(identity_marker,
         identity_marker+'\n  const lineParentOnly=identity.authProvider==="line";',1)
     auth_source=auth_source.replace('  if(globalRole||schoolRoles.length){',
@@ -315,27 +320,33 @@ def prepare(output: Path) -> None:
     if guard_app_version not in guard_source:
         raise RuntimeError("LAB app loader version changed; review LINE login cache isolation")
     webview_guard.write_text(guard_source.replace(guard_app_version,
-        'appendScript("/app-v3.js?v=20261113-line-session-compat",()=>{',1),encoding="utf-8")
+        'appendScript("/app-v3.js?v=20261113-line-assertion",()=>{',1),encoding="utf-8")
     app_v3=app/"app-v3.js"
     app_source=app_v3.read_text(encoding="utf-8")
     api_token_marker='if(state.token)h["X-Google-ID-Token"]=state.token;'
     if api_token_marker not in app_source:
         raise RuntimeError("Frontend API authentication structure changed; review LAB LINE session integration")
     app_source=app_source.replace(api_token_marker,
-        'if(String(state.token||"").startsWith("line-session.")){h["X-Lab-Line-Session"]=state.token.slice(13);h["X-Google-ID-Token"]=state.token}else if(state.token)h["X-Google-ID-Token"]=state.token;',1)
+        'const token=String(state.token||""),lineHandle=String(sessionStorage.getItem("lab_line_session")||"");if(token.startsWith("lab-line-assertion.")){h["X-Lab-Line-Assertion"]=token;h["X-Google-ID-Token"]=token;h["Authorization"]="Bearer "+token;if(/^[A-Za-z0-9_-]{32,64}$/.test(lineHandle))h["X-Lab-Line-Session"]=lineHandle}else if(token.startsWith("line-session.")){h["X-Lab-Line-Session"]=token.slice(13);h["Authorization"]="Bearer "+token}else if(state.token)h["X-Google-ID-Token"]=state.token;',1)
+    app_source=app_source.replace('const r=await fetch(url,fetchOptions);',
+        'if(!fetchOptions.credentials)fetchOptions.credentials="same-origin";const r=await fetch(url,fetchOptions);',1)
     boot_marker='async function boot(){if(!state.token){renderLogin();return}try{await loadProfile()}catch(e){renderLogin(e.message)}}'
     if boot_marker not in app_source:
         raise RuntimeError("Frontend boot flow changed; review LAB LINE Login integration")
     app_source=app_source.replace(boot_marker,r'''let labLineBootError="",labLineBootNotice="";
 function labLineSessionHeaders(token=state.token){
   const value=String(token||"");
-  return value.startsWith("line-session.")?{"X-Lab-Line-Session":value.slice(13),"X-Google-ID-Token":value}:{};
+  const saved=String(sessionStorage.getItem("lab_line_session")||"");
+  const handle=value.startsWith("line-session.")?value.slice(13):saved;
+  return /^[A-Za-z0-9_-]{32,64}$/.test(handle)?{"X-Lab-Line-Session":handle,"Authorization":"Bearer line-session."+handle}:{};
 }
 async function verifyLabLineSession(token=state.token){
   const response=await fetch("/api/line/auth/session",{cache:"no-store",credentials:"same-origin",headers:labLineSessionHeaders(token)});
   const data=await response.json().catch(()=>({}));
-  return response.ok&&data.authenticated===true&&data.authProvider==="line";
+  if(!response.ok||data.authenticated!==true||data.authProvider!=="line"||!isLabLineApiToken(data.apiToken))return false;
+  state.token="lab-line-assertion."+data.apiToken;sessionStorage.setItem("google_id_token",state.token);return true;
 }
+function isLabLineApiToken(value){return /^[A-Za-z0-9_-]{20,800}\.[A-Za-z0-9_-]{43}$/.test(String(value||""))}
 async function finishLabLineAccountLink(){
   const query=new URLSearchParams(location.search),result=String(query.get("line_lab_link")||"");
   if(!result)return true;
@@ -354,23 +365,23 @@ async function restoreLabLineSession(){
     try{
       const response=await fetch("/api/line/auth/finish",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket:result.slice(3)})});
       const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"LINE 登入失敗");
-      if(!/^[A-Za-z0-9_-]{32,64}$/.test(String(data.sessionToken||"")))throw Error("LINE 登入憑證未建立，請重新操作");
-      state.token="line-session."+data.sessionToken;
+      if(!/^[A-Za-z0-9_-]{32,64}$/.test(String(data.sessionToken||""))||!isLabLineApiToken(data.apiToken))throw Error("LINE 登入憑證未建立，請重新操作");
+      sessionStorage.setItem("lab_line_session",data.sessionToken);state.token="lab-line-assertion."+data.apiToken;
       if(!await verifyLabLineSession(state.token))throw Error("LINE 登入狀態未建立，請重新操作");
       sessionStorage.setItem("google_id_token",state.token);return true;
     }catch(error){labLineBootError=error.message||"LINE 登入失敗";return false}
   }
   try{
-    if(String(state.token||"").startsWith("line-session.")&&await verifyLabLineSession(state.token)){sessionStorage.setItem("google_id_token",state.token);return true}
-    if(await verifyLabLineSession("")){state.token="cookie-session";sessionStorage.setItem("google_id_token",state.token);return true}
+    if((String(state.token||"").startsWith("line-session.")||String(state.token||"").startsWith("lab-line-assertion."))&&await verifyLabLineSession(state.token)){sessionStorage.setItem("google_id_token",state.token);return true}
+    if(await verifyLabLineSession("")){return true}
   }catch{}
   return false;
 }
 async function boot(){
   if(!await finishLabLineAccountLink()){renderLogin(labLineBootError);return}
   const hasLineAuthResult=new URLSearchParams(location.search).has("line_lab_auth");
-  if(hasLineAuthResult){state.token="";sessionStorage.removeItem("google_id_token")}
-  if(hasLineAuthResult||!state.token||state.token==="cookie-session"||String(state.token).startsWith("line-session.")){
+  if(hasLineAuthResult){state.token="";sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("lab_line_session")}
+  if(hasLineAuthResult||!state.token||state.token==="cookie-session"||String(state.token).startsWith("line-session.")||String(state.token).startsWith("lab-line-assertion.")){
     const restored=await restoreLabLineSession();
     if(!restored){state.token="";sessionStorage.removeItem("google_id_token");renderLogin(labLineBootError);return}
   }
@@ -388,7 +399,7 @@ window.startLabLineAuth=async function(){
     if logout_marker not in app_source:
         raise RuntimeError("Frontend logout flow changed; review LAB LINE session cleanup")
     app_source=app_source.replace(logout_marker,
-        'function logout(reload=true){const previousToken=String(state.token||"");const lineSession=previousToken==="cookie-session"||previousToken.startsWith("line-session.");const lineHeaders=previousToken.startsWith("line-session.")?{"X-Lab-Line-Session":previousToken.slice(13),"X-Google-ID-Token":previousToken}:{};state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(lineSession)fetch("/api/line/auth/logout",{method:"POST",credentials:"same-origin",headers:lineHeaders,keepalive:true}).catch(()=>{});if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}',1)
+        'function logout(reload=true){const previousToken=String(state.token||""),saved=String(sessionStorage.getItem("lab_line_session")||"");const lineSession=previousToken==="cookie-session"||previousToken.startsWith("line-session.")||previousToken.startsWith("lab-line-assertion.")||Boolean(saved);const handle=previousToken.startsWith("line-session.")?previousToken.slice(13):saved;const lineHeaders=/^[A-Za-z0-9_-]{32,64}$/.test(handle)?{"X-Lab-Line-Session":handle,"Authorization":"Bearer line-session."+handle}:{};state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("lab_line_session");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(lineSession)fetch("/api/line/auth/logout",{method:"POST",credentials:"same-origin",headers:lineHeaders,keepalive:true}).catch(()=>{});if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}',1)
     app_source=app_source.replace('登入已失效，請重新使用 Google 登入','登入已失效，請重新使用 Gmail 或 LINE 登入')
     app_source=app_source.replace('Google Gmail 登入版 v3<br>家長、老師與管理員共用入口',
         '家長可使用 Gmail 或 LINE 登入<br>老師與管理員請使用 Gmail',1)
