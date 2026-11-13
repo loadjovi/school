@@ -159,10 +159,13 @@ def prepare(output: Path) -> None:
     auth=lib/"auth.js"
     auth_source=auth.read_text(encoding="utf-8")
     verify_google='export async function verifyGoogle(request){return verifyGoogleToken(googleToken(request))}'
+    google_custom_token='  if(custom&&custom!=="cookie-session")return custom;'
     identity_marker='  const identity=await verifyGoogle(request);\n  if(!identity)return {authenticated:false};\n  const email=identity.email;'
-    if verify_google not in auth_source or identity_marker not in auth_source:
+    if verify_google not in auth_source or google_custom_token not in auth_source or identity_marker not in auth_source:
         raise RuntimeError("Authentication structure changed; review LAB LINE session integration")
     auth_source='import {getLabLineIdentity} from "./labLineSession.mjs";\n'+auth_source
+    auth_source=auth_source.replace(google_custom_token,
+        '  if(custom&&custom!=="cookie-session"&&!custom.startsWith("line-session."))return custom;',1)
     auth_source=auth_source.replace(verify_google,
         'export async function verifyGoogle(request){return verifyGoogleToken(googleToken(request))||(await getLabLineIdentity(request))}',1)
     auth_source=auth_source.replace(identity_marker,
@@ -303,20 +306,30 @@ def prepare(output: Path) -> None:
     email.write_text(text.replace(expected,'connectionString:"", // LAB: external email permanently disabled'),
                      encoding="utf-8")
     app=output/"app"
+    # Force the LAB shell to request this login fix under a new asset URL. The
+    # production source remains unchanged; this only prevents an already-open
+    # LAB tab from loading a previous app-v3.js response after deployment.
+    webview_guard=app/"webview-guard.js"
+    guard_source=webview_guard.read_text(encoding="utf-8")
+    guard_app_version='appendScript("/app-v3.js?v=20261102-student-workflow",()=>{'
+    if guard_app_version not in guard_source:
+        raise RuntimeError("LAB app loader version changed; review LINE login cache isolation")
+    webview_guard.write_text(guard_source.replace(guard_app_version,
+        'appendScript("/app-v3.js?v=20261113-line-session-compat",()=>{',1),encoding="utf-8")
     app_v3=app/"app-v3.js"
     app_source=app_v3.read_text(encoding="utf-8")
     api_token_marker='if(state.token)h["X-Google-ID-Token"]=state.token;'
     if api_token_marker not in app_source:
         raise RuntimeError("Frontend API authentication structure changed; review LAB LINE session integration")
     app_source=app_source.replace(api_token_marker,
-        'if(String(state.token||"").startsWith("line-session."))h["X-Lab-Line-Session"]=state.token.slice(13);else if(state.token)h["X-Google-ID-Token"]=state.token;',1)
+        'if(String(state.token||"").startsWith("line-session.")){h["X-Lab-Line-Session"]=state.token.slice(13);h["X-Google-ID-Token"]=state.token}else if(state.token)h["X-Google-ID-Token"]=state.token;',1)
     boot_marker='async function boot(){if(!state.token){renderLogin();return}try{await loadProfile()}catch(e){renderLogin(e.message)}}'
     if boot_marker not in app_source:
         raise RuntimeError("Frontend boot flow changed; review LAB LINE Login integration")
     app_source=app_source.replace(boot_marker,r'''let labLineBootError="",labLineBootNotice="";
 function labLineSessionHeaders(token=state.token){
   const value=String(token||"");
-  return value.startsWith("line-session.")?{"X-Lab-Line-Session":value.slice(13)}:{};
+  return value.startsWith("line-session.")?{"X-Lab-Line-Session":value.slice(13),"X-Google-ID-Token":value}:{};
 }
 async function verifyLabLineSession(token=state.token){
   const response=await fetch("/api/line/auth/session",{cache:"no-store",credentials:"same-origin",headers:labLineSessionHeaders(token)});
@@ -375,7 +388,7 @@ window.startLabLineAuth=async function(){
     if logout_marker not in app_source:
         raise RuntimeError("Frontend logout flow changed; review LAB LINE session cleanup")
     app_source=app_source.replace(logout_marker,
-        'function logout(reload=true){const previousToken=String(state.token||"");const lineSession=previousToken==="cookie-session"||previousToken.startsWith("line-session.");const lineHeaders=previousToken.startsWith("line-session.")?{"X-Lab-Line-Session":previousToken.slice(13)}:{};state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(lineSession)fetch("/api/line/auth/logout",{method:"POST",credentials:"same-origin",headers:lineHeaders,keepalive:true}).catch(()=>{});if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}',1)
+        'function logout(reload=true){const previousToken=String(state.token||"");const lineSession=previousToken==="cookie-session"||previousToken.startsWith("line-session.");const lineHeaders=previousToken.startsWith("line-session.")?{"X-Lab-Line-Session":previousToken.slice(13),"X-Google-ID-Token":previousToken}:{};state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(lineSession)fetch("/api/line/auth/logout",{method:"POST",credentials:"same-origin",headers:lineHeaders,keepalive:true}).catch(()=>{});if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}',1)
     app_source=app_source.replace('登入已失效，請重新使用 Google 登入','登入已失效，請重新使用 Gmail 或 LINE 登入')
     app_source=app_source.replace('Google Gmail 登入版 v3<br>家長、老師與管理員共用入口',
         '家長可使用 Gmail 或 LINE 登入<br>老師與管理員請使用 Gmail',1)

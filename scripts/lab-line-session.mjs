@@ -113,6 +113,15 @@ function sessionToken(request){
   // ID; it only identifies the short-lived server-side LAB session.
   const header=String(request.headers.get("x-lab-line-session")||"").trim();
   if(/^[A-Za-z0-9_-]{32,64}$/.test(header))return header;
+  // Azure Static Web Apps already carries X-Google-ID-Token for every
+  // authenticated API call. Reuse that established transport as a LAB-only
+  // compatibility path when an intermediary omits the dedicated header.
+  // The value is still only the opaque server-side session handle.
+  const compatibility=String(request.headers.get("x-google-id-token")||"").trim();
+  if(compatibility.startsWith("line-session.")){
+    const handle=compatibility.slice(13);
+    if(/^[A-Za-z0-9_-]{32,64}$/.test(handle))return handle;
+  }
   return cookieValue(request);
 }
 
