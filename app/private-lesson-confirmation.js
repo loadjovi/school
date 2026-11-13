@@ -34,7 +34,7 @@
   const workflowText={scheduled:"已預約",awaiting_parent:"待家長確認",issue:"家長回報問題",completed:"流程完成",cancelled:"已停課"};
   const workflowClass={scheduled:"warn",awaiting_parent:"warn",issue:"bad",completed:"ok",cancelled:"bad"};
   const notificationTypeText={scheduled:"預約",rescheduled:"改期",cancelled:"停課",completed:"完課確認",confirmed:"家長確認",issue:"問題回報"};
-  const emailText={sent:"Email 已寄送",partial:"Email 部分寄送",failed:"Email 寄送失敗",not_configured:"Email 尚未設定",no_recipients:"尚無收件人 Email",disabled:"Email 通知已由後台關閉",pending:"Email 準備中",not_required:""};
+  const emailText={sent:"Email 已寄送",accepted:"Email 已受理發送",partial:"Email 部分寄送",failed:"Email 寄送失敗",unknown:"Email 狀態待確認",not_configured:"Email 尚未設定",no_recipients:"尚無收件人 Email",disabled:"Email 通知已由後台關閉",pending:"Email 準備中",not_required:""};
   function localDate(){const d=new Date(),x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,10)}
   function localTime(){const d=new Date();return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`}
   function shiftDate(date,days){const d=new Date(`${date}T12:00:00`);d.setDate(d.getDate()+Number(days||0));const x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,10)}
@@ -99,17 +99,19 @@
   function fmtEmailAt(v){if(!v)return "";try{return new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(v))}catch{return ""}}
   function emailStatusLine(x){
     const label=emailText[x?.emailNotificationStatus]||"";if(!label)return "";
-    const type=notificationTypeText[x?.emailNotificationType]||"通知",total=Number(x?.emailNotificationRecipients||0),rawSent=Number(x?.emailNotificationSentCount||0),failed=Number(x?.emailNotificationFailedCount||0),sent=x?.emailNotificationStatus==="sent"&&total&&rawSent===0?total:rawSent,at=fmtEmailAt(x?.emailNotificationAt),resend=Number(x?.emailNotificationResendCount||0);
-    return `📩 ${type}：${label}${total?`｜${sent}/${total} 位${failed?`（失敗 ${failed}）`:""}`:""}${at?`｜${at}`:""}${resend?`｜重寄 ${resend} 次`:""}`;
+    const type=notificationTypeText[x?.emailNotificationType]||"通知",total=Number(x?.emailNotificationRecipients||0),rawSent=Number(x?.emailNotificationSentCount||0),accepted=Number(x?.emailNotificationAcceptedCount||0),failed=Number(x?.emailNotificationFailedCount||0),processed=x?.emailNotificationStatus==="sent"&&total&&rawSent===0?total:x?.emailNotificationStatus==="accepted"?(accepted||total):rawSent,at=fmtEmailAt(x?.emailNotificationAt),resend=Number(x?.emailNotificationResendCount||0);
+    return `📩 ${type}：${label}${total?`｜${processed}/${total} 位${failed?`（失敗 ${failed}）`:""}`:""}${at?`｜${at}`:""}${resend?`｜重寄 ${resend} 次`:""}`;
   }
   function notifyToast(result,successText){
     const m=result?.emailNotification||{};
     if(m.status==="sent")toast(`✅ ${successText}，Email 已寄送 ${m.sentCount||m.recipientCount||1} 位`);
+    else if(m.status==="accepted")toast(`✅ ${successText}，Email 已受理發送 ${m.acceptedCount||m.recipientCount||1} 位`);
     else if(m.status==="partial")toast(`⚠️ ${successText}；部分 Email 寄送失敗`);
     else if(m.status==="no_recipients")toast(`✅ ${successText}；目前尚無可通知的 Email`);
     else if(m.status==="not_configured")toast(`✅ ${successText}；Azure Email 尚未設定`);
     else if(m.status==="disabled")toast(`✅ ${successText}；Email 通知目前關閉`);
     else if(m.status==="failed")toast(`⚠️ ${successText}；Email 寄送失敗，平台資料已同步`);
+    else if(m.status==="unknown"||m.status==="pending")toast(`✅ ${successText}；Email 通知狀態待確認，可由紀錄重寄`);
     else toast(`✅ ${successText}`);
   }
   function sortedLessons(rows=state.privateLessons){

@@ -75,6 +75,26 @@ async function sendOne(client,senderAddress,address,message){
   return {address,status:String(result?.status||"unknown"),id:String(result?.id||"")};
 }
 
+// Private-lesson writes must not wait for the provider's long-running delivery
+// poll. beginSend has already queued the message; delivery remains distinct from
+// acceptance and is therefore recorded as "accepted", never as "sent".
+async function queueOne(client,senderAddress,address,message){
+  const poller=await client.beginSend({
+    senderAddress,
+    content:{
+      subject:message.subject,
+      plainText:message.plainText,
+      html:message.html
+    },
+    recipients:{to:[{address}]}
+  });
+  const state=typeof poller?.getOperationState==="function"?poller.getOperationState():null;
+  const result=typeof poller?.getResult==="function"?poller.getResult():null;
+  const raw=String(result?.status||state?.status||"running").toLowerCase();
+  if(["failed","canceled","cancelled","notstarted","not_started"].includes(raw))throw new Error(`Email queue rejected: ${raw}`);
+  return {address,status:"accepted",id:String(result?.id||state?.result?.id||"")};
+}
+
 const privateLessonMailCopy={
   scheduled:{title:"個別課預約通知",lead:"老師已建立個別課預約，請確認以下日期與時間。",action:"查看個別課預約"},
   rescheduled:{title:"個別課改期通知",lead:"個別課預約日期或時間已更新，請確認新的安排。",action:"查看最新預約"},
@@ -123,14 +143,14 @@ export async function sendPrivateLessonWorkflowEmail({
   const html=`<div style="font-family:Arial,'Noto Sans TC',sans-serif;line-height:1.7;color:#173d31;max-width:640px"><h2 style="color:#1f5a46">🎻 ${esc(school)}｜${esc(copy.title)}</h2><p>${esc(copy.lead)}</p><table style="border-collapse:collapse">${actor?`<tr><td style="padding:4px 12px 4px 0"><b>異動人員</b></td><td>${esc(actor)}</td></tr>`:""}${oldDate?`<tr><td style="padding:4px 12px 4px 0"><b>原日期</b></td><td>${esc(oldDate)}</td></tr>`:""}${oldTimeText?`<tr><td style="padding:4px 12px 4px 0"><b>原時間</b></td><td>${esc(oldTimeText)}</td></tr>`:""}<tr><td style="padding:4px 12px 4px 0"><b>學生</b></td><td>${esc(studentName)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>老師</b></td><td>${esc(teacher)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>日期</b></td><td>${esc(date)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>時間</b></td><td>${esc(timeText)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>分鐘</b></td><td>${Number(minutes||0)} 分鐘</td></tr>${content?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>課程內容</b></td><td>${esc(content)}</td></tr>`:""}${why?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>原因</b></td><td>${esc(why)}</td></tr>`:""}${parentNote?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>備註</b></td><td>${esc(parentNote)}</td></tr>`:""}</table>${link?`<p style="margin-top:20px"><a href="${esc(link)}" style="display:inline-block;background:#1f5a46;color:white;text-decoration:none;padding:10px 18px;border-radius:8px">${esc(copy.action)}</a></p>`:""}<p style="font-size:12px;color:#6c7f77">此信由 ${esc(school)} 系統自動寄出，請勿直接回覆。</p></div>`;
 
   const client=new EmailClient(c.connectionString);
-  const results=await Promise.allSettled(emails.map(address=>sendOne(client,c.senderAddress,address,{subject,plainText,html})));
-  const sent=results.filter(r=>r.status==="fulfilled"&&String(r.value?.status).toLowerCase()==="succeeded").length;
+  const results=await Promise.allSettled(emails.map(address=>queueOne(client,c.senderAddress,address,{subject,plainText,html})));
   const accepted=results.filter(r=>r.status==="fulfilled").length;
   const failed=results.length-accepted;
   return {
-    status:failed===0&&sent===emails.length?"sent":accepted>0?"partial":"failed",
+    status:failed===0&&accepted===emails.length?"accepted":accepted>0?"partial":"failed",
     recipientCount:emails.length,
-    sentCount:sent||accepted,
+    acceptedCount:accepted,
+    sentCount:0,
     failedCount:failed,
     results:results.map(r=>r.status==="fulfilled"?{status:r.value.status,id:r.value.id}:{status:"failed",error:clean(r.reason?.message||r.reason,300)})
   };

@@ -64,7 +64,7 @@ function view(e,teacherNameOverride=""){
     teacherRating:Number(e.teacherRating||0),teacherReview:String(e.teacherReview||""),teacherRatedAt:String(e.teacherRatedAt||""),teacherRatedBy:String(e.teacherRatedBy||""),
     studentPerformanceRating:Number(e.studentPerformanceRating||0),studentPerformanceRatedAt:String(e.studentPerformanceRatedAt||""),studentPerformanceRatedBy:String(e.studentPerformanceRatedBy||""),
     emailNotificationType:String(e.emailNotificationType||""),emailNotificationStatus:String(e.emailNotificationStatus||""),emailNotificationAt:String(e.emailNotificationAt||""),
-    emailNotificationRecipients:Number(e.emailNotificationRecipients||0),emailNotificationSentCount:Number(e.emailNotificationSentCount||0),emailNotificationFailedCount:Number(e.emailNotificationFailedCount||0),
+    emailNotificationRecipients:Number(e.emailNotificationRecipients||0),emailNotificationAcceptedCount:Number(e.emailNotificationAcceptedCount||0),emailNotificationSentCount:Number(e.emailNotificationSentCount||0),emailNotificationFailedCount:Number(e.emailNotificationFailedCount||0),
     emailNotificationResendCount:Number(e.emailNotificationResendCount||0),emailNotificationLastResentAt:String(e.emailNotificationLastResentAt||""),emailNotificationLastResentBy:String(e.emailNotificationLastResentBy||""),
     scheduledAt:String(e.scheduledAt||e.createdAt||""),scheduledBy:String(e.scheduledBy||e.teacher||""),
     rescheduledAt:String(e.rescheduledAt||""),rescheduledBy:String(e.rescheduledBy||""),rescheduleCount:Number(e.rescheduleCount||0),
@@ -129,9 +129,21 @@ function appendScheduleHistory(entity,item){
 function applyNotification(entity,eventType,result,actorEmail,{resend=false}={}){
   const now=new Date().toISOString();
   entity.emailNotificationType=eventType;entity.emailNotificationStatus=String(result?.status||"failed");entity.emailNotificationAt=now;
-  entity.emailNotificationRecipients=Number(result?.recipientCount||0);entity.emailNotificationSentCount=Number(result?.sentCount||0);entity.emailNotificationFailedCount=Number(result?.failedCount||0);
+  entity.emailNotificationRecipients=Number(result?.recipientCount||0);entity.emailNotificationAcceptedCount=Number(result?.acceptedCount||0);entity.emailNotificationSentCount=Number(result?.sentCount||result?.acceptedCount||0);entity.emailNotificationFailedCount=Number(result?.failedCount||0);
   if(resend){entity.emailNotificationResendCount=Number(entity.emailNotificationResendCount||0)+1;entity.emailNotificationLastResentAt=now;entity.emailNotificationLastResentBy=clean(actorEmail,320)}
   entity.updatedAt=now;
+}
+async function persistNotificationAudit(entity,eventType,result,actorEmail,options={}){
+  applyNotification(entity,eventType,result,actorEmail,options);
+  const patch={
+    partitionKey:entity.partitionKey,rowKey:entity.rowKey,
+    emailNotificationType:entity.emailNotificationType,emailNotificationStatus:entity.emailNotificationStatus,emailNotificationAt:entity.emailNotificationAt,
+    emailNotificationRecipients:entity.emailNotificationRecipients,emailNotificationAcceptedCount:entity.emailNotificationAcceptedCount,emailNotificationSentCount:entity.emailNotificationSentCount,emailNotificationFailedCount:entity.emailNotificationFailedCount,
+    emailNotificationResendCount:entity.emailNotificationResendCount,emailNotificationLastResentAt:entity.emailNotificationLastResentAt,emailNotificationLastResentBy:entity.emailNotificationLastResentBy,
+    updatedAt:entity.updatedAt
+  };
+  try{await table("tenantPrivateLesson").updateEntity(patch,"Merge");return true}
+  catch(e){console.error(`Private lesson ${eventType} notification audit failed:`,e);return false}
 }
 async function notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType,target="parents",actorEmail="",actorName="",previous={}}){
   try{
@@ -151,7 +163,7 @@ async function notifyWorkflow({request,schoolId,schoolName,entity,studentName,te
 }
 function emailResponse(result,entity){return {
   status:String(result?.status||entity.emailNotificationStatus||""),recipientCount:Number(result?.recipientCount??entity.emailNotificationRecipients??0),sentCount:Number(result?.sentCount??entity.emailNotificationSentCount??0),
-  failedCount:Number(result?.failedCount??entity.emailNotificationFailedCount??0),type:String(entity.emailNotificationType||""),resendCount:Number(entity.emailNotificationResendCount||0)
+  acceptedCount:Number(result?.acceptedCount??entity.emailNotificationAcceptedCount??0),failedCount:Number(result?.failedCount??entity.emailNotificationFailedCount??0),type:String(entity.emailNotificationType||""),resendCount:Number(entity.emailNotificationResendCount||0)
 }}
 
 app.http("privateLesson",{
@@ -225,8 +237,8 @@ app.http("privateLesson",{
         entity.rescheduledAt=now;entity.rescheduledBy=a.email;entity.rescheduleReason=clean(body.reason,300);entity.rescheduleCount=Number(entity.rescheduleCount||0)+1;entity.updatedAt=now;
         await table("tenantPrivateLesson").updateEntity(entity,"Merge");
         const target=isAdmin?"both":isParent?"teacher":"parents",result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"rescheduled",target,actorEmail:a.email,actorName:a.displayName||a.email,previous});
-        applyNotification(entity,"rescheduled",result,a.email);await table("tenantPrivateLesson").updateEntity(entity,"Merge");
-        return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity)});
+        const notificationAuditPersisted=await persistNotificationAudit(entity,"rescheduled",result,a.email);
+        return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted});
       }
 
       if(action==="cancel_lesson"){
@@ -238,8 +250,8 @@ app.http("privateLesson",{
         entity.status="cancelled";entity.parentConfirmation="not_required";entity.cancelledAt=now;entity.cancelledBy=a.email;entity.cancelReason=clean(body.reason||"個別課停課",300);entity.updatedAt=now;
         await table("tenantPrivateLesson").updateEntity(entity,"Merge");
         const target=isAdmin?"both":isParent?"teacher":"parents",result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"cancelled",target,actorEmail:a.email,actorName:a.displayName||a.email});
-        applyNotification(entity,"cancelled",result,a.email);await table("tenantPrivateLesson").updateEntity(entity,"Merge");
-        return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity)});
+        const notificationAuditPersisted=await persistNotificationAudit(entity,"cancelled",result,a.email);
+        return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted});
       }
 
       if(action==="update_lesson_content"){
@@ -255,6 +267,10 @@ app.http("privateLesson",{
 
       if(action==="complete_lesson"){
         if(!(isAdmin||isTeacher))return json({error:"只有個別課老師或管理員可以登記完成上課"},403);
+        if(String(entity.status||"")==="teacher_completed"&&String(entity.parentConfirmation||"")==="pending"){
+          const recorded=String(entity.emailNotificationType||"")==="completed";
+          return json({ok:true,alreadyCompleted:true,item:view(entity,teacherName),emailNotification:emailResponse(recorded?null:{status:"unknown"},entity)});
+        }
         if(!teacherCompletionStatuses.has(String(entity.status||"")))return json({error:"這筆個別課目前不是可完成上課的預約狀態"},409);
         if(!lessonEnded(entity,clock))return json({error:`尚未到預約結束時間（${entity.eventDate} ${entity.endTime}），不能提前完成上課`},409);
         const attendanceStatus=clean(body.attendanceStatus||entity.actualAttendanceStatus||"present",20);
@@ -266,8 +282,8 @@ app.http("privateLesson",{
         entity.completedAt=now;entity.completedBy=a.email;entity.updatedAt=now;
         await table("tenantPrivateLesson").updateEntity(entity,"Merge");
         const result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"completed",target:"parents",actorEmail:a.email,actorName:a.displayName||teacherName});
-        applyNotification(entity,"completed",result,a.email);await table("tenantPrivateLesson").updateEntity(entity,"Merge");
-        return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity)});
+        const notificationAuditPersisted=await persistNotificationAudit(entity,"completed",result,a.email);
+        return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted});
       }
 
       if(action==="update_weekly_practice_goals"){
@@ -294,8 +310,8 @@ app.http("privateLesson",{
         const workflow=workflowStatus(entity),eventType=workflow==="scheduled"?"scheduled":workflow==="awaiting_parent"?"completed":"";
         if(!eventType)return json({error:"這筆紀錄目前沒有可重寄的通知"},409);
         const result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType,target:"parents",actorEmail:"",actorName:a.displayName||teacherName});
-        applyNotification(entity,eventType,result,a.email,{resend:true});await table("tenantPrivateLesson").updateEntity(entity,"Merge");
-        return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity)});
+        const notificationAuditPersisted=await persistNotificationAudit(entity,eventType,result,a.email,{resend:true});
+        return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted});
       }
 
       if(!isParent)return json({error:"只有家長可以確認個別課完成狀態"},403);
@@ -316,8 +332,8 @@ app.http("privateLesson",{
       }
       entity.updatedAt=now;await table("tenantPrivateLesson").updateEntity(entity,"Merge");
       const eventType=action==="confirmed"?"confirmed":"issue",result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType,target:"teacher",actorEmail:a.email,actorName:a.displayName||"家長"});
-      applyNotification(entity,eventType,result,a.email);await table("tenantPrivateLesson").updateEntity(entity,"Merge");
-      return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity)});
+      const notificationAuditPersisted=await persistNotificationAudit(entity,eventType,result,a.email);
+      return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted});
     }
 
     if(!(a.role==="admin"||a.capabilities?.private))return json({error:"Forbidden"},403);
@@ -339,12 +355,12 @@ app.http("privateLesson",{
       lessonContent:clean(body.lessonContent,500),teacher:a.email,teacherName,parentConfirmation:"not_required",parentConfirmedAt:"",parentConfirmedBy:"",parentNote:"",
       teacherRating:0,teacherReview:"",teacherRatedAt:"",teacherRatedBy:"",studentPerformanceRating:0,studentPerformanceRatedAt:"",studentPerformanceRatedBy:"",scheduledAt:now,scheduledBy:a.email,rescheduledAt:"",rescheduledBy:"",rescheduleReason:"",rescheduleCount:0,scheduleHistory:"[]",
       completedAt:"",completedBy:"",finalizedAt:"",createdAt:now,updatedAt:now,
-      emailNotificationType:"scheduled",emailNotificationStatus:"pending",emailNotificationAt:"",emailNotificationRecipients:0,emailNotificationSentCount:0,emailNotificationFailedCount:0,
+      emailNotificationType:"scheduled",emailNotificationStatus:"pending",emailNotificationAt:"",emailNotificationRecipients:0,emailNotificationAcceptedCount:0,emailNotificationSentCount:0,emailNotificationFailedCount:0,
       emailNotificationResendCount:0,emailNotificationLastResentAt:"",emailNotificationLastResentBy:"",cancelledAt:"",cancelledBy:"",cancelReason:""
     };
     await table("tenantPrivateLesson").createEntity(entity);
     const studentName=clean(master?.studentName||body.studentName||"學生",80),result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"scheduled",target:"parents",actorEmail:a.email,actorName:a.displayName||teacherName});
-    applyNotification(entity,"scheduled",result,a.email);await table("tenantPrivateLesson").updateEntity(entity,"Merge");
-    return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity)},201);
+    const notificationAuditPersisted=await persistNotificationAudit(entity,"scheduled",result,a.email);
+    return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted},201);
   }
 });

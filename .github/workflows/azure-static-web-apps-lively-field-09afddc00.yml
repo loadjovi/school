@@ -40,6 +40,8 @@ jobs:
         run: node --test tests/parent-private-review-refresh-guard.test.mjs
       - name: Private lesson catchup and teacher queue regression tests
         run: node --test tests/private-lesson-catchup-queue.test.mjs
+      - name: Private lesson completion and notification resilience tests
+        run: node --test api/test/privateLessonCompletionResilience.test.mjs
       - name: School absence Email notification and audit regression tests
         run: node --test tests/school-absence-email.test.mjs
       - name: Semester score private lesson follow-up regression tests
