@@ -328,7 +328,7 @@ def prepare(output: Path) -> None:
     main_page=output/"app"/"index.html"
     main_html=main_page.read_text(encoding="utf-8")
     if "</body>" not in main_html:raise RuntimeError("LAB main page insertion point changed")
-    main_page.write_text(main_html.replace("</body>",'<script src="/lab-line-rich-menu-admin.js?v=20261114" defer></script></body>',1),encoding="utf-8")
+    main_page.write_text(main_html.replace("</body>",'<script src="/lab-line-rich-menu-admin.js?v=20261115-role-sync" defer></script></body>',1),encoding="utf-8")
     fee_page=output/"app"/"fee-collections.html"
     fee_html=fee_page.read_text(encoding="utf-8")
     admin_marker='<section id="adminCreate"></section>'
