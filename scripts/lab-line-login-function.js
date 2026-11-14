@@ -6,7 +6,7 @@ import {randomBytes,randomInt,randomUUID,createHash} from "node:crypto";
 import {TableClient,TableServiceClient} from "@azure/data-tables";
 import {getTenantContext,json,verifyGoogleToken} from "../lib/auth.js";
 import {defaultTenantId,listTenantRolesByEmail,tenantSchoolPartition} from "../lib/storage.js";
-import {createLineAccountBindingRequest,bindLineAccount,getLineAccountBinding,getLineAccountBindingsByUserId} from "../lib/lineAccountBinding.js";
+import {createLineAccountBindingRequest,bindLineAccount,getLineAccountBinding,getLineAccountBindingsByEmail,getLineAccountBindingsByUserId} from "../lib/lineAccountBinding.js";
 import {lineBindingCodeHash} from "../lib/lineMessaging.mjs";
 import {parentCoverageKey} from "../lib/labLineStudentCoverage.mjs";
 import {
@@ -138,6 +138,17 @@ async function platformAccount(request){
   if(ctx.error)return {error:ctx.error};
   if(!accountLinkRoles.has(String(ctx.access.role||"")))return {error:response({error:"目前身分不可設定登入方式"},403)};
   return ctx;
+}
+async function resolveCurrentLabLineUserId({request,email}={}){
+  const normalized=String(email||"").trim().toLowerCase();
+  const allowedEmail=String(process.env.LAB_LINE_TEST_PARENT_EMAIL||"").trim().toLowerCase();
+  if(!normalized||!allowedEmail||normalized!==allowedEmail)return "";
+  const identity=await getLabLineIdentity(request);
+  if(identity?.lineUserId&&String(identity.email||"").trim().toLowerCase()===normalized)return String(identity.lineUserId);
+  const bindings=await getLineAccountBindingsByEmail(normalized,{includeTarget:true});
+  const allowedId=String(process.env.LAB_LINE_TEST_USER_ID||"").trim().toLowerCase();
+  const matched=bindings.find(row=>String(row?.lineUserId||"").trim().toLowerCase()===allowedId);
+  return String(matched?.lineUserId||"");
 }
 async function syncLabRoleMenusForLineIdentity({lineUserId,email}={}){
   const normalized=String(email||"").trim().toLowerCase();
@@ -352,8 +363,10 @@ app.http("labLineRichMenuSync",{
       if(!enabled())return response({error:"LAB LINE Login 未啟用"},503);
       assertLabIsolation();
       const ctx=await platformAccount(request);if(ctx.error)return ctx.error;
+      const lineUserId=await resolveCurrentLabLineUserId({request,email:ctx.access.email});
+      if(!lineUserId)return response({error:"目前登入帳號不是指定 LAB 測試帳號，或尚未完成 LINE 綁定"},403);
       const result=await assignLabRoleRichMenu({
-        schoolId:ctx.schoolId,email:ctx.access.email,
+        schoolId:ctx.schoolId,email:ctx.access.email,lineUserId,
         parentLinked:ctx.access.role==="parent"&&Array.isArray(ctx.access.students)&&ctx.access.students.length>0
       });
       if(!result.assigned&&result.reason==="not_allowlisted")return response({error:"目前登入帳號不是指定 LAB 測試帳號"},403);
