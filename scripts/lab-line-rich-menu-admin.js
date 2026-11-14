@@ -3,14 +3,14 @@
 let status=null,busy=false,message="";
 const escape=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 
-async function request(method="GET"){
+async function request(method="GET",path="/api/line/lab-rich-menus"){
   const headers={};
   const token=String(state?.token||"");
   if(token)headers["X-Google-ID-Token"]=token;
   const roleContext=String(sessionStorage.getItem("role_context")||""),schoolId=String(sessionStorage.getItem("school_context_id")||"");
   if(roleContext)headers["X-Role-Context"]=roleContext;
   if(schoolId)headers["X-School-Id"]=schoolId;
-  const response=await fetch("/api/line/lab-rich-menus",{method,headers,credentials:"same-origin"});
+  const response=await fetch(path,{method,headers,credentials:"same-origin"});
   const body=await response.json().catch(()=>({}));
   if(!response.ok)throw Error(body.error||`HTTP ${response.status}`);
   return body;
@@ -27,8 +27,18 @@ function mount(){
     <p>${status?.configured?"✅ 家長與幹部選單已建立，選單 ID 已保存在 LAB。":"尚未建立兩組 Messaging API 個人選單。"}</p>
     ${status?.updatedAt?`<p class="muted">最後設定：${escape(new Date(status.updatedAt).toLocaleString("zh-TW"))}</p>`:""}
     ${message?`<div class="notice">${escape(message)}</div>`:""}
-    <button type="button" class="primary" id="labRichMenuSetup" ${busy||status?.configured?"disabled":""}>${busy?"建立中…":status?.configured?"已完成建立":"建立兩組 LAB 角色選單"}</button>`;
+    <button type="button" class="primary" id="labRichMenuSetup" ${busy||status?.configured?"disabled":""}>${busy?"處理中…":status?.configured?"已完成建立":"建立兩組 LAB 角色選單"}</button>
+    ${status?.configured?`<button type="button" class="secondary" id="labRichMenuSync" ${busy?"disabled":""}>重新同步我的 LINE 選單</button>`:""}`;
   panel.querySelector("#labRichMenuSetup")?.addEventListener("click",setup);
+  panel.querySelector("#labRichMenuSync")?.addEventListener("click",sync);
+}
+async function sync(){
+  if(busy)return;
+  busy=true;message="";mount();
+  try{
+    const result=await request("POST","/api/line/lab-rich-menus/sync");
+    message=result.audience==="staff"?"已同步為幹部選單；請關閉並重新開啟 LINE 聊天室。":result.audience==="parent"?"已同步為家長選單；請關閉並重新開啟 LINE 聊天室。":"目前沒有可指派的個人角色，已恢復通用選單。";
+  }catch(error){message=error.message}finally{busy=false;mount()}
 }
 
 async function load(){try{status=await request();message=""}catch(error){message=error.message}mount()}
