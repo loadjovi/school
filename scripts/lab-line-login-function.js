@@ -6,7 +6,7 @@ import {randomBytes,randomInt,randomUUID,createHash} from "node:crypto";
 import {TableClient,TableServiceClient} from "@azure/data-tables";
 import {getTenantContext,json,verifyGoogleToken} from "../lib/auth.js";
 import {defaultTenantId,listTenantRolesByEmail,tenantSchoolPartition} from "../lib/storage.js";
-import {createLineAccountBindingRequest,bindLineAccount,getLineAccountBinding} from "../lib/lineAccountBinding.js";
+import {createLineAccountBindingRequest,bindLineAccount,getLineAccountBinding,getLineAccountBindingsByUserId} from "../lib/lineAccountBinding.js";
 import {lineBindingCodeHash} from "../lib/lineMessaging.mjs";
 import {parentCoverageKey} from "../lib/labLineStudentCoverage.mjs";
 import {
@@ -139,6 +139,22 @@ async function platformAccount(request){
   if(!accountLinkRoles.has(String(ctx.access.role||"")))return {error:response({error:"目前身分不可設定登入方式"},403)};
   return ctx;
 }
+async function syncLabRoleMenusForLineIdentity({lineUserId,email}={}){
+  const normalized=String(email||"").trim().toLowerCase();
+  if(!normalized||!lineUserId)return [];
+  const [roles,bindings]=await Promise.all([
+    listTenantRolesByEmail(normalized,"active"),
+    getLineAccountBindingsByUserId(lineUserId,{includeTarget:false})
+  ]);
+  const schools=new Set(bindings.map(row=>String(row.schoolId||"")).filter(Boolean).map(tenantSchoolPartition));
+  for(const role of roles){
+    if(role?.role==="schoolAdmin"&&role?.schoolId&&role.schoolId!=="*")schools.add(tenantSchoolPartition(role.schoolId));
+    if(role?.role==="globalAdmin")schools.add(tenantSchoolPartition(defaultTenantId()));
+  }
+  const results=[];
+  for(const schoolId of schools)results.push(await assignLabRoleRichMenu({schoolId,email:normalized,lineUserId}));
+  return results;
+}
 function enabled(){
   const c=config();
   return process.env.LAB_ENVIRONMENT==="functional-uat"&&c.id==="2012482463"&&!!c.secret&&c.uri===CALLBACK;
@@ -207,6 +223,11 @@ app.http("labLineAuthFinish",{methods:["POST"],authLevel:"anonymous",route:"line
     if(!row||row.kind!=="AUTH_TICKET"||row.status!=="ACTIVE"||Number(row.expiresAt)<Date.now())return response({error:"LINE 授權已過期，請重新登入"},403);
     await consume(row);
     const session=await createLabLineSession({lineUserId:row.lineUserId,lineDisplayName:row.lineDisplayName});
+    // Refresh the per-user menu on every successful LINE login so a Global
+    // role change is reflected without asking the user to unlink/relink.
+    // Menu sync failures never invalidate an otherwise valid login.
+    try{await syncLabRoleMenusForLineIdentity({lineUserId:row.lineUserId,email:session.parentEmail})}
+    catch(menuError){console.error("LAB LINE role menu login sync failed",String(menuError?.name||"Error").slice(0,40))}
     return response({authenticated:true,authProvider:"line",displayName:session.displayName,linkedExisting:session.linkedExisting,sessionToken:session.token,apiToken:session.apiToken},200,{},[labLineSessionCookie(session.token)]);
   }catch(error){
     const conflict=error?.code==="IDENTITY_CONFLICT";
@@ -319,6 +340,28 @@ app.http("labLineRichMenuSetup",{
     }catch(error){
       console.error("LAB rich menu setup failed",String(error?.message||error?.name||"Error").slice(0,120));
       return response({error:"LAB LINE 選單建立失敗；未變更通用選單"},500);
+    }
+  }
+});
+
+/** Refreshes only the current allowlisted user's role menu. */
+app.http("labLineRichMenuSync",{
+  methods:["POST"],authLevel:"anonymous",route:"line/lab-rich-menus/sync",
+  handler:async request=>{
+    try{
+      if(!enabled())return response({error:"LAB LINE Login 未啟用"},503);
+      assertLabIsolation();
+      const ctx=await platformAccount(request);if(ctx.error)return ctx.error;
+      const result=await assignLabRoleRichMenu({
+        schoolId:ctx.schoolId,email:ctx.access.email,
+        parentLinked:ctx.access.role==="parent"&&Array.isArray(ctx.access.students)&&ctx.access.students.length>0
+      });
+      if(!result.assigned&&result.reason==="not_allowlisted")return response({error:"目前登入帳號不是指定 LAB 測試帳號"},403);
+      if(!result.assigned&&result.reason==="menus_not_configured")return response({error:"請先建立 LAB 家長與幹部選單"},409);
+      return response({synced:true,assigned:result.assigned===true,audience:result.audience||"unbound",note:"只更新目前白名單 LINE 帳號的個人選單。"});
+    }catch(error){
+      console.error("LAB rich menu sync failed",String(error?.name||"Error").slice(0,40));
+      return response({error:"LINE 個人選單同步失敗，請稍後重試"},500);
     }
   }
 });
