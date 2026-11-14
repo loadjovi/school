@@ -155,6 +155,16 @@ def prepare(output: Path) -> None:
     lib.joinpath("labLineApiAssertion.mjs").write_text(line_assertion,encoding="utf-8")
     line_session=(ROOT/"scripts"/"lab-line-session.mjs").read_text(encoding="utf-8")
     lib.joinpath("labLineSession.mjs").write_text(line_session,encoding="utf-8")
+    rich_menu_rules=(ROOT/"scripts"/"lab-line-rich-menu-rules.mjs").read_text(encoding="utf-8")
+    lib.joinpath("labLineRichMenuRules.mjs").write_text(rich_menu_rules,encoding="utf-8")
+    rich_menu=(ROOT/"scripts"/"lab-line-rich-menu.mjs").read_text(encoding="utf-8")
+    lib.joinpath("labLineRichMenu.mjs").write_text(rich_menu,encoding="utf-8")
+    rich_menu_assets=api/"src"/"assets"
+    rich_menu_assets.mkdir(parents=True,exist_ok=True)
+    for source_name,target_name in (("parent.png","lab-rich-menu-parent.png"),("staff.png","lab-rich-menu-staff.png")):
+        source=ROOT/"scripts"/"functional-lab"/"rich-menu"/source_name
+        if not source.is_file():raise RuntimeError("LAB rich menu image missing: "+source_name)
+        shutil.copy2(source,rich_menu_assets/target_name)
     # LAB accepts either Google or a server-side LINE Login session. The LINE
     # identity is parent-only: it can never inherit teacher/admin capabilities,
     # even when the same email has additional platform roles.
@@ -211,7 +221,7 @@ def prepare(output: Path) -> None:
     registration=fn_dir/"studentRegistration.js"
     registration_source=registration.read_text(encoding="utf-8")
     registration_source=registration_source.replace('import { app } from "@azure/functions";',
-        'import { app } from "@azure/functions";\nimport {ensureLabLineParentBinding} from "../lib/labLineSession.mjs";',1)
+        'import { app } from "@azure/functions";\nimport {ensureLabLineParentBinding} from "../lib/labLineSession.mjs";\nimport {assignLabRoleRichMenu} from "../lib/labLineRichMenu.mjs";',1)
     registration_source=registration_source.replace('registrationId:e.rowKey,parentEmail:e.parentEmail,parentName:e.parentName,relationship:e.relationship,',
         'registrationId:e.rowKey,parentEmail:e.parentEmail,parentName:e.parentName,relationship:e.relationship,authProvider:e.authProvider||"google",',1)
     registration_marker='      const grade=clean(matched.grade,20),groupName=clean(matched.groupName,10),instrument=clean(matched.instrument,20),schoolYear=clean(matched.schoolYear,20);\n      await ensureTenantTables();'
@@ -226,11 +236,37 @@ def prepare(output: Path) -> None:
         'googleSub:access.authProvider==="google"?(access.sub||""):"",identitySub:access.sub||"",authProvider:access.authProvider||"google",matchedStudentId:',1)
     if 'ensureLabLineParentBinding({request,schoolId,parentEmail:access.email})' not in registration_source:
         raise RuntimeError("LAB LINE student registration insertion failed")
+    approval_marker='    await regClient.updateEntity(reg,"Merge");\n\n    let notification;'
+    if approval_marker not in registration_source:
+        raise RuntimeError("Student approval flow changed; review LAB rich menu assignment")
+    registration_source=registration_source.replace(approval_marker,
+        '    await regClient.updateEntity(reg,"Merge");\n'
+        '    try{await assignLabRoleRichMenu({schoolId,email:reg.parentEmail,parentLinked:true})}\n'
+        '    catch(error){console.error("LAB LINE rich menu assignment after approval failed",String(error?.name||"Error"))}\n\n'
+        '    let notification;',1)
     registration.write_text(registration_source,encoding="utf-8")
     oauth_source=(ROOT/"scripts"/"lab-line-login-function.js").read_text(encoding="utf-8")
     fn_dir.joinpath("labLineLogin.js").write_text(prefix+oauth_source,encoding="utf-8")
     coverage_function=(ROOT/"scripts"/"lab-line-student-coverage-function.js").read_text(encoding="utf-8")
     fn_dir.joinpath("labLineStudentCoverage.js").write_text(prefix+coverage_function,encoding="utf-8")
+    # The shared account-binding DELETE route is retained for the LAB UI, but
+    # it first removes the allowlisted user's per-user rich menu. This makes
+    # LINE fall back to the OA Manager default (unbound) menu immediately.
+    webhook_source=line_webhook.read_text(encoding="utf-8")
+    webhook_source='import {unlinkLabRoleRichMenu} from "../lib/labLineRichMenu.mjs";\n'+webhook_source
+    unbind_marker='''      if(request.method==="DELETE"){
+        await unbindLineAccount(schoolId,access.email);
+        return json({bound:false});
+      }'''
+    if unbind_marker not in webhook_source:
+        raise RuntimeError("LINE account unbind flow changed; review LAB rich menu fallback")
+    webhook_source=webhook_source.replace(unbind_marker,'''      if(request.method==="DELETE"){
+        const binding=await getLineAccountBinding(schoolId,access.email,{includeTarget:true});
+        if(binding?.lineUserId)await unlinkLabRoleRichMenu({schoolId,email:access.email,lineUserId:binding.lineUserId});
+        await unbindLineAccount(schoolId,access.email);
+        return json({bound:false,menuAudience:"unbound"});
+      }''',1)
+    line_webhook.write_text(webhook_source,encoding="utf-8")
     # The copied Production webhook stays fail-closed in LAB. Parent account
     # linking uses the dedicated OAuth endpoints above and never exposes the
     # legacy six-digit private-chat binding flow.
@@ -286,6 +322,12 @@ def prepare(output: Path) -> None:
     # other role and is never copied into Production app/.
     log_ui=(ROOT/"scripts"/"lab-line-notification-log.js").read_text(encoding="utf-8")
     (output/"app"/"lab-line-notification-log.js").write_text(log_ui,encoding="utf-8")
+    rich_menu_ui=(ROOT/"scripts"/"lab-line-rich-menu-admin.js").read_text(encoding="utf-8")
+    (output/"app"/"lab-line-rich-menu-admin.js").write_text(rich_menu_ui,encoding="utf-8")
+    main_page=output/"app"/"index.html"
+    main_html=main_page.read_text(encoding="utf-8")
+    if "</body>" not in main_html:raise RuntimeError("LAB main page insertion point changed")
+    main_page.write_text(main_html.replace("</body>",'<script src="/lab-line-rich-menu-admin.js?v=20261114" defer></script></body>',1),encoding="utf-8")
     fee_page=output/"app"/"fee-collections.html"
     fee_html=fee_page.read_text(encoding="utf-8")
     admin_marker='<section id="adminCreate"></section>'

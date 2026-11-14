@@ -5,6 +5,24 @@ import unittest
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 
 class LabLineLoginIsolationTests(unittest.TestCase):
+    def test_role_rich_menus_are_lab_only_allowlisted_and_not_default(self):
+        rules=(ROOT/"scripts/lab-line-rich-menu-rules.mjs").read_text()
+        service=(ROOT/"scripts/lab-line-rich-menu.mjs").read_text()
+        oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
+        prep=(ROOT/"scripts/prepare-functional-lab.py").read_text()
+        self.assertIn('role==="schoolAdmin"',rules)
+        self.assertIn('role==="globalAdmin"',rules)
+        self.assertIn('LAB_LINE_TEST_USER_ID',service)
+        self.assertIn('LAB_LINE_MESSAGING_ACCESS_TOKEN',service)
+        self.assertIn('/v2/bot/user/${encodeURIComponent(target)}/richmenu/',service)
+        self.assertIn('method:"DELETE"',service)
+        self.assertNotIn('/v2/bot/user/all/richmenu',service)
+        self.assertIn('route:"line/lab-rich-menus"',oauth)
+        self.assertIn('ctx.access.capabilities?.tenantAdmin!==true',oauth)
+        self.assertIn('labLineRichMenu.mjs',prep)
+        self.assertTrue((ROOT/"scripts/functional-lab/rich-menu/parent.png").is_file())
+        self.assertTrue((ROOT/"scripts/functional-lab/rich-menu/staff.png").is_file())
+
     def test_oauth_only_in_lab_generator(self):
         oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
         builder=(ROOT/"scripts/prepare-functional-lab.py").read_text()

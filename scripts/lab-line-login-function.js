@@ -1,6 +1,7 @@
 // Generated into the isolated Functional UAT LAB only; never loaded by Production.
 // OAuth state and completion tickets are single-use Azure Table entities.
 import {app} from "@azure/functions";
+import {readFile} from "node:fs/promises";
 import {randomBytes,randomInt,randomUUID,createHash} from "node:crypto";
 import {TableClient,TableServiceClient} from "@azure/data-tables";
 import {getTenantContext,json,verifyGoogleToken} from "../lib/auth.js";
@@ -28,6 +29,7 @@ import {
   reserveRollingWindow,
   validateLabRecipient
 } from "../lib/labLineNotificationSafety.mjs";
+import {assignLabRoleRichMenu,assignLabRoleRichMenuForIdentity,getLabRichMenuConfig,setupLabRichMenus} from "../lib/labLineRichMenu.mjs";
 
 const ORIGIN="https://icy-ocean-0a2602100.6.azurestaticapps.net";
 const CALLBACK=ORIGIN+"/api/line/login/callback";
@@ -245,6 +247,7 @@ app.http("labLineLinkGoogle",{methods:["POST"],authLevel:"anonymous",route:"line
     if(!googleIdentity)return response({error:"Gmail 驗證失敗，請重新選擇 Google 帳號"},401);
     const result=await linkLabLineIdentityToGmail({request,gmailEmail:googleIdentity.email});
     await migrateFriendStatus({schoolIds:result.schoolIds,sourceEmail:result.sourceEmail,targetEmail:result.gmailEmail});
+    for(const schoolId of result.schoolIds)await assignLabRoleRichMenuForIdentity({schoolId,email:result.gmailEmail,identity:lineIdentity,parentLinked:result.migratedMappings>0});
     return response({linked:true,gmailMasked:maskEmail(result.gmailEmail),migratedStudents:result.migratedMappings,migratedRegistrations:result.migratedRegistrations});
   }catch(error){
     const code=String(error?.code||"");
@@ -269,9 +272,10 @@ app.http("labLineLoginFinish",{methods:["POST"],authLevel:"anonymous",route:"lin
     await createLineAccountBindingRequest({schoolId:ctx.schoolId,email:ctx.access.email,codeHash,expiresAt:new Date(Date.now()+60000).toISOString()});
     const result=await bindLineAccount({codeHash,lineUserId:row.lineUserId,lineDisplayName:row.lineDisplayName});
     if(!result.ok)return response({error:"綁定失敗："+result.reason},409);
+    const menu=await assignLabRoleRichMenu({schoolId:ctx.schoolId,email:ctx.access.email,lineUserId:row.lineUserId,parentLinked:ctx.access.role==="parent"&&Array.isArray(ctx.access.students)&&ctx.access.students.length>0});
     try{await saveFriendStatus({schoolId:ctx.schoolId,email:ctx.access.email,friendStatus:row.friendStatus})}
     catch(error){console.error("LAB LINE friend-status persistence failed",String(error?.name||"Error").slice(0,40))}
-    return response({bound:true,friendStatus:row.friendStatus,lineDisplayName:row.lineDisplayName});
+    return response({bound:true,friendStatus:row.friendStatus,lineDisplayName:row.lineDisplayName,menuAudience:menu.audience||"unbound",menuAssigned:menu.assigned===true});
   }catch(e){
     const code=String(e?.code||"");
     const conflict=code.includes("LINKED")||code.includes("CONFLICT")||code.includes("MISMATCH");
@@ -279,6 +283,38 @@ app.http("labLineLoginFinish",{methods:["POST"],authLevel:"anonymous",route:"lin
     return response({error:conflict?"此 Gmail 或 LINE 已連結其他家長身分，請由管理員確認":"LAB LINE 綁定失敗（請由管理員檢查後端日誌）"},conflict?409:500)
   }
 }});
+
+/**
+ * Creates the two Messaging API rich menus but never makes either one the
+ * account-wide default. An authenticated LAB tenant admin must invoke POST.
+ */
+app.http("labLineRichMenuSetup",{
+  methods:["GET","POST"],authLevel:"anonymous",route:"line/lab-rich-menus",
+  handler:async request=>{
+    try{
+      if(!enabled())return response({error:"LAB LINE Login 未啟用"},503);
+      assertLabIsolation();
+      const ctx=await getTenantContext(request);if(ctx.error)return ctx.error;
+      if(ctx.access.role!=="admin"||ctx.access.capabilities?.tenantAdmin!==true)return response({error:"僅授權學校管理員可設定 LAB LINE 選單"},403);
+      if(request.method==="GET"){
+        const current=await getLabRichMenuConfig(ctx.schoolId);
+        return response({configured:current.configured,updatedAt:current.updatedAt||"",note:"只建立家長與幹部個人選單；不會取代 OA Manager 通用選單。"});
+      }
+      const allowedEmail=String(process.env.LAB_LINE_TEST_PARENT_EMAIL||"").trim().toLowerCase();
+      if(!allowedEmail||String(ctx.access.email||"").trim().toLowerCase()!==allowedEmail)return response({error:"只有指定 LAB 測試管理員可建立選單"},403);
+      const [parentImage,staffImage]=await Promise.all([
+        readFile(new URL("../assets/lab-rich-menu-parent.png",import.meta.url)),
+        readFile(new URL("../assets/lab-rich-menu-staff.png",import.meta.url))
+      ]);
+      const saved=await setupLabRichMenus({schoolId:ctx.schoolId,parentImage,staffImage,updatedBy:ctx.access.email});
+      const assignment=await assignLabRoleRichMenu({schoolId:ctx.schoolId,email:ctx.access.email});
+      return response({configured:saved.configured,reused:saved.reused,updatedAt:saved.updatedAt,assigned:assignment.assigned===true,audience:assignment.audience||"unbound",note:"兩組選單 ID 已保存於 LAB Storage；尚未設定為全體預設選單。"});
+    }catch(error){
+      console.error("LAB rich menu setup failed",String(error?.message||error?.name||"Error").slice(0,120));
+      return response({error:"LAB LINE 選單建立失敗；未變更通用選單"},500);
+    }
+  }
+});
 
 /** Functional UAT ONLY: masked delivery-attempt ledger for authorized admins. */
 app.http("labLineNotificationLog",{
