@@ -5,7 +5,7 @@ import {readFile} from "node:fs/promises";
 import {randomBytes,randomInt,randomUUID,createHash} from "node:crypto";
 import {TableClient,TableServiceClient} from "@azure/data-tables";
 import {getTenantContext,json,verifyGoogleToken} from "../lib/auth.js";
-import {tenantSchoolPartition} from "../lib/storage.js";
+import {defaultTenantId,listTenantRolesByEmail,tenantSchoolPartition} from "../lib/storage.js";
 import {createLineAccountBindingRequest,bindLineAccount,getLineAccountBinding} from "../lib/lineAccountBinding.js";
 import {lineBindingCodeHash} from "../lib/lineMessaging.mjs";
 import {parentCoverageKey} from "../lib/labLineStudentCoverage.mjs";
@@ -132,10 +132,11 @@ async function parent(request){
   if(ctx.access.role!=="parent")return {error:response({error:"LAB 家長帳號限定"},403)};
   return ctx;
 }
-async function parentAccount(request){
+const accountLinkRoles=new Set(["parent","unassigned","admin","teacher","globalAdmin"]);
+async function platformAccount(request){
   const ctx=await getTenantContext(request,{allowUnassigned:true});
   if(ctx.error)return {error:ctx.error};
-  if(!["parent","unassigned"].includes(ctx.access.role))return {error:response({error:"僅家長帳號可設定登入方式"},403)};
+  if(!accountLinkRoles.has(String(ctx.access.role||"")))return {error:response({error:"目前身分不可設定登入方式"},403)};
   return ctx;
 }
 function enabled(){
@@ -145,7 +146,7 @@ function enabled(){
 app.http("labLineLoginStart",{methods:["POST"],authLevel:"anonymous",route:"line/login/start",handler:async request=>{
   try{
     if(!enabled())return response({error:"LAB LINE Login 尚未啟用或設定不完整"},503);
-    const ctx=await parentAccount(request);if(ctx.error)return ctx.error;
+    const ctx=await platformAccount(request);if(ctx.error)return ctx.error;
     let input={};try{input=await request.json()}catch{}
     const returnTo=input?.returnTo==="home"?"home":"fees";
     const state=random(),nonce=random(),verifier=random(),challenge=createHash("sha256").update(verifier).digest("base64url");
@@ -231,7 +232,7 @@ app.http("labLineAccountStatus",{methods:["GET"],authLevel:"anonymous",route:"li
   try{
     if(!enabled())return response({error:"LAB 帳號綁定未啟用"},503);
     const ctx=await getTenantContext(request,{allowUnassigned:true});if(ctx.error)return ctx.error;
-    if(!["parent","unassigned"].includes(ctx.access.role))return response({error:"僅家長帳號可查看登入綁定狀態"},403);
+    if(!accountLinkRoles.has(String(ctx.access.role||"")))return response({error:"目前身分不可查看登入綁定狀態"},403);
     const status=await getLabParentAccountLinkStatus({request,schoolId:ctx.schoolId,parentEmail:ctx.access.email,authProvider:ctx.access.authProvider||"google"});
     return response({authProvider:status.authProvider,gmailLinked:status.gmailLinked,gmailMasked:status.gmailLinked?maskEmail(status.gmailEmail):"",lineLinked:status.lineLinked,lineDisplayName:status.lineLinked?status.lineDisplayName:""});
   }catch(error){console.error("LAB account link status failed",String(error?.code||error?.name||"Error"));return response({error:"無法讀取登入方式綁定狀態"},500)}
@@ -247,7 +248,13 @@ app.http("labLineLinkGoogle",{methods:["POST"],authLevel:"anonymous",route:"line
     if(!googleIdentity)return response({error:"Gmail 驗證失敗，請重新選擇 Google 帳號"},401);
     const result=await linkLabLineIdentityToGmail({request,gmailEmail:googleIdentity.email});
     await migrateFriendStatus({schoolIds:result.schoolIds,sourceEmail:result.sourceEmail,targetEmail:result.gmailEmail});
-    for(const schoolId of result.schoolIds)await assignLabRoleRichMenuForIdentity({schoolId,email:result.gmailEmail,identity:lineIdentity,parentLinked:result.migratedMappings>0});
+    const tenantRoles=await listTenantRolesByEmail(result.gmailEmail,"active");
+    const assignedSchools=new Set(result.schoolIds.map(tenantSchoolPartition));
+    for(const role of tenantRoles){
+      if(role?.role==="schoolAdmin"&&role?.schoolId&&role.schoolId!=="*")assignedSchools.add(tenantSchoolPartition(role.schoolId));
+      if(role?.role==="globalAdmin")assignedSchools.add(tenantSchoolPartition(defaultTenantId()));
+    }
+    for(const schoolId of assignedSchools)await assignLabRoleRichMenuForIdentity({schoolId,email:result.gmailEmail,identity:lineIdentity,parentLinked:result.migratedMappings>0});
     return response({linked:true,gmailMasked:maskEmail(result.gmailEmail),migratedStudents:result.migratedMappings,migratedRegistrations:result.migratedRegistrations});
   }catch(error){
     const code=String(error?.code||"");
@@ -259,11 +266,11 @@ app.http("labLineLinkGoogle",{methods:["POST"],authLevel:"anonymous",route:"line
 app.http("labLineLoginFinish",{methods:["POST"],authLevel:"anonymous",route:"line/login/finish",handler:async request=>{
   try{
     if(!enabled())return response({error:"LAB LINE Login 未啟用"},503);
-    const ctx=await parentAccount(request);if(ctx.error)return ctx.error;
+    const ctx=await platformAccount(request);if(ctx.error)return ctx.error;
     const body=await request.json(),ticket=String(body.ticket||"");
     if(!/^[A-Za-z0-9_-]{32,64}$/.test(ticket))return response({error:"無效的 LINE 授權結果"},400);
     const row=await getRow(ticket);
-    if(!row||row.kind!=="TICKET"||row.status!=="ACTIVE"||Number(row.expiresAt)<Date.now()||row.schoolId!==ctx.schoolId||row.parentEmail!==ctx.access.email)return response({error:"LINE 授權已過期或不屬於目前家長"},403);
+    if(!row||row.kind!=="TICKET"||row.status!=="ACTIVE"||Number(row.expiresAt)<Date.now()||row.schoolId!==ctx.schoolId||row.parentEmail!==ctx.access.email)return response({error:"LINE 授權已過期或不屬於目前帳號"},403);
     await consume(row);
     await registerLabParentIdentityLink({lineUserId:row.lineUserId,gmailEmail:ctx.access.email});
     // Legacy binding storage requires a six-digit code; generate it server-side only.

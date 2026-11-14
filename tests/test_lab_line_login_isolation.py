@@ -54,7 +54,7 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('labLineStudentCoverage.js',builder)
         self.assertIn('lab-line-student-coverage.js',builder)
 
-    def test_line_can_authenticate_parent_without_a_binding_code(self):
+    def test_line_can_authenticate_a_linked_platform_account_without_a_binding_code(self):
         oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
         session=(ROOT/"scripts/lab-line-session.mjs").read_text()
         builder=(ROOT/"scripts/prepare-functional-lab.py").read_text()
@@ -75,8 +75,8 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('tableName="LabLineAuthSessions"',session)
         self.assertIn('getLabLineAssertionIdentity(request)',builder)
         self.assertIn('getLabLineIdentity(request)',builder)
-        self.assertIn('lineParentOnly=identity.authProvider==="line"',builder)
-        self.assertIn('使用 LINE 登入（家長）',builder)
+        self.assertIn('lineUnlinked=identity.authProvider==="line"&&identity.gmailLinked!==true',builder)
+        self.assertIn('使用 LINE 登入',builder)
         production="\n".join(path.read_text() for path in (ROOT/"api/src").rglob("*.js"))
         self.assertNotIn('route:"line/auth/start"',production)
         self.assertFalse((ROOT/"api/src/functions/labLineLogin.js").exists())
@@ -105,7 +105,8 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('route:"line/account/status"',oauth)
         self.assertIn('route:"line/account/link-google"',oauth)
         self.assertIn('getTenantContext(request,{allowUnassigned:true})',oauth)
-        self.assertIn('["parent","unassigned"].includes(ctx.access.role)',oauth)
+        self.assertIn('const accountLinkRoles=new Set(["parent","unassigned","admin","teacher","globalAdmin"])',oauth)
+        self.assertIn('accountLinkRoles.has(String(ctx.access.role||""))',oauth)
         self.assertIn('(await verifyGoogleToken(googleToken(request)))||(await getLabLineAssertionIdentity(request))||(await getLabLineIdentity(request))',builder)
         self.assertNotIn('return verifyGoogleToken(googleToken(request))||(await getLabLineAssertionIdentity(request))',builder)
         self.assertIn('verifyGoogleToken(credential)',oauth)
@@ -122,10 +123,13 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('api("line/account/status")',builder)
         self.assertIn('labGmailLinkButton',builder)
         self.assertIn('雙重登入已完成',builder)
-        self.assertIn('增加登入方式不會重複建立家長或學生資料',builder)
+        self.assertIn('Gmail 與 LINE 只負責識別同一個平台帳號',builder)
         self.assertNotIn('綁定 LINE（免輸入驗證碼）',builder)
-        self.assertIn('不需重新輸入學生姓名與學號',builder)
-        self.assertIn('["parent","unassigned"].includes(state.me?.role)',builder)
+        self.assertIn('不會重新建立平台帳號',builder)
+        self.assertIn('listTenantRolesByEmail(result.gmailEmail,"active")',oauth)
+        self.assertIn('role?.role==="schoolAdmin"',oauth)
+        self.assertIn('role?.role==="globalAdmin"',oauth)
+        self.assertIn('["parent","unassigned","admin","teacher","globalAdmin"].includes(state.me?.role)',builder)
         self.assertNotIn('route:"line/account/link-google"',(ROOT/"api/src/functions/lineWebhook.js").read_text())
         self.assertFalse((ROOT/"api/src/lib/labLineSession.mjs").exists())
 
@@ -159,12 +163,12 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertNotIn('lineUserId:',link_google)
         self.assertNotIn('credential:',link_google.split('return response',1)[-1])
 
-    def test_line_parent_login_cannot_gain_teacher_or_admin_contexts(self):
+    def test_unlinked_line_is_restricted_but_gmail_linked_line_uses_global_roles(self):
         builder=(ROOT/"scripts/prepare-functional-lab.py").read_text()
-        self.assertIn('if(!lineParentOnly&&(globalRole||schoolRoles.length))',builder)
-        self.assertIn('const directory=!lineParentOnly&&roleTenantAvailable?',builder)
-        self.assertIn('if(a.authProvider==="line")return;',builder)
-        self.assertIn('if(a.authProvider!=="line")try{tenantRoles=',builder)
+        self.assertIn('if(!lineUnlinked&&(globalRole||schoolRoles.length))',builder)
+        self.assertIn('const directory=!lineUnlinked&&roleTenantAvailable?',builder)
+        self.assertIn('if(a.authProvider==="line"&&a.gmailLinked!==true)return;',builder)
+        self.assertIn('if(a.authProvider!=="line"||a.gmailLinked===true)try{tenantRoles=',builder)
         self.assertIn('if(a.authProvider!=="line")try{await saveUserIdentity(a)}',builder)
 
     def test_single_recipient_endpoint_never_accepts_browser_target_or_message(self):

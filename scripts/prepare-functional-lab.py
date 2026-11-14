@@ -165,9 +165,10 @@ def prepare(output: Path) -> None:
         source=ROOT/"scripts"/"functional-lab"/"rich-menu"/source_name
         if not source.is_file():raise RuntimeError("LAB rich menu image missing: "+source_name)
         shutil.copy2(source,rich_menu_assets/target_name)
-    # LAB accepts either Google or a server-side LINE Login session. The LINE
-    # identity is parent-only: it can never inherit teacher/admin capabilities,
-    # even when the same email has additional platform roles.
+    # LAB accepts either Google or a server-side LINE Login session.
+    # An unlinked LINE identity is fail-closed. Once the user explicitly links
+    # that LINE identity to a verified Gmail, both providers resolve the same
+    # canonical email and therefore the same Global-assigned platform roles.
     auth=lib/"auth.js"
     auth_source=auth.read_text(encoding="utf-8")
     verify_google='export async function verifyGoogle(request){return verifyGoogleToken(googleToken(request))}'
@@ -186,18 +187,18 @@ def prepare(output: Path) -> None:
     auth_source=auth_source.replace(verify_google,
         'export async function verifyGoogle(request){return (await verifyGoogleToken(googleToken(request)))||(await getLabLineAssertionIdentity(request))||(await getLabLineIdentity(request))}',1)
     auth_source=auth_source.replace(identity_marker,
-        identity_marker+'\n  const lineParentOnly=identity.authProvider==="line";',1)
+        identity_marker+'\n  const lineUnlinked=identity.authProvider==="line"&&identity.gmailLinked!==true;',1)
     auth_source=auth_source.replace('  if(globalRole||schoolRoles.length){',
-        '  if(!lineParentOnly&&(globalRole||schoolRoles.length)){',1)
+        '  if(!lineUnlinked&&(globalRole||schoolRoles.length)){',1)
     auth_source=auth_source.replace('  const directory=roleTenantAvailable?await getTeacherDirectory(email,roleSchoolId):null;',
-        '  const directory=!lineParentOnly&&roleTenantAvailable?await getTeacherDirectory(email,roleSchoolId):null;',1)
+        '  const directory=!lineUnlinked&&roleTenantAvailable?await getTeacherDirectory(email,roleSchoolId):null;',1)
     auth_source=auth_source.replace('  const temporary=roleTenantAvailable&&!directory?await activeTeacherSupport(email,roleSchoolId,supportDay):null;',
-        '  const temporary=!lineParentOnly&&roleTenantAvailable&&!directory?await activeTeacherSupport(email,roleSchoolId,supportDay):null;',1)
-    if 'const lineParentOnly=identity.authProvider==="line";' not in auth_source:
-        raise RuntimeError("LAB LINE parent-only auth insertion failed")
+        '  const temporary=!lineUnlinked&&roleTenantAvailable&&!directory?await activeTeacherSupport(email,roleSchoolId,supportDay):null;',1)
+    if 'const lineUnlinked=identity.authProvider==="line"&&identity.gmailLinked!==true;' not in auth_source:
+        raise RuntimeError("LAB LINE canonical-account auth insertion failed")
     auth.write_text(auth_source,encoding="utf-8")
-    # Preserve provider information for the LAB UI while excluding teacher and
-    # administrative contexts from LINE-authenticated sessions.
+    # Preserve provider information. Only an explicitly Gmail-linked LINE
+    # session may load contexts assigned to that canonical Gmail account.
     me=fn_dir/"me.js"
     me_source=me.read_text(encoding="utf-8")
     tenant_lookup='  let tenantRoles=[];\n  try{tenantRoles=await listTenantRolesByEmail(a.email,"active")}catch(e){console.warn("context tenant role lookup failed",e)}'
@@ -205,9 +206,9 @@ def prepare(output: Path) -> None:
     if tenant_lookup not in me_source or teacher_lookup not in me_source:
         raise RuntimeError("Identity context structure changed; review LAB LINE restrictions")
     me_source=me_source.replace(tenant_lookup,
-        '  let tenantRoles=[];\n  if(a.authProvider!=="line")try{tenantRoles=await listTenantRolesByEmail(a.email,"active")}catch(e){console.warn("context tenant role lookup failed",e)}',1)
+        '  let tenantRoles=[];\n  if(a.authProvider!=="line"||a.gmailLinked===true)try{tenantRoles=await listTenantRolesByEmail(a.email,"active")}catch(e){console.warn("context tenant role lookup failed",e)}',1)
     me_source=me_source.replace(teacher_lookup,
-        '    const teacherLookup=(async()=>{\n    if(a.authProvider==="line")return;\n    try{',1)
+        '    const teacherLookup=(async()=>{\n    if(a.authProvider==="line"&&a.gmailLinked!==true)return;\n    try{',1)
     me_source=me_source.replace('  try{await saveUserIdentity(a)}catch(e){console.warn("user identity registry update failed",e)}',
         '  if(a.authProvider!=="line")try{await saveUserIdentity(a)}catch(e){console.warn("user identity registry update failed",e)}',1)
     me_source=me_source.replace('    identityId:a.sub||"",email:a.email,displayName:a.displayName,role:a.role,section:a.section||null,picture:a.picture||null,',
@@ -393,7 +394,7 @@ async function finishLabLineAccountLink(){
   if(!result.startsWith("ok.")){labLineBootError="LINE 綁定授權未完成，原帳號不受影響";return false}
   try{
     await api("/api/line/login/finish",{method:"POST",body:JSON.stringify({ticket:result.slice(3)})});
-    labLineBootNotice="✅ LINE 已併入目前家長帳號";return true;
+    labLineBootNotice="✅ LINE 已併入目前平台帳號";return true;
   }catch(error){labLineBootError=error.message||"LINE 綁定失敗";return false}
 }
 async function restoreLabLineSession(){
@@ -441,11 +442,11 @@ window.startLabLineAuth=async function(){
         'function logout(reload=true){const previousToken=String(state.token||""),saved=String(sessionStorage.getItem("lab_line_session")||"");const lineSession=previousToken==="cookie-session"||previousToken.startsWith("line-session.")||previousToken.startsWith("lab-line-assertion.")||Boolean(saved);const handle=previousToken.startsWith("line-session.")?previousToken.slice(13):saved;const lineHeaders=/^[A-Za-z0-9_-]{32,64}$/.test(handle)?{"X-Lab-Line-Session":handle,"Authorization":"Bearer line-session."+handle}:{};state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("lab_line_session");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(lineSession)fetch("/api/line/auth/logout",{method:"POST",credentials:"same-origin",headers:lineHeaders,keepalive:true}).catch(()=>{});if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}',1)
     app_source=app_source.replace('登入已失效，請重新使用 Google 登入','登入已失效，請重新使用 Gmail 或 LINE 登入')
     app_source=app_source.replace('Google Gmail 登入版 v3<br>家長、老師與管理員共用入口',
-        '家長可使用 Gmail 或 LINE 登入<br>老師與管理員請使用 Gmail',1)
+        '可使用 Gmail 登入；已完成帳號連結者也可使用 LINE',1)
     google_button='<div id="googleBtn" style="display:flex;justify-content:center;margin-top:18px"></div>'
     if google_button not in app_source:
         raise RuntimeError("Google login button structure changed; review LAB LINE button")
-    app_source=app_source.replace(google_button,google_button+'<div class="muted" style="text-align:center;margin:14px 0 8px">或</div><button type="button" class="primary" style="width:100%;background:#06c755" onclick="startLabLineAuth()">使用 LINE 登入（家長）</button>',1)
+    app_source=app_source.replace(google_button,google_button+'<div class="muted" style="text-align:center;margin:14px 0 8px">或</div><button type="button" class="primary" style="width:100%;background:#06c755" onclick="startLabLineAuth()">使用 LINE 登入</button>',1)
     app_source=app_source.replace('Google Gmail 登入版 v3</div>',
         '${state.me?.authProvider==="line"?"LINE 登入":"Gmail 登入"}</div>',1)
     app_source=app_source.replace('<br>登入 Gmail：${esc(state.me.email)}<br>',
@@ -480,7 +481,7 @@ window.startLabLineAuth=async function(){
 const labOriginalLoadProfile=loadProfile;
 loadProfile=async function(){
   await labOriginalLoadProfile();
-  if(!["parent","unassigned"].includes(state.me?.role))return;
+  if(!["parent","unassigned","admin","teacher","globalAdmin"].includes(state.me?.role))return;
   try{state.labAccountLinkStatus=await api("/api/line/account/status")}catch(error){state.labAccountLinkStatus={error:error.message||"無法讀取綁定狀態"}}
   render();
 };
@@ -490,8 +491,8 @@ function labAccountLinkCard(){
   if(status.error)return `<div class="card"><h2>🔐 登入方式</h2><div class="error">${esc(status.error)}</div></div>`;
   const gmail=status.gmailLinked?`<span class="badge ok">✅ Gmail 已綁定</span>${status.gmailMasked?`<div class="muted">${esc(status.gmailMasked)}</div>`:""}`:`<span class="badge warn">尚未綁定 Gmail</span>`;
   const line=status.lineLinked?`<span class="badge ok">✅ LINE 已綁定</span>${status.lineDisplayName?`<div class="muted">${esc(status.lineDisplayName)}</div>`:""}`:`<span class="badge warn">尚未綁定 LINE</span>`;
-  const action=!status.lineLinked?`<div class="notice" style="margin-top:14px">直接完成 LINE 授權即可，不需再次輸入學生姓名、學號或額外綁定碼。</div><button class="primary" style="background:#06c755" onclick="startLabAccountLineLink()">追加綁定 LINE</button>`:!status.gmailLinked?`<div class="notice" style="margin-top:14px">選擇既有 Gmail 完成追加綁定，不需重新輸入學生姓名與學號。</div><div id="labGmailLinkButton" style="display:flex;justify-content:center;margin-top:14px"></div>`:`<div class="notice" style="margin-top:14px"><b>雙重登入已完成</b><br>之後可使用 Gmail 或 LINE 登入同一個家長帳號。</div>`;
-  return `<div class="card"><h2>🔐 登入與通知帳號</h2><div class="notice">增加登入方式不會重複建立家長或學生資料；兩種登入會共用同一組孩子與紀錄。</div><div class="row2" style="margin-top:14px"><div class="item" style="display:block">${gmail}</div><div class="item" style="display:block">${line}</div></div>${action}</div>`;
+  const action=!status.lineLinked?`<div class="notice" style="margin-top:14px">直接完成 LINE 授權即可；管理員或老師不需要先具備學生資料。</div><button class="primary" style="background:#06c755" onclick="startLabAccountLineLink()">追加綁定 LINE</button>`:!status.gmailLinked?`<div class="notice" style="margin-top:14px">選擇既有 Gmail 完成追加綁定；不會重新建立平台帳號。</div><div id="labGmailLinkButton" style="display:flex;justify-content:center;margin-top:14px"></div>`:`<div class="notice" style="margin-top:14px"><b>雙重登入已完成</b><br>之後可使用 Gmail 或 LINE 登入同一個平台帳號。</div>`;
+  return `<div class="card"><h2>🔐 登入與通知帳號</h2><div class="notice">Gmail 與 LINE 只負責識別同一個平台帳號；實際權限仍由 Global 管理中心指派，不會因綁定 LINE 自動升級。</div><div class="row2" style="margin-top:14px"><div class="item" style="display:block">${gmail}</div><div class="item" style="display:block">${line}</div></div>${action}</div>`;
 }
 window.startLabAccountLineLink=async function(){
   try{
@@ -511,8 +512,8 @@ async function mountLabGmailLinkButton(){
     google.accounts.id.initialize({client_id:cfg.googleClientId,callback:async result=>{
       try{
         const linked=await api("/api/line/account/link-google",{method:"POST",body:JSON.stringify({credential:result.credential})});
-        toast("✅ Gmail 已併入目前家長帳號");
-        state.labAccountLinkStatus={authProvider:"line",gmailLinked:true,gmailMasked:linked.gmailMasked,lineLinked:true,lineDisplayName:state.labAccountLinkStatus?.lineDisplayName||"LINE 家長"};
+        toast("✅ Gmail 已併入目前平台帳號");
+        state.labAccountLinkStatus={authProvider:"line",gmailLinked:true,gmailMasked:linked.gmailMasked,lineLinked:true,lineDisplayName:state.labAccountLinkStatus?.lineDisplayName||"LINE 帳號"};
         await loadProfile();
       }catch(error){toast("❌ "+(error.message||"Gmail 綁定失敗"))}
     }});
@@ -520,12 +521,12 @@ async function mountLabGmailLinkButton(){
   }catch(error){target.innerHTML=`<div class="error">${esc(error.message||"無法載入 Gmail 綁定")}</div>`}
 }
 const labOriginalHome=home;
-home=function(){const content=labOriginalHome();return ["parent","unassigned"].includes(state.me?.role)?content+labAccountLinkCard():content};
+home=function(){const content=labOriginalHome();return ["parent","unassigned","admin","teacher","globalAdmin"].includes(state.me?.role)?content+labAccountLinkCard():content};
 const labOriginalRender=render;
 render=function(){labOriginalRender();if($("labGmailLinkButton"))setTimeout(mountLabGmailLinkButton,0)};
 '''
     app_source=app_source.replace(account_marker,'\n'+account_ui+account_marker,1)
-    if '使用 LINE 登入（家長）' not in app_source or 'line/auth/finish' not in app_source:
+    if '使用 LINE 登入' not in app_source or 'line/auth/finish' not in app_source:
         raise RuntimeError("LAB LINE Login frontend insertion failed")
     app_v3.write_text(app_source,encoding="utf-8")
     webview=app/"webview-guard.js"

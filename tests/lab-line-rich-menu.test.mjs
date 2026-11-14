@@ -7,6 +7,27 @@ test("school or global administrators receive the staff menu",()=>{
   assert.equal(resolveLabRichMenuAudience({schoolId:"sacred-heart",tenantRoles:[{role:"globalAdmin",schoolId:"*",status:"active"}]}),LAB_RICH_MENU_AUDIENCES.STAFF);
 });
 
+test("a Global-assigned administrative teacher receives staff without being a parent",()=>{
+  assert.equal(resolveLabRichMenuAudience({
+    schoolId:"sacred-heart",
+    tenantRoles:[
+      {role:"teacher",schoolId:"sacred-heart",status:"active"},
+      {role:"schoolAdmin",schoolId:"sacred-heart",status:"active"}
+    ],
+    studentCount:0,
+    parentLinked:false
+  }),LAB_RICH_MENU_AUDIENCES.STAFF);
+});
+
+test("teacher alone does not silently gain the staff menu",()=>{
+  assert.equal(resolveLabRichMenuAudience({
+    schoolId:"sacred-heart",
+    tenantRoles:[{role:"teacher",schoolId:"sacred-heart",status:"active"}],
+    studentCount:0,
+    parentLinked:false
+  }),LAB_RICH_MENU_AUDIENCES.UNBOUND);
+});
+
 test("inactive or other-school admin never upgrades the menu",()=>{
   assert.equal(resolveLabRichMenuAudience({schoolId:"sacred-heart",tenantRoles:[{role:"schoolAdmin",schoolId:"other",status:"active"}],studentCount:1}),LAB_RICH_MENU_AUDIENCES.PARENT);
   assert.equal(resolveLabRichMenuAudience({schoolId:"sacred-heart",tenantRoles:[{role:"schoolAdmin",schoolId:"sacred-heart",status:"inactive"}]}),LAB_RICH_MENU_AUDIENCES.UNBOUND);
