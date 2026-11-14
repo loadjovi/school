@@ -171,6 +171,22 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('if(a.authProvider!=="line"||a.gmailLinked===true)try{tenantRoles=',builder)
         self.assertIn('if(a.authProvider!=="line")try{await saveUserIdentity(a)}',builder)
 
+    def test_line_login_refreshes_role_menu_and_admin_can_resync(self):
+        oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
+        ui=(ROOT/"scripts/lab-line-rich-menu-admin.js").read_text()
+        auth_finish=oauth.split('app.http("labLineAuthFinish"',1)[1].split('app.http("labLineAuthSession"',1)[0]
+        sync_route=oauth.split('app.http("labLineRichMenuSync"',1)[1].split('/** Functional UAT ONLY:',1)[0]
+        self.assertIn('syncLabRoleMenusForLineIdentity',auth_finish)
+        self.assertIn('email:session.parentEmail',auth_finish)
+        self.assertIn('role?.role==="schoolAdmin"',oauth)
+        self.assertIn('role?.role==="globalAdmin"',oauth)
+        self.assertIn('route:"line/lab-rich-menus/sync"',oauth)
+        self.assertIn('assignLabRoleRichMenu',sync_route)
+        self.assertIn('not_allowlisted',sync_route)
+        self.assertIn('重新同步我的 LINE 選單',ui)
+        self.assertIn('/api/line/lab-rich-menus/sync',ui)
+        self.assertIn('lab-line-rich-menu-admin.js?v=20261115-role-sync',(ROOT/"scripts/prepare-functional-lab.py").read_text())
+
     def test_single_recipient_endpoint_never_accepts_browser_target_or_message(self):
         oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
         send=oauth.split('app.http("labLineSendTestNotification"',1)[1]
