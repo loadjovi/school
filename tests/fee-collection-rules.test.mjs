@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
+import {runInNewContext} from "node:vm";
 import {
   canParentReport,maskBankAccount,normalizeFeeProject,paymentStatusLabel,
   validateTransferReport,validateVerification
@@ -32,4 +34,21 @@ test("reporting opens only for an open project with an unpaid positive charge",(
   assert.equal(canParentReport({projectStatus:"OPEN",paymentStatus:"AWAITING_TRANSFER",amount:0}),false);
   assert.equal(paymentStatusLabel("VERIFIED"),"已確認入帳");
   assert.equal(maskBankAccount("123456789012"),"********9012");
+});
+
+test("fee creation resets the captured form after an asynchronous request",async()=>{
+  const page=readFileSync(new URL("../app/fee-collections.js",import.meta.url),"utf8");
+  const source=page.slice(page.indexOf("async function createProject("),page.indexOf("async function mutateProject("));
+  let reset=false,refreshed=false,notice="";
+  const form={reset(){reset=true}},event={currentTarget:form,preventDefault(){}};
+  const create=runInNewContext(source+";createProject",{
+    FormData:class {constructor(target){assert.equal(target,form)} entries(){return [["kind","TEAM_T"],["title","DEMO"]]}},
+    confirm:()=>true,showStatus:message=>{notice=message},
+    api:async()=>{event.currentTarget=null},
+    loadProjects:async()=>{refreshed=true}
+  });
+  await create(event);
+  assert.equal(reset,true);
+  assert.equal(refreshed,true);
+  assert.equal(notice,"收費專案草稿已建立。");
 });

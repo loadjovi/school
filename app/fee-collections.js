@@ -110,10 +110,10 @@ function renderProjects(){
 }
 
 async function createProject(event){
-  event.preventDefault();const form=new FormData(event.currentTarget),body=Object.fromEntries(form.entries());
+  event.preventDefault();const form=event.currentTarget,body=Object.fromEntries(new FormData(form).entries());
   if(body.kind!=="YEAR_END_DINNER")delete body.activityId;
   if(!confirm(`建立「${body.title}」收費專案草稿？建立後請同步收費對象，再由財務人員開放。`))return;
-  try{showStatus("正在建立收費專案…");await api("fee-collections/projects",{method:"POST",body:JSON.stringify(body)});event.currentTarget.reset();await loadProjects();showStatus("收費專案草稿已建立。") }catch(error){showStatus(error.message,"error")}
+  try{showStatus("正在建立收費專案…");await api("fee-collections/projects",{method:"POST",body:JSON.stringify(body)});form.reset();await loadProjects();showStatus("收費專案草稿已建立。") }catch(error){showStatus(error.message,"error")}
 }
 
 async function mutateProject(id,action){
