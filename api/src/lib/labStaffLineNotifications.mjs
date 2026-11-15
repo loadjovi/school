@@ -35,6 +35,14 @@ async function deliver(schoolId,eventKey,recipients,text){
   const normalizedRecipients=[...new Set(recipients.map(email).filter(Boolean))];
   const reverseTargets=new Map();
   const allowedLineUserId=String(process.env.LAB_LINE_TEST_USER_ID||"").trim();
+  const allowedEmail=email(process.env.LAB_LINE_TEST_PARENT_EMAIL);
+  // In LAB the role-rich-menu sync can resolve the allowlisted LINE identity
+  // from its authenticated LINE session before an email-keyed account-binding
+  // row exists. Keep staff reminders aligned with that same explicit identity:
+  // only the configured LAB Gmail may fall back to the configured LAB user ID.
+  if(allowedLineUserId&&allowedEmail&&normalizedRecipients.includes(allowedEmail)){
+    reverseTargets.set(allowedEmail,allowedLineUserId);
+  }
   if(allowedLineUserId){
     try{
       const bindings=await getLineAccountBindingsByUserId(allowedLineUserId,{includeTarget:true});
