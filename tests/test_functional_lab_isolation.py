@@ -194,7 +194,7 @@ class FunctionalUATIsolationTests(unittest.TestCase):
                 lab_text=actual.read_text(encoding="utf-8")
                 prod_text=original.read_text(encoding="utf-8")
                 for expected in ('使用 LINE 登入','/api/line/auth/start','/api/line/auth/finish',
-                                 '學生綁定申請已送出 ✅','核准前不會開放學生資料',
+                                 '學生綁定申請已送出 ✅','待審核期間不顯示學生姓名與學號',
                                  '/api/line/account/status','/api/line/account/link-google',
                                  '綁定 LINE','雙重登入已完成'):
                     self.assertIn(expected,lab_text)
