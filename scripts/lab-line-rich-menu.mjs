@@ -83,21 +83,23 @@ async function saveConfig({schoolId,parentRichMenuId="",staffRichMenuId="",updat
   return now;
 }
 
-export async function setupLabRichMenus({schoolId,parentImage,staffImage,updatedBy=""}={}){
+export async function setupLabRichMenus({schoolId,parentImage,staffImage,updatedBy="",force=false}={}){
   assertLabIsolation();
   if(!Buffer.isBuffer(parentImage)||!Buffer.isBuffer(staffImage))throw Error("LAB 圖文選單圖片缺失");
   const existing=await getLabRichMenuConfig(schoolId);
-  if(existing.configured)return {...existing,reused:true};
-  let parentRichMenuId=existing.parentRichMenuId,staffRichMenuId=existing.staffRichMenuId;
-  if(!parentRichMenuId){
+  if(existing.configured&&!force)return {...existing,reused:true};
+  let parentRichMenuId="",staffRichMenuId="";
+  try{
     parentRichMenuId=await createOne(LAB_RICH_MENU_AUDIENCES.PARENT,parentImage);
-    await saveConfig({schoolId,parentRichMenuId,staffRichMenuId,updatedBy});
-  }
-  if(!staffRichMenuId){
     staffRichMenuId=await createOne(LAB_RICH_MENU_AUDIENCES.STAFF,staffImage);
+    const now=await saveConfig({schoolId,parentRichMenuId,staffRichMenuId,updatedBy});
+    return {configured:true,parentRichMenuId,staffRichMenuId,updatedAt:now,updatedBy:String(updatedBy||""),reused:false,replaced:existing.configured};
+  }catch(error){
+    for(const id of [parentRichMenuId,staffRichMenuId]){
+      if(id)try{await lineApi(`/v2/bot/richmenu/${encodeURIComponent(id)}`,{method:"DELETE"})}catch{}
+    }
+    throw error;
   }
-  const now=await saveConfig({schoolId,parentRichMenuId,staffRichMenuId,updatedBy});
-  return {configured:true,parentRichMenuId,staffRichMenuId,updatedAt:now,updatedBy:String(updatedBy||""),reused:false};
 }
 
 export async function resolveLabAccountMenu({schoolId,email,parentLinked=false}={}){
