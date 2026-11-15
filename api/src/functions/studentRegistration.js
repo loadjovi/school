@@ -2,6 +2,7 @@ import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
 import { ensureTenantTables, table, rowKey, getRegistrationsByEmail, listRegistrations, getStudentMaster, listStudentMaster, tenantParentPartition, tenantSchoolPartition, tenantStudentPartition } from "../lib/storage.js";
 import { sendParentApprovalEmail } from "../lib/email.js";
+import {notifyPendingParentRegistration} from "../lib/labStaffLineNotifications.mjs";
 
 const allowedGroups=new Set(["A","B","C","儲備"]);
 const allowedGrades=new Set(["一年級","二年級","三年級","四年級","五年級","六年級"]);
@@ -87,7 +88,16 @@ app.http("studentRegistration",{
       const registrationId=rowKey("reg");
       const entity={partitionKey:tenantSchoolPartition(schoolId),rowKey:registrationId,schoolId,parentEmail:access.email,parentName,relationship,studentName,studentNo,grade,groupName,instrument,schoolYear,status:"pending",consent:true,createdAt:new Date().toISOString(),googleSub:access.sub||"",matchedStudentId:String(matched.rowKey||"")};
       await table("tenantRegistrations").createEntity(entity);
-      return json({ok:true,registration:view(entity)},201);
+      const staffLineNotification=await notifyPendingParentRegistration({schoolId,registrationId,studentName});
+      entity.notificationStatus=String(staffLineNotification?.status||"");
+      entity.notificationSentAt=(staffLineNotification?.sent||0)>0?new Date().toISOString():null;
+      entity.notificationError=(staffLineNotification?.failed||0)>0?"LINE 管理員通知發送失敗":((staffLineNotification?.skipped||0)>0&&!(staffLineNotification?.sent||0)?"找不到符合條件且已綁定 LINE 的學校管理員":"");
+      await table("tenantRegistrations").updateEntity({
+        partitionKey:entity.partitionKey,rowKey:entity.rowKey,
+        notificationStatus:entity.notificationStatus,notificationSentAt:entity.notificationSentAt,
+        notificationError:entity.notificationError
+      },"Merge");
+      return json({ok:true,registration:view(entity),staffLineNotification},201);
     }
 
     if(access.role!=="admin")return json({error:"Forbidden"},403);

@@ -6,6 +6,7 @@ import {listStudentMaster,listUserStudentMappings,getTenantDirectory,listTenantA
 import {getStudentAliasInfo} from "./auth.js";
 import {emailConfigured,sendPaymentRequiredEmail,sendFinancePaymentEmail} from "./email.js";
 import {paymentNoticeCandidates,paymentNoticeKey,noticeInScope,deliverPaymentNotices,uniformNeedsPayment,familyPaymentInfo,reminderNotices,uniformNotificationStates} from "./paymentNoticeRules.mjs";
+import {notifyFinanceTransferReports} from "./labStaffLineNotifications.mjs";
 
 const safe=value=>String(value).replaceAll("'","''");
 const decode=row=>({...JSON.parse(row.payload||"{}"),id:row.rowKey});
@@ -85,7 +86,9 @@ export async function processPaymentNotifications(schoolId,{scope={kind:"all"},p
   let financeNotification;
   try{
     const financeNotices=await financeData();
+    const financeLineNotification=preview?{status:"preview",sent:0}:await notifyFinanceTransferReports({schoolId,notices:financeNotices});
     financeNotification=await deliverPaymentNotices({notices:financeNotices,repository,configured,disabled,preview,retryFailed,send:notice=>sendFinancePaymentEmail({...notice,schoolName:school?.systemName||school?.schoolName||"弦樂團",appUrl:paymentPlatformUrl()})});
+    financeNotification.line=financeLineNotification;
     const potential=financeNoticeCandidates({uniforms:uniformRows.map(decode),families:familyRows.map(decode),configs,staff:[],recipients:["scope@example.invalid"]});
     financeNotification.noFinanceRecipients=!financeNotices.length&&potential.some(n=>scope.kind==="all"||scope.kind===n.sourceType&&scope.id===n.itemId);
   }

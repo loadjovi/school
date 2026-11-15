@@ -1,5 +1,5 @@
 import {app} from "@azure/functions";
-import {randomInt} from "node:crypto";
+import {randomInt,timingSafeEqual} from "node:crypto";
 import {getTenantContext,json} from "../lib/auth.js";
 import {
   bindLineNotificationTarget,clearLineNotificationTarget,createLineBindingRequest,findLineBindingRequest,
@@ -13,6 +13,9 @@ import {
   bindLineAccount,createLineAccountBindingRequest,findLineAccountBindingRequest,
   getLineAccountBinding,unbindLineAccount
 } from "../lib/lineAccountBinding.js";
+import {isTodayCoursesCommand,lineTodayCoursesReply} from "../lib/lineTodayCourses.mjs";
+import {isLatestAnnouncementsCommand,lineLatestAnnouncementsReply} from "../lib/lineLatestAnnouncements.mjs";
+import {isActivityCalendarCommand,lineActivityCalendarReply} from "../lib/lineActivityCalendar.mjs";
 
 const lineSecret=()=>String(process.env.LINE_CHANNEL_SECRET||"").trim();
 const lineToken=()=>String(process.env.LINE_CHANNEL_ACCESS_TOKEN||"").trim();
@@ -21,6 +24,20 @@ const officialAccountUrl=()=>{
   const url=String(process.env.LINE_OFFICIAL_ACCOUNT_URL||"").trim();
   return /^https:\/\/(?:line\.me\/R\/ti\/p\/@[A-Za-z0-9._-]+|lin\.ee\/[A-Za-z0-9_-]+)$/.test(url)?url:"";
 };
+
+// Fail-closed, opt-in LAB identity command. No LAB data or token is accessed here.
+// The LINE public profile ID (e.g. roy.lin) is NOT a Messaging API user ID.
+function labTesterAllowed(userId){
+  if(process.env.LINE_LAB_RELAY_ENABLED!=="true")return false;
+  const id=String(userId||"");
+  const allowed=String(process.env.LINE_LAB_TEST_USER_ID||"").trim();
+  if(!/^U[0-9a-f]{32}$/i.test(id)||!/^U[0-9a-f]{32}$/i.test(allowed))return false;
+  return timingSafeEqual(Buffer.from(id.toLowerCase()),Buffer.from(allowed.toLowerCase()));
+}
+function labBindingCommand(text){
+  const match=/^#LAB綁定\\s+([0-9]{6})$/.exec(String(text||"").trim());
+  return match?.[1]||"";
+}
 
 function lineSettingsResponse(settings,request,extra={}){
   return {
@@ -47,6 +64,53 @@ app.http("lineWebhook",{
     for(const event of events){
       try{
         if(event?.type!=="message"||event?.message?.type!=="text")continue;
+        if(isTodayCoursesCommand(event.message.text)){
+          const replyToken=String(event.replyToken||""),lineUserId=String(event.source?.userId||"");
+          if(event.source?.type!=="user"||!lineUserId){
+            await replyLineMessage(replyToken,"今日課程包含學生個人資訊，請在官方帳號的一對一聊天室查詢。");
+            continue;
+          }
+          await replyLineMessage(replyToken,await lineTodayCoursesReply(lineUserId));
+          continue;
+        }
+        if(isLatestAnnouncementsCommand(event.message.text)){
+          const replyToken=String(event.replyToken||""),lineUserId=String(event.source?.userId||"");
+          if(event.source?.type!=="user"||!lineUserId){
+            await replyLineMessage(replyToken,"最新公告會依學生所屬團別篩選，請在官方帳號的一對一聊天室查詢。");
+            continue;
+          }
+          await replyLineMessage(replyToken,await lineLatestAnnouncementsReply(lineUserId));
+          continue;
+        }
+        if(isActivityCalendarCommand(event.message.text)){
+          const replyToken=String(event.replyToken||""),lineUserId=String(event.source?.userId||"");
+          if(event.source?.type!=="user"||!lineUserId){
+            await replyLineMessage(replyToken,"活動行事曆會依學生所屬團別篩選，請在官方帳號的一對一聊天室查詢。");
+            continue;
+          }
+          await replyLineMessage(replyToken,await lineActivityCalendarReply(lineUserId));
+          continue;
+        }
+        if(String(event.message.text||"").trim()==="#LAB身分確認"){
+          // Opt-in diagnostic only. The user ID is returned solely to the same
+          // signed, one-to-one LINE conversation; never placed in logs/storage.
+          if(process.env.LINE_LAB_IDENTITY_LOOKUP_ENABLED==="true"&&
+             event.source?.type==="user"&&/^U[0-9a-f]{32}$/i.test(String(event.source?.userId||""))){
+            await replyLineMessage(String(event.replyToken||""),
+              "LAB 身分確認\\nMessaging API User ID："+event.source.userId+
+              "\\n請勿將此識別碼貼到公開群組；此操作不會綁定或修改任何家長資料。");
+          }
+          continue;
+        }
+        const labCode=labBindingCommand(event.message.text);
+        if(labCode){
+          // Intentionally do not process or log the LAB code until the isolated,
+          // authenticated LAB relay is implemented and separately approved.
+          if(event.source?.type==="user"&&labTesterAllowed(event.source?.userId)){
+            await replyLineMessage(String(event.replyToken||""),"LAB 真實綁定尚未啟用，請先使用 LAB 模擬綁定功能。");
+          }
+          continue; // Never interpret a LAB command as a production binding.
+        }
         const accountCode=parseLineAccountBindingCommand(event.message.text);
         if(accountCode){
           const replyToken=String(event.replyToken||""),lineUserId=String(event.source?.userId||"");
