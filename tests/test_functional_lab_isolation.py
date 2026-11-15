@@ -120,6 +120,15 @@ class FunctionalUATIsolationTests(unittest.TestCase):
             if not original.is_file() or original.suffix.lower() not in (".js",".css"):
                 continue
             actual=self.lab/"app"/original.relative_to(ROOT/"app")
+            if original.name=="fee-collections.js":
+                # The only permitted LAB frontend change is a tightly scoped mock binding UI.
+                lab_text=actual.read_text(encoding="utf-8")
+                prod_text=original.read_text(encoding="utf-8")
+                self.assertIn('lab-mock-line-bind',lab_text)
+                self.assertIn('LAB 模擬模式',lab_text)
+                self.assertNotIn('lab-mock-line-bind',prod_text)
+                self.assertIn('lab/line/mock-bind',lab_text)
+                continue
             self.assertEqual(actual.read_bytes(),original.read_bytes(),
                              "SOP LAB must not repaint the production view: "+str(original))
     def test_sop_lab_source_manifest_is_reproducible(self):

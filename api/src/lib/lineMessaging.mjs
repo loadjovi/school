@@ -39,6 +39,11 @@ export function parseLineBindingCommand(text){
   return match?match[1]:"";
 }
 
+export function parseLineAccountBindingCommand(text){
+  const match=String(text||"").trim().match(/^#?綁定帳號[\s　:：-]*(\d{6})$/u);
+  return match?match[1]:"";
+}
+
 function lineToken(){return String(process.env.LINE_CHANNEL_ACCESS_TOKEN||"").trim()}
 
 async function lineApi(path,{method="POST",body}={}){
@@ -72,4 +77,10 @@ export async function getLineGroupSummary(groupId){
   const id=String(groupId||"").trim();
   if(!id)return null;
   try{return await lineApi(`/v2/bot/group/${encodeURIComponent(id)}/summary`,{method:"GET"})}catch{return null}
+}
+
+export async function getLineUserProfile(userId){
+  const id=String(userId||"").trim();
+  if(!id)return null;
+  try{return await lineApi(`/v2/bot/profile/${encodeURIComponent(id)}`,{method:"GET"})}catch{return null}
 }
