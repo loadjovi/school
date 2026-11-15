@@ -14,6 +14,7 @@ import {
   getLineAccountBinding,unbindLineAccount
 } from "../lib/lineAccountBinding.js";
 import {isTodayCoursesCommand,lineTodayCoursesReply} from "../lib/lineTodayCourses.mjs";
+import {isLatestAnnouncementsCommand,lineLatestAnnouncementsReply} from "../lib/lineLatestAnnouncements.mjs";
 
 const lineSecret=()=>String(process.env.LINE_CHANNEL_SECRET||"").trim();
 const lineToken=()=>String(process.env.LINE_CHANNEL_ACCESS_TOKEN||"").trim();
@@ -69,6 +70,15 @@ app.http("lineWebhook",{
             continue;
           }
           await replyLineMessage(replyToken,await lineTodayCoursesReply(lineUserId));
+          continue;
+        }
+        if(isLatestAnnouncementsCommand(event.message.text)){
+          const replyToken=String(event.replyToken||""),lineUserId=String(event.source?.userId||"");
+          if(event.source?.type!=="user"||!lineUserId){
+            await replyLineMessage(replyToken,"最新公告會依學生所屬團別篩選，請在官方帳號的一對一聊天室查詢。");
+            continue;
+          }
+          await replyLineMessage(replyToken,await lineLatestAnnouncementsReply(lineUserId));
           continue;
         }
         if(String(event.message.text||"").trim()==="#LAB身分確認"){

@@ -181,6 +181,25 @@ def prepare(output: Path) -> None:
     today_courses.write_text(today_source
         .replace(today_import,'import {defaultTenantId,getMappedStudentsByEmail,listByStudent,listTenantRolesByEmail} from "./storage.js";',1)
         .replace(today_lookup,today_lab_lookup,1),encoding="utf-8")
+    announcements=lib/"lineLatestAnnouncements.mjs"
+    announcement_source=announcements.read_text(encoding="utf-8")
+    announcement_import='import {getMappedStudentsByEmail} from "./storage.js";'
+    announcement_lookup='''  const bindings=await getLineAccountBindingsByUserId(lineUserId,{includeTarget:false});
+  if(!bindings.length)return "目前 LINE 尚未連結平台帳號，請先點選「開啟／綁定平台」完成綁定。";'''
+    announcement_lab_lookup='''  let bindings=await getLineAccountBindingsByUserId(lineUserId,{includeTarget:false});
+  const labAllowed=String(process.env.LAB_LINE_TEST_USER_ID||"").trim();
+  const labEmail=String(process.env.LAB_LINE_TEST_PARENT_EMAIL||"").trim().toLowerCase();
+  if(!bindings.length&&/^U[0-9a-f]{32}$/i.test(labAllowed)&&String(lineUserId||"").trim().toLowerCase()===labAllowed.toLowerCase()&&labEmail){
+    const roles=await listTenantRolesByEmail(labEmail,"active");
+    const schoolIds=[...new Set([defaultTenantId(),...roles.map(row=>String(row.schoolId||row.rowKey||"").trim()).filter(id=>id&&id!=="*")])];
+    bindings=schoolIds.map(schoolId=>({parentEmail:labEmail,schoolId}));
+  }
+  if(!bindings.length)return "目前 LINE 尚未連結平台帳號，請先點選「開啟／綁定平台」完成綁定。";'''
+    if announcement_import not in announcement_source or announcement_lookup not in announcement_source:
+        raise RuntimeError("Latest-announcement binding structure changed; review LAB identity fallback")
+    announcements.write_text(announcement_source
+        .replace(announcement_import,'import {defaultTenantId,getMappedStudentsByEmail,listTenantRolesByEmail} from "./storage.js";',1)
+        .replace(announcement_lookup,announcement_lab_lookup,1),encoding="utf-8")
     # LINE Login OAuth and its pure safety rules exist ONLY in the isolated
     # generated LAB API.
     safety_source=(ROOT/"scripts"/"lab-line-notification-safety.mjs").read_text(encoding="utf-8")

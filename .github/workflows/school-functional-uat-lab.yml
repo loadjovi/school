@@ -63,6 +63,7 @@ jobs:
           node --test tests/lab-line-auth-rules.test.mjs tests/lab-line-api-assertion.test.mjs
           node --test tests/lab-line-student-coverage.test.mjs
           node --test tests/lab-line-rich-menu.test.mjs
+          node --test tests/line-today-courses.test.mjs tests/line-latest-announcements.test.mjs
           node --test tests/phase1-fee-integration.test.mjs
           node --test tests/admin-semester-scores.test.mjs tests/admin-score-quick-filters.test.mjs tests/admin-attendance-todos.test.mjs tests/tshirt-first-receipt.test.mjs
           node --test tests/admin-private-followup.test.mjs api/test/privateLessonFollowup.test.mjs

@@ -276,6 +276,15 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertNotIn("LAB_LINE_TEST_PARENT_EMAIL",production)
         self.assertNotIn("LAB_LINE_TEST_USER_ID",production)
 
+    def test_lab_latest_announcements_fallback_is_exact_user_only(self):
+        builder=(ROOT/"scripts/prepare-functional-lab.py").read_text()
+        production=(ROOT/"api/src/lib/lineLatestAnnouncements.mjs").read_text()
+        self.assertIn('announcements=lib/"lineLatestAnnouncements.mjs"',builder)
+        self.assertIn("Latest-announcement binding structure changed",builder)
+        self.assertIn('String(lineUserId||"").trim().toLowerCase()===labAllowed.toLowerCase()',builder)
+        self.assertNotIn("LAB_LINE_TEST_PARENT_EMAIL",production)
+        self.assertNotIn("LAB_LINE_TEST_USER_ID",production)
+
     def test_rolling_limit_is_atomic_and_has_parallel_regressions(self):
         oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
         safety=(ROOT/"scripts/lab-line-notification-safety.mjs").read_text()

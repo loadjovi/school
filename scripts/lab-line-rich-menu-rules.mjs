@@ -37,7 +37,7 @@ export function labRichMenuDefinition(audience,origin){
     size:{width:2500,height:1686},selected:true,name:"LAB 聖心弦樂－家長選單",chatBarText:"家長功能",
     areas:[
       messageArea(0,0,1250,843,"今日課程","今日課程"),
-      area(1250,0,1250,843,"最新公告",uri(origin,"?line_menu=parent_announcements")),
+      messageArea(1250,0,1250,843,"最新公告","最新公告"),
       area(0,843,1250,843,"活動行事曆",uri(origin,"?line_menu=parent_activity_calendar")),
       area(1250,843,1250,843,"開啟家長平台",uri(origin,"?line_menu=parent_portal"))
     ]
@@ -47,7 +47,7 @@ export function labRichMenuDefinition(audience,origin){
     areas:[
       messageArea(0,0,833,843,"今日課程","今日課程"),
       area(833,0,834,843,"活動行事曆",uri(origin,"?line_menu=staff_activity_calendar")),
-      area(1667,0,833,843,"最新公告",uri(origin,"?line_menu=staff_announcements")),
+      messageArea(1667,0,833,843,"最新公告","最新公告"),
       area(0,843,833,843,"點名管理",uri(origin,"?line_menu=staff_attendance")),
       area(833,843,834,843,"待辦事項",uri(origin,"?line_menu=staff_todos")),
       area(1667,843,833,843,"開啟幹部平台",uri(origin,"?line_menu=staff_portal"))
