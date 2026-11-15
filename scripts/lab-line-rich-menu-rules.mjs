@@ -38,7 +38,7 @@ export function labRichMenuDefinition(audience,origin){
     areas:[
       messageArea(0,0,1250,843,"今日課程","今日課程"),
       messageArea(1250,0,1250,843,"最新公告","最新公告"),
-      area(0,843,1250,843,"活動行事曆",uri(origin,"?line_menu=parent_activity_calendar")),
+      messageArea(0,843,1250,843,"活動行事曆","活動行事曆"),
       area(1250,843,1250,843,"開啟家長平台",uri(origin,"?line_menu=parent_portal"))
     ]
   };
