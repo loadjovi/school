@@ -1,6 +1,8 @@
 import { app } from "@azure/functions";
 import { getTenantContext, getStudentAliasInfo, json } from "../lib/auth.js";
 import { ensureTenantTables, table, getStudentMaster, rowKey, tenantParentPartition, tenantSchoolPartition, tenantStudentPartition } from "../lib/storage.js";
+import { resolveTenantLineChannel } from "../lib/lineTenantConfig.js";
+import { listTenantLineRecipientStatuses } from "../lib/tenantLineAccounts.js";
 
 function clean(v,max=200){return String(v||"").trim().slice(0,max)}
 
@@ -144,6 +146,23 @@ app.http("studentParentLinks",{
     }
 
     items.sort((a,b)=>String(a.studentId).localeCompare(String(b.studentId))||String(a.relationship).localeCompare(String(b.relationship),"zh-Hant")||String(a.parentEmail).localeCompare(String(b.parentEmail)));
-    return json({items});
+    if (request.query.get("includeLineStatus") !== "1") return json({items});
+    if (items.length) {
+      let statuses;
+      try {
+        const {botUserId} = await resolveTenantLineChannel(schoolId);
+        if (botUserId) statuses = await listTenantLineRecipientStatuses(schoolId, botUserId);
+      } catch (error) {
+        console.warn("Student parent LINE status unavailable", {schoolId, status: error?.statusCode});
+      }
+      for (const item of items) {
+        const line = statuses?.get(item.parentEmail);
+        item.lineBound = statuses ? Boolean(line) : null;
+        item.lineFriendStatus = line?.status || null;
+        item.lineFriendCheckedAt = line?.checkedAt || null;
+      }
+    }
+    const response = json({items});
+    return {...response, headers: {...response.headers, "Cache-Control": "private, no-store"}};
   }
 });

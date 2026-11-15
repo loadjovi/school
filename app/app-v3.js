@@ -124,11 +124,42 @@ async function renderLineLogin(){
   }catch(error){console.warn("LINE school list unavailable")}
 }
 
+async function syncParentLineMenu(button){
+  const output=button.closest("section")?.querySelector("[data-line-menu-result]");
+  if(!output||button.disabled)return;
+  button.disabled=true;
+  output.textContent="正在同步 LINE 選單…";
+  try{
+    const result=await api("/api/line/school-account",{method:"POST",body:JSON.stringify({action:"sync-menu"})});
+    const messages={
+      parent:"已同步為家長選單，請重新開啟 LINE 聊天室查看。",
+      staff:"此帳號有教職人員權限，已同步為幹部選單。請重新開啟 LINE 聊天室查看。",
+      default:"目前使用通用選單。若已完成綁定，請聯絡學校管理員確認家長選單設定。",
+      unavailable:"目前無法同步，請聯絡學校管理員確認 LINE 選單設定。"
+    };
+    output.textContent=result.configured===false?"此校的 LINE 服務尚未開啟。":messages[result.audience]||"目前無法同步，請稍後再試。";
+  }catch(error){
+    output.textContent=error.message||"LINE 選單同步失敗，請稍後再試。";
+  }finally{
+    button.disabled=false;
+  }
+}
+
 function tenantServicesEntry(){
   const me=state.me, options=me?.capabilities||{};
   if(!["admin","parent","unassigned"].includes(me?.role)||!["home","admin","uniformEvents"].includes(state.page))return "";
   const billing=options.feeCollections&&me.role!=="unassigned";
   if(!options.lineAccount&&!billing)return "";
+  if(options.lineAccount&&["parent","unassigned"].includes(me.role)){
+    const description=billing
+      ?"綁定個人 LINE 後可接收課程與活動提醒，也可在這裡查看繳費與核帳進度。"
+      :"綁定個人 LINE 後可接收課程與活動提醒。";
+    const button=billing?"開啟 LINE 通知／費用資訊 →":"開啟 LINE 通知設定 →";
+    const sync=me.role==="parent"
+      ?'<button type="button" class="secondary" style="width:100%;margin-top:8px" onclick="syncParentLineMenu(this)">重新同步我的 LINE 選單</button><div class="muted" role="status" data-line-menu-result></div>'
+      :"";
+    return `<section class="card" aria-labelledby="parentLineServicesTitle"><h2 id="parentLineServicesTitle">🔔 LINE 通知與家長服務</h2><div class="notice">${description}</div><button type="button" class="primary" style="width:100%" onclick="location.href='/fee-collections.html'">${button}</button>${sync}</section>`;
+  }
   const label=options.lineAccount&&billing?"LINE 帳號與費用":options.lineAccount?"管理 LINE 帳號":"收費專案與匯款核帳";
   return `<div class="card"><a href="/fee-collections.html">${label}</a></div>`;
 }
@@ -277,12 +308,13 @@ function studentsPage(){
  const group=s=>["C","儲備"].includes(String(s.groupName||"").trim())?"RESERVE":String(s.groupName||"").trim();
  const query=String(state.studentMasterQuery||"").trim().toLocaleLowerCase("zh-Hant");
  const rank=s=>{const section=String(s.section||"").trim(),instrument=String(s.instrument||"").trim();if(section.includes("小提一"))return 0;if(section.includes("小提二"))return 1;if(section.includes("中提"))return 3;if(section.includes("大提"))return 4;if(section.includes("低音"))return 5;if(instrument.includes("小提"))return 2;if(instrument.includes("中提"))return 3;if(instrument.includes("大提"))return 4;if(instrument.includes("低音"))return 5;return 6};
- const students=all.filter(s=>(filter==="ALL"||filter==="INACTIVE"?filter!=="INACTIVE"||s.status==="inactive":group(s)===filter)&&(!query||[s.name,s.studentId,s.classCode,s.grade,s.groupName,s.instrument,s.section].join(" ").toLocaleLowerCase("zh-Hant").includes(query))).sort((a,b)=>Number(a.status==="inactive")-Number(b.status==="inactive")||rank(a)-rank(b)||String(a.grade||"").localeCompare(String(b.grade||""),"zh-Hant",{numeric:true})||String(a.name||"").localeCompare(String(b.name||""),"zh-Hant"));
+ const lineFilter=state.studentLineFilter||"all";
+ const students=all.filter(s=>(lineFilter==="all"||(s.status!=="inactive"&&window.studentLineStatus?.(s)===lineFilter))&&(filter==="ALL"||filter==="INACTIVE"?filter!=="INACTIVE"||s.status==="inactive":group(s)===filter)&&(!query||[s.name,s.studentId,s.classCode,s.grade,s.groupName,s.instrument,s.section].join(" ").toLocaleLowerCase("zh-Hant").includes(query))).sort((a,b)=>Number(a.status==="inactive")-Number(b.status==="inactive")||rank(a)-rank(b)||String(a.grade||"").localeCompare(String(b.grade||""),"zh-Hant",{numeric:true})||String(a.name||"").localeCompare(String(b.name||""),"zh-Hant"));
  const choices=[["ALL","全部"],["A","A 團"],["B","B 團"],["RESERVE","儲備團"],["INACTIVE","退出／停用"]];
  const filters=choices.map(([key,label])=>{const count=all.filter(s=>key==="ALL"||key==="INACTIVE"?key!=="INACTIVE"||s.status==="inactive":group(s)===key).length;return `<button type="button" aria-pressed="${filter===key}" onclick="selectStudentMasterGroup('${key}')">${label} <span>${count}</span></button>`}).join("");
  const rows=students.map(s=>{const parents=Array.isArray(s.parents)?s.parents.length:0;const pending=(state.registrations||[]).some(r=>String(r.status||"pending")==="pending"&&(String(r.studentNo||r.studentId||"").trim()===String(s.studentId||"").trim()||String(r.matchedStudentId||"").trim()===String(s.studentId||"").trim()));
-  return `<details class="student-master-row"><summary><span><strong>${esc(s.name)}</strong><small>${esc(s.studentId)}</small></span><span>${esc(s.grade||"待確認")}<small>${esc(s.groupName||"待確認")}團</small></span><span>${esc(s.instrument||"待確認")}<small>${esc(s.section||"分部待確認")}</small></span><span>${s.status==="inactive"?"已退出／停用":parents?`已綁定 ${parents} 位`:pending?"家長待審核":"未綁定"}<small>展開編輯</small></span></summary><div class="student-master-edit">${studentEdit(s)}</div></details>`}).join("");
- return `<div class="card student-master-list student-task-panel" data-student-task-panel="browse"><h2>查詢／修改學生</h2><div class="student-task-steps" aria-label="操作步驟"><span><b>1</b>搜尋學生</span><span><b>2</b>展開資料</span><span><b>3</b>儲存修改</span></div><form class="student-master-search" onsubmit="runStudentMasterSearch(event)"><label for="studentMasterQuery">姓名或學號</label><div><input id="studentMasterQuery" value="${esc(state.studentMasterQuery||"")}" placeholder="輸入姓名、學號、班級或樂器"><button type="submit">搜尋</button>${query?'<button type="button" class="secondary" onclick="clearStudentMasterSearch()">清除</button>':""}</div></form><p>共 ${all.length} 位學生；目前顯示 ${students.length} 位。點選學生即可修改基本資料，或辦理團別異動、退出與重新加入。</p><div class="student-master-filters" role="group" aria-label="依團別篩選學生">${filters}</div><div class="student-master-head" aria-hidden="true"><span>學生</span><span>年級／團別</span><span>樂器／分部</span><span>家長／狀態</span></div>${rows||'<div class="notice">找不到符合條件的學生，請調整關鍵字或團別。</div>'}</div>`
+  return `<details class="student-master-row"><summary><span><strong>${esc(s.name)}</strong><small>${esc(s.studentId)}</small></span><span>${esc(s.grade||"待確認")}<small>${esc(s.groupName||"待確認")}團</small></span><span>${esc(s.instrument||"待確認")}<small>${esc(s.section||"分部待確認")}</small></span><span>${s.status==="inactive"?"已退出／停用":parents?`已綁定 ${parents} 位`:pending?"家長待審核":"未綁定"}${s.status!=="inactive"&&window.studentLineStatusLabel?`<small class="student-line-row" data-line-status="${window.studentLineStatus(s)}">${esc(window.studentLineStatusLabel(s))}</small>`:""}<small>展開編輯</small></span></summary><div class="student-master-edit">${studentEdit(s)}</div></details>`}).join("");
+ return `<div class="card student-master-list student-task-panel" data-student-task-panel="browse"><h2>查詢／修改學生</h2>${window.studentLineCoverage?.(all,students.length)||""}<div class="student-task-steps" aria-label="操作步驟"><span><b>1</b>搜尋學生</span><span><b>2</b>展開資料</span><span><b>3</b>儲存修改</span></div><form class="student-master-search" onsubmit="runStudentMasterSearch(event)"><label for="studentMasterQuery">姓名或學號</label><div><input id="studentMasterQuery" value="${esc(state.studentMasterQuery||"")}" placeholder="輸入姓名、學號、班級或樂器"><button type="submit">搜尋</button>${query?'<button type="button" class="secondary" onclick="clearStudentMasterSearch()">清除</button>':""}</div></form><p>共 ${all.length} 位學生；目前顯示 ${students.length} 位。點選學生即可修改基本資料，或辦理團別異動、退出與重新加入。</p><div class="student-master-filters" role="group" aria-label="依團別篩選學生">${filters}</div><div class="student-master-head" aria-hidden="true"><span>學生</span><span>年級／團別</span><span>樂器／分部</span><span>家長／狀態</span></div>${rows||'<div class="notice">找不到符合條件的學生，請調整關鍵字或團別。</div>'}</div>`
 }
 window.selectStudentMasterGroup=function(group){if(!["ALL","A","B","RESERVE","INACTIVE"].includes(group))return;state.studentMasterFilter=group;render()};
 window.runStudentMasterSearch=function(event){event?.preventDefault();state.studentMasterQuery=$("studentMasterQuery")?.value.trim()||"";render()};

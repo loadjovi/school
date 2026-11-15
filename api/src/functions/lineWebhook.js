@@ -2,7 +2,7 @@ import {app} from "@azure/functions";
 import {randomInt} from "node:crypto";
 import {getTenantContext,json} from "../lib/auth.js";
 import {defaultTenantId,tenantIdValue} from "../lib/storage.js";
-import {getTenantLineAccount} from "../lib/tenantLineAccounts.js";
+import {getTenantLineAccount,recordTenantLineFriendship} from "../lib/tenantLineAccounts.js";
 import {refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
 import {tenantLineParentReply,tenantLineReplyKind} from "../lib/tenantLineReplies.mjs";
 import {resolveTenantLineChannel,lineTargetMatchesChannel,tenantWebhookLinks} from "../lib/lineTenantConfig.js";
@@ -42,8 +42,11 @@ async function handleLineWebhook(request,schoolId,legacyRoute){
     for(const event of events){
       try{
         const userId=event?.source?.type==="user" ? String(event.source.userId||"") : "";
-        if(channel.loginConfigured&&userId&&event.type==="follow"){
-          await refreshTenantLineMenu(channel,await getTenantLineAccount(schoolId,botUserId,userId),userId);
+        if(channel.loginConfigured&&userId&&["follow","unfollow"].includes(event.type)){
+          const followed=event.type==="follow";
+          const tasks=[recordTenantLineFriendship(schoolId,botUserId,userId,followed,event.timestamp)];
+          if(followed)tasks.push(getTenantLineAccount(schoolId,botUserId,userId).then(account=>refreshTenantLineMenu(channel,account,userId)));
+          await Promise.all(tasks);
           continue;
         }
         if(event?.type!=="message"||event?.message?.type!=="text")continue;

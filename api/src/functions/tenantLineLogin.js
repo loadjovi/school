@@ -7,7 +7,7 @@ import {
   clearOAuthCookie, clearTenantLineSession, createTenantLineOAuth, createTenantLineSession,
   getOrCreateTenantLineAccount, getTenantGoogleLink, lineCookie,
   lineSessionCookie, linkTenantGoogle, LineAccountConflict, tenantLineSession, unlinkTenantGoogle,
-  useTenantLineOAuth
+  useTenantLineOAuth, recordTenantLineFriendship
 } from "../lib/tenantLineAccounts.js";
 import {refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
 
@@ -40,6 +40,22 @@ async function tryMenuSync(channel, account, userId) {
     await refreshTenantLineMenu(channel, account, userId);
   } catch {
     console.warn("LINE menu sync deferred", {schoolId: channel.schoolId});
+  }
+}
+
+async function checkFriendship(channel, userId, accessToken) {
+  if (!accessToken) return;
+  const checkedAt = Date.now();
+  try {
+    const response = await fetch("https://api.line.me/friendship/v1/status", {
+      headers: {Authorization: `Bearer ${accessToken}`}, signal: AbortSignal.timeout(2500)
+    });
+    if (response.ok) {
+      const {friendFlag} = await response.json();
+      await recordTenantLineFriendship(channel.schoolId, channel.botUserId, userId, friendFlag, checkedAt);
+    }
+  } catch {
+    console.warn("LINE friendship check deferred", {schoolId: channel.schoolId});
   }
 }
 
@@ -117,7 +133,7 @@ app.http("tenantLineLoginCallback", {
         cookies.push(lineCookie("orchestra_google_id_token", "", 0));
         resultUrl.searchParams.set("line_session", schoolId);
       }
-      await tryMenuSync(channel, account);
+      await Promise.all([tryMenuSync(channel, account), checkFriendship(channel, userId, tokens.access_token)]);
     } catch (error) {
       resultUrl.searchParams.set("line_error", error instanceof LineAccountConflict ? "conflict" : "verification");
     }

@@ -34,7 +34,13 @@ function dataTables() {
     },
     async createEntity(row) {apply(rows, "create", row);},
     async deleteEntity(partitionKey, rowKey, options) {apply(rows, "delete", {partitionKey, rowKey}, options);},
-    async updateEntity(row) {apply(rows, "update", {...rows.get(key(row.partitionKey, row.rowKey)), ...row});},
+    async updateEntity(row, mode, options) {apply(rows, "update", {...rows.get(key(row.partitionKey, row.rowKey)), ...row}, options);},
+    async *listEntities({queryOptions: {filter}}) {
+      const [, partition, bot, start, end] = /^PartitionKey eq '(.*?)' and botUserId eq '(.*?)' and RowKey ge '(.*?)' and RowKey lt '(.*?)'$/.exec(filter);
+      for (const row of rows.values()) {
+        if (row.partitionKey === partition && row.botUserId === bot && row.rowKey >= start && row.rowKey < end) yield {...row};
+      }
+    },
     async submitTransaction(actions) {
       const draft = new Map(rows);
       for (const action of actions) apply(draft, action[0], action[1], action[3]);
@@ -51,7 +57,7 @@ function identities(studentRows = new Set()) {
     defaultTenantId: () => "sacred-heart", tenantSchoolPartition: value => value,
     getMappedStudentsByEmail: async (email, school) => studentRows.has(school + "|" + email) ? [{}] : [],
     getRegistrationsByEmail: async () => []
-  }, ";({getOrCreateTenantLineAccount,getTenantGoogleLink,getTenantLineRecipient,getTenantLineParentContact,linkTenantGoogle,unlinkTenantGoogle,createTenantLineSession,tenantLineSession,createTenantLineOAuth,useTenantLineOAuth})");
+  }, ";({getOrCreateTenantLineAccount,getTenantGoogleLink,getTenantLineRecipient,getTenantLineParentContact,linkTenantGoogle,unlinkTenantGoogle,createTenantLineSession,tenantLineSession,createTenantLineOAuth,useTenantLineOAuth,recordTenantLineFriendship,listTenantLineRecipientStatuses})");
 }
 
 test("both login methods resolve a single account without crossing schools", async () => {
@@ -113,6 +119,85 @@ test("LINE authentication never reads students for a different school or staff c
     assert.equal((await lineParentAccess({headers: new Headers(headers)})).role, "contextDenied");
   }
   assert.equal(reads, 0);
+});
+
+test("student parent links expose LINE status only to the school's admin", async () => {
+  let handler;
+  let role = "parent";
+  let lookups = 0;
+  let botAvailable = true;
+  load("api/src/functions/studentParentLinks.js", {
+    app: {http(name, options) { handler = options.handler; }},
+    getTenantContext: async () => ({schoolId: "school-a", access: {role}}),
+    getStudentAliasInfo: async () => ({}), json: (items, status = 200) => ({items, status}),
+    ensureTenantTables: async () => {}, tenantSchoolPartition: id => id,
+    table: () => ({async *listEntities() {
+      yield {rowKey: "100001", parentEmail: google.email};
+      yield {rowKey: "100002", parentEmail: "other@example.com"};
+    }}),
+    resolveTenantLineChannel: async () => ({botUserId: botAvailable ? botId : ""}),
+    listTenantLineRecipientStatuses: async (schoolId, bot) => {
+      lookups++;
+      assert.equal(schoolId, "school-a");
+      assert.equal(bot, botId);
+      return new Map([[google.email, {status: "friend", checkedAt: 1000}]]);
+    }
+  });
+  const request = {method: "GET", query: new URLSearchParams("includeLineStatus=1")};
+  assert.equal((await handler(request)).status, 403);
+  assert.equal(lookups, 0);
+  role = "admin";
+  const linked = (await handler(request)).items.items;
+  assert.equal(linked[0].lineBound, true);
+  assert.equal(linked[0].lineFriendStatus, "friend");
+  assert.equal(linked[0].lineFriendCheckedAt, 1000);
+  assert.equal(linked[1].lineBound, false);
+  assert.equal(Object.hasOwn(linked[0], "lineUserId"), false);
+  assert.equal((await handler({...request, query: new URLSearchParams()})).items.items[0].lineBound, undefined);
+  botAvailable = false;
+  assert.equal((await handler(request)).items.items[0].lineBound, null);
+  assert.equal(lookups, 1);
+});
+
+test("student LINE coverage preserves binding and uses the latest friendship for the same school and bot", async () => {
+  const store = identities();
+  const account = await store.getOrCreateTenantLineAccount("school-a", botId, userId, "家長");
+  const lookup = (school = "school-a", bot = botId) => store.listTenantLineRecipientStatuses(school, bot);
+  assert.equal((await lookup()).get(account.parentEmail).status, "unknown");
+  await store.recordTenantLineFriendship("school-a", botId, userId, true, 1000);
+  assert.equal((await lookup()).get(account.parentEmail).status, "friend");
+  await store.recordTenantLineFriendship("school-a", botId, userId, false, 2000);
+  await store.recordTenantLineFriendship("school-a", botId, userId, true, 1500);
+  assert.equal((await lookup()).get(account.parentEmail).status, "not_friend");
+  assert.equal((await lookup()).get(account.parentEmail).checkedAt, 2000);
+  assert.equal((await lookup("school-b")).size, 0);
+  assert.equal((await lookup("school-a", "U" + "c".repeat(32))).size, 0);
+});
+
+test("parent home keeps the service card and syncs with the active school account", async () => {
+  const state = {me: {role: "parent", capabilities: {lineAccount: true, feeCollections: true}}, page: "home"};
+  const calls = [];
+  const file = source("app/app-v3.js");
+  const {tenantServicesEntry, syncParentLineMenu} = runInNewContext(
+    file.slice(file.indexOf("async function syncParentLineMenu("), file.indexOf("async function renderLogin(")) +
+    ";({tenantServicesEntry,syncParentLineMenu})", {
+      state, api: async (url, options) => {calls.push({url, options});return {audience: "parent"};}
+    }
+  );
+  assert.match(tenantServicesEntry(), /LINE 通知與家長服務/);
+  assert.match(tenantServicesEntry(), /開啟 LINE 通知／費用資訊/);
+  assert.match(tenantServicesEntry(), /重新同步我的 LINE 選單/);
+  const output = {};
+  const button = {disabled: false, closest: () => ({querySelector: () => output})};
+  await syncParentLineMenu(button);
+  assert.equal(calls[0].url, "/api/line/school-account");
+  assert.equal(JSON.parse(calls[0].options.body).action, "sync-menu");
+  assert.match(output.textContent, /已同步為家長選單/);
+  assert.equal(button.disabled, false);
+  state.me.role = "unassigned";
+  assert.doesNotMatch(tenantServicesEntry(), /重新同步我的 LINE 選單/);
+  state.me.role = "admin";
+  assert.doesNotMatch(tenantServicesEntry(), /LINE 通知與家長服務/);
 });
 
 test("fee notification retry keeps the initial target and provider retry key", async () => {

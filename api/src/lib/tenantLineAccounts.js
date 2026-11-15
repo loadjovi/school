@@ -8,6 +8,7 @@ let initialized;
 export const lineHash = value => createHash("sha256").update(value).digest("hex");
 export const lineRandom = () => randomBytes(32).toString("base64url");
 const lineKey = (botUserId, userId) => "line-" + lineHash(botUserId + ":" + userId);
+const friendshipKey = (botUserId, userId) => "friend-" + lineHash(botUserId + ":" + userId);
 const googleKey = sub => "google-" + lineHash(sub);
 const emailKey = email => "email-" + lineHash(email);
 const contactKey = email => "contact-" + lineHash(email);
@@ -57,6 +58,51 @@ export async function getTenantLineRecipient(schoolId, email, botUserId) {
   if (!email || !botUserId) return null;
   const row = await read(tenantSchoolPartition(schoolId), emailKey(email));
   return row?.botUserId === botUserId && row.lineUserId ? row : null;
+}
+
+export async function recordTenantLineFriendship(schoolId, botUserId, userId, friend, checkedAt) {
+  if (!botUserId || !/^U[0-9a-f]{32}$/i.test(userId) || typeof friend !== "boolean" || !Number.isFinite(checkedAt)) return;
+  const partitionKey = tenantSchoolPartition(schoolId), rowKey = friendshipKey(botUserId, userId);
+  const db = await writableStore();
+  const next = {partitionKey, rowKey, botUserId, friend, checkedAt};
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const old = await read(partitionKey, rowKey);
+    if (old && (old.checkedAt > checkedAt || (old.checkedAt === checkedAt && (!old.friend || friend)))) return;
+    try {
+      if (old) await db.updateEntity(next, "Replace", {etag: old.etag});
+      else await db.createEntity(next);
+      return;
+    } catch (error) {
+      if (![409, 412].includes(error.statusCode) || attempt === 2) throw error;
+    }
+  }
+}
+
+export async function listTenantLineRecipientStatuses(schoolId, botUserId) {
+  const partition = tenantSchoolPartition(schoolId).replaceAll("'", "''");
+  const bot = botUserId.replaceAll("'", "''");
+  const scope = `PartitionKey eq '${partition}' and botUserId eq '${bot}'`;
+  async function rows(prefix, select) {
+    const filter = `${scope} and RowKey ge '${prefix}-' and RowKey lt '${prefix}.'`;
+    const result = [];
+    try {
+      for await (const row of store().listEntities({queryOptions: {filter, select}})) result.push(row);
+    } catch (error) {
+      if (error.statusCode !== 404) throw error;
+    }
+    return result;
+  }
+  const [recipients, friendships] = await Promise.all([
+    rows("email", ["parentEmail", "lineUserId"]), rows("friend", ["RowKey", "friend", "checkedAt"])
+  ]);
+  const byUser = new Map(friendships.map(row => [row.rowKey, row]));
+  return new Map(recipients.filter(row => row.parentEmail && row.lineUserId).map(row => {
+    const entry = byUser.get(friendshipKey(botUserId, row.lineUserId));
+    return [row.parentEmail, {
+      status: entry ? (entry.friend ? "friend" : "not_friend") : "unknown",
+      checkedAt: entry?.checkedAt || null
+    }];
+  }));
 }
 
 export async function getOrCreateTenantLineAccount(schoolId, botUserId, userId, displayName) {
