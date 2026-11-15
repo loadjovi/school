@@ -266,6 +266,16 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn("sourceUserId.toLowerCase()!==labAllowed.toLowerCase()",builder)
         self.assertNotIn("LAB: reject real LINE webhook",builder)
 
+    def test_lab_today_courses_fallback_is_exact_user_only(self):
+        builder=(ROOT/"scripts/prepare-functional-lab.py").read_text()
+        production=(ROOT/"api/src/lib/lineTodayCourses.mjs").read_text()
+        self.assertIn("LAB_LINE_TEST_PARENT_EMAIL",builder)
+        self.assertIn("listTenantRolesByEmail",builder)
+        self.assertIn("defaultTenantId()",builder)
+        self.assertIn('String(lineUserId||"").trim().toLowerCase()===labAllowed.toLowerCase()',builder)
+        self.assertNotIn("LAB_LINE_TEST_PARENT_EMAIL",production)
+        self.assertNotIn("LAB_LINE_TEST_USER_ID",production)
+
     def test_rolling_limit_is_atomic_and_has_parallel_regressions(self):
         oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
         safety=(ROOT/"scripts/lab-line-notification-safety.mjs").read_text()
