@@ -16,6 +16,8 @@ test("finance LINE reminders use finance assignment intersection and reported tr
   assert.match(source,/item\.stage==="reported"/);
   assert.match(source,/getLineAccountBinding\(schoolId,recipient,\{includeTarget:true\}\)/);
   assert.match(source,/getLineAccountBindingsByUserId\(allowedLineUserId,\{includeTarget:true\}\)/);
+  assert.match(source,/allowedEmail=email\(process\.env\.LAB_LINE_TEST_PARENT_EMAIL\)/);
+  assert.match(source,/reverseTargets\.set\(allowedEmail,allowedLineUserId\)/);
   assert.match(source,/reverseTargets\.get\(recipient\)/);
   assert.match(source,/parent-registration:/);
   assert.match(source,/finance-transfer:/);
