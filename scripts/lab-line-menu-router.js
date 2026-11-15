@@ -2,7 +2,7 @@
   const PARAM="line_menu";
   const STORAGE_KEY="lab_line_menu_target";
   const STAFF_TARGETS=new Set(["staff_today_courses","staff_attendance","staff_todos","staff_portal"]);
-  const ALL_TARGETS=new Set([...STAFF_TARGETS,"parent_today_courses","parent_announcements","parent_activity_leave","parent_portal"]);
+  const ALL_TARGETS=STAFF_TARGETS;
 
   function requestedTarget(){
     const query=new URLSearchParams(location.search).get(PARAM)||"";
@@ -65,11 +65,8 @@
       return true;
     }
 
+    if(typeof window.openSchoolAdminWorkspace!=="function")return false;
     clearTarget();
-    if(typeof window.openSchoolAdminWorkspace!=="function"){
-      showMessage("幹部功能仍在載入，請稍後再試");
-      return true;
-    }
 
     if(target==="staff_today_courses"){
       await window.openSchoolAdminWorkspace("attendance");
