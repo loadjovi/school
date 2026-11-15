@@ -16,14 +16,15 @@ export function parentCoverageKey(schoolId,email){
 }
 
 function normalizeBinding(value){
-  if(!value?.bound)return {bound:false,friendStatus:"unbound",lineDisplayName:"",boundAt:""};
+  if(!value?.bound)return {bound:false,friendStatus:"unbound",lineDisplayName:"",boundAt:"",connectionSource:""};
   const friendStatus=["friend","not_friend","unknown"].includes(String(value.friendStatus||""))
     ?String(value.friendStatus):"unknown";
   return {
     bound:true,
     friendStatus,
     lineDisplayName:clean(value.lineDisplayName,100),
-    boundAt:clean(value.boundAt,80)
+    boundAt:clean(value.boundAt,80),
+    connectionSource:value.connectionSource==="identity_link"?"identity_link":"account_binding"
   };
 }
 
