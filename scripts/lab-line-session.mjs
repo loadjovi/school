@@ -83,6 +83,15 @@ export async function getLabParentIdentityLink(lineUserId){
   return parentEmail?{parentEmail,linkedAt:String(lineLink.linkedAt||"")} : null;
 }
 
+export async function getLabParentIdentityLinkByEmail(gmailEmail){
+  assertLabIsolation();
+  const parentEmail=normalizeVerifiedGmail(gmailEmail);if(!parentEmail)return null;
+  const rowKey="gmail_"+hash(parentEmail).slice(0,48),db=await identityClient();
+  const row=await entityOrNull(db,"IDENTITY",rowKey);
+  if(!row||row.status!=="ACTIVE"||normalizeVerifiedGmail(row.parentEmail)!==parentEmail)return null;
+  return {parentEmail,linkedAt:String(row.linkedAt||""),lineUserIdHash:String(row.lineUserIdHash||"")};
+}
+
 async function persistLabParentIdentityLink({lineUserId,gmailEmail,lineBindings=[],gmailBindings=[]}={}){
   const email=normalizeVerifiedGmail(gmailEmail),rows=await identityRows(lineUserId,email);
   const checked=validateLabParentIdentityPair({lineUserId,gmailEmail:email,lineLink:rows.lineLink,gmailLink:rows.gmailLink,lineBindings,gmailBindings});
