@@ -356,11 +356,28 @@ def prepare(output: Path) -> None:
     fee_page.write_text(fee_html,encoding="utf-8")
     messaging=lib/"lineMessaging.mjs"
     messaging_source=messaging.read_text(encoding="utf-8")
-    api_guard='async function lineApi(path,{method="POST",body}={}){'
-    if api_guard not in messaging_source:
+    token_source='function lineToken(){return String(process.env.LINE_CHANNEL_ACCESS_TOKEN||"").trim()}'
+    push_source='''export async function pushLineMessage(to,text){
+  const target=String(to||"").trim();
+  if(!target)throw new Error("LINE 通知群組尚未綁定");
+  return lineApi("/v2/bot/message/push",{body:{to:target,messages:[{type:"text",text:String(text||"").slice(0,5000)}]}});
+}'''
+    if token_source not in messaging_source or push_source not in messaging_source:
         raise RuntimeError("LINE Messaging API structure changed; review LAB isolation before deploying")
-    messaging.write_text(messaging_source.replace(api_guard,
-        api_guard+chr(10)+'  throw new Error("LAB LINE external messaging is disabled");'),encoding="utf-8")
+    # Keep every shared Messaging API call on the isolated LAB channel. Pushes
+    # additionally fail closed unless the destination is the explicit LAB user.
+    # This enables staff reminders without allowing arbitrary external sends.
+    messaging_source=messaging_source.replace(token_source,
+        'function lineToken(){return String(process.env.LAB_LINE_MESSAGING_ACCESS_TOKEN||"").trim()}',1)
+    messaging_source=messaging_source.replace(push_source,'''export async function pushLineMessage(to,text){
+  const target=String(to||"").trim();
+  const allowed=String(process.env.LAB_LINE_TEST_USER_ID||"").trim();
+  if(!/^U[0-9a-f]{32}$/i.test(target)||!/^U[0-9a-f]{32}$/i.test(allowed)||target.toLowerCase()!==allowed.toLowerCase()){
+    throw new Error("LAB LINE 通知對象不在白名單");
+  }
+  return lineApi("/v2/bot/message/push",{body:{to:target,messages:[{type:"text",text:String(text||"").slice(0,5000)}]}});
+}''',1)
+    messaging.write_text(messaging_source,encoding="utf-8")
     # Never deliver emails from tests, even if somebody accidentally configures ACS.
     email=lib/"email.js"
     text=email.read_text(encoding="utf-8")
