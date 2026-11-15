@@ -15,6 +15,8 @@ test("finance LINE reminders use finance assignment intersection and reported tr
   assert.match(source,/financeRecipients\(admins,assignments\)/);
   assert.match(source,/item\.stage==="reported"/);
   assert.match(source,/getLineAccountBinding\(schoolId,recipient,\{includeTarget:true\}\)/);
+  assert.match(source,/getLineAccountBindingsByUserId\(allowedLineUserId,\{includeTarget:true\}\)/);
+  assert.match(source,/reverseTargets\.get\(recipient\)/);
   assert.match(source,/parent-registration:/);
   assert.match(source,/finance-transfer:/);
 });
@@ -27,6 +29,7 @@ test("notification delivery is deduplicated and cannot block the primary workflo
   assert.match(module,/if\(error\.statusCode!==409\)throw error/);
   assert.match(module,/return \{status:"failed",sent:0,failed:1\}/);
   assert.match(registration,/await notifyPendingParentRegistration/);
+  assert.match(registration,/notificationStatus=String\(staffLineNotification/);
   assert.match(payments,/preview\?\{status:"preview",sent:0\}:await notifyFinanceTransferReports/);
 });
 
