@@ -27,7 +27,7 @@ function mount(){
     <p>${status?.configured?"✅ 家長與幹部選單已建立，選單 ID 已保存在 LAB。":"尚未建立兩組 Messaging API 個人選單。"}</p>
     ${status?.updatedAt?`<p class="muted">最後設定：${escape(new Date(status.updatedAt).toLocaleString("zh-TW"))}</p>`:""}
     ${message?`<div class="notice">${escape(message)}</div>`:""}
-    <button type="button" class="primary" id="labRichMenuSetup" ${busy||status?.configured?"disabled":""}>${busy?"處理中…":status?.configured?"已完成建立":"建立兩組 LAB 角色選單"}</button>
+    <button type="button" class="primary" id="labRichMenuSetup" ${busy?"disabled":""}>${busy?"處理中…":status?.configured?"更新兩組 LAB 角色選單":"建立兩組 LAB 角色選單"}</button>
     ${status?.configured?`<button type="button" class="secondary" id="labRichMenuSync" ${busy?"disabled":""}>重新同步我的 LINE 選單</button>`:""}`;
   panel.querySelector("#labRichMenuSetup")?.addEventListener("click",setup);
   panel.querySelector("#labRichMenuSync")?.addEventListener("click",sync);
@@ -43,11 +43,11 @@ async function sync(){
 
 async function load(){try{status=await request();message=""}catch(error){message=error.message}mount()}
 async function setup(){
-  if(busy||!confirm("將在目前 LINE 官方帳號建立兩組 LAB 個人選單，並只嘗試套用至 Roy 白名單帳號。確定繼續？"))return;
+  if(busy||!confirm(`${status?.configured?"更新":"建立"}目前 LINE 官方帳號的兩組 LAB 個人選單，並只套用至 Roy 白名單帳號。確定繼續？`))return;
   busy=true;message="";mount();
   try{
     const result=await request("POST");status=result;
-    message=result.assigned?`已建立並套用「${result.audience==="staff"?"幹部":"家長"}選單」至 Roy LAB 帳號。`:`兩組選單已建立；目前帳號尚未符合個人選單指派條件。`;
+    message=result.assigned?`已更新並套用「${result.audience==="staff"?"幹部":"家長"}選單」至 Roy LAB 帳號。`:`兩組選單已更新；目前帳號尚未符合個人選單指派條件。`;
   }catch(error){message=error.message}finally{busy=false;mount()}
 }
 
