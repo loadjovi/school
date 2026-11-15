@@ -185,8 +185,9 @@ document.addEventListener("click",async event=>{
       location.assign(url);
     }
     if(action==="sync-line-menu"){
-      const {audience,areaCount}=await api("line/school-account",{method:"POST",body:JSON.stringify({action:"sync-menu"})});
-      showStatus(audience==="parent"?"已同步家長選單。":audience==="staff"?`LINE 已確認套用幹部選單${areaCount===6?"（六宮格）":""}。`:audience==="default"?"目前使用通用選單。":"目前無法同步 LINE 選單。");
+      const {audience,areaCount,chatActionsVerified}=await api("line/school-account",{method:"POST",body:JSON.stringify({action:"sync-menu"})});
+      const staffMessage=chatActionsVerified?"LINE 已確認套用幹部六宮格。上排三格在聊天室回覆，下排三格開啟後台。":`LINE 已確認套用幹部選單${areaCount===6?"（六宮格）":""}。`;
+      showStatus(audience==="parent"?"已同步家長選單。":audience==="staff"?staffMessage:audience==="default"?"目前使用通用選單。":"目前無法同步 LINE 選單。");
     }
     if(action==="unbind-line"&&confirm("確定解除此校 LINE 綁定？")){
       await api("line/school-account",{method:"DELETE"});

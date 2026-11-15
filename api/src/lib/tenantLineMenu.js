@@ -37,6 +37,7 @@ export async function refreshTenantLineMenu(channel, account, userId = account?.
     return "unavailable";
   }
   let definition;
+  let chatActionsVerified = false;
   if (verify && menuId) {
     try {
       definition = await lineApi("/v2/bot/richmenu/" + menuId, {accessToken, method: "GET"});
@@ -44,8 +45,17 @@ export async function refreshTenantLineMenu(channel, account, userId = account?.
       if (error.status === 404) throw new LineMenuSyncError("此校官方帳號找不到已設定的選單，請核對選單 ID。");
       throw error;
     }
-    if (role === "staff" && schoolId === defaultTenantId() && process.env.LAB_ENVIRONMENT === "functional-uat" && definition.areas?.length !== 6) {
-      throw new LineMenuSyncError("目前設定的幹部選單不是聖心 LAB 六宮格，請核對幹部選單 ID。");
+    if (role === "staff" && schoolId === defaultTenantId() && process.env.LAB_ENVIRONMENT === "functional-uat") {
+      if (!Array.isArray(definition.areas) || definition.areas.length !== 6) {
+        throw new LineMenuSyncError("目前設定的幹部選單不是聖心 LAB 六宮格，請核對幹部選單 ID。");
+      }
+      const ordered = [...definition.areas].sort((a, b) => a.bounds?.y - b.bounds?.y || a.bounds?.x - b.bounds?.x);
+      const invalid = ["今日課程", "活動行事曆", "最新公告"].find((label, index) => {
+        const action = ordered[index].action;
+        return action?.type !== "message" || action.text !== "#幹部" + label;
+      });
+      if (invalid) throw new LineMenuSyncError(`幹部選單的「${invalid}」尚未設定為聊天室回覆，請更新幹部選單 ID。`);
+      chatActionsVerified = true;
     }
   }
   try {
@@ -57,7 +67,7 @@ export async function refreshTenantLineMenu(channel, account, userId = account?.
   if (!verify || !menuId) return menuId ? role : "default";
   try {
     const assigned = await lineApi(resource, {accessToken, method: "GET"});
-    if (assigned.richMenuId === menuId) return {audience: role, areaCount: definition.areas?.length || 0};
+    if (assigned.richMenuId === menuId) return {audience: role, areaCount: definition.areas?.length || 0, chatActionsVerified};
   } catch (error) {
     if (error.status !== 404) throw error;
   }

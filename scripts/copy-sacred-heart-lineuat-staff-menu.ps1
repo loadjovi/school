@@ -1,3 +1,5 @@
+param([string]$InspectMenuId)
+
 $ErrorActionPreference = 'Stop'
 
 $sourceId = 'richmenu-daa57224afb5a808e8d1ab909ba620a0'
@@ -17,9 +19,21 @@ function Read-LineJson($uri) {
     [Text.Encoding]::UTF8.GetString($response.RawContentStream.ToArray()) | ConvertFrom-Json
 }
 
+function Get-MenuActionKeys($areas) {
+    $areas | ForEach-Object {
+        "$($_.bounds.y)|$($_.bounds.x)|$($_.action.type)|$($_.action.text)|$($_.action.uri)"
+    } | Sort-Object
+}
+
 try {
     $bot = Read-LineJson "$apiRoot/info"
     if ($bot.basicId -ne '@154sfvwp') { throw 'This token belongs to a different official account. No changes were made.' }
+    if ($InspectMenuId) {
+        if ($InspectMenuId -notmatch '^richmenu-[0-9a-f]{32}$') { throw 'Invalid rich menu ID.' }
+        $menu = Read-LineJson "$apiRoot/richmenu/$InspectMenuId"
+        $menu.areas | Sort-Object { $_.bounds.y }, { $_.bounds.x } | ForEach-Object { $_.action } | Format-List label, type, text, uri
+        return
+    }
 
     $source = Read-LineJson "$apiRoot/richmenu/$sourceId"
     if ($source.areas.Count -ne 6) { throw 'The source menu does not have six buttons.' }
@@ -34,14 +48,15 @@ try {
         }
         @{bounds = $area.bounds; action = $action}
     })
-    $actionKeys = @($areas | ForEach-Object { "$($_.action.type)|$($_.action.text)|$($_.action.uri)" })
-    if (@($actionKeys | Sort-Object -Unique).Count -ne 6) { throw 'One or more staff menu destinations are missing.' }
+    $actionKeys = @(Get-MenuActionKeys $areas)
+    $destinations = @($areas | ForEach-Object { "$($_.action.type)|$($_.action.text)|$($_.action.uri)" } | Sort-Object -Unique)
+    if ($destinations.Count -ne 6) { throw 'One or more staff menu destinations are missing.' }
 
     $menuName = $source.name + ' (lineuat chat)'
     $existingMenus = (Read-LineJson "$apiRoot/richmenu/list").richmenus
     foreach ($menu in $existingMenus) {
         if ($menu.name -ne $menuName -or $menu.areas.Count -ne 6) { continue }
-        $existingKeys = @($menu.areas | ForEach-Object { "$($_.action.type)|$($_.action.text)|$($_.action.uri)" })
+        $existingKeys = @(Get-MenuActionKeys $menu.areas)
         if (Compare-Object $actionKeys $existingKeys -SyncWindow 0) { continue }
         try {
             $null = Invoke-WebRequest -UseBasicParsing -Uri "$dataRoot/richmenu/$($menu.richMenuId)/content" -Headers $headers
@@ -62,6 +77,10 @@ try {
     $new = Invoke-RestMethod -Method Post -Uri "$apiRoot/richmenu" -Headers $headers `
         -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($menuBody))
     try {
+        $saved = Read-LineJson "$apiRoot/richmenu/$($new.richMenuId)"
+        if ($saved.areas.Count -ne 6 -or (Compare-Object $actionKeys @(Get-MenuActionKeys $saved.areas) -SyncWindow 0)) {
+            throw 'LINE saved a different button layout. The incomplete menu copy will be removed.'
+        }
         $null = Invoke-RestMethod -Method Post -Uri "$dataRoot/richmenu/$($new.richMenuId)/content" `
             -Headers $headers -ContentType $mimeType -Body ($image.RawContentStream.ToArray())
     } catch {

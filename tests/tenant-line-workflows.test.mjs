@@ -215,7 +215,7 @@ test("LINE admin sync protects the existing menu and verifies LINE actually assi
   const parentMenuId = "richmenu-" + "1".repeat(32), staffMenuId = "richmenu-" + "2".repeat(32);
   const account = {lineUserId: userId, googleEmail: google.email};
   const channel = {schoolId: "sacred-heart", accessToken: "school-token", configured: true, parentMenuId, staffMenuId};
-  let schoolAdmin = true, areaCount = 4, linkedMenuId = parentMenuId;
+  let schoolAdmin = true, areaCount = 4, linkedMenuId = parentMenuId, chatActions = false;
   const {refreshTenantLineMenu} = load("api/src/lib/tenantLineMenu.js", {
     listTenantRolesByEmail: async () => schoolAdmin ? [{role:"schoolAdmin", schoolId:"sacred-heart"}] : [],
     getTeacherDirectory: async () => null, defaultTenantId: () => "sacred-heart",
@@ -223,7 +223,10 @@ test("LINE admin sync protects the existing menu and verifies LINE actually assi
     lineApi: async (path, options) => {
       calls.push({path, method:options.method});
       assert.equal(options.accessToken, "school-token");
-      if (path.startsWith("/v2/bot/richmenu/")) return {areas: Array(areaCount).fill({})};
+      if (path.startsWith("/v2/bot/richmenu/")) return {areas: Array.from({length:areaCount}, (_, index) => ({
+        bounds:{x:index%3,y:Math.floor(index/3)},
+        action:chatActions&&index<3?{type:"message",text:"#幹部"+["今日課程","活動行事曆","最新公告"][index]}:{type:"uri"}
+      })).reverse()};
       if (options.method === "GET") return {richMenuId:linkedMenuId};
       return {};
     }
@@ -235,11 +238,15 @@ test("LINE admin sync protects the existing menu and verifies LINE actually assi
   await assert.rejects(verify(), /六宮格/);
   assert.equal(calls.length, 1);
   areaCount = 6;
+  await assert.rejects(verify(), /今日課程.*聊天室回覆/);
+  assert.equal(calls.length, 2);
+  chatActions = true;
   await assert.rejects(verify(), /LINE 尚未確認/);
   linkedMenuId = staffMenuId;
   const result = await verify();
   assert.equal(result.audience, "staff");
   assert.equal(result.areaCount, 6);
+  assert.equal(result.chatActionsVerified, true);
   schoolAdmin = false;
   await assert.rejects(verify(), /未判定為此校管理員/);
 });
