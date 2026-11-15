@@ -295,6 +295,16 @@
   if(!accountHeading.hidden){const meta=accountTasks[accountTask],markup=`<span class="aw-account-kicker">帳號工作</span><h2>${meta.title}</h2><p>${meta.description}</p><div class="aw-account-steps">${meta.steps.map((step,index)=>`<span><b>${index+1}</b>${step}</span>`).join('')}</div>`;if(accountHeading.innerHTML!==markup)accountHeading.innerHTML=markup}
   const pendingCount=(state.registrations||[]).filter(x=>String(x.status||'pending')==='pending').length,activeStudentRows=(state.master||[]).filter(s=>s.status!=='inactive'),activeStudentIds=new Set(activeStudentRows.map(s=>String(s.studentId||s.studentNo||'')).filter(Boolean)),activeStudents=activeStudentRows.length,boundStudents=new Set((state.parentLinks||[]).map(x=>String(x.studentId||'')).filter(id=>activeStudentIds.has(id))).size,schoolEmails=state.schoolAccessAdmin?.emails;
   text('#awParentPendingCount',pendingCount?`待審 ${pendingCount} 筆`:'目前無待審');
+  const studentShortcut=root.querySelector('[data-workspace-action="students"] span:first-child');
+  if(studentShortcut&&state.studentLineLoaded&&state.me?.capabilities?.lineAccount){
+   const counts=window.studentLineCoverageCounts?.(activeStudentRows);
+   if(counts){
+    if(!studentShortcut.querySelector('[data-student-line-count]')){
+     const label=document.createElement('small');label.dataset.studentLineCount='';studentShortcut.append(label);
+    }
+    text('[data-student-line-count]',`LINE 綁定涵蓋 ${counts.bound}／${counts.active} 位學生｜${counts.unique} 位家長`);
+   }
+  }else studentShortcut?.querySelector('[data-student-line-count]')?.remove();
   text('#awFamilyBindingCount',`已綁定 ${boundStudents}／${activeStudents} 位`);
   text('#awTeacherAccountTaskCount',`啟用 ${active} 人`);
   text('#awSchoolAccountTaskCount',Array.isArray(schoolEmails)?`已設定 ${schoolEmails.length} 組`:'準備讀取');

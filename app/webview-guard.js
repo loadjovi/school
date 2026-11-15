@@ -54,7 +54,7 @@
       "/roster-support.js",
       "/student-number-support.js?v=20260918-1105",
       "/student-change-admin.js?v=20261102-student-workflow",
-      "/parent-link-admin.js?v=20261115-line-coverage",
+      "/parent-link-admin.js?v=20261115-line-coverage-summary",
       "/teacher-settings.js?v=20261002-teacher-types",
       "/teacher-admin.js?v=20261025-parent-review-student",
       "/batch-upgrade.js?v=20261102-student-workflow",
@@ -130,7 +130,7 @@
   async function loadRoleModules(){
     await waitForProfileReady();
     if(typeof state==="undefined"||!state.me)return;
-    const list=[...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261107-line-settings-group","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
+    const list=[...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261107-line-settings-group-services","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");
@@ -144,7 +144,7 @@
   }
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-services-20261115",()=>{
+    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-school-services-20261115",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);

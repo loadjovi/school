@@ -124,7 +124,7 @@ async function renderLineLogin(){
   }catch(error){console.warn("LINE school list unavailable")}
 }
 
-async function syncParentLineMenu(button){
+async function syncOwnLineMenu(button){
   const output=button.closest("section")?.querySelector("[data-line-menu-result]");
   if(!output||button.disabled)return;
   button.disabled=true;
@@ -134,7 +134,7 @@ async function syncParentLineMenu(button){
     const messages={
       parent:"已同步為家長選單，請重新開啟 LINE 聊天室查看。",
       staff:"此帳號有教職人員權限，已同步為幹部選單。請重新開啟 LINE 聊天室查看。",
-      default:"目前使用通用選單。若已完成綁定，請聯絡學校管理員確認家長選單設定。",
+      default:"目前使用通用選單。若已完成綁定，請確認此校的角色選單設定。",
       unavailable:"目前無法同步，請聯絡學校管理員確認 LINE 選單設定。"
     };
     output.textContent=result.configured===false?"此校的 LINE 服務尚未開啟。":messages[result.audience]||"目前無法同步，請稍後再試。";
@@ -149,6 +149,15 @@ function tenantServicesEntry(){
   const me=state.me, options=me?.capabilities||{};
   if(!["admin","parent","unassigned"].includes(me?.role)||!["home","admin","uniformEvents"].includes(state.page))return "";
   const billing=options.feeCollections&&me.role!=="unassigned";
+  if(me.role==="admin"){
+    if(state.page!=="admin"||state.teacherAdminOpen)return "";
+    const fees=billing?`<section class="card" data-admin-group="home" aria-labelledby="schoolFeeServicesTitle"><h2 id="schoolFeeServicesTitle">💰 收費專案與匯款核帳</h2><div class="notice">管理團 T 與期末聚餐收費；已獲指派的財務人員可核對匯款。</div><button type="button" class="primary" style="width:100%" onclick="location.href='/fee-collections.html'">前往收費專案／財務核帳 →</button></section>`:"";
+    if(!options.lineRoleMenus&&!options.lineAccount)return fees;
+    const menus=options.lineRoleMenus||{};
+    const status=options.lineAccount?`家長選單${menus.parent?"已設定":"待設定"}・幹部選單${menus.staff?"已設定":"待設定"}`:"此校的 LINE 帳號服務尚未啟用。";
+    const actions=options.lineAccount?`<button type="button" class="primary" style="width:100%" onclick="location.href='/fee-collections.html#lineBinding'">管理我的 LINE 帳號 →</button><button type="button" class="secondary" style="width:100%;margin-top:8px" onclick="syncOwnLineMenu(this)">重新同步我的 LINE 選單</button><div class="muted" role="status" data-line-menu-result></div>`:"";
+    return `${fees}<section class="card" data-admin-group="home" aria-labelledby="schoolLineServicesTitle"><h2 id="schoolLineServicesTitle">LINE 角色選單</h2><div class="notice">${status}</div>${actions}</section>`;
+  }
   if(!options.lineAccount&&!billing)return "";
   if(options.lineAccount&&["parent","unassigned"].includes(me.role)){
     const description=billing
@@ -156,12 +165,11 @@ function tenantServicesEntry(){
       :"綁定個人 LINE 後可接收課程與活動提醒。";
     const button=billing?"開啟 LINE 通知／費用資訊 →":"開啟 LINE 通知設定 →";
     const sync=me.role==="parent"
-      ?'<button type="button" class="secondary" style="width:100%;margin-top:8px" onclick="syncParentLineMenu(this)">重新同步我的 LINE 選單</button><div class="muted" role="status" data-line-menu-result></div>'
+      ?'<button type="button" class="secondary" style="width:100%;margin-top:8px" onclick="syncOwnLineMenu(this)">重新同步我的 LINE 選單</button><div class="muted" role="status" data-line-menu-result></div>'
       :"";
     return `<section class="card" aria-labelledby="parentLineServicesTitle"><h2 id="parentLineServicesTitle">🔔 LINE 通知與家長服務</h2><div class="notice">${description}</div><button type="button" class="primary" style="width:100%" onclick="location.href='/fee-collections.html'">${button}</button>${sync}</section>`;
   }
-  const label=options.lineAccount&&billing?"LINE 帳號與費用":options.lineAccount?"管理 LINE 帳號":"收費專案與匯款核帳";
-  return `<div class="card"><a href="/fee-collections.html">${label}</a></div>`;
+  return billing?'<div class="card"><a href="/fee-collections.html">查看費用資訊</a></div>':"";
 }
 async function renderLogin(error=""){document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>Google Gmail 登入版 v3<br>家長、老師與管理員共用入口</p>${error?`<div class="error">${esc(error)}</div>`:""}<div id="googleBtn" style="display:flex;justify-content:center;margin-top:18px"></div><div id="tenantLineSignIn"></div><div class="notice" style="margin-top:16px">第一次登入若尚未綁定學生，可直接填寫學生資料送交管理員確認。</div></div></div>`;renderLineLogin();if(window.__lineEmbedded){$("googleBtn").textContent="Google 登入請使用 Safari 或 Chrome";return}try{const cfg=await fetch("/api/config").then(r=>r.json());if(!cfg.googleClientId){$("googleBtn").innerHTML='<div class="error">尚未設定 GOOGLE_CLIENT_ID</div>';return}let n=0;const wait=setInterval(()=>{n++;if(window.google?.accounts?.id){clearInterval(wait);google.accounts.id.initialize({client_id:cfg.googleClientId,callback:async res=>{state.token=res.credential;sessionStorage.setItem("google_id_token",state.token);try{await loadProfile()}catch(e){renderLogin(e.message)}}});google.accounts.id.renderButton($("googleBtn"),{theme:"outline",size:"large",shape:"pill",text:"signin_with",locale:"zh_TW",width:Math.min(280,Math.max(200,document.getElementById("googleBtn").clientWidth||280))})}else if(n>50){clearInterval(wait);$("googleBtn").innerHTML='<div class="error">Google 登入元件載入失敗</div>'}},100)}catch(e){$("googleBtn").innerHTML=`<div class="error">${esc(e.message)}</div>`}}
 function roleText(){return({parent:"家長／學生",teacher:"老師",sectionTeacher:"分部老師",ensembleTeacher:"合奏老師",comprehensiveTeacher:"綜合課老師",privateTeacher:"個別課老師",admin:"學校管理員",school:"校方查詢",globalAdmin:"Global 管理員",tenantPending:"學校建置中",contextSelector:"選擇身分",contextDenied:"請重新選擇身分",unassigned:"尚未綁定"}[state.me?.role]||"使用者")}

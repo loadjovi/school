@@ -178,9 +178,9 @@ test("parent home keeps the service card and syncs with the active school accoun
   const state = {me: {role: "parent", capabilities: {lineAccount: true, feeCollections: true}}, page: "home"};
   const calls = [];
   const file = source("app/app-v3.js");
-  const {tenantServicesEntry, syncParentLineMenu} = runInNewContext(
-    file.slice(file.indexOf("async function syncParentLineMenu("), file.indexOf("async function renderLogin(")) +
-    ";({tenantServicesEntry,syncParentLineMenu})", {
+  const {tenantServicesEntry, syncOwnLineMenu} = runInNewContext(
+    file.slice(file.indexOf("async function syncOwnLineMenu("), file.indexOf("async function renderLogin(")) +
+    ";({tenantServicesEntry,syncOwnLineMenu})", {
       state, api: async (url, options) => {calls.push({url, options});return {audience: "parent"};}
     }
   );
@@ -189,7 +189,7 @@ test("parent home keeps the service card and syncs with the active school accoun
   assert.match(tenantServicesEntry(), /重新同步我的 LINE 選單/);
   const output = {};
   const button = {disabled: false, closest: () => ({querySelector: () => output})};
-  await syncParentLineMenu(button);
+  await syncOwnLineMenu(button);
   assert.equal(calls[0].url, "/api/line/school-account");
   assert.equal(JSON.parse(calls[0].options.body).action, "sync-menu");
   assert.match(output.textContent, /已同步為家長選單/);
@@ -198,6 +198,16 @@ test("parent home keeps the service card and syncs with the active school accoun
   assert.doesNotMatch(tenantServicesEntry(), /重新同步我的 LINE 選單/);
   state.me.role = "admin";
   assert.doesNotMatch(tenantServicesEntry(), /LINE 通知與家長服務/);
+  state.page = "admin";
+  state.me.capabilities.lineRoleMenus = {parent: true, staff: false};
+  assert.match(tenantServicesEntry(), /收費專案與匯款核帳/);
+  assert.match(tenantServicesEntry(), /LINE 角色選單/);
+  assert.match(tenantServicesEntry(), /家長選單已設定・幹部選單待設定/);
+  assert.match(tenantServicesEntry(), /重新同步我的 LINE 選單/);
+  state.me.capabilities.feeCollections = false;
+  assert.doesNotMatch(tenantServicesEntry(), /收費專案與匯款核帳/);
+  state.teacherAdminOpen = true;
+  assert.equal(tenantServicesEntry(), "");
 });
 
 test("fee notification retry keeps the initial target and provider retry key", async () => {

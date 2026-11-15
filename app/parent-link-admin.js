@@ -40,17 +40,21 @@
   window.studentLineStatusLabel=student=>lineLabels[window.studentLineStatus(student)];
   window.setStudentLineFilter=function(filter){if(Object.hasOwn(lineLabels,filter)){state.studentLineFilter=filter;render()}};
   window.reloadStudentLineCoverage=async function(){await loadParentLinks();render()};
-  window.studentLineCoverage=function(students,visible){
+  window.studentLineCoverageCounts=function(students){
     const active=students.filter(student=>student.status!=="inactive");
     const bound=active.filter(student=>(student.parents||[]).some(parent=>parent.lineBound===true));
     const confirmed=active.filter(student=>window.studentLineStatus(student)==="friend");
     const unique=new Set(bound.flatMap(student=>(student.parents||[]).filter(parent=>parent.lineBound===true).map(parent=>parent.parentEmail)));
+    return {active:active.length,bound:bound.length,confirmed:confirmed.length,unique:unique.size};
+  };
+  window.studentLineCoverage=function(students,visible){
+    const counts=window.studentLineCoverageCounts(students);
     const filters=Object.entries(lineLabels).map(([key,label])=>`<button type="button" aria-pressed="${(state.studentLineFilter||"all")===key}" onclick="setStudentLineFilter('${key}')">${label}</button>`).join("");
     return `<section class="student-line-coverage" aria-label="LINE 通知綁定">
       <div class="student-line-heading"><h3>LINE 通知綁定</h3><button type="button" class="secondary" onclick="reloadStudentLineCoverage()">重新讀取</button></div>
       ${state.studentLineLoaded?`<div class="student-line-counts">
-        <div><b>${active.length}</b><span>在團學生</span></div><div><b>${bound.length}</b><span>LINE 綁定涵蓋學生</span></div>
-        <div><b>${unique.size}</b><span>已綁定家長（去重）</span></div><div><b>${confirmed.length}</b><span>有家長曾確認為好友</span></div></div>`:'<p class="muted">LINE 綁定資料尚未載入，請重新讀取。</p>'}
+        <div><b>${counts.active}</b><span>在團學生</span></div><div><b>${counts.bound}</b><span>LINE 綁定涵蓋學生</span></div>
+        <div><b>${counts.unique}</b><span>已綁定家長（去重）</span></div><div><b>${counts.confirmed}</b><span>有家長曾確認為好友</span></div></div>`:'<p class="muted">LINE 綁定資料尚未載入，請重新讀取。</p>'}
       <p class="muted">統計限在團學生。同一家長有多名子女時只計一次。好友狀態以最後確認為準。</p>
       <div class="student-line-filters" role="group" aria-label="依 LINE 狀態篩選">${filters}</div>
       <small class="muted">符合目前條件 ${visible} 位學生</small></section>`;

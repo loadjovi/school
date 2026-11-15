@@ -82,7 +82,14 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
   const features = {};
   if(a.schoolId&&["parent","unassigned","admin"].includes(a.role)){
     features.feeCollections=tenantFeeEnabled(a.schoolId);
-    try{features.lineAccount=(await resolveTenantLineChannel(a.schoolId)).loginConfigured}
+    try{
+      const channel=await resolveTenantLineChannel(a.schoolId);
+      features.lineAccount=channel.loginConfigured;
+      if(a.role==="admin")features.lineRoleMenus={
+        parent:/^richmenu-[a-f0-9]{32}$/i.test(channel.parentMenuId),
+        staff:/^richmenu-[a-f0-9]{32}$/i.test(channel.staffMenuId)
+      };
+    }
     catch{console.warn("LINE configuration lookup deferred")}
   }
   let activeContextKey="";
