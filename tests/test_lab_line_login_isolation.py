@@ -97,6 +97,9 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         pending_ui=builder.split('function registrationForm(){const pending=',1)[1].split(';return `<div class="card"><h2>第一次登入',1)[0]
         self.assertNotIn('pending.studentName',pending_ui)
         self.assertNotIn('pending.studentNo',pending_ui)
+        self.assertIn('前次家長申請未通過',builder)
+        self.assertIn('原申請的學生資料已清除',builder)
+        self.assertIn('unassigned:"家長身分未核准"',builder)
         self.assertIn('authProvider:e.authProvider||"google"',builder)
         self.assertIn('學號需為 6 碼數字',registration)
 
@@ -125,7 +128,10 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('LINE／Gmail 雙向綁定已完成',builder)
         self.assertIn('api("line/account/status")',builder)
         self.assertIn('labGmailLinkButton',builder)
-        self.assertIn('雙重登入已完成',builder)
+        self.assertIn('Gmail 與 LINE 登入方式已連結',builder)
+        self.assertIn('不代表家長身分已通過',builder)
+        self.assertIn('Gmail 登入已連結',builder)
+        self.assertIn('LINE 登入已連結',builder)
         self.assertIn('Gmail 與 LINE 只負責識別同一個平台帳號',builder)
         self.assertIn('["admin","teacher","globalAdmin"].includes(state.me?.role)',builder)
         self.assertIn('Gmail 與 LINE 可作為同一個家長帳號的登入方式',builder)
@@ -138,6 +144,15 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('["parent","unassigned","admin","teacher","globalAdmin"].includes(state.me?.role)',builder)
         self.assertNotIn('route:"line/account/link-google"',(ROOT/"api/src/functions/lineWebhook.js").read_text())
         self.assertFalse((ROOT/"api/src/lib/labLineSession.mjs").exists())
+
+    def test_rejected_parent_application_is_scrubbed_without_unlinking_login_methods(self):
+        builder=(ROOT/"scripts/prepare-functional-lab.py").read_text()
+        rejection=builder.split('A rejected parent application must not retain',1)[1].split('return json({ok:true,status:"rejected"})',1)[0]
+        for field in ('studentName','studentNo','matchedStudentId','studentId','grade','groupName','instrument','schoolYear'):
+            self.assertIn(f'reg.{field}=""',rejection)
+        self.assertIn('reg.consent=false',rejection)
+        self.assertIn('assignLabRoleRichMenu({schoolId,email:reg.parentEmail,parentLinked:false})',rejection)
+        self.assertNotIn('moveLineAccountBinding',rejection)
 
     def test_identity_link_conflicts_fail_closed_and_secrets_stay_server_side(self):
         rules=(ROOT/"scripts/lab-line-auth-rules.mjs").read_text()
