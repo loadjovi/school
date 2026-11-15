@@ -7,6 +7,23 @@ function opts(list,val){return list.map(x=>`<option value="${esc(x)}" ${x===val?
 function toast(msg){const t=$("toast");if(!t)return;t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1800)}
 async function api(url,options={}){const h={"Content-Type":"application/json"};if(state.token)h["X-Google-ID-Token"]=state.token;const schoolContext=sessionStorage.getItem("school_context_id")||"",roleContext=sessionStorage.getItem("role_context")||"";if(schoolContext)h["X-School-Id"]=schoolContext;if(roleContext)h["X-Role-Context"]=roleContext;Object.assign(h,options.headers||{});const method=String(options.method||"GET").toUpperCase(),fetchOptions={...options,headers:h};if(method==="GET"&&String(url).startsWith("/api/")&&!fetchOptions.cache)fetchOptions.cache="no-store";const r=await fetch(url,fetchOptions);const d=await r.json().catch(()=>({}));if(r.status===401){logout(false);throw new Error("登入已失效，請重新使用 Google 登入")};if(!r.ok)throw new Error(d.error||d.message||`HTTP ${r.status}`);return d}
 function logout(reload=true){state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}
+async function restoreLineStaffSession(){
+  const entry=window.getLineStaffEntry?.();
+  if(!entry)return;
+  const response=await fetch("/api/me",{
+    credentials:"same-origin",cache:"no-store",
+    headers:{"X-School-Id":entry.schoolId,"X-Role-Context":"schoolAdmin"}
+  });
+  if(response.status===401||response.status===403)return;
+  if(!response.ok)throw new Error("暫時無法確認登入狀態，請重新整理後再試。");
+  const profile=await response.json();
+  if(profile.role!=="admin"||profile.schoolId!==entry.schoolId)return;
+  state.token="cookie-session";
+  sessionStorage.setItem("google_id_token",state.token);
+  sessionStorage.setItem("school_context_id",entry.schoolId);
+  sessionStorage.setItem("role_context","schoolAdmin");
+  return profile;
+}
 async function boot(){
   const query=new URLSearchParams(location.search);
   const lineError=query.get("line_error");
@@ -15,7 +32,12 @@ async function boot(){
     history.replaceState({}, "", location.pathname+(query.size?"?"+query:""));
     if(!state.token){renderLogin(lineError==="conflict"?"此校帳號已有綁定，請聯絡管理員確認。":"LINE 驗證未完成，請重新登入。");return}
   }
-  if(!state.token){renderLogin();return}try{await loadProfile()}catch(e){renderLogin(e.message)}}
+  try{
+    const profile=state.token?undefined:await restoreLineStaffSession();
+    if(!state.token){renderLogin();return}
+    await loadProfile(profile);
+  }catch(error){renderLogin(error.message)}
+}
 const schoolViewScript="/school-access.js?v=20261027-school-followup";
 let schoolViewLoading=null;
 async function loadSchoolViewModule(){
@@ -38,8 +60,8 @@ async function loadSchoolViewModule(){
   catch(e){state.schoolViewerLoadError=e.message||"校方功能載入失敗";render()}
 }
 window.retrySchoolView=()=>{state.schoolViewerLoadError="";render();return loadSchoolViewModule()};
-async function loadProfile(){
-  state.me=await api("/api/me");
+async function loadProfile(profile){
+  state.me=profile??await api("/api/me");
   window.resumeLineStaffEntry?.();
   const contexts=Array.isArray(state.me.contexts)?state.me.contexts:[];
   const chosen=sessionStorage.getItem("role_context")||"";

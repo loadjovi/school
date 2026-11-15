@@ -284,6 +284,56 @@ test("LINE staff links open the six workspaces only for the matching school admi
   }
 });
 
+test("a new LINE staff tab resumes a verified Google cookie only for the requested school", async () => {
+  const script = source("app/app-v3.js");
+  const bootScript = script.slice(script.indexOf("async function restoreLineStaffSession("), script.indexOf("const schoolViewScript="));
+  const entry = {target:"staff_attendance", schoolId:"school-a"};
+  const authorized = {role:"admin", schoolId:"school-a"};
+  const cases = [
+    {entry, profile:authorized, resumes:true},
+    {entry, status:401},
+    {entry, status:403},
+    {entry, profile:{role:"admin", schoolId:"school-b"}},
+    {entry, profile:{role:"parent", schoolId:"school-a"}},
+    {entry, profile:{role:"globalAdmin", schoolId:null}},
+    {entry:null, profile:authorized},
+    {entry, token:"already-in-tab", profile:authorized}
+  ];
+  for (const {entry: pending, profile, resumes, status = 200, token = ""} of cases) {
+    const storage = new Map(), requests = [], profiles = [], loginScreens = [];
+    const state = {token};
+    const boot = runInNewContext(bootScript + ";boot", {
+      state, URLSearchParams, location:{search:""}, window:{getLineStaffEntry:()=>pending},
+      sessionStorage:{setItem:(key,value)=>storage.set(key,value)},
+      fetch:async (url, options) => {
+        requests.push({url, options});
+        return {status, ok:status===200, json:async()=>profile};
+      },
+      loadProfile:async profile => profiles.push(profile),
+      renderLogin:message => loginScreens.push(message)
+    });
+    await boot();
+    assert.equal(requests.length, pending&&!token?1:0);
+    if (requests.length) {
+      assert.equal(requests[0].url,"/api/me");
+      assert.equal(requests[0].options.credentials,"same-origin");
+      assert.equal(requests[0].options.headers["X-School-Id"],"school-a");
+      assert.equal(requests[0].options.headers["X-Role-Context"],"schoolAdmin");
+    }
+    if (resumes) {
+      assert.deepEqual(profiles,[authorized]);
+      assert.equal(state.token,"cookie-session");
+      assert.equal(storage.get("google_id_token"),"cookie-session");
+      assert.equal(storage.get("school_context_id"),"school-a");
+      assert.equal(storage.get("role_context"),"schoolAdmin");
+    } else {
+      assert.equal(storage.size,0);
+      assert.deepEqual(profiles,token?[undefined]:[]);
+    }
+    assert.equal(loginScreens.length,resumes||token?0:1);
+  }
+});
+
 test("staff LINE queries require an active administrator of the selected school and never read private lessons", async () => {
   let roles = [], reads = [];
   const events = [

@@ -37,10 +37,16 @@
   }else if(requestedEntry.target){
     sessionStorage.removeItem(staffEntryKey);
   }
+  function getLineStaffEntry(){
+    try{
+      const entry=JSON.parse(sessionStorage.getItem(staffEntryKey)||"null");
+      return validStaffEntry(entry)?entry:null;
+    }catch{return null}
+  }
+  window.getLineStaffEntry=getLineStaffEntry;
   async function openStaffMenuEntry(){
-    let entry;
-    try{entry=JSON.parse(sessionStorage.getItem(staffEntryKey)||"null")}catch{return}
-    if(!validStaffEntry(entry))return;
+    const entry=getLineStaffEntry();
+    if(!entry)return;
     sessionStorage.removeItem(staffEntryKey);
     const url=new URL(location.href);
     if(url.searchParams.has("line_menu")){
@@ -192,7 +198,7 @@
   window.resumeLineStaffEntry=()=>{if(sessionStorage.getItem(staffEntryKey))loadRoleModules()};
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-action-check-20261116",()=>{
+    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
