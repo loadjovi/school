@@ -93,7 +93,10 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertNotIn('ensureLabLineParentBinding',registration)
         self.assertIn('LINE（${esc(state.me.displayName||"家長")}）',builder)
         self.assertIn('學生綁定申請已送出 ✅',builder)
-        self.assertIn('核准前不會開放學生資料',builder)
+        self.assertIn('待審核期間不顯示學生姓名與學號',builder)
+        pending_ui=builder.split('function registrationForm(){const pending=',1)[1].split(';return `<div class="card"><h2>第一次登入',1)[0]
+        self.assertNotIn('pending.studentName',pending_ui)
+        self.assertNotIn('pending.studentNo',pending_ui)
         self.assertIn('authProvider:e.authProvider||"google"',builder)
         self.assertIn('學號需為 6 碼數字',registration)
 
