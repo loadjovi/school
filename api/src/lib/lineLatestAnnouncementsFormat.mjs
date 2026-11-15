@@ -37,9 +37,9 @@ export function uniqueAnnouncementEvents(rows=[]){
   );
 }
 
-export function formatLineLatestAnnouncements({fromDate,groups=[],events=[]}={}){
+export function formatLineLatestAnnouncements({fromDate,groups=[],events=[],schoolWide=false}={}){
   const normalizedGroups=[...new Set(groups.map(clean).filter(Boolean))];
-  const groupLabel=normalizedGroups.length?normalizedGroups.map(group=>`${group.replace(/團$/u,"")}團`).join("、"):"相關團別";
+  const groupLabel=schoolWide?"幹部｜全校":normalizedGroups.length?normalizedGroups.map(group=>`${group.replace(/團$/u,"")}團`).join("、"):"相關團別";
   const rows=uniqueAnnouncementEvents(events).slice(0,5);
   if(!rows.length)return `📢 最新公告｜${groupLabel}\n\n目前沒有新的重要通知或課程異動。\n\n一般活動日期請點選「活動行事曆」。`;
   const body=rows.map(row=>{

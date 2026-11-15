@@ -277,6 +277,42 @@ test("LINE staff links open the six workspaces only for the matching school admi
   }
 });
 
+test("staff LINE queries require an active administrator of the selected school and never read private lessons", async () => {
+  let roles = [], reads = [];
+  const events = [
+    {title:"全校重要公告", eventDate:"2026-11-16", visibleToParents:true},
+    {title:"內部重要提醒", eventDate:"2026-11-16", visibleToParents:false},
+    {title:"比賽加練", eventType:"training", eventDate:"2026-11-16"}
+  ];
+  const {tenantLineStaffReplyKind,tenantLineStaffReply} = load("api/src/lib/tenantLineReplies.mjs", {
+    listTenantRolesByEmail: async (email,status) => {assert.equal(email,google.email);assert.equal(status,"active");return roles;},
+    resolveSchoolCourses: async school => {reads.push(school);return [];},
+    listCalendarEvents: async school => {reads.push(school);return events;},
+    isTrainingEventType: type => type === "training", isImportantAnnouncement: row => row.title.includes("重要"),
+    formatLineTodayCourses: args => args, formatLineActivityCalendar: args => args, formatLineLatestAnnouncements: args => args
+  }, ";({tenantLineStaffReplyKind,tenantLineStaffReply})");
+  const request = {googleEmail:google.email}, date = new Date("2026-11-16T03:00:00Z");
+  assert.equal(tenantLineStaffReplyKind("今日課程"), "");
+  assert.equal(tenantLineStaffReplyKind("#幹部今日課程"), "today");
+  assert.equal(tenantLineStaffReplyKind("#幹部活動行事曆"), "calendar");
+  assert.equal(tenantLineStaffReplyKind("#幹部最新公告"), "announcements");
+  for (roles of [[], [{schoolId:"school-a",role:"teacher"}], [{schoolId:"school-b",role:"schoolAdmin"}], [{schoolId:"*",role:"globalAdmin"}]]) {
+    assert.match(await tenantLineStaffReply("today","school-a",request,date), /限本校/);
+  }
+  assert.equal(reads.length,0);
+  roles = [{schoolId:"school-a",role:"schoolAdmin"}];
+  const today = await tenantLineStaffReply("today","school-a",request,date);
+  assert.equal(today.schoolWide,true);
+  assert.equal(today.students[0].training[0].title,"比賽加練");
+  assert.equal(today.students[0].privateLessons,undefined);
+  const calendar = await tenantLineStaffReply("calendar","school-a",request,date);
+  assert.equal(calendar.events.length,3);
+  const announcements = await tenantLineStaffReply("announcements","school-a",request,date);
+  assert.equal(announcements.events.length,1);
+  assert.equal(announcements.events[0].title,"全校重要公告");
+  assert.deepEqual(reads,["school-a","school-a","school-a","school-a"]);
+});
+
 test("fee notification retry keeps the initial target and provider retry key", async () => {
   const calls = [];
   let target = userId;

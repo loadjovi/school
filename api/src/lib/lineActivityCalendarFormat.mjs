@@ -23,15 +23,16 @@ export function uniqueActivityEvents(rows=[]){
   );
 }
 
-export function formatLineActivityCalendar({fromDate,toDate,groups=[],events=[]}={}){
+export function formatLineActivityCalendar({fromDate,toDate,groups=[],events=[],schoolWide=false}={}){
   const normalizedGroups=[...new Set(groups.map(clean).filter(Boolean))];
-  const groupLabel=normalizedGroups.length?normalizedGroups.map(group=>`${group.replace(/團$/u,"")}團`).join("、"):"相關團別";
+  const groupLabel=schoolWide?"幹部｜全校":normalizedGroups.length?normalizedGroups.map(group=>`${group.replace(/團$/u,"")}團`).join("、"):"相關團別";
   const rows=uniqueActivityEvents(events).slice(0,8);
-  if(!rows.length)return `📅 活動行事曆｜${groupLabel}\n\n未來 30 天沒有適用於學生團別的活動、加練、比賽或演出。\n\n查詢區間：${dateLabel(fromDate)}～${dateLabel(toDate)}`;
+  if(!rows.length)return `📅 活動行事曆｜${groupLabel}\n\n未來 30 天沒有${schoolWide?"安排":"適用於學生團別的"}活動、加練、比賽或演出。\n\n查詢區間：${dateLabel(fromDate)}～${dateLabel(toDate)}`;
   const body=rows.map(row=>{
     const date=clean(row.eventDate),end=clean(row.endDate),range=end&&end!==date?`${dateLabel(date)}～${dateLabel(end)}`:dateLabel(date);
     const location=clean(row.location);
-    return `• ${range}｜${timeLabel(row)}\n  ${clean(row.title)||"團隊活動"}${location?`\n  📍 ${location}`:""}`;
+    const group=schoolWide&&clean(row.targetGroups)?`｜${clean(row.targetGroups)==="ALL"?"全團":clean(row.targetGroups)}`:"";
+    return `• ${range}｜${timeLabel(row)}\n  ${clean(row.title)||"團隊活動"}${group}${location?`\n  📍 ${location}`:""}`;
   }).join("\n\n");
   return `📅 活動行事曆｜${groupLabel}\n${dateLabel(fromDate)}～${dateLabel(toDate)}\n\n${body}\n\n以上依日期排列，最多顯示 8 筆。`;
 }

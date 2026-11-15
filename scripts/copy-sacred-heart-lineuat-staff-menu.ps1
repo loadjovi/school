@@ -5,6 +5,8 @@ $targetOrigin = 'https://icy-ocean-0a2602100-lineuat.eastasia.6.azurestaticapps.
 $apiRoot = 'https://api.line.me/v2/bot'
 $dataRoot = 'https://api-data.line.me/v2/bot'
 $expectedTargets = @('staff_today_courses', 'staff_activity_calendar', 'staff_announcements', 'staff_attendance', 'staff_todos', 'staff_portal')
+$chatTargets = @('staff_today_courses', 'staff_activity_calendar', 'staff_announcements')
+$staffCommandPrefix = '#' + [char]0x5E79 + [char]0x90E8
 
 $secureToken = Read-Host 'LINE Messaging API Access Token for @154sfvwp' -AsSecureString
 if ($secureToken.Length -eq 0) { throw 'No token was entered.' }
@@ -25,20 +27,22 @@ try {
         $uri = [Uri]$area.action.uri
         $target = [regex]::Match($uri.Query, '(?:^\?|&)line_menu=([a-z_]+)(?:&|$)').Groups[1].Value
         if ($area.action.type -ne 'uri' -or $target -notin $expectedTargets) { throw 'An unexpected source button was found.' }
-        @{
-            bounds = $area.bounds
-            action = @{type = 'uri'; label = $area.action.label; uri = "$targetOrigin/?line_menu=$target&schoolId=sacred-heart&openExternalBrowser=1"}
+        $action = if ($target -in $chatTargets) {
+            @{type = 'message'; label = $area.action.label; text = $staffCommandPrefix + $area.action.label}
+        } else {
+            @{type = 'uri'; label = $area.action.label; uri = "$targetOrigin/?line_menu=$target&schoolId=sacred-heart&openExternalBrowser=1"}
         }
+        @{bounds = $area.bounds; action = $action}
     })
-    $urls = @($areas | ForEach-Object { $_.action.uri } | Sort-Object -Unique)
-    if ($urls.Count -ne 6) { throw 'One or more staff menu destinations are missing.' }
+    $actionKeys = @($areas | ForEach-Object { "$($_.action.type)|$($_.action.text)|$($_.action.uri)" })
+    if (@($actionKeys | Sort-Object -Unique).Count -ne 6) { throw 'One or more staff menu destinations are missing.' }
 
-    $menuName = $source.name + ' (lineuat)'
+    $menuName = $source.name + ' (lineuat chat)'
     $existingMenus = (Read-LineJson "$apiRoot/richmenu/list").richmenus
     foreach ($menu in $existingMenus) {
         if ($menu.name -ne $menuName -or $menu.areas.Count -ne 6) { continue }
-        $existingUrls = @($menu.areas | ForEach-Object { $_.action.uri } | Sort-Object -Unique)
-        if (Compare-Object $urls $existingUrls) { continue }
+        $existingKeys = @($menu.areas | ForEach-Object { "$($_.action.type)|$($_.action.text)|$($_.action.uri)" })
+        if (Compare-Object $actionKeys $existingKeys -SyncWindow 0) { continue }
         try {
             $null = Invoke-WebRequest -UseBasicParsing -Uri "$dataRoot/richmenu/$($menu.richMenuId)/content" -Headers $headers
             Write-Output $menu.richMenuId

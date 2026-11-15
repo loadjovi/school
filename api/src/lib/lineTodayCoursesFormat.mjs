@@ -22,22 +22,24 @@ function courseLine(icon,title,row,note=""){
   return `${icon} ${title}\n   ${timeRange(row)}${location?`｜${location}`:""}${state?`｜${state}`:""}`;
 }
 
-export function formatLineTodayCourses({date,students=[]}={}){
+export function formatLineTodayCourses({date,students=[],schoolWide=false}={}){
   const formatted=new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",month:"numeric",day:"numeric",weekday:"short"}).format(new Date(`${date}T12:00:00+08:00`));
   const sections=students.map(item=>{
     const student=item.student||{},rows=[];
     for(const row of item.schedules||[]){
       const cancelled=clean(row.effectiveStatus)==="cancelled";
       const note=cancelled?`停課${row.exception?.reason?`：${clean(row.exception.reason)}`:""}`:"";
-      rows.push(courseLine(row.courseType==="section"?"🎼":"🎻",clean(row.courseName)||"團體課",row,note));
+      const group=schoolWide&&clean(row.groupName)?`｜${clean(row.groupName)}`:"";
+      rows.push(courseLine(row.courseType==="section"?"🎼":"🎻",(clean(row.courseName)||"團體課")+group,row,note));
     }
     for(const row of item.training||[])rows.push(courseLine("🏆",clean(row.title)||"加練／訓練",row));
     for(const row of item.privateLessons||[]){
       const teacher=clean(row.teacherName)||clean(row.teacher),status=statusLabel(row.status);
       rows.push(courseLine("👤",`個別課${teacher?`｜${teacher}`:""}`,row,status));
     }
-    const title=`【${clean(student.name)||"學生"}｜${clean(student.groupName)||"未分團"}團】`;
+    const title=schoolWide?"【幹部｜全校課程】":`【${clean(student.name)||"學生"}｜${clean(student.groupName)||"未分團"}團】`;
     return `${title}\n${rows.length?rows.join("\n"):"✅ 今天沒有已安排的課程"}`;
   });
-  return `📅 今日課程｜${formatted}\n\n${sections.join("\n\n")}\n\n資料依平台目前課表、訓練行事曆與個課預約即時整理。`;
+  const source=schoolWide?"課表與訓練行事曆":"課表、訓練行事曆與個課預約";
+  return `📅 今日課程｜${formatted}\n\n${sections.join("\n\n")}\n\n資料依平台目前${source}即時整理。`;
 }

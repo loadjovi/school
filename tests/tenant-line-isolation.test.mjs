@@ -19,7 +19,7 @@ const botId = "U" + "a".repeat(32);
 const channelA = {schoolId: "school-a", channelSecret: "secret-a", accessToken: "token-a", configured: true, botUserId: botId, legacy: false};
 const channelB = {schoolId: "school-b", channelSecret: "secret-b", accessToken: "token-b", configured: true, botUserId: "U" + "b".repeat(32), legacy: false};
 
-function webhookFixture() {
+function webhookFixture(overrides = {}) {
   const handlers = {};
   const lookups = [], binds = [], replies = [];
   load("api/src/functions/lineWebhook.js", {
@@ -33,15 +33,16 @@ function webhookFixture() {
     },
     bindLineNotificationTarget: async target => { binds.push(target); return {}; },
     getLineGroupSummary: async () => ({groupName: "測試群組"}),
-    replyLineMessage: async (...args) => { replies.push(args); }
+    replyLineMessage: async (...args) => { replies.push(args); },
+    ...overrides
   });
   return {handlers, lookups, binds, replies};
 }
 
-function signedRequest(schoolId, signingChannel, destination = signingChannel.botUserId) {
+function signedRequest(schoolId, signingChannel, destination = signingChannel.botUserId, event) {
   const raw = Buffer.from(JSON.stringify({
     destination,
-    events: [{type: "message", message: {type: "text", text: "#綁定通知 123456"},
+    events: [event || {type: "message", message: {type: "text", text: "#綁定通知 123456"},
       replyToken: "reply-test", source: {type: "group", groupId: "group-a"}}]
   }));
   const signature = createHmac("sha256", signingChannel.channelSecret).update(raw).digest("base64");
@@ -63,6 +64,24 @@ test("valid webhook looks up and consumes a binding in the selected school and r
   assert.equal(binds[0].schoolId, "school-a");
   assert.equal(binds[0].botUserId, botId);
   assert.equal(replies[0][2].accessToken, "token-a");
+});
+
+test("staff commands never fetch school data from a group chat and use the verified webhook school in direct chat", async () => {
+  const reads=[];
+  const {handlers,replies}=webhookFixture({
+    resolveTenantLineChannel: async () => ({...channelA,loginConfigured:true}),
+    tenantLineStaffReplyKind: () => "today",
+    getTenantLineAccount: async (school,bot,user) => {reads.push([school,bot,user]);return {};},
+    tenantLineStaffReply: async (kind,school) => `${school}:${kind}`
+  });
+  const msg={type:"message",message:{type:"text",text:"#幹部今日課程"},replyToken:"reply-test"};
+  await handlers.tenantLineWebhook(signedRequest("school-a",channelA,botId,{...msg,source:{type:"group",groupId:"group-a"}}));
+  assert.equal(reads.length,0);
+  assert.match(replies[0][1], /一對一聊天室/);
+  await handlers.tenantLineWebhook(signedRequest("school-a",channelA,botId,{...msg,source:{type:"user",userId:"test-user"}}));
+  assert.deepEqual(reads,[["school-a",botId,"test-user"]]);
+  assert.equal(replies[1][1],"school-a:today");
+  assert.equal(replies[1][2].accessToken,"token-a");
 });
 
 test("group binding checks school partition, bot and conditional update for a one-use code", async () => {

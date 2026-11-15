@@ -4,7 +4,7 @@ import {getTenantContext,json} from "../lib/auth.js";
 import {defaultTenantId,tenantIdValue} from "../lib/storage.js";
 import {getTenantLineAccount,recordTenantLineFriendship} from "../lib/tenantLineAccounts.js";
 import {refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
-import {tenantLineParentReply,tenantLineReplyKind} from "../lib/tenantLineReplies.mjs";
+import {tenantLineParentReply,tenantLineReplyKind,tenantLineStaffReply,tenantLineStaffReplyKind} from "../lib/tenantLineReplies.mjs";
 import {resolveTenantLineChannel,lineTargetMatchesChannel,tenantWebhookLinks} from "../lib/lineTenantConfig.js";
 import {
   bindLineNotificationTarget,clearLineNotificationTarget,createLineBindingRequest,findLineBindingRequest,
@@ -50,6 +50,14 @@ async function handleLineWebhook(request,schoolId,legacyRoute){
           continue;
         }
         if(event?.type!=="message"||event?.message?.type!=="text")continue;
+        const staffKind=channel.loginConfigured && tenantLineStaffReplyKind(event.message.text);
+        if(staffKind){
+          if(userId){
+            const account=await getTenantLineAccount(schoolId,botUserId,userId);
+            await replyLineMessage(event.replyToken,await tenantLineStaffReply(staffKind,schoolId,account),options);
+          }else await replyLineMessage(event.replyToken,"請到此校 LINE 官方帳號的一對一聊天室查詢。",options);
+          continue;
+        }
         const replyKind=channel.loginConfigured && tenantLineReplyKind(event.message.text);
         if(replyKind){
           const account=userId?await getTenantLineAccount(schoolId,botUserId,userId):null;
