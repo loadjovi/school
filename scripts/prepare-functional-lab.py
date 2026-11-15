@@ -145,6 +145,13 @@ def prepare(output: Path) -> None:
         .replace('const url=String(process.env.LINE_OFFICIAL_ACCOUNT_URL||"").trim();',
                  'const url=""; // LAB: never link to the Production LINE account'),encoding="utf-8")
     webhook_source=line_webhook.read_text(encoding="utf-8")
+    binding_import='''  getLineAccountBinding,unbindLineAccount
+} from "../lib/lineAccountBinding.js";'''
+    binding_import_lab='''  getLineAccountBinding,getLineAccountBindingsByUserId,unbindLineAccount
+} from "../lib/lineAccountBinding.js";'''
+    if binding_import not in webhook_source:
+        raise RuntimeError("LINE account binding import changed; review LAB inbound identity verification")
+    webhook_source=webhook_source.replace(binding_import,binding_import_lab,1)
     webhook_marker='''    for(const event of events){
       try{
         if(event?.type!=="message"||event?.message?.type!=="text")continue;'''
@@ -153,7 +160,10 @@ def prepare(output: Path) -> None:
         if(event?.type!=="message"||event?.message?.type!=="text")continue;
         const labAllowed=String(process.env.LAB_LINE_TEST_USER_ID||"").trim();
         const sourceUserId=String(event.source?.userId||"").trim();
-        if(!/^U[0-9a-f]{32}$/i.test(labAllowed)||sourceUserId.toLowerCase()!==labAllowed.toLowerCase())continue;'''
+        const exactTester=/^U[0-9a-f]{32}$/i.test(labAllowed)&&sourceUserId.toLowerCase()===labAllowed.toLowerCase();
+        const verifiedBindings=/^U[0-9a-f]{32}$/i.test(sourceUserId)
+          ?await getLineAccountBindingsByUserId(sourceUserId,{includeTarget:false}):[];
+        if(!exactTester&&!verifiedBindings.length)continue;'''
     if webhook_marker not in webhook_source:
         raise RuntimeError("LINE webhook event loop changed; review LAB inbound allowlist")
     line_webhook.write_text(webhook_source.replace(webhook_marker,webhook_guard,1),encoding="utf-8")
