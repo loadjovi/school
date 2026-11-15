@@ -122,7 +122,14 @@ async function recordAssignment({schoolId,lineUserId,audience,richMenuId="",emai
 export async function assignLabRoleRichMenu({schoolId,email,lineUserId="",parentLinked=false}={}){
   assertLabIsolation();
   const binding=lineUserId?null:await getLineAccountBinding(schoolId,email,{includeTarget:true});
-  const target=String(lineUserId||binding?.lineUserId||"");
+  const normalizedEmail=String(email||"").trim().toLowerCase();
+  const allowedEmail=String(process.env.LAB_LINE_TEST_PARENT_EMAIL||"").trim().toLowerCase();
+  const identityLinkedTarget=normalizedEmail&&normalizedEmail===allowedEmail
+    ?String(process.env.LAB_LINE_TEST_USER_ID||"").trim():"";
+  // The LAB OAuth identity can already be linked to Gmail while the legacy
+  // notification-binding row is absent. The explicit single-user allowlist is
+  // the canonical fallback for role-menu assignment in that state.
+  const target=String(lineUserId||binding?.lineUserId||identityLinkedTarget||"");
   if(!allowlisted(target))return {assigned:false,reason:"not_allowlisted"};
   const audience=await resolveLabAccountMenu({schoolId,email,parentLinked});
   if(audience===LAB_RICH_MENU_AUDIENCES.UNBOUND)return unlinkLabRoleRichMenu({schoolId,email,lineUserId:target});
