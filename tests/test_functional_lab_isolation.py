@@ -34,9 +34,13 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         s=(self.lab/"api/src/lib/storage.js").read_text()
         self.assertIn('assertLabIsolation();return process.env.STORAGE_CONNECTION_STRING',s)
     def test_email_disabled_regardless_of_acs_secret(self):
-        s=(self.lab/"api/src/lib/email.js").read_text()
-        self.assertIn('connectionString:""',s)
-        self.assertNotIn('connectionString:clean(process.env.ACS_EMAIL_CONNECTION_STRING',s)
+        s=(self.lab/"api/src/lib/tenantEmailConfig.mjs").read_text()
+        self.assertIn("const buildSuppressesExternalEmail = true;",s)
+        self.assertNotIn("const buildSuppressesExternalEmail = false;",s)
+    def test_default_lab_does_not_enable_named_line_uat_fee_fixture(self):
+        self.assertFalse((self.lab/"api/src/functions/lineUatFeeFixture.js").exists())
+        self.assertIn("const buildEnablesDemoFees = false;",(self.lab/"api/src/lib/lineTenantConfig.js").read_text())
+        self.assertNotIn("data-line-uat-fees",(self.lab/"app/fee-collections.html").read_text())
     def test_all_html_pages_labeled_nonproduction(self):
         count=0
         for file in (self.lab/"app").rglob("*.html"):

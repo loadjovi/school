@@ -26,6 +26,10 @@ function harness({lab=false,withRecipient=true,notificationsEnabled=true}={}){
  const ctx={createHash,EmailClient:FakeEmail,TableClient:FakeTableClient,TableServiceClient:{fromConnectionString:()=>({createTable:async()=>{}})},
   tenantSchoolPartition:s=>s,defaultTenantId:()=>schoolId,getSystemSettings:async()=>({emailNotificationsEnabled:notificationsEnabled}),process:{env:{STORAGE_CONNECTION_STRING:"test-storage",ACS_EMAIL_CONNECTION_STRING:"test-email",ACS_EMAIL_SENDER:"robot@example.com",LAB_ENVIRONMENT:lab?"functional-uat":""}},
   console,Date,JSON,Set,Map,String,Number,Error,Promise,Array};
+ ctx.URL=URL;
+ ctx.getTenantDirectory=async sid=>({systemName:sid});
+ const config=readFileSync(new URL("../api/src/lib/tenantEmailConfig.mjs",import.meta.url),"utf8").replace(/^import .+;$/gm,"").replaceAll("export ","");
+ runInNewContext(config,ctx);
  const js=moduleSource.replace(/^import .+;$/gm,"").replace(/\bexport (async )?(function|const)\b/g,(_,asyncPart,kind)=>(asyncPart||"")+kind);
  const api=runInNewContext(js+";({dispatchSchoolAbsenceEmails,schoolAbsenceKey,schoolAbsenceMailContent,absenceNotificationCandidates,listSchoolAbsenceEmails})",ctx);
  return {api,data,sent,env:ctx.process.env};

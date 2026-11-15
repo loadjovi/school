@@ -165,6 +165,12 @@
   else if(state.page!=='admin'){await go('admin');state.adminWorkspaceSection=groups[group]?group:'home';render()}else render();
   requestAnimationFrame(()=>{organize();window.scrollTo(0,0)});
  };
+ window.openSchoolAdminActivitySettings=async function(){
+  if(state.me?.role!=='admin')return;
+  await window.openSchoolAdminWorkspace('uniformAdmin');
+  const frame=document.getElementById('awUniformFrame');
+  if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261102-activity-boundary&task=activity';
+ };
  const setGroup=(node,group)=>{if(node.dataset.adminGroup!==group)node.dataset.adminGroup=group};
  function classify(main){
   for(const [id,group] of Object.entries(rootGroups)){const node=document.getElementById(id);if(node&&main.contains(node))setGroup(node,group)}
@@ -295,6 +301,16 @@
   if(!accountHeading.hidden){const meta=accountTasks[accountTask],markup=`<span class="aw-account-kicker">帳號工作</span><h2>${meta.title}</h2><p>${meta.description}</p><div class="aw-account-steps">${meta.steps.map((step,index)=>`<span><b>${index+1}</b>${step}</span>`).join('')}</div>`;if(accountHeading.innerHTML!==markup)accountHeading.innerHTML=markup}
   const pendingCount=(state.registrations||[]).filter(x=>String(x.status||'pending')==='pending').length,activeStudentRows=(state.master||[]).filter(s=>s.status!=='inactive'),activeStudentIds=new Set(activeStudentRows.map(s=>String(s.studentId||s.studentNo||'')).filter(Boolean)),activeStudents=activeStudentRows.length,boundStudents=new Set((state.parentLinks||[]).map(x=>String(x.studentId||'')).filter(id=>activeStudentIds.has(id))).size,schoolEmails=state.schoolAccessAdmin?.emails;
   text('#awParentPendingCount',pendingCount?`待審 ${pendingCount} 筆`:'目前無待審');
+  const studentShortcut=root.querySelector('[data-workspace-action="students"] span:first-child');
+  if(studentShortcut&&state.studentLineLoaded&&state.me?.capabilities?.lineAccount){
+   const counts=window.studentLineCoverageCounts?.(activeStudentRows);
+   if(counts){
+    if(!studentShortcut.querySelector('[data-student-line-count]')){
+     const label=document.createElement('small');label.dataset.studentLineCount='';studentShortcut.append(label);
+    }
+    text('[data-student-line-count]',`LINE 綁定涵蓋 ${counts.bound}／${counts.active} 位學生｜${counts.unique} 位家長`);
+   }
+  }else studentShortcut?.querySelector('[data-student-line-count]')?.remove();
   text('#awFamilyBindingCount',`已綁定 ${boundStudents}／${activeStudents} 位`);
   text('#awTeacherAccountTaskCount',`啟用 ${active} 人`);
   text('#awSchoolAccountTaskCount',Array.isArray(schoolEmails)?`已設定 ${schoolEmails.length} 組`:'準備讀取');
@@ -351,10 +367,10 @@
   state.adminLearningWorkspaceTask=task;organize();
   requestAnimationFrame(()=>document.querySelector(task==='overview'?'.aw-learning-overview':'.aw-learning-practice')?.scrollIntoView({block:'start',behavior:'smooth'}));
  });
- document.addEventListener('click',async e=>{
-  const button=e.target.closest?.('[data-attendance-work]');if(!button)return;e.preventDefault();
-  const task=button.dataset.attendanceWork;
+ window.openSchoolAdminAttendanceTask=async function(task){
+  if(state.me?.role!=='admin')return;
   if(!['home','regular','followup'].includes(task))return;
+  if(!inScope()||state.adminWorkspaceSection!=='attendance')await window.openSchoolAdminWorkspace('attendance');
   state.adminAttendanceWorkspaceTask=task;organize();
   if(task==='regular')requestAnimationFrame(()=>document.getElementById('adminAttendanceAssist')?.scrollIntoView({block:'start',behavior:'smooth'}));
   if(task==='followup'){
@@ -362,6 +378,10 @@
    organize();requestAnimationFrame(()=>{const panel=[...document.querySelectorAll('#adminOperations .card')].find(card=>card.querySelector('h2')?.textContent.includes('當日未到／請假追蹤'));panel?.scrollIntoView({block:'start',behavior:'smooth'});});
   }
   if(task==='home')requestAnimationFrame(()=>document.querySelector('.aw-attendance-task-picker')?.scrollIntoView({block:'start',behavior:'smooth'}));
+ };
+ document.addEventListener('click',async e=>{
+  const button=e.target.closest?.('[data-attendance-work]');if(!button)return;e.preventDefault();
+  await window.openSchoolAdminAttendanceTask(button.dataset.attendanceWork);
  });
  document.addEventListener('click',async e=>{
   const button=e.target.closest?.('[data-course-work]');if(!button)return;e.preventDefault();
@@ -385,7 +405,7 @@
    if(button.dataset.workspaceGroup)return await window.openSchoolAdminWorkspace(button.dataset.workspaceGroup);
    const key=button.dataset.workspaceAction;
    if(groups[key])return await window.openSchoolAdminWorkspace(key);
-   if(key==='activitySettings'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&v=20261102-activity-boundary&task=activity';return}
+   if(key==='activitySettings')return await window.openSchoolAdminActivitySettings();
    if(key==='uniformAdmin'){await window.openSchoolAdminWorkspace('uniformAdmin');return}
    if(key==='parentCorrection'){state.adminAccountWorkspaceTask='families';if(typeof window.openParentBindingCorrection==='function')window.openParentBindingCorrection();else document.querySelector('#parentBindingStats button')?.click();organize();return}
    if(key==='attendanceTable')return await window.desktopNavigate('attendance');

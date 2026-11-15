@@ -80,8 +80,9 @@ test("private-lesson email returns after provider acceptance without polling for
   }
   const context={EmailClient:FakeEmailClient,process:{env:{ACS_EMAIL_CONNECTION_STRING:"test",ACS_EMAIL_SENDER:"robot@example.org"}},console,URL,JSON,Set,String,Number,Error,Promise,Array,Object};
   const source=emailSource.slice(emailSource.indexOf("function clean(")).replace(/\bexport\s+/g,"");
-  const api=runInNewContext(source+";({sendPrivateLessonWorkflowEmail})",context);
-  const result=await api.sendPrivateLessonWorkflowEmail({recipients:["parent@example.org"],eventType:"completed",schoolName:"測試平台",studentName:"測試學生",teacherName:"測試老師",lessonDate:"2026-11-12",startTime:"10:00",endTime:"10:50",appUrl:"https://example.test/"});
+  const config=readFileSync(new URL("../src/lib/tenantEmailConfig.mjs",import.meta.url),"utf8").replace(/^import .+;$/gm,"").replaceAll("export ","");
+  const api=runInNewContext(config+"\n"+source+";({sendPrivateLessonWorkflowEmail})",{...context,defaultTenantId:()=>"sacred-heart"});
+  const result=await api.sendPrivateLessonWorkflowEmail({schoolId:"sacred-heart",recipients:["parent@example.org"],eventType:"completed",schoolName:"測試平台",studentName:"測試學生",teacherName:"測試老師",lessonDate:"2026-11-12",startTime:"10:00",endTime:"10:50",appUrl:"https://example.test/"});
   assert.equal(queued.length,1);
   assert.equal(result.status,"accepted");
   assert.equal(result.acceptedCount,1);

@@ -60,6 +60,44 @@
     }catch(e){state.globalTenant.error=e.message||String(e)}
     state.globalTenant.loading=false;draw();
   }
+  function lineChannelPanel(sid){
+    const id=esc(sid);
+    return `<div class="global-inline-admin">
+      <h3>LINE 與 Email 通知</h3>
+      <button class="secondary" onclick="loadGlobalLineChannel('${id}')">查看通知設定</button>
+      <div id="globalLineChannel_${id}" aria-live="polite"></div>
+    </div>`;
+  }
+  window.loadGlobalLineChannel=async function(sid,status){
+    const panel=document.getElementById("globalLineChannel_"+sid);
+    if(!panel)return;
+    if(status==="disabled"&&!window.confirm("停用此校 LINE 官方帳號？群組通知會停止。"))return;
+    if(status==="active"&&panel.dataset.legacy==="true"&&!window.confirm("確定切換聖心至逐校設定？若改用不同官方帳號，需更新 Webhook 並重新綁定群組。"))return;
+    panel.textContent="載入中…";
+    try{
+      const endpoint="/api/line/tenant-config/"+encodeURIComponent(sid);
+      const channel=status?await api(endpoint,{method:"PATCH",body:JSON.stringify({status})}):await api(endpoint);
+      const prefix="LINE_"+sid.replaceAll("-","_").toUpperCase();
+      const label=channel.messagingConfigured?(channel.legacy?"使用原有聖心設定":"已啟用"):channel.status==="disabled"?"已停用":"待設定";
+      const emailLabel={legacy:"沿用聖心既有寄件設定",tenant:"已設定此校寄件服務",disabled:"已停用",lab_suppressed:"LAB 已停用對外寄信",unconfigured:"尚未設定"};
+      panel.dataset.legacy=String(channel.legacy);
+      const webhook=channel.webhookPath?new URL(channel.webhookPath,location.origin).href:channel.webhookUrl;
+      panel.innerHTML=`<div class="notice"><b>${esc(label)}</b><br>
+        Email ${esc(emailLabel[channel.email?.mode]||"尚未設定")}<br>
+        LINE Login ${channel.loginConfigured?"已設定":"尚未設定"}<br>
+        ${channel.loginCallback?`登入回呼 <code style="overflow-wrap:anywhere">${esc(channel.loginCallback)}</code><br>`:""}
+        Webhook URL <code style="overflow-wrap:anywhere">${esc(webhook)}</code><br>
+        在 Azure 設定 <code style="overflow-wrap:anywhere">${esc(prefix)}_CHANNEL_SECRET</code> 與
+        <code style="overflow-wrap:anywhere">${esc(prefix)}_CHANNEL_ACCESS_TOKEN</code> 後，可啟用或重新驗證。
+        <br>LINE Login 另需設定 <code>${esc(prefix)}_LOGIN_CHANNEL_ID</code>、<code>${esc(prefix)}_LOGIN_CHANNEL_SECRET</code>
+        與 <code>${esc(prefix)}_APP_ORIGIN</code>。
+      </div>
+      <button class="primary" onclick="loadGlobalLineChannel('${esc(sid)}','active')">驗證並啟用</button>
+      ${channel.status!=="disabled"?`<button class="secondary" onclick="loadGlobalLineChannel('${esc(sid)}','disabled')">停用</button>`:""}`;
+    }catch(e){
+      panel.textContent=e.message||"無法讀取 LINE 設定";
+    }
+  };
   function inlineAdminPanel(x){
     const sid=String(x.schoolId||"");
     if(String(state.globalTenant.selectedSchoolId||"")!==sid)return "";
@@ -87,7 +125,7 @@
     const lifecycleLocked=sid==="sacred-heart"||["onboarding","active"].includes(x.status);
     const statusOptions=sid==="sacred-heart"?'<option value="active">啟用（固定）</option>':lifecycleLocked?'<option value="'+esc(x.status)+'">'+esc(st[x.status]||x.status)+'（由 Phase 4 管理）</option>':['setup','inactive'].map(value=>'<option value="'+value+'" '+(value===x.status?'selected':'')+'>'+esc(st[value]||value)+'</option>').join("");
     const schoolForm='<div class="global-inline-admin"><h3>🏫 學校基本設定</h3><div class="notice"><b>schoolId：'+esc(sid)+'</b><br>schoolId 建立後不可修改；「隔離驗證中」與「正式啟用」只能由 Phase 4 安全流程切換。</div><label>學校名稱</label><input id="tenantName_'+esc(sid)+'" value="'+esc(x.schoolName||'')+'" maxlength="120"><div class="row2"><div><label>簡稱</label><input id="tenantShort_'+esc(sid)+'" value="'+esc(x.shortName||'')+'" maxlength="60"></div><div><label>系統名稱</label><input id="tenantSystem_'+esc(sid)+'" value="'+esc(x.systemName||'')+'" maxlength="160"></div></div><div class="row2"><div><label>縣市</label><select id="tenantCity_'+esc(sid)+'">'+cityOptions+'</select></div><div><label>學制</label><select id="tenantLevel_'+esc(sid)+'">'+levelOptions+'</select></div></div><div class="row2"><div><label>時區</label><select id="tenantTimezone_'+esc(sid)+'"><option value="Asia/Taipei" selected>Asia/Taipei</option></select></div><div><label>狀態</label><select id="tenantStatus_'+esc(sid)+'" '+(lifecycleLocked?'disabled':'')+'>'+statusOptions+'</select></div></div><button class="primary" onclick="saveSchoolTenant(\''+esc(sid)+'\')">💾 儲存學校設定</button></div>';
-    return schoolForm+'<div class="global-inline-admin"><h3>🔐 '+esc(x.schoolName)+'｜學校管理員與財務權限</h3><div class="notice">先指定 School Admin，再於對應人員旁指派財務核帳權限。只有具財務權限的人可設定收款帳戶及確認入帳，操作會留下稽核紀錄。</div>'+selfAction+list+revokedList+'<label>新增此校管理員 Google Email</label><input id="globalAdminEmail_'+esc(sid)+'" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 '+esc(x.schoolName)+' School Admin</button></div>'+teacherList;
+    return schoolForm+lineChannelPanel(sid)+'<div class="global-inline-admin"><h3>🔐 '+esc(x.schoolName)+'｜學校管理員與財務權限</h3><div class="notice">先指定 School Admin，再於對應人員旁指派財務核帳權限。只有具財務權限的人可設定收款帳戶及確認入帳，操作會留下稽核紀錄。</div>'+selfAction+list+revokedList+'<label>新增此校管理員 Google Email</label><input id="globalAdminEmail_'+esc(sid)+'" type="email" placeholder="admin@example.com"><button class="primary" onclick="grantSchoolAdmin(\''+esc(sid)+'\')">＋ 指定 '+esc(x.schoolName)+' School Admin</button></div>'+teacherList;
   }
   function schoolCard(x){
     const mode=x.dataMode==="tenant-scoped-operational"?"學生、家長、老師、出勤、練習與個別課資料均已 Tenant 化。":x.dataMode==="tenant-onboarding-testing"?"正在隔離驗證；測試帳號只能操作此校 Tenant，尚未正式啟用。":"Tenant 結構已備妥，但維持建置狀態且尚未加入正式營運資料。";

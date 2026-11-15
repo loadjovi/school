@@ -9,10 +9,71 @@
   const embedded=isLine||isSocial||isIOSWebView||isAndroidWebView;
   const current=new URL(location.href);
   if(current.searchParams.get("google_redirect")==="1"){sessionStorage.setItem("google_id_token","cookie-session");current.searchParams.delete("google_redirect");history.replaceState({},"",current.pathname+(current.search?current.search:"")+current.hash)}
+  const lineSchool=current.searchParams.get("line_session");
+  if(lineSchool&&/^[a-z0-9-]{2,60}$/.test(lineSchool)){
+    sessionStorage.setItem("google_id_token","line-session");
+    sessionStorage.setItem("school_context_id",lineSchool);
+    sessionStorage.setItem("role_context","parent");
+    current.searchParams.delete("line_session");
+    history.replaceState({},"",current.pathname+(current.search?current.search:"")+current.hash);
+  }
+  const staffMenuRoutes={
+    staff_today_courses:["attendance","followup"],
+    staff_activity_calendar:["courses"],
+    staff_announcements:["uniformAdmin","activity"] ,
+    staff_attendance:["attendance","regular"],
+    staff_todos:["tasks"],
+    staff_portal:["home"]
+  };
+  const staffEntryKey="line_staff_entry";
+  function validStaffEntry(entry){
+    return entry&&Object.hasOwn(staffMenuRoutes,entry.target)&&/^[a-z0-9-]{2,60}$/.test(entry.schoolId||"");
+  }
+  const requestedEntry={target:current.searchParams.get("line_menu"),schoolId:current.searchParams.get("schoolId")};
+  if(validStaffEntry(requestedEntry)){
+    sessionStorage.setItem(staffEntryKey,JSON.stringify(requestedEntry));
+    sessionStorage.setItem("school_context_id",requestedEntry.schoolId);
+    sessionStorage.setItem("role_context","schoolAdmin");
+  }else if(requestedEntry.target){
+    sessionStorage.removeItem(staffEntryKey);
+  }
+  function getLineStaffEntry(){
+    try{
+      const entry=JSON.parse(sessionStorage.getItem(staffEntryKey)||"null");
+      return validStaffEntry(entry)?entry:null;
+    }catch{return null}
+  }
+  window.getLineStaffEntry=getLineStaffEntry;
+  async function openStaffMenuEntry(){
+    const entry=getLineStaffEntry();
+    if(!entry)return;
+    sessionStorage.removeItem(staffEntryKey);
+    const url=new URL(location.href);
+    if(url.searchParams.has("line_menu")){
+      for(const name of ["line_menu","schoolId","openExternalBrowser"])url.searchParams.delete(name);
+      history.replaceState(history.state,"",url.pathname+url.search+url.hash);
+    }
+    if(state.me?.role!=="admin"||state.me.schoolId!==entry.schoolId){
+      toast("請用該校已獲指派的管理員 Gmail 登入，再點選 LINE 幹部選單。");
+      return;
+    }
+    try{
+      const [group,task]=staffMenuRoutes[entry.target];
+      if(task==="regular"||task==="followup")await window.openSchoolAdminAttendanceTask(task);
+      else if(task==="activity")await window.openSchoolAdminActivitySettings();
+      else await window.openSchoolAdminWorkspace(group);
+    }catch(error){toast("無法開啟 LINE 選單入口："+(error.message||"請稍後重試"))}
+  }
+  window.__lineEmbedded=isLine;
   function cleanUrl(){const u=new URL(location.href);u.searchParams.delete("openExternalBrowser");u.searchParams.delete("openInAppBrowser");u.searchParams.delete("google_redirect");return u.toString()}
   function lineExternalUrl(){const u=new URL(cleanUrl());u.searchParams.set("openExternalBrowser","1");return u.toString()}
   window.copyOrchestraUrl=async()=>{const url=cleanUrl();try{await navigator.clipboard.writeText(url);alert("網址已複製，請貼到 Safari 或 Chrome 開啟。")}catch{const t=document.createElement("textarea");t.value=url;document.body.appendChild(t);t.select();document.execCommand("copy");t.remove();alert("網址已複製，請貼到 Safari 或 Chrome 開啟。")}};
-  if(embedded){const platform=isIOS?"Safari":isAndroid?"Chrome":"外部瀏覽器";const action=isLine?`<a class="primary" style="display:block;text-align:center;text-decoration:none" href="${lineExternalUrl()}">用 ${platform} 開啟</a>`:`<button class="primary" onclick="copyOrchestraUrl()">複製網址，用 ${platform} 開啟</button>`;document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>Google Gmail 登入</p><div class="error" style="margin-top:16px"><b>目前是在 App 內建瀏覽器中開啟</b><br><br>Google 為保護帳號，不支援 Android／iOS WebView 登入，因此可能只看到白畫面。</div><div class="notice" style="margin-top:12px">請改用 <b>${platform}</b> 開啟本系統，再按「使用 Google 帳戶登入」。${isLine?"<br><br>下方按鈕會要求 LINE 改用外部瀏覽器開啟。":""}</div>${action}<button class="secondary" style="width:100%;margin-top:10px" onclick="copyOrchestraUrl()">複製網站網址</button></div></div>`;return}
+  if(isLine&&validStaffEntry(requestedEntry)){
+    window.lineStaffExternalUrl=lineExternalUrl;
+    document.getElementById("app").innerHTML='<div class="login-wrap"><div class="login-card"><h1>學校後台</h1><p>請使用 Safari 或 Chrome 開啟，再以獲指派的 Gmail 登入。</p><button class="primary" onclick="location.href=lineStaffExternalUrl()">用瀏覽器開啟</button><button class="secondary" onclick="copyOrchestraUrl()">複製連結</button></div></div>';
+    return;
+  }
+  if(embedded&&!isLine){const platform=isIOS?"Safari":isAndroid?"Chrome":"外部瀏覽器";const action=isLine?`<a class="primary" style="display:block;text-align:center;text-decoration:none" href="${lineExternalUrl()}">用 ${platform} 開啟</a>`:`<button class="primary" onclick="copyOrchestraUrl()">複製網址，用 ${platform} 開啟</button>`;document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>Google Gmail 登入</p><div class="error" style="margin-top:16px"><b>目前是在 App 內建瀏覽器中開啟</b><br><br>Google 為保護帳號，不支援 Android／iOS WebView 登入，因此可能只看到白畫面。</div><div class="notice" style="margin-top:12px">請改用 <b>${platform}</b> 開啟本系統，再按「使用 Google 帳戶登入」。${isLine?"<br><br>下方按鈕會要求 LINE 改用外部瀏覽器開啟。":""}</div>${action}<button class="secondary" style="width:100%;margin-top:10px" onclick="copyOrchestraUrl()">複製網站網址</button></div></div>`;return}
   function appendScript(src,onload,onerror){
     const existing=[...document.scripts].find(s=>s.getAttribute("src")===src);
     if(existing){if(onload)setTimeout(onload,0);return existing}
@@ -45,7 +106,7 @@
       "/roster-support.js",
       "/student-number-support.js?v=20260918-1105",
       "/student-change-admin.js?v=20261102-student-workflow",
-      "/parent-link-admin.js?v=20260921-0135",
+      "/parent-link-admin.js?v=20261115-line-coverage-summary",
       "/teacher-settings.js?v=20261002-teacher-types",
       "/teacher-admin.js?v=20261025-parent-review-student",
       "/batch-upgrade.js?v=20261102-student-workflow",
@@ -53,13 +114,13 @@
       "/attendance-support.js?v=20260928-2148",
       "/attendance-edit.js?v=20261002-save-confirm",
       "/practice-progress.js?v=20261104-practice-filter-anchor",
-      "/admin-operations.js?v=20261107-line-absence-group",
+      "/admin-operations.js?v=20261107-line-absence-group-webhook-path",
       "/admin-followup-summary-fix.js?v=20260917-1320",
       "/system-backup.js?v=20261003-practice20",
       "/school-access.js?v=20261027-school-followup",
       "/school-access-audit-admin.js?v=20261017-simple-records",
       "/school-admin-activity.js?v=20261025-restore",
-      "/school-access-refresh-fix.js?v=20261015-finance-role",
+      "/school-access-refresh-fix.js?v=20261015-finance-role-tenant-line-20261115",
       "/training-attendance.js?v=20261102-activity-boundary"
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
@@ -78,7 +139,7 @@
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20261027-school-followup",
-      "/school-access-refresh-fix.js?v=20261015-finance-role"
+      "/school-access-refresh-fix.js?v=20261015-finance-role-tenant-line-20261115"
     ];
     if(role==="school")return ["/school-access.js?v=20261027-school-followup"];
     if(role==="parent")return [
@@ -94,7 +155,7 @@
     if(role==="globalAdmin")return [
       "/school-access.js?v=20261027-school-followup",
       "/school-access-audit-admin.js?v=20261017-simple-records",
-      "/school-access-refresh-fix.js?v=20261015-finance-role"
+      "/school-access-refresh-fix.js?v=20261015-finance-role-tenant-line-20261115"
     ];
     return [];
   }
@@ -120,8 +181,8 @@
   }
   async function loadRoleModules(){
     await waitForProfileReady();
-    if(typeof state==="undefined"||!state.me)return;
-    const list=[...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261107-line-settings-group","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
+    if(typeof state==="undefined"||!state.me||window.__roleModuleBootstrap||window.__roleModulesReady)return;
+    const list=[...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261116-line-staff-entry","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");
@@ -132,16 +193,18 @@
     window.__roleLoaderActive=false;
     document.documentElement.classList.remove("role-modules-loading");
     try{render()}catch(e){}
+    await openStaffMenuEntry();
   }
+  window.resumeLineStaffEntry=()=>{if(sessionStorage.getItem(staffEntryKey))loadRoleModules()};
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261102-student-workflow",()=>{
+    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
     });
   }
   function installIOSRedirectMode(){let tries=0;const timer=setInterval(()=>{tries++;if(window.google?.accounts?.id?.initialize){clearInterval(timer);const nativeInitialize=window.google.accounts.id.initialize.bind(window.google.accounts.id);window.google.accounts.id.initialize=(config={})=>{const {callback,...rest}=config;return nativeInitialize({...rest,ux_mode:"redirect",login_uri:`${location.origin}/api/google-login`})};loadApp()}else if(tries>120){clearInterval(timer);loadApp()}},50)}
-  document.addEventListener("click",async e=>{const btn=e.target.closest?.(".logout");if(!btn)return;e.preventDefault();e.stopImmediatePropagation();try{await fetch("/api/google-logout",{method:"POST"})}catch{}sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");location.href="/"},true);
-  if(isIOS)installIOSRedirectMode();else loadApp();
+  document.addEventListener("click",async e=>{const btn=e.target.closest?.(".logout");if(!btn)return;e.preventDefault();e.stopImmediatePropagation();await Promise.allSettled([fetch("/api/google-logout",{method:"POST"}),fetch("/api/line/session/logout",{method:"POST"})]);sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");location.href="/"},true);
+  if(isIOS&&!isLine)installIOSRedirectMode();else loadApp();
 })();

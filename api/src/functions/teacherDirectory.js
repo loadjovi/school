@@ -105,7 +105,7 @@ app.http("teacherDirectory",{
       try{
         const tenant=await getTenantDirectory(schoolId);
         const schoolName=clean(tenant?.systemName||tenant?.schoolName||access.schoolName||"弦樂團管理系統",120);
-        emailNotification=await sendTeacherAccessEnabledEmail({
+        emailNotification=await sendTeacherAccessEnabledEmail({schoolId,
           recipient:email,
           teacherName,
           schoolName,

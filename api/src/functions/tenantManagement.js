@@ -1,3 +1,4 @@
+import {emailConfigured} from "../lib/tenantEmailConfig.mjs";
 import { app } from "@azure/functions";
 import { getAccess, getStudentAliasInfo, json } from "../lib/auth.js";
 import {
@@ -467,11 +468,11 @@ app.http("globalHealth",{
   handler:async request=>{
     const g=await requireGlobal(request);if(g.error)return g.error;
     const checks=[healthCheck("global-auth","Global 權限驗證","healthy","已驗證 Global Admin 身分")];
-    const environment={storage:Boolean(process.env.STORAGE_CONNECTION_STRING),googleLogin:Boolean(process.env.GOOGLE_CLIENT_ID),bootstrapAdmin:Boolean(String(process.env.ADMIN_EMAILS||"").trim()),emailService:Boolean(process.env.ACS_EMAIL_CONNECTION_STRING&&process.env.ACS_EMAIL_SENDER)};
+    const environment={storage:Boolean(process.env.STORAGE_CONNECTION_STRING),googleLogin:Boolean(process.env.GOOGLE_CLIENT_ID),bootstrapAdmin:Boolean(String(process.env.ADMIN_EMAILS||"").trim()),emailService:false};
     checks.push(healthCheck("storage-config","Azure Storage 設定",environment.storage?"healthy":"critical",environment.storage?"已設定":"缺少必要設定"));
     checks.push(healthCheck("google-login","Google 登入設定",environment.googleLogin?"healthy":"critical",environment.googleLogin?"已設定":"缺少必要設定"));
     checks.push(healthCheck("bootstrap-admin","Global 啟動管理員",environment.bootstrapAdmin?"healthy":"warning",environment.bootstrapAdmin?"已設定":"未設定備援啟動管理員"));
-    checks.push(healthCheck("email-service","通知郵件服務",environment.emailService?"healthy":"warning",environment.emailService?"已設定":"郵件通知尚未完整設定"));
+
     let tablesReady=true;
     try{await ensureTenantTables()}catch(error){tablesReady=false;checks.push(healthCheck("tenant-tables","Tenant 資料表","critical","無法連線或建立必要資料表"))}
     if(tablesReady)checks.push(healthCheck("tenant-tables","Tenant 資料表","healthy","必要資料表可存取"));
@@ -483,6 +484,11 @@ app.http("globalHealth",{
       try{const marker=await table("tenantMigration").getEntity(defaultTenantId(),"phase2-tenant-scope-v1");migrationStatus=String(marker.status||"not_started")}catch(error){if(error.statusCode===404)migrationStatus="not_started";else migrationStatus="error"}
       checks.push(healthCheck("phase2-migration","Phase 2 Tenant 遷移",migrationStatus==="verified"?"healthy":"critical",migrationStatus==="verified"?"完整性已驗證":`目前狀態：${migrationStatus}`));
       const operational=tenants.filter(x=>["active","onboarding","setup"].includes(String(x.status||"setup")));
+      const active=operational.filter(x=>x.status==="active");
+      const configuredMail=active.filter(x=>emailConfigured(x.schoolId||x.rowKey)).length;
+      environment.emailService=configuredMail>0;
+      const mailReady=active.length>0&&configuredMail===active.length;
+      checks.push(healthCheck("email-service","各校通知郵件服務",mailReady?"healthy":"warning",`已設定 ${configuredMail} / ${active.length} 所啟用學校`));
       const coverage=await Promise.all(operational.map(async tenant=>({schoolId:String(tenant.rowKey),count:(await listTenantAdmins(String(tenant.rowKey),"active")).length})));
       adminCoverage={required:coverage.length,covered:coverage.filter(x=>x.count>0).length,missing:coverage.filter(x=>x.count===0).length};
       checks.push(healthCheck("school-admin-coverage","School Admin 覆蓋",adminCoverage.missing===0?"healthy":"warning",adminCoverage.missing===0?`${adminCoverage.covered} 所學校皆已指派`:`${adminCoverage.missing} 所學校尚未指派`));

@@ -1,3 +1,6 @@
+import {getTenantLineRecipient} from "../lib/tenantLineAccounts.js";
+import {resolveTenantLineChannel} from "../lib/lineTenantConfig.js";
+import {refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
 import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
 import { ensureTenantTables, table, rowKey, getRegistrationsByEmail, listRegistrations, getStudentMaster, listStudentMaster, tenantParentPartition, tenantSchoolPartition, tenantStudentPartition } from "../lib/storage.js";
@@ -145,7 +148,12 @@ app.http("studentRegistration",{
 
     let notification;
     try{
-      notification=await sendParentApprovalEmail({
+      const channel=await resolveTenantLineChannel(schoolId);
+      const lineAccount=channel.loginConfigured&&await getTenantLineRecipient(schoolId,reg.parentEmail,channel.botUserId);
+      if(lineAccount)await refreshTenantLineMenu(channel,lineAccount);
+    }catch{console.warn("Approved parent LINE menu sync deferred",{schoolId})}
+    try{
+      notification=await sendParentApprovalEmail({schoolId,schoolName:context.tenant?.systemName||context.tenant?.schoolName,
         recipient:reg.parentEmail,parentName:reg.parentName,studentName,grade,groupName,instrument
       });
     }catch(e){

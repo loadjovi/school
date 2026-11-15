@@ -3,6 +3,9 @@ import { createHash } from "node:crypto";
 import { getMappedStudentsByEmail, listStudentMaster, getTeacherProfile, getTeacherDirectory, activeTeacherSupport, listUserStudentMappings, ensureDefaultTenant, ensureBootstrapGlobalAdmin, listTenantRolesByEmail, getTenantDirectory, defaultTenantId, tenantIdValue } from "./storage.js";
 import { teacherCourseAccess } from "./teacherAccountType.js";
 import {financeAssigned} from "./financeAccess.js";
+import {getTenantGoogleLink, tenantLineSession} from "./tenantLineAccounts.js";
+import {resolveTenantLineChannel} from "./lineTenantConfig.js";
+import {tenantLineParentStudents} from "./tenantLineMenu.js";
 
 const googleClient = new OAuth2Client();
 const aliasCaches=new Map();
@@ -29,7 +32,7 @@ function googleToken(request){
   const session=cookieValue(request,"orchestra_google_id_token");
   if(session)return session;
   const custom=String(request.headers.get("x-google-id-token")||"").trim();
-  if(custom&&custom!=="cookie-session")return custom;
+  if(custom&&custom!=="cookie-session"&&custom!=="line-session")return custom;
   const auth=String(request.headers.get("authorization")||"");
   if(!auth.toLowerCase().startsWith("bearer "))return "";
   return auth.slice(7).trim();
@@ -240,9 +243,30 @@ export async function getStudentIdAliases(studentId,schoolId=defaultTenantId()){
   return (await getStudentAliasInfo(studentId,schoolId)).aliases;
 }
 
+async function lineParentAccess(request) {
+  const session = await tenantLineSession(request);
+  if (!session) return {authenticated: false};
+  const {schoolId, account} = session;
+  const requestedSchool = request.headers.get("x-school-id");
+  const requestedRole = request.headers.get("x-role-context");
+  if ((requestedSchool && requestedSchool !== schoolId) || (requestedRole && requestedRole !== "parent")) {
+    return {authenticated: true, authProvider: "line", role: "contextDenied", schoolId, capabilities: {}};
+  }
+  const [tenant, channel] = await Promise.all([getTenantDirectory(schoolId), resolveTenantLineChannel(schoolId)]);
+  if (!channel.loginConfigured || channel.botUserId !== account.botUserId) return {authenticated: false};
+  const students = await canonicalizeStudents(await tenantLineParentStudents(schoolId, account.parentEmail), schoolId);
+  return {
+    authenticated: true, authProvider: "line", role: students.length ? "parent" : "unassigned",
+    schoolId, schoolName: tenant.schoolName, systemName: tenant.systemName,
+    email: account.parentEmail, contactEmail: account.googleEmail || "",
+    displayName: account.displayName || "LINE 家長", students,
+    capabilities: {tenantOnboarding: tenant.status === "onboarding"}
+  };
+}
+
 export async function getAccess(request){
   const identity=await verifyGoogle(request);
-  if(!identity)return {authenticated:false};
+  if(!identity)return lineParentAccess(request);
   const email=identity.email;
   const parentMap=parseJsonEnv("STUDENT_MAP_JSON",{});
   const admins=String(process.env.ADMIN_EMAILS||"").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean);
@@ -347,13 +371,20 @@ export async function getAccess(request){
     return {authenticated:true,...identity,displayName:directory.teacherName||identity.displayName,role,schoolId:roleSchoolId,schoolName:String(roleTenant?.schoolName||roleSchoolId),systemName:String(roleTenant?.systemName||roleTenant?.schoolName||roleSchoolId),capabilities,sectionAssignments,assignments:sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,students:[...byId.values()]};
   }
 
-  if(!requestedContext||requestedContext==="parent"){
-    if(roleSchoolId===defaultId&&parentMap[email])return {authenticated:true,...identity,role:"parent",schoolId:defaultId,schoolName:String(defaultTenant.schoolName||"聖心小學"),systemName:String(defaultTenant.systemName||"聖心小學弦樂團"),students:await canonicalizeStudents(parentMap[email],defaultId)};
-    const dynamicStudents=roleTenantAvailable?await getMappedStudentsByEmail(email,roleSchoolId):[];
-    if(dynamicStudents.length)return {authenticated:true,...identity,role:"parent",schoolId:roleSchoolId,schoolName:String(roleTenant?.schoolName||roleSchoolId),systemName:String(roleTenant?.systemName||roleTenant?.schoolName||roleSchoolId),students:await canonicalizeStudents(dynamicStudents,roleSchoolId),capabilities:{tenantOnboarding:roleTenantOnboarding}};
+  let parentIdentity = identity;
+  if(roleTenantAvailable&&(!requestedContext||requestedContext==="parent")){
+    const link = await getTenantGoogleLink(roleSchoolId, identity.sub);
+    if(link)parentIdentity = {...identity,email:link.parentEmail,contactEmail:identity.email};
+    const legacy = roleSchoolId===defaultId && parentMap[parentIdentity.email];
+    const dynamicStudents = legacy ? (Array.isArray(legacy) ? legacy : legacy.students || []) : await getMappedStudentsByEmail(parentIdentity.email, roleSchoolId);
+    if(dynamicStudents?.length){
+      return {authenticated:true,...parentIdentity,role:"parent",schoolId:roleSchoolId,
+        schoolName:String(roleTenant?.schoolName||roleSchoolId),systemName:String(roleTenant?.systemName||roleTenant?.schoolName||roleSchoolId),
+        students:await canonicalizeStudents(dynamicStudents,roleSchoolId),capabilities:{tenantOnboarding:roleTenantOnboarding}};
+    }
   }
   const parentRegistration=requestedContext==="parent"&&roleTenantAvailable;
-  return {authenticated:true,...identity,role:parentRegistration||!requestedContext?"unassigned":"contextDenied",schoolId:requestedSchoolId||defaultId,schoolName:String(roleTenant?.schoolName||defaultTenant.schoolName||"聖心小學"),systemName:String(roleTenant?.systemName||defaultTenant.systemName||"聖心小學弦樂團"),capabilities:parentRegistration&&roleTenantOnboarding?{tenantOnboarding:true}:requestedContext&&!parentRegistration?{contextDenied:true}:{}};
+  return {authenticated:true,...parentIdentity,role:parentRegistration||!requestedContext?"unassigned":"contextDenied",schoolId:requestedSchoolId||defaultId,schoolName:String(roleTenant?.schoolName||defaultTenant.schoolName||"聖心小學"),systemName:String(roleTenant?.systemName||defaultTenant.systemName||"聖心小學弦樂團"),capabilities:parentRegistration&&roleTenantOnboarding?{tenantOnboarding:true}:requestedContext&&!parentRegistration?{contextDenied:true}:{}};
 }
 
 export async function getTenantContext(request,{requireActive=true,allowUnassigned=false}={}){

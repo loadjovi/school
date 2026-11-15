@@ -4,8 +4,9 @@
 
   async function loadParentLinks(){
     if(state.me?.role!=="admin")return;
+    state.studentLineLoaded=false;
     try{
-      const d=await api("/api/student-parent-links");
+      const d=await api("/api/student-parent-links?includeLineStatus=1");
       state.parentLinks=d.items||[];
       const byStudent=new Map();
       for(const x of state.parentLinks){
@@ -15,6 +16,7 @@
         byStudent.get(id).push(x);
       }
       for(const s of state.master||[])s.parents=byStudent.get(String(s.studentId))||[];
+      state.studentLineLoaded=true;
     }catch(e){
       console.warn("load parent Gmail links failed",e);
       state.parentLinks=[];
@@ -24,6 +26,39 @@
 
   const originalLoadAdmin=loadAdmin;
   loadAdmin=async function(){await originalLoadAdmin();await loadParentLinks()};
+
+  const lineLabels={all:"全部",friend:"曾確認為好友",pending:"好友待確認",not_friend:"未加入或已封鎖",unbound:"LINE 未綁定",no_parent:"尚無家長",unknown:"狀態無法確認"};
+  window.studentLineStatus=function(student){
+    if(!state.studentLineLoaded)return "unknown";
+    const parents=student.parents||[],bound=parents.filter(parent=>parent.lineBound===true);
+    if(!parents.length)return "no_parent";
+    if(bound.some(parent=>parent.lineFriendStatus==="friend"))return "friend";
+    if(bound.some(parent=>parent.lineFriendStatus!=="not_friend"))return "pending";
+    if(bound.length)return "not_friend";
+    return parents.some(parent=>parent.lineBound==null)?"unknown":"unbound";
+  };
+  window.studentLineStatusLabel=student=>lineLabels[window.studentLineStatus(student)];
+  window.setStudentLineFilter=function(filter){if(Object.hasOwn(lineLabels,filter)){state.studentLineFilter=filter;render()}};
+  window.reloadStudentLineCoverage=async function(){await loadParentLinks();render()};
+  window.studentLineCoverageCounts=function(students){
+    const active=students.filter(student=>student.status!=="inactive");
+    const bound=active.filter(student=>(student.parents||[]).some(parent=>parent.lineBound===true));
+    const confirmed=active.filter(student=>window.studentLineStatus(student)==="friend");
+    const unique=new Set(bound.flatMap(student=>(student.parents||[]).filter(parent=>parent.lineBound===true).map(parent=>parent.parentEmail)));
+    return {active:active.length,bound:bound.length,confirmed:confirmed.length,unique:unique.size};
+  };
+  window.studentLineCoverage=function(students,visible){
+    const counts=window.studentLineCoverageCounts(students);
+    const filters=Object.entries(lineLabels).map(([key,label])=>`<button type="button" aria-pressed="${(state.studentLineFilter||"all")===key}" onclick="setStudentLineFilter('${key}')">${label}</button>`).join("");
+    return `<section class="student-line-coverage" aria-label="LINE 通知綁定">
+      <div class="student-line-heading"><h3>LINE 通知綁定</h3><button type="button" class="secondary" onclick="reloadStudentLineCoverage()">重新讀取</button></div>
+      ${state.studentLineLoaded?`<div class="student-line-counts">
+        <div><b>${counts.active}</b><span>在團學生</span></div><div><b>${counts.bound}</b><span>LINE 綁定涵蓋學生</span></div>
+        <div><b>${counts.unique}</b><span>已綁定家長（去重）</span></div><div><b>${counts.confirmed}</b><span>有家長曾確認為好友</span></div></div>`:'<p class="muted">LINE 綁定資料尚未載入，請重新讀取。</p>'}
+      <p class="muted">統計限在團學生。同一家長有多名子女時只計一次。好友狀態以最後確認為準。</p>
+      <div class="student-line-filters" role="group" aria-label="依 LINE 狀態篩選">${filters}</div>
+      <small class="muted">符合目前條件 ${visible} 位學生</small></section>`;
+  };
 
   function pendingForStudent(s){
     const id=String(s.studentId||s.studentNo||"").trim(),name=String(s.name||s.studentName||"").trim();
@@ -35,10 +70,19 @@
   }
   function parentBlock(s){
     const parents=Array.isArray(s.parents)?s.parents:[],pending=pendingForStudent(s);
-    if(!parents.length&&!pending.length)return `<div class="notice" style="margin:10px 0"><b>👪 家長 Gmail 綁定</b><br><span class="muted">尚未綁定家長 Gmail，也沒有待審核申請。</span></div>`;
+    if(!parents.length&&!pending.length)return `<div class="notice" style="margin:10px 0"><b>👪 家長帳號綁定</b><br><span class="muted">尚未綁定家長，也沒有待審核申請。</span></div>`;
     const pendingRows=pending.map(r=>`<div style="padding:5px 0"><b>⏳ 待審核家長申請</b><br><span>${esc(r.parentEmail||"")}</span><small style="display:block;margin-top:2px">學生：${esc(r.studentName||s.name||"")}｜學號 ${esc(r.studentNo||s.studentId||"")}</small></div>`).join("");
-    const rows=parents.map(p=>{const rel=esc(p.relationship||"家長"),name=p.parentName?` ${esc(p.parentName)}`:"",oldId=p.sourceStudentId&&p.sourceStudentId!==s.studentId?`<small style="display:block;margin-top:2px">歷史學生 ID：${esc(p.sourceStudentId)}</small>`:"";return `<div style="padding:5px 0"><b>✅ ${rel}${name}</b><br><span>${esc(p.parentEmail)}</span>${oldId}</div>`}).join("");
-    return `<div class="notice" style="margin:10px 0"><b>👪 家長 Gmail 綁定</b>${pendingRows}${rows}</div>`;
+    const rows=parents.map(p=>{
+      const rel=esc(p.relationship||"家長"),name=p.parentName?` ${esc(p.parentName)}`:"";
+      const oldId=p.sourceStudentId&&p.sourceStudentId!==s.studentId?`<small style="display:block;margin-top:2px">歷史學生 ID：${esc(p.sourceStudentId)}</small>`:"";
+      const parentEmail=String(p.parentEmail||"");
+      const contact=parentEmail.endsWith("@line.invalid")?"LINE 建立的家長帳號":esc(parentEmail);
+      const friendStatus=p.lineFriendStatus==="friend"?"曾確認為好友":p.lineFriendStatus==="not_friend"?"未加入或已封鎖":"好友狀態待確認";
+      const lineStatus=p.lineBound===true?`LINE 已綁定｜${friendStatus}`:p.lineBound===false?"LINE 未綁定":"LINE 狀態無法確認";
+      const checkedAt=p.lineFriendCheckedAt?`<small style="display:block">最後確認 ${esc(new Date(p.lineFriendCheckedAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}))}</small>`:"";
+      return `<div style="padding:5px 0"><b>✅ ${rel}${name}</b><br><span>${contact}</span><br><span>${lineStatus}</span>${checkedAt}${oldId}</div>`;
+    }).join("");
+    return `<div class="notice" style="margin:10px 0"><b>👪 家長帳號綁定</b>${pendingRows}${rows}</div>`;
   }
 
   const originalStudentEdit=studentEdit;

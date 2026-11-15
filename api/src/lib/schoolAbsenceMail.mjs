@@ -1,8 +1,9 @@
 import {createHash} from "node:crypto";
 import {EmailClient} from "@azure/communication-email";
 import {TableClient,TableServiceClient} from "@azure/data-tables";
-import {tenantSchoolPartition,defaultTenantId} from "./storage.js";
+import {tenantSchoolPartition,defaultTenantId,getTenantDirectory} from "./storage.js";
 import {getSystemSettings} from "./settings.js";
+import {tenantEmailAddress,tenantEmailConfig} from "./tenantEmailConfig.mjs";
 
 // School staff are the explicitly authorized "校方查詢帳號" (school-access),
 // NOT every instructor nor parent. Only notify for group-class absences.
@@ -12,7 +13,7 @@ const email=v=>String(v||"").trim().toLowerCase();
 const safe=v=>String(v||"").replaceAll("'","''");
 const truncate=(v,length=250)=>String(v||"").trim().slice(0,length);
 const allowed=new Set(["section","ensemble","comprehensive"]);
-const emailOk=v=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email(v));
+
 let ready=false;
 const hash=v=>createHash("sha256").update(JSON.stringify(v)).digest("hex");
 export const schoolAbsenceLogPartition=schoolId=>tenantSchoolPartition(schoolId);
@@ -53,14 +54,11 @@ async function staffEmails(schoolId){
  }
  let rows=[];
  try{rows=JSON.parse(String(entity.emailsJson||"[]"))}catch{}
- return [...new Set((Array.isArray(rows)?rows:[]).map(email).filter(emailOk))].sort();
+ return [...new Set((Array.isArray(rows)?rows:[]).map(tenantEmailAddress).filter(Boolean))].sort();
 }
 const classLabel={section:"分部課",ensemble:"合奏課",comprehensive:"綜合課"};
-function subject(date,count){
- return "【聖心弦樂成長平台】"+date+" 學生缺席通知（"+count+" 位）";
-}
-export function schoolAbsenceMailContent({date,students,appUrl}){
- const title=subject(date,students.length);
+export function schoolAbsenceMailContent({date,students,appUrl,schoolName="學校平台"}){
+ const title=`【${truncate(schoolName,120)}】${date} 學生缺席通知（${students.length} 位）`;
  const lines=[
   "學校老師您好：",
   date+" 弦樂團課程有 "+students.length+" 筆新登記的學生缺席紀錄，請登入「校方出缺勤」確認學生狀況。",
@@ -75,9 +73,7 @@ export function schoolAbsenceMailContent({date,students,appUrl}){
  ];
  return {subject:title,plainText:lines.filter((v,i)=>v!==""||i===2).join("\n")};
 }
-async function deliver(address,mail){
- const sender=truncate(process.env.ACS_EMAIL_SENDER,320);
- const conn=truncate(process.env.ACS_EMAIL_CONNECTION_STRING,2000);
+async function deliver(address,mail,{senderAddress:sender,connectionString:conn}){
  if(!sender||!conn)return {status:"not_configured",messageId:"",error:"未設定 ACS Email 服務"};
  try{
   const poller=await new EmailClient(conn).beginSend({senderAddress:sender,recipients:{to:[{address}]},content:mail});
@@ -94,6 +90,7 @@ export async function dispatchSchoolAbsenceEmails({schoolId,date,items=[],actor=
  const enabled=(await getSystemSettings(schoolId)).emailNotificationsEnabled===true;
  const recipientsForAudit=recipients.length?recipients:[""];
  const batches=new Map(),now=new Date().toISOString(),sid=schoolAbsenceLogPartition(schoolId);
+ const config=tenantEmailConfig(sid);
  let created=0,sent=0,skipped=0;
  for(const recipient of recipientsForAudit){
   const pending=[];
@@ -109,14 +106,16 @@ export async function dispatchSchoolAbsenceEmails({schoolId,date,items=[],actor=
   }
   if(pending.length)batches.set(recipient,pending);
  }
+ const tenant=enabled&&config.connectionString&&batches.size?await getTenantDirectory(sid):null;
  for(const [recipient,rows] of batches){
   let result;
   if(!recipient)result={status:"no_recipient",messageId:"",error:"尚未設定校方查詢帳號收件人"};
-  else if(process.env.LAB_ENVIRONMENT==="functional-uat")result={status:"lab_suppressed",messageId:"",error:"LAB 不寄送真實通知"};
-  else if(!enabled)result={status:"disabled",messageId:"",error:"學校 Email 通知功能尚未啟用"};
+  else if(config.mode==="lab_suppressed")result={status:"lab_suppressed",messageId:"",error:"LAB 不寄送真實通知"};
+  else if(!enabled||config.mode==="disabled")result={status:"disabled",messageId:"",error:"學校 Email 通知功能尚未啟用"};
   else{
-   const mail=schoolAbsenceMailContent({date,students:rows,appUrl:truncate(process.env.PUBLIC_APP_URL||"",350)});
-   result=await deliver(recipient,mail);
+   const schoolName=sid===defaultTenantId()?"聖心弦樂成長平台":tenant?.systemName||tenant?.schoolName;
+   const mail=schoolAbsenceMailContent({date,students:rows,schoolName,appUrl:config.appUrl||truncate(process.env.PUBLIC_APP_URL||"",350)});
+   result=await deliver(recipient,mail,config);
   }
   for(const row of rows){
    await log.updateEntity({partitionKey:sid,rowKey:row.rowKey,status:result.status,

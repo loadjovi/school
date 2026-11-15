@@ -244,7 +244,7 @@ app.http("uniformEventRequests",{
             if(String(alias?.canonicalStudentId||mapping.studentId)===String(next.studentId))recipients.add(mapping.parentEmail);
           }
           const student=await getStudentMaster(next.studentId,schoolId);
-          const result=await sendUniformRequestStatusEmail({recipients:[...recipients],studentName:student?.studentName||"學生",kind:next.kind,status:next.status,size:next.size,quantity:next.quantity});
+          const result=await sendUniformRequestStatusEmail({schoolId,schoolName:ctx.tenant?.systemName||ctx.tenant?.schoolName,recipients:[...recipients],studentName:student?.studentName||"學生",kind:next.kind,status:next.status,size:next.size,quantity:next.quantity});
           notificationStatus=result.status;
           if(result.status!=="sent")console.warn("uniform request email not fully sent",{requestId:data.id,status:result.status,recipientCount:result.recipientCount||0});
         }catch(e){notificationStatus="failed";console.error("uniform request email failed",{requestId:data.id,error:e?.message||String(e)})}
