@@ -157,6 +157,30 @@ def prepare(output: Path) -> None:
     if webhook_marker not in webhook_source:
         raise RuntimeError("LINE webhook event loop changed; review LAB inbound allowlist")
     line_webhook.write_text(webhook_source.replace(webhook_marker,webhook_guard,1),encoding="utf-8")
+    # The isolated LAB rich menu can be assigned directly to the allowlisted
+    # LINE user before a production-style LineAccountBinding row exists.  For
+    # that one exact user only, resolve today's courses through the configured
+    # LAB Gmail identity and its active school roles/default Sacred Heart tenant.
+    # Production source stays fail-closed and is not modified.
+    today_courses=lib/"lineTodayCourses.mjs"
+    today_source=today_courses.read_text(encoding="utf-8")
+    today_import='import {getMappedStudentsByEmail,listByStudent} from "./storage.js";'
+    today_lookup='''  const bindings=await getLineAccountBindingsByUserId(lineUserId,{includeTarget:false});
+  if(!bindings.length)return "目前 LINE 尚未連結平台帳號，請先點選「開啟／綁定平台」完成綁定。";'''
+    today_lab_lookup='''  let bindings=await getLineAccountBindingsByUserId(lineUserId,{includeTarget:false});
+  const labAllowed=String(process.env.LAB_LINE_TEST_USER_ID||"").trim();
+  const labEmail=String(process.env.LAB_LINE_TEST_PARENT_EMAIL||"").trim().toLowerCase();
+  if(!bindings.length&&/^U[0-9a-f]{32}$/i.test(labAllowed)&&String(lineUserId||"").trim().toLowerCase()===labAllowed.toLowerCase()&&labEmail){
+    const roles=await listTenantRolesByEmail(labEmail,"active");
+    const schoolIds=[...new Set([defaultTenantId(),...roles.map(row=>String(row.schoolId||row.rowKey||"").trim()).filter(id=>id&&id!=="*")])];
+    bindings=schoolIds.map(schoolId=>({parentEmail:labEmail,schoolId}));
+  }
+  if(!bindings.length)return "目前 LINE 尚未連結平台帳號，請先點選「開啟／綁定平台」完成綁定。";'''
+    if today_import not in today_source or today_lookup not in today_source:
+        raise RuntimeError("Today-course binding structure changed; review LAB identity fallback")
+    today_courses.write_text(today_source
+        .replace(today_import,'import {defaultTenantId,getMappedStudentsByEmail,listByStudent,listTenantRolesByEmail} from "./storage.js";',1)
+        .replace(today_lookup,today_lab_lookup,1),encoding="utf-8")
     # LINE Login OAuth and its pure safety rules exist ONLY in the isolated
     # generated LAB API.
     safety_source=(ROOT/"scripts"/"lab-line-notification-safety.mjs").read_text(encoding="utf-8")
