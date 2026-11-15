@@ -17,7 +17,13 @@ async function claim(schoolId,eventKey,recipient){
   try{
     await db.createEntity({partitionKey:String(schoolId),rowKey:key(`${eventKey}:${recipient}`),eventKey:String(eventKey).slice(0,300),recipient:email(recipient),status:"SENDING",createdAt:new Date().toISOString()});
     return true;
-  }catch(error){if(error.statusCode===409)return false;throw error}
+  }catch(error){
+    if(error.statusCode!==409)throw error;
+    const row=await db.getEntity(String(schoolId),key(`${eventKey}:${recipient}`));
+    if(row.status!=="FAILED")return false;
+    await db.updateEntity({partitionKey:row.partitionKey,rowKey:row.rowKey,status:"SENDING",updatedAt:new Date().toISOString(),error:""},"Merge",{etag:row.etag});
+    return true;
+  }
 }
 
 async function finish(schoolId,eventKey,recipient,status,error=""){
