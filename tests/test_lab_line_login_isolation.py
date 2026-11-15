@@ -201,6 +201,7 @@ class LabLineLoginIsolationTests(unittest.TestCase):
 
     def test_line_login_refreshes_role_menu_and_admin_can_resync(self):
         oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
+        rich_menu=(ROOT/"scripts/lab-line-rich-menu.mjs").read_text()
         ui=(ROOT/"scripts/lab-line-rich-menu-admin.js").read_text()
         auth_finish=oauth.split('app.http("labLineAuthFinish"',1)[1].split('app.http("labLineAuthSession"',1)[0]
         sync_route=oauth.split('app.http("labLineRichMenuSync"',1)[1].split('/** Functional UAT ONLY:',1)[0]
@@ -212,9 +213,11 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('assignLabRoleRichMenu',sync_route)
         self.assertIn('resolveCurrentLabLineUserId',sync_route)
         self.assertIn('lineUserId,',sync_route)
-        self.assertIn('not_allowlisted',sync_route)
+        self.assertIn('not_verified_lab_identity',sync_route)
+        self.assertIn('getLabParentIdentityLink(target)',rich_menu)
+        self.assertIn('verifiedIdentity',rich_menu)
         self.assertIn('getLineAccountBindingsByEmail(normalized,{includeTarget:true})',oauth)
-        self.assertIn('normalized!==allowedEmail',oauth)
+        self.assertIn('if(!normalized)return ""',oauth)
         self.assertIn('重新同步我的 LINE 選單',ui)
         self.assertIn('/api/line/lab-rich-menus/sync',ui)
         self.assertIn('lab-line-rich-menu-admin.js?v=20261115-role-sync',(ROOT/"scripts/prepare-functional-lab.py").read_text())

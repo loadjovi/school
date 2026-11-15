@@ -141,13 +141,11 @@ async function platformAccount(request){
 }
 async function resolveCurrentLabLineUserId({request,email}={}){
   const normalized=String(email||"").trim().toLowerCase();
-  const allowedEmail=String(process.env.LAB_LINE_TEST_PARENT_EMAIL||"").trim().toLowerCase();
-  if(!normalized||!allowedEmail||normalized!==allowedEmail)return "";
+  if(!normalized)return "";
   const identity=await getLabLineIdentity(request);
   if(identity?.lineUserId&&String(identity.email||"").trim().toLowerCase()===normalized)return String(identity.lineUserId);
   const bindings=await getLineAccountBindingsByEmail(normalized,{includeTarget:true});
-  const allowedId=String(process.env.LAB_LINE_TEST_USER_ID||"").trim().toLowerCase();
-  const matched=bindings.find(row=>String(row?.lineUserId||"").trim().toLowerCase()===allowedId);
+  const matched=bindings.find(row=>/^U[0-9a-f]{32}$/i.test(String(row?.lineUserId||"")));
   return String(matched?.lineUserId||"");
 }
 async function syncLabRoleMenusForLineIdentity({lineUserId,email}={}){
@@ -355,7 +353,7 @@ app.http("labLineRichMenuSetup",{
   }
 });
 
-/** Refreshes only the current allowlisted user's role menu. */
+/** Refreshes only the current verified LAB Gmail/LINE identity's role menu. */
 app.http("labLineRichMenuSync",{
   methods:["POST"],authLevel:"anonymous",route:"line/lab-rich-menus/sync",
   handler:async request=>{
@@ -364,14 +362,14 @@ app.http("labLineRichMenuSync",{
       assertLabIsolation();
       const ctx=await platformAccount(request);if(ctx.error)return ctx.error;
       const lineUserId=await resolveCurrentLabLineUserId({request,email:ctx.access.email});
-      if(!lineUserId)return response({error:"目前登入帳號不是指定 LAB 測試帳號，或尚未完成 LINE 綁定"},403);
+      if(!lineUserId)return response({error:"目前登入帳號尚未完成 Gmail 與 LINE 綁定"},403);
       const result=await assignLabRoleRichMenu({
         schoolId:ctx.schoolId,email:ctx.access.email,lineUserId,
         parentLinked:ctx.access.role==="parent"&&Array.isArray(ctx.access.students)&&ctx.access.students.length>0
       });
-      if(!result.assigned&&result.reason==="not_allowlisted")return response({error:"目前登入帳號不是指定 LAB 測試帳號"},403);
+      if(!result.assigned&&result.reason==="not_verified_lab_identity")return response({error:"目前登入帳號尚未完成 LAB 身分驗證"},403);
       if(!result.assigned&&result.reason==="menus_not_configured")return response({error:"請先建立 LAB 家長與幹部選單"},409);
-      return response({synced:true,assigned:result.assigned===true,audience:result.audience||"unbound",note:"只更新目前白名單 LINE 帳號的個人選單。"});
+      return response({synced:true,assigned:result.assigned===true,audience:result.audience||"unbound",note:"只更新目前已驗證 LINE 帳號的個人選單。"});
     }catch(error){
       console.error("LAB rich menu sync failed",String(error?.name||"Error").slice(0,40));
       return response({error:"LINE 個人選單同步失敗，請稍後重試"},500);

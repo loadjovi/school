@@ -1,10 +1,12 @@
 // Copied only into the generated Functional UAT LAB API.
-// It creates and assigns per-user rich menus only for the single allowlisted
-// LAB tester. It never sets a Messaging API default menu.
+// It creates and assigns per-user rich menus only for the explicit LAB tester
+// or a Gmail/LINE identity verified inside the isolated LAB. It never sets a
+// Messaging API default menu.
 import {createHash,timingSafeEqual} from "node:crypto";
 import {TableClient,TableServiceClient} from "@azure/data-tables";
 import {assertLabIsolation} from "./labIsolation.mjs";
 import {getLineAccountBinding} from "./lineAccountBinding.js";
+import {getLabParentIdentityLink} from "./labLineSession.mjs";
 import {getMappedStudentsByEmail,listTenantRolesByEmail,tenantSchoolPartition} from "./storage.js";
 import {LAB_RICH_MENU_AUDIENCES,labRichMenuDefinition,resolveLabRichMenuAudience} from "./labLineRichMenuRules.mjs";
 
@@ -130,7 +132,10 @@ export async function assignLabRoleRichMenu({schoolId,email,lineUserId="",parent
   // notification-binding row is absent. The explicit single-user allowlist is
   // the canonical fallback for role-menu assignment in that state.
   const target=String(lineUserId||binding?.lineUserId||identityLinkedTarget||"");
-  if(!allowlisted(target))return {assigned:false,reason:"not_allowlisted"};
+  const identity=target?await getLabParentIdentityLink(target):null;
+  const verifiedIdentity=Boolean(identity&&String(identity.parentEmail||"").trim().toLowerCase()===normalizedEmail);
+  const verifiedBinding=Boolean(binding?.lineUserId&&String(binding.lineUserId)===target);
+  if(!allowlisted(target)&&!verifiedIdentity&&!verifiedBinding)return {assigned:false,reason:"not_verified_lab_identity"};
   const audience=await resolveLabAccountMenu({schoolId,email,parentLinked});
   if(audience===LAB_RICH_MENU_AUDIENCES.UNBOUND)return unlinkLabRoleRichMenu({schoolId,email,lineUserId:target});
   const config=await getLabRichMenuConfig(schoolId);
@@ -148,7 +153,10 @@ export async function assignLabRoleRichMenuForIdentity({schoolId,email,identity,
 export async function unlinkLabRoleRichMenu({schoolId,email="",lineUserId}={}){
   assertLabIsolation();
   const target=String(lineUserId||"");
-  if(!allowlisted(target))return {unlinked:false,reason:"not_allowlisted"};
+  const normalizedEmail=String(email||"").trim().toLowerCase();
+  const identity=target?await getLabParentIdentityLink(target):null;
+  const verifiedIdentity=Boolean(identity&&String(identity.parentEmail||"").trim().toLowerCase()===normalizedEmail);
+  if(!allowlisted(target)&&!verifiedIdentity)return {unlinked:false,reason:"not_verified_lab_identity"};
   await lineApi(`/v2/bot/user/${encodeURIComponent(target)}/richmenu`,{method:"DELETE"});
   await recordAssignment({schoolId,lineUserId:target,audience:LAB_RICH_MENU_AUDIENCES.UNBOUND,email});
   return {unlinked:true,audience:LAB_RICH_MENU_AUDIENCES.UNBOUND};
