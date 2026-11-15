@@ -542,10 +542,13 @@ render=function(){labOriginalRender();if($("labGmailLinkButton"))setTimeout(moun
     app.joinpath("functional-lab-banner.js").write_text(BANNER.lstrip(),encoding="utf-8")
     coverage_ui=(ROOT/"scripts"/"lab-line-student-coverage.js").read_text(encoding="utf-8")
     app.joinpath("lab-line-student-coverage.js").write_text(coverage_ui,encoding="utf-8")
+    menu_router=(ROOT/"scripts"/"lab-line-menu-router.js").read_text(encoding="utf-8")
+    app.joinpath("lab-line-menu-router.js").write_text(menu_router,encoding="utf-8")
     home_page=app/"index.html"
     home_html=home_page.read_text(encoding="utf-8")
-    if "</body>" not in home_html:raise RuntimeError("LAB LINE student coverage insertion point changed")
-    home_page.write_text(home_html.replace("</body>",'<script defer src="/lab-line-student-coverage.js?v=20261112"></script></body>',1),encoding="utf-8")
+    if "</body>" not in home_html:raise RuntimeError("LAB LINE menu scripts insertion point changed")
+    lab_scripts='<script defer src="/lab-line-student-coverage.js?v=20261112"></script><script defer src="/lab-line-menu-router.js?v=20261115"></script>'
+    home_page.write_text(home_html.replace("</body>",lab_scripts+"</body>",1),encoding="utf-8")
     count=0
     for page in app.rglob("*.html"):
         text=page.read_text(encoding="utf-8")
