@@ -245,6 +245,24 @@ def prepare(output: Path) -> None:
         '    try{await assignLabRoleRichMenu({schoolId,email:reg.parentEmail,parentLinked:true})}\n'
         '    catch(error){console.error("LAB LINE rich menu assignment after approval failed",String(error?.name||"Error"))}\n\n'
         '    let notification;',1)
+    rejection_marker='''    if(action==="reject"){
+      reg.status="rejected";reg.reviewedAt=new Date().toISOString();reg.reviewedBy=access.email;reg.note=note;
+      await regClient.updateEntity(reg,"Merge");
+      return json({ok:true,status:"rejected"});
+    }'''
+    if rejection_marker not in registration_source:
+        raise RuntimeError("Student rejection flow changed; review LAB privacy reset")
+    registration_source=registration_source.replace(rejection_marker,'''    if(action==="reject"){
+      reg.status="rejected";reg.reviewedAt=new Date().toISOString();reg.reviewedBy=access.email;reg.note=note;
+      // A rejected parent application must not retain the student's submitted
+      // identity fields. Gmail/LINE remain login methods for the same account.
+      reg.studentName="";reg.studentNo="";reg.matchedStudentId="";reg.studentId="";
+      reg.grade="";reg.groupName="";reg.instrument="";reg.schoolYear="";reg.consent=false;
+      await regClient.updateEntity(reg,"Merge");
+      try{await assignLabRoleRichMenu({schoolId,email:reg.parentEmail,parentLinked:false})}
+      catch(error){console.error("LAB LINE rich menu reset after rejection failed",String(error?.name||"Error"))}
+      return json({ok:true,status:"rejected"});
+    }''',1)
     registration.write_text(registration_source,encoding="utf-8")
     oauth_source=(ROOT/"scripts"/"lab-line-login-function.js").read_text(encoding="utf-8")
     fn_dir.joinpath("labLineLogin.js").write_text(prefix+oauth_source,encoding="utf-8")
@@ -455,6 +473,7 @@ window.startLabLineAuth=async function(){
         '我確認此${state.me?.authProvider==="line"?" LINE":" Gmail"}帳號為上述學生之家長／監護人，並同意建立家長存取權限。',1)
     app_source=app_source.replace('同一個 Google 帳號可以同時具有 Global、學校管理員、老師與家長身分。',
         '同一個登入帳號可以具有一個或多個已核准身分。',1)
+    app_source=app_source.replace('unassigned:"尚未綁定"','unassigned:"家長身分未核准"',1)
     app_source=app_source.replace('Gmail 只用來辨識家長／老師／管理員；學生資料存在 StudentMaster。',
         'Gmail 或 LINE 只用來辨識登入者；學生資料存在 StudentMaster。',1)
     profile_marker='  if(state.me.role==="admin"){\n    state.page="admin";'
@@ -469,7 +488,7 @@ window.startLabLineAuth=async function(){
     if registration_form not in app_source:
         raise RuntimeError("Frontend registration form changed; review LINE pending-state UI")
     app_source=app_source.replace(registration_form,
-        'function registrationForm(){const pending=(state.registrations||[]).find(x=>x.status==="pending");if(pending)return `<div class="card hero"><h2>學生綁定申請已送出 ✅</h2><div class="notice">申請目前正在等待學校管理員審核。核准完成後，重新登入即可使用家長功能。</div><p class="muted">為保護學生資料，待審核期間不顯示學生姓名與學號，也不需要再次填寫。</p></div>`;return `<div class="card"><h2>第一次登入｜綁定學生</h2>',1)
+        'function registrationForm(){const pending=(state.registrations||[]).find(x=>x.status==="pending");if(pending)return `<div class="card hero"><h2>學生綁定申請已送出 ✅</h2><div class="notice">申請目前正在等待學校管理員審核。核准完成後，重新登入即可使用家長功能。</div><p class="muted">為保護學生資料，待審核期間不顯示學生姓名與學號，也不需要再次填寫。</p></div>`;const rejected=(state.registrations||[]).some(x=>x.status==="rejected");return `<div class="card"><h2>${rejected?"重新申請｜綁定學生":"第一次登入｜綁定學生"}</h2>${rejected?`<div class="notice"><b>前次家長申請未通過</b><br>原申請的學生資料已清除，請確認姓名與學號後重新提出申請。</div>`:""}',1)
     app_source=app_source.replace('await api("/api/student-registration",{method:"POST",body:JSON.stringify(body)});toast("✅ 已送出，等待管理員確認");state.page="home";render()',
         'await api("/api/student-registration",{method:"POST",body:JSON.stringify(body)});const pending=await api("/api/student-registration");state.registrations=pending.items||[];toast("✅ 已送出，等待管理員確認");state.page="home";render()',1)
     app_source=app_source.replace('申請 Gmail：${esc(r.parentEmail)}<br>家長填寫：',
@@ -492,13 +511,15 @@ function labAccountLinkCard(){
   const privileged=["admin","teacher","globalAdmin"].includes(state.me?.role);
   const accountNotice=privileged
     ?`Gmail 與 LINE 只負責識別同一個平台帳號；實際權限仍由 Global 管理中心指派，不會因綁定 LINE 自動升級。`
-    :`Gmail 與 LINE 可作為同一個家長帳號的登入方式；完成學生綁定後，兩種登入會共用同一位學生與紀錄。`;
-  const gmail=status.gmailLinked?`<span class="badge ok">✅ Gmail 已綁定</span>${status.gmailMasked?`<div class="muted">${esc(status.gmailMasked)}</div>`:""}`:`<span class="badge warn">尚未綁定 Gmail</span>`;
-  const line=status.lineLinked?`<span class="badge ok">✅ LINE 已綁定</span>${status.lineDisplayName?`<div class="muted">${esc(status.lineDisplayName)}</div>`:""}`:`<span class="badge warn">尚未綁定 LINE</span>`;
+    :state.me?.role==="unassigned"
+      ?`Gmail 與 LINE 僅代表登入方式已連結，不代表家長身分已通過。家長權限須於學生綁定申請核准後才會開放。`
+      :`Gmail 與 LINE 可作為同一個家長帳號的登入方式；兩種登入會共用同一位學生與紀錄。`;
+  const gmail=status.gmailLinked?`<span class="badge ok">✅ Gmail 登入已連結</span>${status.gmailMasked?`<div class="muted">${esc(status.gmailMasked)}</div>`:""}`:`<span class="badge warn">尚未連結 Gmail 登入</span>`;
+  const line=status.lineLinked?`<span class="badge ok">✅ LINE 登入已連結</span>${status.lineDisplayName?`<div class="muted">${esc(status.lineDisplayName)}</div>`:""}`:`<span class="badge warn">尚未連結 LINE 登入</span>`;
   const lineLinkNotice=privileged
     ?`直接完成 LINE 授權即可；管理員或老師不需要先具備學生資料。`
     :`完成 LINE 授權後，可使用 Gmail 或 LINE 登入同一個家長帳號；學生綁定申請不會重複建立。`;
-  const action=!status.lineLinked?`<div class="notice" style="margin-top:14px">${lineLinkNotice}</div><button class="primary" style="background:#06c755" onclick="startLabAccountLineLink()">追加綁定 LINE</button>`:!status.gmailLinked?`<div class="notice" style="margin-top:14px">選擇既有 Gmail 完成追加綁定；不會重新建立平台帳號。</div><div id="labGmailLinkButton" style="display:flex;justify-content:center;margin-top:14px"></div>`:`<div class="notice" style="margin-top:14px"><b>雙重登入已完成</b><br>之後可使用 Gmail 或 LINE 登入同一個平台帳號。</div>`;
+  const action=!status.lineLinked?`<div class="notice" style="margin-top:14px">${lineLinkNotice}</div><button class="primary" style="background:#06c755" onclick="startLabAccountLineLink()">追加綁定 LINE</button>`:!status.gmailLinked?`<div class="notice" style="margin-top:14px">選擇既有 Gmail 完成追加綁定；不會重新建立平台帳號。</div><div id="labGmailLinkButton" style="display:flex;justify-content:center;margin-top:14px"></div>`:`<div class="notice" style="margin-top:14px"><b>Gmail 與 LINE 登入方式已連結</b><br>${state.me?.role==="unassigned"?"目前仍需重新提出學生綁定申請，並等待學校核准。":"之後可使用 Gmail 或 LINE 登入同一個平台帳號。"}</div>`;
   return `<div class="card"><h2>🔐 登入與通知帳號</h2><div class="notice">${accountNotice}</div><div class="row2" style="margin-top:14px"><div class="item" style="display:block">${gmail}</div><div class="item" style="display:block">${line}</div></div>${action}</div>`;
 }
 window.startLabAccountLineLink=async function(){
