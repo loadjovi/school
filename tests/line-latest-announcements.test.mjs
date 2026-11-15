@@ -1,11 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {formatLineLatestAnnouncements,isLatestAnnouncementsCommand,uniqueAnnouncementEvents} from "../api/src/lib/lineLatestAnnouncementsFormat.mjs";
+import {formatLineLatestAnnouncements,isImportantAnnouncement,isLatestAnnouncementsCommand,uniqueAnnouncementEvents} from "../api/src/lib/lineLatestAnnouncementsFormat.mjs";
 
 test("latest-announcement command accepts only the private menu query",()=>{
   assert.equal(isLatestAnnouncementsCommand("最新公告"),true);
   assert.equal(isLatestAnnouncementsCommand("#最新公告"),true);
   assert.equal(isLatestAnnouncementsCommand("查看最新公告"),false);
+});
+
+test("latest announcements include important notices but exclude ordinary calendar rows",()=>{
+  assert.equal(isImportantAnnouncement({title:"A團週六加練",note:"一般加練"}),false);
+  assert.equal(isImportantAnnouncement({title:"A團週六加練時間調整",note:"集合時間改為 08:30"}),true);
+  assert.equal(isImportantAnnouncement({title:"耶誕演出",note:"服裝為團 T、黑長褲"}),true);
 });
 
 test("latest announcements show only supplied relevant events in date order",()=>{
@@ -26,5 +32,6 @@ test("duplicate events shared by siblings are emitted once",()=>{
 
 test("no relevant activity has an explicit empty response",()=>{
   const text=formatLineLatestAnnouncements({fromDate:"2026-11-15",groups:["B"],events:[]});
-  assert.match(text,/目前沒有適用於學生團別的近期活動公告/);
+  assert.match(text,/目前沒有新的重要通知或課程異動/);
+  assert.match(text,/活動行事曆/);
 });
