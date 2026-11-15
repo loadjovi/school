@@ -63,8 +63,8 @@
   function lineChannelPanel(sid){
     const id=esc(sid);
     return `<div class="global-inline-admin">
-      <h3>LINE 官方帳號</h3>
-      <button class="secondary" onclick="loadGlobalLineChannel('${id}')">查看 LINE 設定</button>
+      <h3>LINE 與 Email 通知</h3>
+      <button class="secondary" onclick="loadGlobalLineChannel('${id}')">查看通知設定</button>
       <div id="globalLineChannel_${id}" aria-live="polite"></div>
     </div>`;
   }
@@ -79,8 +79,10 @@
       const channel=status?await api(endpoint,{method:"PATCH",body:JSON.stringify({status})}):await api(endpoint);
       const prefix="LINE_"+sid.replaceAll("-","_").toUpperCase();
       const label=channel.messagingConfigured?(channel.legacy?"使用原有聖心設定":"已啟用"):channel.status==="disabled"?"已停用":"待設定";
+      const emailLabel={legacy:"沿用聖心既有寄件設定",tenant:"已設定此校寄件服務",disabled:"已停用",lab_suppressed:"LAB 已停用對外寄信",unconfigured:"尚未設定"};
       panel.dataset.legacy=String(channel.legacy);
       panel.innerHTML=`<div class="notice"><b>${esc(label)}</b><br>
+        Email ${esc(emailLabel[channel.email?.mode]||"尚未設定")}<br>
         LINE Login ${channel.loginConfigured?"已設定":"尚未設定"}<br>
         ${channel.loginCallback?`登入回呼 <code style="overflow-wrap:anywhere">${esc(channel.loginCallback)}</code><br>`:""}
         Webhook URL <code style="overflow-wrap:anywhere">${esc(channel.webhookUrl)}</code><br>

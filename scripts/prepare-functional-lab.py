@@ -130,11 +130,11 @@ def prepare(output: Path) -> None:
         original.replace(marker,'const conn=()=>{assertLabIsolation();return process.env.STORAGE_CONNECTION_STRING;};'),
         encoding="utf-8")
     # Never deliver emails from tests, even if somebody accidentally configures ACS.
-    email=lib/"email.js"
+    email=lib/"tenantEmailConfig.mjs"
     text=email.read_text(encoding="utf-8")
-    expected='connectionString:clean(process.env.ACS_EMAIL_CONNECTION_STRING,2000),'
+    expected='const buildSuppressesExternalEmail = false;'
     if expected not in text:raise RuntimeError("Email config has changed; review required")
-    email.write_text(text.replace(expected,'connectionString:"", // LAB: external email permanently disabled'),
+    email.write_text(text.replace(expected,'const buildSuppressesExternalEmail = true; // LAB: external email permanently disabled'),
                      encoding="utf-8")
     app=output/"app"
     app.joinpath("functional-lab-banner.js").write_text(BANNER.lstrip(),encoding="utf-8")

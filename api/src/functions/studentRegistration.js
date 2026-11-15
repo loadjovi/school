@@ -153,15 +153,9 @@ app.http("studentRegistration",{
       if(lineAccount)await refreshTenantLineMenu(channel,lineAccount);
     }catch{console.warn("Approved parent LINE menu sync deferred",{schoolId})}
     try{
-      let contactEmail=reg.parentEmail;
-      if(contactEmail.endsWith("@line.invalid")){
-        const channel=await resolveTenantLineChannel(schoolId);
-        const account=await getTenantLineRecipient(schoolId,reg.parentEmail,channel.botUserId);
-        contactEmail=account?.googleEmail||"";
-      }
-      notification=contactEmail?await sendParentApprovalEmail({
-        recipient:contactEmail,parentName:reg.parentName,studentName,grade,groupName,instrument
-      }):{status:"not_configured"};
+      notification=await sendParentApprovalEmail({schoolId,schoolName:context.tenant?.systemName||context.tenant?.schoolName,
+        recipient:reg.parentEmail,parentName:reg.parentName,studentName,grade,groupName,instrument
+      });
     }catch(e){
       notification={status:"failed",error:String(e?.message||e||"email_send_failed").slice(0,500)};
     }

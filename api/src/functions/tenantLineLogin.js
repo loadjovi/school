@@ -2,7 +2,7 @@ import {app} from "@azure/functions";
 import {createHash} from "node:crypto";
 import {getTenantContext, json, verifyGoogle, verifyGoogleToken} from "../lib/auth.js";
 import {tenantIdValue, listTenantDirectory} from "../lib/storage.js";
-import {resolveTenantLineChannel} from "../lib/lineTenantConfig.js";
+import {listTenantLineLoginSchools,resolveTenantLineChannel} from "../lib/lineTenantConfig.js";
 import {
   clearOAuthCookie, clearTenantLineSession, createTenantLineOAuth, createTenantLineSession,
   getOrCreateTenantLineAccount, getTenantGoogleLink, lineCookie,
@@ -47,12 +47,7 @@ app.http("tenantLineLoginSchools", {
   methods: ["GET"], route: "line/login-schools", authLevel: "anonymous",
   handler: async () => {
     const schools = (await listTenantDirectory()).filter(school => ["active", "onboarding"].includes(school.status));
-    const items = await Promise.all(schools.map(async school => {
-      const schoolId = school.schoolId || school.rowKey;
-      const channel = await resolveTenantLineChannel(schoolId);
-      return channel.loginConfigured ? {schoolId, schoolName: school.schoolName || schoolId} : null;
-    }));
-    return {...json({items: items.filter(Boolean)}), headers: privateHeaders};
+    return {...json({items: await listTenantLineLoginSchools(schools)}), headers: privateHeaders};
   }
 });
 

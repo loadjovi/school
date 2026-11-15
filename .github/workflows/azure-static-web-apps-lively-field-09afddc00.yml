@@ -62,7 +62,7 @@ jobs:
         run: node --test tests/tshirt-receiving-workflow.test.mjs
 
       - name: LINE webhook signature and binding regression tests
-        run: node --test tests/line-webhook.test.mjs tests/line-absence-notification.test.mjs tests/tenant-line-isolation.test.mjs tests/tenant-line-workflows.test.mjs tests/fee-collection-rules.test.mjs tests/line-activity-calendar.test.mjs tests/line-latest-announcements.test.mjs tests/line-today-courses.test.mjs
+        run: node --test tests/line-webhook.test.mjs tests/line-absence-notification.test.mjs tests/tenant-line-isolation.test.mjs tests/tenant-line-workflows.test.mjs tests/tenant-notification-isolation.test.mjs tests/fee-collection-rules.test.mjs tests/line-activity-calendar.test.mjs tests/line-latest-announcements.test.mjs tests/line-today-courses.test.mjs
 
       - name: Parent home uniform payment notice tests
         run: node --test tests/parent-uniform-payment-notice.test.mjs tests/payment-email-notifications.test.mjs tests/finance-payment-notifications.test.mjs

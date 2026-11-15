@@ -1,4 +1,5 @@
 import {app} from "@azure/functions";
+import {tenantEmailConfig} from "../lib/tenantEmailConfig.mjs";
 import {getAccess, json} from "../lib/auth.js";
 import {getTenantDirectory, tenantIdValue} from "../lib/storage.js";
 import {
@@ -25,7 +26,9 @@ app.http("tenantLineChannelConfig", {
         await saveTenantLineChannel(schoolId, body.status, access.email);
       }
       const channel = await resolveTenantLineChannel(schoolId);
+      const email = tenantEmailConfig(schoolId);
       return json({
+        email: {mode: email.mode, configured: Boolean(email.connectionString)},
         schoolId, status: channel.status, legacy: channel.legacy, acceptsLegacy: channel.acceptsLegacy,
         messagingConfigured: channel.configured, channelSecretConfigured: channel.hasSecret,
         accessTokenConfigured: channel.hasToken, loginConfigured: channel.loginConfigured,

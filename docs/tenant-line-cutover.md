@@ -1,29 +1,29 @@
-# 逐校 LINE 驗收與正式切換
+# 多校通知框架與聖心 DEMO 驗收
 
-驗收使用 Functional UAT 的 `lineuat` 部署、專用 Storage 與兩個測試 LINE 官方帳號。兩校各自的 Messaging API 與 LINE Login Channel 設在同一 LINE Provider，並在 LINE Login 設定連結該校官方帳號。各環境的 Azure 設定使用該環境的帳號與憑證。
+第一階段以聖心弦樂團 DEMO 驗收為準。程式測試使用六個模擬租戶和模擬服務驗證隔離。日後開通其他學校時，才為各校設定正式 LINE 與 Email。
 
-以 `LINE_<SCHOOL_ID>_` 為前綴。學校 ID 大寫，連字號轉底線，例如 `LINE_SACRED_HEART_`。
+## 逐校設定
 
-| 設定 | 用途 |
+學校 ID 大寫，連字號轉底線，例如 `SACRED_HEART`。各環境的 Azure 設定使用該環境的帳號與憑證。
+
+| 設定前綴 | 逐校設定項 |
 |---|---|
-| `CHANNEL_SECRET`、`CHANNEL_ACCESS_TOKEN` | Messaging API Webhook 驗證與回覆 |
-| `LOGIN_CHANNEL_ID`、`LOGIN_CHANNEL_SECRET`、`APP_ORIGIN` | LINE Login 及本環境網站的 HTTPS Origin |
-| `PARENT_RICH_MENU_ID`、`STAFF_RICH_MENU_ID` | 同一官方帳號內的個人圖文選單 ID。未綁定選單在該官方帳號設定為預設。 |
-| `FEE_COLLECTIONS_ENABLED` | 設為 `true` 開放收費專案 |
-| `PAYMENT_NOTIFICATIONS_ENABLED` | 設為 `true` 開放 LINE 核帳私訊 |
+| `LINE_<SCHOOL_ID>_` | `CHANNEL_SECRET`、`CHANNEL_ACCESS_TOKEN`、`LOGIN_CHANNEL_ID`、`LOGIN_CHANNEL_SECRET`、`APP_ORIGIN`、`PARENT_RICH_MENU_ID`、`STAFF_RICH_MENU_ID` |
+| `LINE_<SCHOOL_ID>_` | `FEE_COLLECTIONS_ENABLED=true` 開放收費專案。`PAYMENT_NOTIFICATIONS_ENABLED=true` 開放 LINE 核帳私訊。 |
+| `ACS_EMAIL_<SCHOOL_ID>_` | `CONNECTION_STRING`、`SENDER` 選擇寄件服務與地址。`APP_URL` 可指定學校登入入口。`ENABLED=false` 停用此校對外郵件。 |
 
-LINE Login 回呼為 `<APP_ORIGIN>/api/line/tenant-login/<schoolId>/callback`；Messaging API Webhook 為 `<APP_ORIGIN>/api/line/webhook/<schoolId>`。家長選單的今日課程、最新公告及活動行事曆按鈕使用同名文字訊息動作。開啟平台可連到 `<APP_ORIGIN>/?schoolId=<schoolId>`。
+- 每校使用自己的 LINE 官方帳號。同一校的 Messaging API 與 LINE Login Channel 放在同一個 LINE Provider，並在 LINE Login 連結該校官方帳號。
+- LINE Login 回呼使用 `<APP_ORIGIN>/api/line/tenant-login/<schoolId>/callback`。Messaging API Webhook 使用 `<APP_ORIGIN>/api/line/webhook/<schoolId>`。家長選單的今日課程、最新公告及活動行事曆按鈕使用同名文字訊息動作。平台入口可連到 `<APP_ORIGIN>/?schoolId=<schoolId>`。
+- 新校在 Azure 設定後，由 Global 管理中心逐校預覽狀態及驗證啟用 LINE。Email 可由平台代管，但每校需明確配置寄件設定。若只填入部分 Email 設定，該校會停止寄送直到配對完整。
+- 聖心以原有 LINE 群組與寄件設定相容既有流程。新校未設定的通道不會套用聖心帳號或郵件服務。兩種通知各自啟停。
+- 收件人與帳務資料取自所屬學校。若家長先以 LINE 建立資料、後來連結 Gmail，Email 會送到該校驗證過的 Gmail。解除 LINE 連結也可保留 Gmail 登入及 Email 收件設定。
 
-依序將憑證設定到 Azure、在 Global 管理中心的學校設定驗證並啟用、於 LINE Developers 驗證 Webhook，再使用該校測試家長和群組操作。更新任一學校的憑證後，由 Global 管理中心重新驗證該校設定。
+## 聖心 DEMO 驗收
 
-## 合併前驗收
-
-1. 同一測試 Gmail 分別與 A、B 校 LINE 登入綁定。兩校各自核准測試學生，核對兩種登入方式可使用同一校帳號。解除 A 校連結後，B 校綁定仍可使用。
-2. 在家長的一對一聊天室各點一次「今日課程」「活動行事曆」「最新公告」，核對學校與團別。使用未核准的帳號與群組聊天室確認無學生資訊回覆。
-3. 各校分別用待辦及缺席測試群組走綁定與測試通知。完成獨立帳號設定後，僅在驗收環境設定 `LAB_ALLOW_TENANT_LINE_ABSENCE=true`，實際登記測試學生缺席走完整通知。將 A 校簽章送至 B 校 Webhook、把 A 校登入流程送至 B 校回呼，以及解除一校 LINE 設定，確認學校隔離。
-4. 用測試團 T 及聚餐專案回報匯款、退回補正、重新回報、核帳；以家長與未指派財務權限的管理員驗證核帳拒絕。重試同一通知並確認只有一筆 LINE 推播。
-5. 記錄驗收 commit，核對 PR 與驗收的 SHA 相同。正式聖心沿用原帳號，先檢查 Webhook、群組及出勤，再開啟新登入與通知。第二校可獨立排程。
+1. 使用 `lineuat` 的獨立 LAB Storage。以既有聖心 DEMO 資料驗證家長登入、學生核准、LINE／Gmail 綁定、群組和圖文選單流程。辦理實際 LINE 驗收時只用獨立測試 LINE 官方帳號與測試收件人。
+2. 以團 T、期末聚餐測試單核對匯款回報、補正、核帳與通知重試。個別課、家長核准、老師開通、團服及缺席郵件在自動測試中檢查寄件設定和內容，LAB 實站保留郵件抑制。
+3. 確認聖心相容路徑與回退方式後，記錄驗收 SHA。其他學校需要啟用時，再按校執行 LINE Login、群組、選單、Email 和切回原設定的驗收。
 
 ## 回退
 
-帳務與 LINE 發送分開。通知異常時先關閉該校 `PAYMENT_NOTIFICATIONS_ENABLED`，帳務仍可操作。若其他 LINE 功能影響服務，可從 Global 停用該校 LINE。聖心切換時若驗證為同一官方帳號，舊 Webhook 與既有群組仍可沿用。共用服務異常時，回退到驗收前記錄的正式 commit。
+LINE 首先依校停用有問題的功能或停用該校 LINE。Email 可透過該校 `ENABLED=false` 停用。聖心沿用同一官方帳號時，舊 Webhook 和既有群組可繼續使用。共用服務異常時，可回退到切換前的正式 commit。

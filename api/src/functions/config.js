@@ -1,14 +1,10 @@
+import {emailConfigured} from "../lib/tenantEmailConfig.mjs";
 import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
 import { getSystemSettings, saveSystemSettings } from "../lib/settings.js";
 import { listTenantDirectory } from "../lib/storage.js";
 
-function emailConfigured(){
-  return !!(
-    String(process.env.ACS_EMAIL_CONNECTION_STRING||"").trim() &&
-    String(process.env.ACS_EMAIL_SENDER||"").trim()
-  );
-}
+
 
 app.http("config",{methods:["GET"],authLevel:"anonymous",route:"config",handler:async()=>{
   return json({googleClientId:String(process.env.GOOGLE_CLIENT_ID||"")});
@@ -38,10 +34,10 @@ app.http("adminSettings",{
       const body=await request.json();
       if(typeof body.emailNotificationsEnabled!=="boolean")return json({error:"emailNotificationsEnabled 必須為布林值"},400);
       const saved=await saveSystemSettings({emailNotificationsEnabled:body.emailNotificationsEnabled,updatedBy:a.email,schoolId});
-      return json({...saved,emailServiceConfigured:emailConfigured(),effectiveEmailEnabled:saved.emailNotificationsEnabled&&emailConfigured()});
+      return json({...saved,emailServiceConfigured:emailConfigured(schoolId),effectiveEmailEnabled:saved.emailNotificationsEnabled&&emailConfigured(schoolId)});
     }
 
     const settings=await getSystemSettings(schoolId);
-    return json({...settings,emailServiceConfigured:emailConfigured(),effectiveEmailEnabled:settings.emailNotificationsEnabled&&emailConfigured()});
+    return json({...settings,emailServiceConfigured:emailConfigured(schoolId),effectiveEmailEnabled:settings.emailNotificationsEnabled&&emailConfigured(schoolId)});
   }
 });

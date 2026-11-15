@@ -10,6 +10,7 @@ export const lineRandom = () => randomBytes(32).toString("base64url");
 const lineKey = (botUserId, userId) => "line-" + lineHash(botUserId + ":" + userId);
 const googleKey = sub => "google-" + lineHash(sub);
 const emailKey = email => "email-" + lineHash(email);
+const contactKey = email => "contact-" + lineHash(email);
 const sessionCookieName = "__Host-school-line-session";
 const sessionDuration = 12 * 60 * 60;
 
@@ -44,6 +45,12 @@ export async function getTenantLineAccount(schoolId, botUserId, userId) {
 
 export async function getTenantGoogleLink(schoolId, googleSub) {
   return googleSub ? read(tenantSchoolPartition(schoolId), googleKey(googleSub)) : null;
+}
+
+export async function getTenantLineParentContact(schoolId, email) {
+  if (!/^line-[a-f0-9-]{36}@line\.invalid$/.test(email || "")) return "";
+  const row = await read(tenantSchoolPartition(schoolId), contactKey(email));
+  return row?.googleEmail || "";
 }
 
 export async function getTenantLineRecipient(schoolId, email, botUserId) {
@@ -118,6 +125,14 @@ export async function linkTenantGoogle(schoolId, line, google) {
     actions.push(["update", emailRow, "Replace", {etag: oldParentIndex.etag}]);
   } else {
     actions.push(["create", emailRow], ["delete", oldParentIndex]);
+  }
+  if (parentEmail.endsWith("@line.invalid")) {
+    const existingContact = await read(partitionKey, contactKey(parentEmail));
+    if (existingContact && existingContact.googleSub !== google.sub) {
+      throw new LineAccountConflict("此校家長帳號已連結其他 Gmail");
+    }
+    const contact = {partitionKey, rowKey: contactKey(parentEmail), googleSub: google.sub, googleEmail: google.email};
+    actions.push(existingContact ? ["update", contact, "Replace", {etag: existingContact.etag}] : ["create", contact]);
   }
   try {
     await (await writableStore()).submitTransaction(actions);

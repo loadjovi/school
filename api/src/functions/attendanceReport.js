@@ -1,3 +1,4 @@
+import {emailConfigured} from "../lib/tenantEmailConfig.mjs";
 import {schoolAcknowledgement} from "../lib/attendanceFollowup.mjs";
 import { app } from "@azure/functions";
 import { TableClient } from "@azure/data-tables";
@@ -149,16 +150,16 @@ app.http("sectionRecorderSummary",{
 });
 
 function taipeiDate(){return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
-function emailConfigured(){return !!(String(process.env.ACS_EMAIL_CONNECTION_STRING||"").trim()&&String(process.env.ACS_EMAIL_SENDER||"").trim())}
+
 async function notificationSettingsResponse(request,a,schoolId){
   if(request.method==="PATCH"){
     const body=await request.json();
     if(typeof body.emailNotificationsEnabled!=="boolean")return json({error:"emailNotificationsEnabled 必須為布林值"},400);
     const saved=await saveSystemSettings({emailNotificationsEnabled:body.emailNotificationsEnabled,updatedBy:a.email,schoolId});
-    return json({...saved,emailServiceConfigured:emailConfigured(),effectiveEmailEnabled:saved.emailNotificationsEnabled&&emailConfigured()});
+    return json({...saved,emailServiceConfigured:emailConfigured(schoolId),effectiveEmailEnabled:saved.emailNotificationsEnabled&&emailConfigured(schoolId)});
   }
   const settings=await getSystemSettings(schoolId);
-  return json({...settings,emailServiceConfigured:emailConfigured(),effectiveEmailEnabled:settings.emailNotificationsEnabled&&emailConfigured()});
+  return json({...settings,emailServiceConfigured:emailConfigured(schoolId),effectiveEmailEnabled:settings.emailNotificationsEnabled&&emailConfigured(schoolId)});
 }
 async function canonicalDailyId(id,students,cache,schoolId){
   const key=String(id||"");

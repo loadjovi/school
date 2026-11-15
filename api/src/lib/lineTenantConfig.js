@@ -53,6 +53,28 @@ function credentials(schoolId, legacy = false) {
 export async function resolveTenantLineChannel(schoolId) {
   const id = tenantSchoolPartition(schoolId);
   const [tenant, row] = await Promise.all([getTenantDirectory(id), read(table(), schoolRow(id))]);
+  return resolveChannel(id, tenant, row);
+}
+
+export async function listTenantLineLoginSchools(tenants) {
+  const configs = new Map();
+  try {
+    for await (const row of table().listEntities({queryOptions: {filter: "PartitionKey eq 'line' and RowKey ge 'school-' and RowKey lt 'school.'"}})) {
+      configs.set(row.rowKey, row);
+    }
+  } catch (error) {
+    if (error.statusCode !== 404) throw error;
+  }
+  const schools = [];
+  for (const tenant of tenants) {
+    const schoolId = tenant.schoolId || tenant.rowKey;
+    const channel = resolveChannel(schoolId, tenant, configs.get(schoolRow(schoolId)));
+    if (channel.loginConfigured) schools.push({schoolId, schoolName: tenant.schoolName || schoolId});
+  }
+  return schools;
+}
+
+function resolveChannel(id, tenant, row) {
   const legacy = id === defaultTenantId() && !row;
   const {channelSecret, accessToken, loginId, loginSecret, loginFingerprint, appOrigin, parentMenuId, staffMenuId, paymentLineEnabled} = credentials(id, legacy);
   const status = row?.status || (legacy && channelSecret && accessToken ? "active" : "setup");
@@ -94,6 +116,7 @@ export async function saveTenantLineChannel(schoolId, status, actor) {
   const row = {
     partitionKey, rowKey: schoolRow(id), status,
     botUserId: old?.botUserId || "", acceptsLegacy: old?.acceptsLegacy === true,
+    legacyTokenFingerprint: old?.legacyTokenFingerprint || "",
     secretFingerprint: old?.secretFingerprint || "",
     tokenFingerprint: old?.tokenFingerprint || "", loginFingerprint: old?.loginFingerprint || "", updatedBy: actor,
     updatedAt: new Date().toISOString()
@@ -115,15 +138,22 @@ export async function saveTenantLineChannel(schoolId, status, actor) {
       const bot = await lineApi("/v2/bot/info", {method: "GET", accessToken});
       if (!/^U[0-9a-f]{32}$/i.test(bot.userId || "")) throw new Error("Missing bot user ID");
       row.botUserId = bot.userId.toLowerCase().replace(/^u/, "U");
+      row.legacyTokenFingerprint = "";
       row.acceptsLegacy = id === defaultTenantId() &&
         Boolean(old?.acceptsLegacy && old.botUserId === row.botUserId);
       if (legacy.accessToken) {
-        const legacyBot = accessToken === legacy.accessToken
-          ? bot : await lineApi("/v2/bot/info", {method: "GET", accessToken: legacy.accessToken});
+        const sacredHeart = id === defaultTenantId() ? old : await read(client, schoolRow(defaultTenantId()));
+        const verifiedLegacy = sacredHeart?.legacyTokenFingerprint === fingerprint(legacy.accessToken) && sacredHeart.acceptsLegacy;
+        const legacyBot = verifiedLegacy ? {userId: sacredHeart.botUserId}
+          : accessToken === legacy.accessToken ? bot
+          : await lineApi("/v2/bot/info", {method: "GET", accessToken: legacy.accessToken});
         if (!/^U[0-9a-f]{32}$/i.test(legacyBot.userId || "")) throw new Error("Missing legacy bot user ID");
         const sameBot = row.botUserId.toLowerCase() === legacyBot.userId.toLowerCase();
         if (sameBot && id !== defaultTenantId()) throw new LineConfigError("此 LINE 官方帳號已用於聖心");
-        if (sameBot) row.acceptsLegacy = true;
+        if (sameBot) {
+          row.acceptsLegacy = true;
+          row.legacyTokenFingerprint = fingerprint(legacy.accessToken);
+        }
       }
     } catch (error) {
       if (error instanceof LineConfigError) throw error;

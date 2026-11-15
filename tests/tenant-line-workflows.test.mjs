@@ -51,7 +51,7 @@ function identities(studentRows = new Set()) {
     defaultTenantId: () => "sacred-heart", tenantSchoolPartition: value => value,
     getMappedStudentsByEmail: async (email, school) => studentRows.has(school + "|" + email) ? [{}] : [],
     getRegistrationsByEmail: async () => []
-  }, ";({getOrCreateTenantLineAccount,getTenantGoogleLink,getTenantLineRecipient,linkTenantGoogle,unlinkTenantGoogle,createTenantLineSession,tenantLineSession,createTenantLineOAuth,useTenantLineOAuth})");
+  }, ";({getOrCreateTenantLineAccount,getTenantGoogleLink,getTenantLineRecipient,getTenantLineParentContact,linkTenantGoogle,unlinkTenantGoogle,createTenantLineSession,tenantLineSession,createTenantLineOAuth,useTenantLineOAuth})");
 }
 
 test("both login methods resolve a single account without crossing schools", async () => {
@@ -65,12 +65,15 @@ test("both login methods resolve a single account without crossing schools", asy
   assert.equal(linkedB.parentEmail, google.email);
   assert.equal((await store.getTenantGoogleLink("school-a", google.sub)).parentEmail, a.parentEmail);
   assert.equal(await store.getTenantLineRecipient("school-b", a.parentEmail, botId), null);
+  assert.equal(await store.getTenantLineParentContact("school-a", a.parentEmail), google.email);
+  assert.equal(await store.getTenantLineParentContact("school-b", a.parentEmail), "");
   const cookie = await store.createTenantLineSession("school-a", linkedA);
   const request = {headers: new Headers({cookie: "__Host-school-line-session=" + cookie})};
   assert.equal((await store.tenantLineSession(request)).schoolId, "school-a");
   await store.unlinkTenantGoogle("school-a", google.sub);
   assert.equal(await store.tenantLineSession(request), null);
   assert.equal((await store.getTenantGoogleLink("school-a", google.sub)).parentEmail, a.parentEmail);
+  assert.equal(await store.getTenantLineParentContact("school-a", a.parentEmail), google.email);
   assert.equal((await store.getTenantGoogleLink("school-b", google.sub)).lineUserId, userId);
 });
 

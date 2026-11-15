@@ -154,7 +154,7 @@ async function notifyWorkflow({request,schoolId,schoolName,entity,studentName,te
     if(target==="teacher"||target==="both")recipients.push(String(entity.teacher||"").trim().toLowerCase());
     const unique=[...new Set(recipients.filter(x=>x&&x!==String(actorEmail||"").trim().toLowerCase()))],appUrl=publicAppUrl(request);
     if(!appUrl)console.warn("Unable to resolve public app URL for private lesson email; set APP_PUBLIC_URL in Azure environment variables.");
-    return await sendPrivateLessonWorkflowEmail({
+    return await sendPrivateLessonWorkflowEmail({schoolId,
       recipients:unique,eventType,schoolName,studentName,teacherName,lessonDate:String(entity.eventDate||""),startTime:String(entity.startTime||""),endTime:String(entity.endTime||""),minutes:Number(entity.minutes||0),
       lessonContent:String(entity.lessonContent||""),previousDate:String(previous.lessonDate||""),previousStartTime:String(previous.startTime||""),previousEndTime:String(previous.endTime||""),
       reason:String(eventType==="rescheduled"?entity.rescheduleReason||"":entity.cancelReason||""),note:String(entity.parentNote||""),actorName,appUrl
