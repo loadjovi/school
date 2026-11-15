@@ -1,7 +1,7 @@
 import {getLineAccountBindingsByUserId} from "./lineAccountBinding.js";
 import {getMappedStudentsByEmail} from "./storage.js";
 import {calendarEventsForStudent} from "../functions/calendarEvents.js";
-import {formatLineLatestAnnouncements,uniqueAnnouncementEvents} from "./lineLatestAnnouncementsFormat.mjs";
+import {formatLineLatestAnnouncements,isImportantAnnouncement,uniqueAnnouncementEvents} from "./lineLatestAnnouncementsFormat.mjs";
 
 export {formatLineLatestAnnouncements,isLatestAnnouncementsCommand} from "./lineLatestAnnouncementsFormat.mjs";
 
@@ -25,6 +25,6 @@ export async function lineLatestAnnouncementsReply(lineUserId,{now=new Date(),da
   return formatLineLatestAnnouncements({
     fromDate,
     groups:identities.map(item=>item.student.groupName),
-    events:uniqueAnnouncementEvents(eventLists.flat())
+    events:uniqueAnnouncementEvents(eventLists.flat().filter(isImportantAnnouncement))
   });
 }
