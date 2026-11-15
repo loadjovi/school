@@ -39,15 +39,25 @@ test("student binding selects parent and missing binding keeps default",()=>{
   assert.equal(resolveLabRichMenuAudience({schoolId:"sacred-heart"}),LAB_RICH_MENU_AUDIENCES.UNBOUND);
 });
 
-test("role menus use exact 2x2 bounds and LAB-only URLs",()=>{
-  for(const audience of [LAB_RICH_MENU_AUDIENCES.PARENT,LAB_RICH_MENU_AUDIENCES.STAFF]){
-    const menu=labRichMenuDefinition(audience,"https://lab.example/");
-    assert.deepEqual(menu.size,{width:2500,height:1686});
-    assert.equal(menu.areas.length,4);
-    assert.deepEqual(menu.areas.map(x=>x.bounds),[
-      {x:0,y:0,width:1250,height:843},{x:1250,y:0,width:1250,height:843},
-      {x:0,y:843,width:1250,height:843},{x:1250,y:843,width:1250,height:843}
-    ]);
-    assert.ok(menu.areas.every(x=>x.action.uri.startsWith("https://lab.example/?line_menu=")));
-  }
+test("parent menu keeps exact 2x2 bounds and LAB-only URLs",()=>{
+  const menu=labRichMenuDefinition(LAB_RICH_MENU_AUDIENCES.PARENT,"https://lab.example/");
+  assert.deepEqual(menu.size,{width:2500,height:1686});
+  assert.equal(menu.areas.length,4);
+  assert.deepEqual(menu.areas.map(x=>x.bounds),[
+    {x:0,y:0,width:1250,height:843},{x:1250,y:0,width:1250,height:843},
+    {x:0,y:843,width:1250,height:843},{x:1250,y:843,width:1250,height:843}
+  ]);
+  assert.ok(menu.areas.every(x=>x.action.uri.startsWith("https://lab.example/?line_menu=")));
+});
+
+test("staff menu uses exact 2x3 bounds without gaps",()=>{
+  const menu=labRichMenuDefinition(LAB_RICH_MENU_AUDIENCES.STAFF,"https://lab.example/");
+  assert.deepEqual(menu.size,{width:2500,height:1686});
+  assert.equal(menu.areas.length,6);
+  assert.deepEqual(menu.areas.map(x=>x.bounds),[
+    {x:0,y:0,width:833,height:843},{x:833,y:0,width:834,height:843},{x:1667,y:0,width:833,height:843},
+    {x:0,y:843,width:833,height:843},{x:833,y:843,width:834,height:843},{x:1667,y:843,width:833,height:843}
+  ]);
+  assert.deepEqual(menu.areas.map(x=>x.action.label),["今日課程","活動行事曆","最新公告","點名管理","待辦事項","開啟幹部平台"]);
+  assert.ok(menu.areas.every(x=>x.action.uri.startsWith("https://lab.example/?line_menu=")));
 });

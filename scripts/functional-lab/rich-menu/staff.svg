@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2500" height="1686" viewBox="0 0 2500 1686">
+  <defs>
+    <style>
+      .zh{font-family:'Noto Sans CJK TC','Microsoft JhengHei',sans-serif;font-size:62px;font-weight:700;fill:#17345f;text-anchor:middle}
+      .en{font-family:'Noto Sans',sans-serif;font-size:28px;font-weight:500;letter-spacing:5px;fill:#687894;text-anchor:middle}
+      .icon{fill:none;stroke-width:25;stroke-linecap:round;stroke-linejoin:round}
+    </style>
+  </defs>
+  <rect width="2500" height="1686" fill="#ffffff"/>
+
+  <g transform="translate(14 14)">
+    <rect width="805" height="815" rx="28" fill="#eef4ff" stroke="#cbd9ef" stroke-width="5"/>
+    <g transform="translate(402 282)" class="icon" stroke="#4f72bd">
+      <rect x="-112" y="-94" width="224" height="192" rx="20"/>
+      <path d="M-112-35h224M-62-120v52M62-120v52"/>
+      <circle cx="58" cy="48" r="58" fill="#eef4ff"/>
+      <path d="M58 15v38l28 17"/>
+    </g>
+    <text class="zh" x="402" y="548">今日課程</text>
+    <text class="en" x="402" y="608">TODAY</text>
+  </g>
+
+  <g transform="translate(847 14)">
+    <rect width="806" height="815" rx="28" fill="#eef9f4" stroke="#cce4d9" stroke-width="5"/>
+    <g transform="translate(403 282)" class="icon" stroke="#438f79">
+      <rect x="-118" y="-98" width="236" height="206" rx="22"/>
+      <path d="M-118-38h236M-64-126v54M64-126v54"/>
+      <path d="M-68 12h34M4 12h34M-68 60h34M4 60h34"/>
+    </g>
+    <text class="zh" x="403" y="548">活動行事曆</text>
+    <text class="en" x="403" y="608">CALENDAR</text>
+  </g>
+
+  <g transform="translate(1681 14)">
+    <rect width="805" height="815" rx="28" fill="#fff7e8" stroke="#eddcb7" stroke-width="5"/>
+    <g transform="translate(402 282)" class="icon" stroke="#c29135">
+      <path d="M-116-40h72l120-76v232L-44 40h-72z"/>
+      <path d="M-58 40l28 94h66L4 70M104-56l48-32M104 56l48 32"/>
+    </g>
+    <text class="zh" x="402" y="548">最新公告</text>
+    <text class="en" x="402" y="608">NEWS</text>
+  </g>
+
+  <g transform="translate(14 857)">
+    <rect width="805" height="815" rx="28" fill="#edf9f7" stroke="#c9e5df" stroke-width="5"/>
+    <g transform="translate(402 282)" class="icon" stroke="#318b82">
+      <rect x="-102" y="-112" width="204" height="232" rx="18"/>
+      <path d="M-48-112v-30h96v30M-58-42l22 22 40-46M-58 38l22 22 40-46M32-30h42M32 50h42"/>
+    </g>
+    <text class="zh" x="402" y="548">點名管理</text>
+    <text class="en" x="402" y="608">ATTENDANCE</text>
+  </g>
+
+  <g transform="translate(847 857)">
+    <rect width="806" height="815" rx="28" fill="#fff8e9" stroke="#eadfbd" stroke-width="5"/>
+    <g transform="translate(403 282)" class="icon" stroke="#b89539">
+      <path d="M-90-126h120l72 72v180H-90zM30-126v72h72"/>
+      <path d="M-46-36h92M-46 12h92M-46 60h58"/>
+      <circle cx="74" cy="72" r="58" fill="#fff8e9"/>
+      <path d="M44 72l22 22 40-48"/>
+    </g>
+    <text class="zh" x="403" y="548">待辦事項</text>
+    <text class="en" x="403" y="608">TO-DO</text>
+  </g>
+
+  <g transform="translate(1681 857)">
+    <rect width="805" height="815" rx="28" fill="#f3f0ff" stroke="#d8d0ec" stroke-width="5"/>
+    <g transform="translate(402 282)" class="icon" stroke="#7560ae">
+      <circle cx="-32" cy="-64" r="58"/>
+      <path d="M-132 112c8-82 45-126 100-126s92 44 100 126"/>
+      <circle cx="90" cy="42" r="64" fill="#f3f0ff"/>
+      <path d="M90 4v76M52 42h76"/>
+    </g>
+    <text class="zh" x="402" y="548">開啟幹部平台</text>
+    <text class="en" x="402" y="608">STAFF PORTAL</text>
+  </g>
+</svg>

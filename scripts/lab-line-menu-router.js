@@ -1,7 +1,7 @@
 (()=>{
   const PARAM="line_menu";
   const STORAGE_KEY="lab_line_menu_target";
-  const STAFF_TARGETS=new Set(["staff_today_courses","staff_attendance","staff_todos","staff_portal"]);
+  const STAFF_TARGETS=new Set(["staff_today_courses","staff_activity_calendar","staff_announcements","staff_attendance","staff_todos","staff_portal"]);
   const PARENT_TARGETS=new Set(["parent_today_courses","parent_announcements","parent_activity_calendar","parent_portal"]);
   const ALL_TARGETS=new Set([...STAFF_TARGETS,...PARENT_TARGETS]);
 
@@ -112,6 +112,22 @@
 
     if(typeof window.openSchoolAdminWorkspace!=="function")return false;
     clearTarget();
+
+    if(target==="staff_activity_calendar"||target==="staff_announcements"){
+      const parentContexts=usableContexts("parent");
+      if(parentContexts.length===1){
+        const parentTarget=target==="staff_activity_calendar"?"parent_activity_calendar":"parent_announcements";
+        try{sessionStorage.setItem(STORAGE_KEY,parentTarget)}catch{}
+        sessionStorage.setItem("role_context","parent");
+        if(parentContexts[0].schoolId)sessionStorage.setItem("school_context_id",String(parentContexts[0].schoolId));
+        location.reload();
+        return true;
+      }
+      await window.openSchoolAdminWorkspace("home");
+      window.scrollTo(0,0);
+      showMessage("此資訊需具備同校家長身分；已開啟幹部平台首頁");
+      return true;
+    }
 
     if(target==="staff_today_courses"){
       await window.openSchoolAdminWorkspace("attendance");
