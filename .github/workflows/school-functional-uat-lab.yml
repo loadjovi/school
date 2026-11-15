@@ -54,7 +54,12 @@ jobs:
           echo "LAB deployment remains isolated; NO Production data is copied."
 
       - name: Prepare SOP LAB from the selected code branch
-        run: python3 scripts/prepare-functional-lab.py --output .functional-lab-build
+        run: |
+          build_args=(--output .functional-lab-build)
+          if [[ "$GITHUB_REF_NAME" == "codex/tenant-line-production-foundation-20261115" ]]; then
+            build_args+=(--line-uat)
+          fi
+          python3 scripts/prepare-functional-lab.py "${build_args[@]}"
 
       - name: Verify LAB isolation, generated API, and frontend
         run: |

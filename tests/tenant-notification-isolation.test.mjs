@@ -88,3 +88,13 @@ test("login discovery uses one config query for six tenants and omits disabled o
   assert.deepEqual(Array.from(choices, row => row.schoolId), schoolIds.slice(0, 3));
   assert.equal(queries, 1);
 });
+
+
+test("webhook links use configured public origin or a relative path",()=>{
+  const links=load("lineTenantConfig.js",{createHash,URL,process:{env:{}}},"tenantWebhookLinks");
+  const channel={schoolId:"sacred-heart",legacy:false};
+  assert.equal(links(channel).webhookPath,"/api/line/webhook/sacred-heart");
+  assert.equal(links(channel).webhookUrl,"");
+  assert.equal(links({...channel,appOrigin:"https://school.example.test"}).webhookUrl,
+    "https://school.example.test/api/line/webhook/sacred-heart");
+});

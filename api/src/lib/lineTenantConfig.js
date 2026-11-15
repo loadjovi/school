@@ -4,6 +4,7 @@ import {defaultTenantId, getTenantDirectory, tenantSchoolPartition} from "./stor
 import {lineApi} from "./lineMessaging.mjs";
 
 const partitionKey = "line";
+const buildEnablesDemoFees = false;
 const schoolRow = schoolId => `school-${schoolId}`;
 const fingerprint = value => createHash("sha256").update(value).digest("hex");
 
@@ -31,6 +32,7 @@ function httpsOrigin(value) {
 }
 
 export function tenantFeeEnabled(schoolId) {
+  if (buildEnablesDemoFees && process.env.LAB_ENVIRONMENT === "functional-uat" && schoolId === defaultTenantId()) return true;
   const prefix = "LINE_" + tenantSchoolPartition(schoolId).replaceAll("-", "_").toUpperCase();
   return process.env[prefix + "_FEE_COLLECTIONS_ENABLED"] === "true";
 }
@@ -189,4 +191,10 @@ export function lineTargetMatchesChannel(target, channel) {
 
 export function tenantWebhookPath(channel) {
   return channel.legacy ? "/api/line/webhook" : `/api/line/webhook/${encodeURIComponent(channel.schoolId)}`;
+}
+
+export function tenantWebhookLinks(channel) {
+  const webhookPath = tenantWebhookPath(channel);
+  const origin = httpsOrigin(channel.appOrigin || process.env.PUBLIC_APP_URL || process.env.APP_PUBLIC_URL);
+  return {webhookPath, webhookUrl: origin ? new URL(webhookPath, origin).toString() : ""};
 }

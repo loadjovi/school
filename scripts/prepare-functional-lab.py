@@ -100,7 +100,7 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
 else attach();
 })();
 '''
-def prepare(output: Path) -> None:
+def prepare(output: Path, *, line_uat: bool = False) -> None:
     output=output.resolve()
     if output==ROOT or ROOT in output.parents and output.name in {"app","api"}:
         raise ValueError("Do not overwrite source directories")
@@ -160,6 +160,16 @@ def prepare(output: Path) -> None:
     install_sop_fixtures(api)
     install_sop_parent_binding(api)
     install_sop_data_tools(api,app)
+    if line_uat:
+        config=lib/"lineTenantConfig.js"
+        current=config.read_text(encoding="utf-8")
+        marker="const buildEnablesDemoFees = false;"
+        if marker not in current:raise RuntimeError("DEMO fee flag has changed")
+        config.write_text(current.replace(marker,"const buildEnablesDemoFees = true;"),encoding="utf-8")
+        shutil.copyfile(ROOT/"scripts"/"line-uat-fee-fixture.js",fn_dir/"lineUatFeeFixture.js")
+        fee_page=app/"fee-collections.html"
+        fee_page.write_text(fee_page.read_text(encoding="utf-8").replace('<html lang="zh-Hant">','<html lang="zh-Hant" data-line-uat-fees>'),encoding="utf-8")
+
     # No real identities/records or copied secret settings in the release.
     for forbidden in (api/"local.settings.json",app/".env"):
         if forbidden.exists():raise RuntimeError("Unexpected runtime secret file in LAB bundle")
@@ -168,5 +178,6 @@ def prepare(output: Path) -> None:
 if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--output",type=Path,default=ROOT/".functional-lab-build")
+    parser.add_argument("--line-uat",action="store_true")
     args=parser.parse_args()
-    prepare(args.output)
+    prepare(args.output,line_uat=args.line_uat)

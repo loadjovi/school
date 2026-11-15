@@ -5,7 +5,7 @@ import {defaultTenantId,tenantIdValue} from "../lib/storage.js";
 import {getTenantLineAccount} from "../lib/tenantLineAccounts.js";
 import {refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
 import {tenantLineParentReply,tenantLineReplyKind} from "../lib/tenantLineReplies.mjs";
-import {resolveTenantLineChannel,lineTargetMatchesChannel,tenantWebhookPath} from "../lib/lineTenantConfig.js";
+import {resolveTenantLineChannel,lineTargetMatchesChannel,tenantWebhookLinks} from "../lib/lineTenantConfig.js";
 import {
   bindLineNotificationTarget,clearLineNotificationTarget,createLineBindingRequest,findLineBindingRequest,
   getLineNotificationTarget,getSystemSettings,recordLineTest,saveLineNotificationMode
@@ -15,14 +15,14 @@ import {
   parseLineBindingCommand,pushLineMessage,replyLineMessage,verifyLineSignature
 } from "../lib/lineMessaging.mjs";
 
-function lineSettingsResponse(settings,request,channel,extra={}){
+function lineSettingsResponse(settings,channel,extra={}){
   return {
     ...settings,
     lineServiceConfigured:channel.configured,
     lineChannelSecretConfigured:channel.hasSecret,
     lineAccessTokenConfigured:channel.hasToken,
     lineNotificationModeLabel:lineNotificationModeLabel(settings.lineNotificationMode),
-    webhookUrl:new URL(tenantWebhookPath(channel),request.url).toString(),
+    ...tenantWebhookLinks(channel),
     ...extra
   };
 }
@@ -95,7 +95,7 @@ app.http("lineNotificationSettings",{
         const body=await request.json(),mode=String(body?.lineNotificationMode||"");
         if(normalizeLineNotificationMode(mode)!==mode)return json({error:"通知模式不正確"},400);
         const saved=await saveLineNotificationMode({schoolId,mode,updatedBy:access.email});
-        return json(lineSettingsResponse(saved,request,channel));
+        return json(lineSettingsResponse(saved,channel));
       }
       if(request.method==="POST"){
         const body=await request.json(),action=String(body?.action||"");
@@ -104,14 +104,14 @@ app.http("lineNotificationSettings",{
           const code=String(randomInt(100000,1000000)),expiresAt=new Date(Date.now()+15*60*1000).toISOString();
           await createLineBindingRequest({schoolId,codeHash:lineBindingCodeHash(code,channel.channelSecret),botUserId:channel.botUserId,expiresAt,updatedBy:access.email});
           const settings=await getSystemSettings(schoolId);
-          return json(lineSettingsResponse(settings,request,channel,{bindingCode:code,bindingCodeExpiresAt:expiresAt}));
+          return json(lineSettingsResponse(settings,channel,{bindingCode:code,bindingCodeExpiresAt:expiresAt}));
         }
         if(action==="create_absence_binding_code"){
           if(!channel.configured)return json({error:"請先啟用該校的 LINE 官方帳號"},409);
           const code=String(randomInt(100000,1000000)),expiresAt=new Date(Date.now()+15*60*1000).toISOString();
           await createLineBindingRequest({schoolId,codeHash:lineBindingCodeHash(code,channel.channelSecret),botUserId:channel.botUserId,expiresAt,purpose:"absence",updatedBy:access.email});
           const settings=await getSystemSettings(schoolId);
-          return json(lineSettingsResponse(settings,request,channel,{absenceBindingCode:code,absenceBindingCodeExpiresAt:expiresAt}));
+          return json(lineSettingsResponse(settings,channel,{absenceBindingCode:code,absenceBindingCodeExpiresAt:expiresAt}));
         }
         if(action==="test"){
           if(!channel.configured)return json({error:"LINE Messaging API 尚未完成設定"},409);
@@ -121,7 +121,7 @@ app.http("lineNotificationSettings",{
           await pushLineMessage(target.targetId,`✅ ${context.tenant.systemName||context.tenant.schoolName||"學校平台"} LINE 通知測試成功\n時間：${sentAt}\n模式：${lineNotificationModeLabel(target.mode)}\n\n之後後台待辦會依設定模式發送到本群組。`,channel);
           await recordLineTest({schoolId,updatedBy:access.email});
           const settings=await getSystemSettings(schoolId);
-          return json(lineSettingsResponse(settings,request,channel,{testSent:true}));
+          return json(lineSettingsResponse(settings,channel,{testSent:true}));
         }
         if(action==="test_absence"){
           if(!channel.configured)return json({error:"LINE Messaging API 尚未完成設定"},409);
@@ -131,19 +131,19 @@ app.http("lineNotificationSettings",{
           await pushLineMessage(target.targetId,`✅ 學生缺席即時通知群組測試成功\n時間：${sentAt}\n\n之後只有學生被新標記為「缺席」時會通知本群組；請假、遲到與重複儲存不通知。`,channel);
           await recordLineTest({schoolId,purpose:"absence",updatedBy:access.email});
           const settings=await getSystemSettings(schoolId);
-          return json(lineSettingsResponse(settings,request,channel,{absenceTestSent:true}));
+          return json(lineSettingsResponse(settings,channel,{absenceTestSent:true}));
         }
         if(action==="unbind"){
           const settings=await clearLineNotificationTarget({schoolId,updatedBy:access.email});
-          return json(lineSettingsResponse(settings,request,channel));
+          return json(lineSettingsResponse(settings,channel));
         }
         if(action==="unbind_absence"){
           const settings=await clearLineNotificationTarget({schoolId,purpose:"absence",updatedBy:access.email});
-          return json(lineSettingsResponse(settings,request,channel));
+          return json(lineSettingsResponse(settings,channel));
         }
         return json({error:"不支援的操作"},400);
       }
-      return json(lineSettingsResponse(await getSystemSettings(schoolId),request,channel));
+      return json(lineSettingsResponse(await getSystemSettings(schoolId),channel));
     }catch(error){console.error("LINE settings failed",error?.message||String(error));return json({error:"LINE 通知設定處理失敗"},500)}
   }
 });

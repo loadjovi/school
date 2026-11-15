@@ -81,11 +81,12 @@
       const label=channel.messagingConfigured?(channel.legacy?"使用原有聖心設定":"已啟用"):channel.status==="disabled"?"已停用":"待設定";
       const emailLabel={legacy:"沿用聖心既有寄件設定",tenant:"已設定此校寄件服務",disabled:"已停用",lab_suppressed:"LAB 已停用對外寄信",unconfigured:"尚未設定"};
       panel.dataset.legacy=String(channel.legacy);
+      const webhook=channel.webhookPath?new URL(channel.webhookPath,location.origin).href:channel.webhookUrl;
       panel.innerHTML=`<div class="notice"><b>${esc(label)}</b><br>
         Email ${esc(emailLabel[channel.email?.mode]||"尚未設定")}<br>
         LINE Login ${channel.loginConfigured?"已設定":"尚未設定"}<br>
         ${channel.loginCallback?`登入回呼 <code style="overflow-wrap:anywhere">${esc(channel.loginCallback)}</code><br>`:""}
-        Webhook URL <code style="overflow-wrap:anywhere">${esc(channel.webhookUrl)}</code><br>
+        Webhook URL <code style="overflow-wrap:anywhere">${esc(webhook)}</code><br>
         在 Azure 設定 <code style="overflow-wrap:anywhere">${esc(prefix)}_CHANNEL_SECRET</code> 與
         <code style="overflow-wrap:anywhere">${esc(prefix)}_CHANNEL_ACCESS_TOKEN</code> 後，可啟用或重新驗證。
         <br>LINE Login 另需設定 <code>${esc(prefix)}_LOGIN_CHANNEL_ID</code>、<code>${esc(prefix)}_LOGIN_CHANNEL_SECRET</code>

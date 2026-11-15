@@ -59,7 +59,9 @@ async function showGoogleLink(){
 function renderAdminCreate(){
   if(state.me?.role!=="admin"){$("adminCreate").innerHTML="";return}
   const accounts=state.templates.filter(item=>item.active===true),activities=state.activities;
-  $("adminCreate").innerHTML=`<div class="card"><h2>＋ 建立收費專案</h2><div class="steps"><span>1 建立草稿</span><span>2 同步收費對象</span><span>3 財務開放繳費</span></div><form id="projectForm"><div class="row"><div><label>專案類型</label><select name="kind" id="projectKind"><option value="TEAM_T">團 T</option><option value="YEAR_END_DINNER">期末聚餐</option></select></div><div><label>專案名稱</label><input name="title" maxlength="100" placeholder="例如：115 學年度第二次團 T 加購" required></div></div><div class="row"><div><label>繳費期限</label><input name="dueDate" type="date" required></div><div><label>收款帳戶</label><select name="accountTemplateId" required><option value="">請選擇</option>${accounts.map(item=>`<option value="${esc(item.id)}">${esc(item.label)}｜${esc(item.bankName)} ${esc(item.accountNumber.slice(-4))}</option>`).join("")}</select></div></div><div id="activityField" class="hidden"><label>對應期末聚餐活動</label><select name="activityId"><option value="">請選擇活動</option>${activities.map(item=>`<option value="${esc(item.activityId)}">${esc(item.title)}</option>`).join("")}</select></div><label>家長繳費說明</label><textarea name="instructions" maxlength="1000" placeholder="例如：請於期限內完成匯款，並回填帳號末五碼。"></textarea><div class="actions"><button type="submit" ${accounts.length?"":"disabled"}>建立草稿</button></div>${accounts.length?"":`<div class="notice warn">目前沒有啟用中的收款帳戶，請先至「團服與活動 → 匯款帳戶」建立。</div>`}</form></div>`;
+  const fixtureButton=document.documentElement.hasAttribute("data-line-uat-fees")&&state.me.capabilities?.financeVerifier
+    ? '<button type="button" class="secondary" data-action="seed-demo-fee">建立 DEMO 收費測試資料</button>' : '';
+  $("adminCreate").innerHTML=`<div class="card"><h2>＋ 建立收費專案</h2>${fixtureButton}<div class="steps"><span>1 建立草稿</span><span>2 同步收費對象</span><span>3 財務開放繳費</span></div><form id="projectForm"><div class="row"><div><label>專案類型</label><select name="kind" id="projectKind"><option value="TEAM_T">團 T</option><option value="YEAR_END_DINNER">期末聚餐</option></select></div><div><label>專案名稱</label><input name="title" maxlength="100" placeholder="例如：115 學年度第二次團 T 加購" required></div></div><div class="row"><div><label>繳費期限</label><input name="dueDate" type="date" required></div><div><label>收款帳戶</label><select name="accountTemplateId" required><option value="">請選擇</option>${accounts.map(item=>`<option value="${esc(item.id)}">${esc(item.label)}｜${esc(item.bankName)} ${esc(item.accountNumber.slice(-4))}</option>`).join("")}</select></div></div><div id="activityField" class="hidden"><label>對應期末聚餐活動</label><select name="activityId"><option value="">請選擇活動</option>${activities.map(item=>`<option value="${esc(item.activityId)}">${esc(item.title)}</option>`).join("")}</select></div><label>家長繳費說明</label><textarea name="instructions" maxlength="1000" placeholder="例如：請於期限內完成匯款，並回填帳號末五碼。"></textarea><div class="actions"><button type="submit" ${accounts.length?"":"disabled"}>建立草稿</button></div>${accounts.length?"":`<div class="notice warn">目前沒有啟用中的收款帳戶，請先至「團服與活動 → 匯款帳戶」建立。</div>`}</form></div>`;
   const kind=$("projectKind"),toggle=()=>{$("activityField").classList.toggle("hidden",kind.value!=="YEAR_END_DINNER")};kind.addEventListener("change",toggle);toggle();
   $("projectForm").addEventListener("submit",createProject);
 }
@@ -171,6 +173,11 @@ document.addEventListener("click",async event=>{
   if(action==="reopen")return mutateProject(target.dataset.id,"REOPEN");
   target.disabled=true;
   try{
+    if(action==="seed-demo-fee"){
+      await api("sop-lab/line-uat-fee-fixture",{method:"POST"});
+      await load();
+      showStatus("已準備 DEMO 虛構收款帳戶及期末聚餐報名。請勿實際匯款。");
+    }
     if(action==="link-line"){
       const {url}=await api("line/tenant-login/"+encodeURIComponent(state.me.schoolId)+"/start",{
         method:"POST",body:JSON.stringify({mode:"link"})

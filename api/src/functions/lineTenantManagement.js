@@ -3,7 +3,7 @@ import {tenantEmailConfig} from "../lib/tenantEmailConfig.mjs";
 import {getAccess, json} from "../lib/auth.js";
 import {getTenantDirectory, tenantIdValue} from "../lib/storage.js";
 import {
-  LineConfigError, resolveTenantLineChannel, saveTenantLineChannel, tenantWebhookPath
+  LineConfigError, resolveTenantLineChannel, saveTenantLineChannel, tenantWebhookLinks
 } from "../lib/lineTenantConfig.js";
 
 app.http("tenantLineChannelConfig", {
@@ -33,7 +33,7 @@ app.http("tenantLineChannelConfig", {
         messagingConfigured: channel.configured, channelSecretConfigured: channel.hasSecret,
         accessTokenConfigured: channel.hasToken, loginConfigured: channel.loginConfigured,
         loginCallback: channel.loginConfigured ? channel.appOrigin + "/api/line/tenant-login/" + schoolId + "/callback" : "",
-        webhookUrl: new URL(tenantWebhookPath(channel), request.url).toString()
+        ...tenantWebhookLinks(channel)
       });
     } catch (error) {
       if (error instanceof LineConfigError) return json({error: error.message}, 409);
