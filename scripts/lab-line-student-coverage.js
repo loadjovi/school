@@ -104,7 +104,8 @@
     function parentRows(item){
       if(!item?.parents?.length)return `<div class="notice">此學生目前尚無已核准的家長 Gmail 關聯。</div>`;
       return item.parents.map(parent=>{
-        const stateText=!parent.bound?"尚未綁定 LINE":parent.friendStatus==="friend"?"已綁定｜綁定時可通知":parent.friendStatus==="not_friend"?"已綁定｜未加入或已封鎖官方帳號":"已綁定｜好友狀態待確認";
+        const linkedText=parent.connectionSource==="identity_link"?"LINE 登入已連結":"LINE 已綁定";
+        const stateText=!parent.bound?"尚未綁定 LINE":parent.friendStatus==="friend"?`${linkedText}｜可通知`:parent.friendStatus==="not_friend"?`${linkedText}｜未加入或已封鎖官方帳號`:`${linkedText}｜好友狀態待確認`;
         const lineName=parent.lineDisplayName?`<small>LINE：${esc(parent.lineDisplayName)}</small>`:"";
         const boundAt=parent.boundAt?`<small>綁定時間：${esc(formatTime(parent.boundAt))}</small>`:"";
         return `<div class="lab-line-parent-row"><div><b>${esc(parent.relationship||"家長")}${parent.parentName?`｜${esc(parent.parentName)}`:""}</b><small>${esc(parent.parentEmailMasked||"")}</small>${lineName}${boundAt}</div><span class="${parent.friendStatus==="friend"?"good":parent.bound?"warn":"muted"}">${stateText}</span></div>`;
