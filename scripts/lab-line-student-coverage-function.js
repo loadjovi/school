@@ -4,6 +4,7 @@ import {TableClient} from "@azure/data-tables";
 import {getTenantContext,getStudentAliasInfo,json} from "../lib/auth.js";
 import {ensureTenantTables,listStudentMaster,table,tenantSchoolPartition} from "../lib/storage.js";
 import {getLineAccountBinding} from "../lib/lineAccountBinding.js";
+import {getLabParentIdentityLinkByEmail} from "../lib/labLineSession.mjs";
 import {buildLabLineStudentCoverage,parentCoverageKey} from "../lib/labLineStudentCoverage.mjs";
 
 const clean=(value,max=200)=>String(value??"").trim().slice(0,max);
@@ -50,8 +51,14 @@ async function bindings(schoolId,links){
   for(let index=0;index<emails.length;index+=8){
     const batch=emails.slice(index,index+8);
     await Promise.all(batch.map(async email=>{
-      const binding=await getLineAccountBinding(schoolId,email);
-      result.set(email,binding?{...binding,friendStatus:friendByEmail.get(email)||"unknown"}:{bound:false});
+      const [binding,identityLink]=await Promise.all([
+        getLineAccountBinding(schoolId,email),
+        getLabParentIdentityLinkByEmail(email)
+      ]);
+      const friendStatus=friendByEmail.get(email)||"unknown";
+      if(binding)result.set(email,{...binding,friendStatus,connectionSource:"account_binding"});
+      else if(identityLink)result.set(email,{bound:true,friendStatus,lineDisplayName:"LINE 登入已連結",boundAt:identityLink.linkedAt,connectionSource:"identity_link"});
+      else result.set(email,{bound:false});
     }));
   }
   return result;
