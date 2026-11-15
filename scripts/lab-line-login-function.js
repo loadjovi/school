@@ -345,7 +345,7 @@ app.http("labLineRichMenuSetup",{
         readFile(new URL("../assets/lab-rich-menu-parent.png",import.meta.url)),
         readFile(new URL("../assets/lab-rich-menu-staff.png",import.meta.url))
       ]);
-      const saved=await setupLabRichMenus({schoolId:ctx.schoolId,parentImage,staffImage,updatedBy:ctx.access.email});
+      const saved=await setupLabRichMenus({schoolId:ctx.schoolId,parentImage,staffImage,updatedBy:ctx.access.email,force:true});
       const assignment=await assignLabRoleRichMenu({schoolId:ctx.schoolId,email:ctx.access.email});
       return response({configured:saved.configured,reused:saved.reused,updatedAt:saved.updatedAt,assigned:assignment.assigned===true,audience:assignment.audience||"unbound",note:"兩組選單 ID 已保存於 LAB Storage；尚未設定為全體預設選單。"});
     }catch(error){
