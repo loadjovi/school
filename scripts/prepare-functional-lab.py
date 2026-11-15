@@ -489,10 +489,17 @@ function labAccountLinkCard(){
   const status=state.labAccountLinkStatus;
   if(!status)return `<div class="card"><h2>🔐 登入方式</h2><div class="notice">正在確認 Gmail 與 LINE 綁定狀態…</div></div>`;
   if(status.error)return `<div class="card"><h2>🔐 登入方式</h2><div class="error">${esc(status.error)}</div></div>`;
+  const privileged=["admin","teacher","globalAdmin"].includes(state.me?.role);
+  const accountNotice=privileged
+    ?`Gmail 與 LINE 只負責識別同一個平台帳號；實際權限仍由 Global 管理中心指派，不會因綁定 LINE 自動升級。`
+    :`Gmail 與 LINE 可作為同一個家長帳號的登入方式；完成學生綁定後，兩種登入會共用同一位學生與紀錄。`;
   const gmail=status.gmailLinked?`<span class="badge ok">✅ Gmail 已綁定</span>${status.gmailMasked?`<div class="muted">${esc(status.gmailMasked)}</div>`:""}`:`<span class="badge warn">尚未綁定 Gmail</span>`;
   const line=status.lineLinked?`<span class="badge ok">✅ LINE 已綁定</span>${status.lineDisplayName?`<div class="muted">${esc(status.lineDisplayName)}</div>`:""}`:`<span class="badge warn">尚未綁定 LINE</span>`;
-  const action=!status.lineLinked?`<div class="notice" style="margin-top:14px">直接完成 LINE 授權即可；管理員或老師不需要先具備學生資料。</div><button class="primary" style="background:#06c755" onclick="startLabAccountLineLink()">追加綁定 LINE</button>`:!status.gmailLinked?`<div class="notice" style="margin-top:14px">選擇既有 Gmail 完成追加綁定；不會重新建立平台帳號。</div><div id="labGmailLinkButton" style="display:flex;justify-content:center;margin-top:14px"></div>`:`<div class="notice" style="margin-top:14px"><b>雙重登入已完成</b><br>之後可使用 Gmail 或 LINE 登入同一個平台帳號。</div>`;
-  return `<div class="card"><h2>🔐 登入與通知帳號</h2><div class="notice">Gmail 與 LINE 只負責識別同一個平台帳號；實際權限仍由 Global 管理中心指派，不會因綁定 LINE 自動升級。</div><div class="row2" style="margin-top:14px"><div class="item" style="display:block">${gmail}</div><div class="item" style="display:block">${line}</div></div>${action}</div>`;
+  const lineLinkNotice=privileged
+    ?`直接完成 LINE 授權即可；管理員或老師不需要先具備學生資料。`
+    :`完成 LINE 授權後，可使用 Gmail 或 LINE 登入同一個家長帳號；學生綁定申請不會重複建立。`;
+  const action=!status.lineLinked?`<div class="notice" style="margin-top:14px">${lineLinkNotice}</div><button class="primary" style="background:#06c755" onclick="startLabAccountLineLink()">追加綁定 LINE</button>`:!status.gmailLinked?`<div class="notice" style="margin-top:14px">選擇既有 Gmail 完成追加綁定；不會重新建立平台帳號。</div><div id="labGmailLinkButton" style="display:flex;justify-content:center;margin-top:14px"></div>`:`<div class="notice" style="margin-top:14px"><b>雙重登入已完成</b><br>之後可使用 Gmail 或 LINE 登入同一個平台帳號。</div>`;
+  return `<div class="card"><h2>🔐 登入與通知帳號</h2><div class="notice">${accountNotice}</div><div class="row2" style="margin-top:14px"><div class="item" style="display:block">${gmail}</div><div class="item" style="display:block">${line}</div></div>${action}</div>`;
 }
 window.startLabAccountLineLink=async function(){
   try{
