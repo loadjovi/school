@@ -72,7 +72,7 @@
     const panel=document.getElementById("globalLineChannel_"+sid);
     if(!panel)return;
     if(status==="disabled"&&!window.confirm("停用此校 LINE 官方帳號？群組通知會停止。"))return;
-    if(status==="active"&&panel.dataset.legacy==="true"&&!window.confirm("切換聖心至逐校 Webhook 後，請更新 LINE Developers 的 Webhook URL 並重新綁定群組。確定切換？"))return;
+    if(status==="active"&&panel.dataset.legacy==="true"&&!window.confirm("確定切換聖心至逐校設定？若改用不同官方帳號，需更新 Webhook 並重新綁定群組。"))return;
     panel.textContent="載入中…";
     try{
       const endpoint="/api/line/tenant-config/"+encodeURIComponent(sid);

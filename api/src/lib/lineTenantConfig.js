@@ -44,7 +44,7 @@ export async function resolveTenantLineChannel(schoolId) {
       row.tokenFingerprint === fingerprint(accessToken)))
   );
   return {
-    schoolId: id, status, configured, legacy,
+    schoolId: id, status, configured, legacy, acceptsLegacy: legacy || (id === defaultTenantId() && row?.acceptsLegacy === true),
     platformName: tenant?.systemName || tenant?.schoolName || "學校平台", botUserId: row?.botUserId || "",
     channelSecret: configured ? channelSecret : "",
     accessToken: configured ? accessToken : "",
@@ -69,7 +69,8 @@ export async function saveTenantLineChannel(schoolId, status, actor) {
   const old = await read(client, schoolRow(id));
   const row = {
     partitionKey, rowKey: schoolRow(id), status,
-    botUserId: old?.botUserId || "", secretFingerprint: old?.secretFingerprint || "",
+    botUserId: old?.botUserId || "", acceptsLegacy: old?.acceptsLegacy === true,
+    secretFingerprint: old?.secretFingerprint || "",
     tokenFingerprint: old?.tokenFingerprint || "", updatedBy: actor,
     updatedAt: new Date().toISOString()
   };
@@ -90,12 +91,15 @@ export async function saveTenantLineChannel(schoolId, status, actor) {
       const bot = await lineApi("/v2/bot/info", {method: "GET", accessToken});
       if (!/^U[0-9a-f]{32}$/i.test(bot.userId || "")) throw new Error("Missing bot user ID");
       row.botUserId = bot.userId.toLowerCase().replace(/^u/, "U");
-      if (legacy.accessToken && id !== defaultTenantId()) {
-        const legacyBot = await lineApi("/v2/bot/info", {method: "GET", accessToken: legacy.accessToken});
+      row.acceptsLegacy = id === defaultTenantId() &&
+        Boolean(old?.acceptsLegacy && old.botUserId === row.botUserId);
+      if (legacy.accessToken) {
+        const legacyBot = accessToken === legacy.accessToken
+          ? bot : await lineApi("/v2/bot/info", {method: "GET", accessToken: legacy.accessToken});
         if (!/^U[0-9a-f]{32}$/i.test(legacyBot.userId || "")) throw new Error("Missing legacy bot user ID");
-        if (row.botUserId.toLowerCase() === legacyBot.userId.toLowerCase()) {
-          throw new LineConfigError("此 LINE 官方帳號已用於聖心");
-        }
+        const sameBot = row.botUserId.toLowerCase() === legacyBot.userId.toLowerCase();
+        if (sameBot && id !== defaultTenantId()) throw new LineConfigError("此 LINE 官方帳號已用於聖心");
+        if (sameBot) row.acceptsLegacy = true;
       }
     } catch (error) {
       if (error instanceof LineConfigError) throw error;
@@ -121,9 +125,9 @@ export async function saveTenantLineChannel(schoolId, status, actor) {
 }
 
 export function lineTargetMatchesChannel(target, channel) {
-  return Boolean(target.targetId && (channel.legacy
-    ? !target.botUserId
-    : target.botUserId && target.botUserId === channel.botUserId));
+  return Boolean(target.targetId && (target.botUserId
+    ? target.botUserId === channel.botUserId
+    : channel.acceptsLegacy));
 }
 
 export function tenantWebhookPath(channel) {

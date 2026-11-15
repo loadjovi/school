@@ -26,7 +26,7 @@ app.http("tenantLineChannelConfig", {
       }
       const channel = await resolveTenantLineChannel(schoolId);
       return json({
-        schoolId, status: channel.status, legacy: channel.legacy,
+        schoolId, status: channel.status, legacy: channel.legacy, acceptsLegacy: channel.acceptsLegacy,
         messagingConfigured: channel.configured, channelSecretConfigured: channel.hasSecret,
         accessTokenConfigured: channel.hasToken,
         webhookUrl: new URL(tenantWebhookPath(channel), request.url).toString()

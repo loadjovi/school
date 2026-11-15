@@ -27,7 +27,7 @@ function lineSettingsResponse(settings,request,channel,extra={}){
 async function handleLineWebhook(request,schoolId,legacyRoute){
     if(!schoolId||tenantIdValue(schoolId)!==schoolId)return json({error:"Not found"},404);
     const channel=await resolveTenantLineChannel(schoolId);
-    if(!channel.configured||legacyRoute!==channel.legacy)return json({error:"LINE webhook is not configured"},503);
+    if(!channel.configured||(legacyRoute?!channel.acceptsLegacy:channel.legacy))return json({error:"LINE webhook is not configured"},503);
     const {channelSecret:secret,accessToken,botUserId}=channel;
     const options={accessToken};
     const rawBody=Buffer.from(await request.arrayBuffer());
@@ -44,7 +44,7 @@ async function handleLineWebhook(request,schoolId,legacyRoute){
         const replyToken=String(event.replyToken||"");
         const groupId=event.source?.type==="group"?String(event.source.groupId||""):"";
         if(!groupId){await replyLineMessage(replyToken,"請在要接收通知的 LINE 群組內輸入綁定指令。",options);continue}
-        const requestRow=await findLineBindingRequest(schoolId,lineBindingCodeHash(code,secret),botUserId);
+        const requestRow=await findLineBindingRequest(schoolId,lineBindingCodeHash(code,secret),botUserId,channel.acceptsLegacy);
         if(!requestRow){await replyLineMessage(replyToken,"綁定碼不正確或已逾時，請回到平台「更多 → 平台設定」重新產生。",options);continue}
         const absence=requestRow.purpose==="absence";
         const group=await getLineGroupSummary(groupId,options),label=String(group?.groupName||(absence?"學生缺席通知群組":"LINE 幹部群組"));

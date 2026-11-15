@@ -113,3 +113,39 @@ test("legacy token is available to Sacred Heart only and explicit sends fail wit
   assert.equal((await resolveTenantLineChannel("school-b")).accessToken, "");
   await assert.rejects(pushLineMessage("group-a", "test"), /LINE_CHANNEL_ACCESS_TOKEN/);
 });
+
+test("only the same verified Sacred Heart bot can inherit existing groups", async () => {
+  const {createHash} = await import("node:crypto");
+  const rows = new Map();
+  const client = {
+    async createTable() {},
+    async getEntity(partition, rowKey) {
+      if (!rows.has(rowKey)) throw Object.assign(new Error(), {statusCode: 404});
+      return rows.get(rowKey);
+    },
+    async submitTransaction(actions) {
+      for (const [, row] of actions) rows.set(row.rowKey, {...row, etag: "test-etag"});
+    }
+  };
+  const {saveTenantLineChannel, resolveTenantLineChannel, lineTargetMatchesChannel} = load(
+    "api/src/lib/lineTenantConfig.js", {
+      createHash, defaultTenantId, tenantSchoolPartition: value => value,
+      getTenantDirectory: async () => ({status: "active"}),
+      TableClient: {fromConnectionString: () => client},
+      process: {env: {
+        LINE_CHANNEL_SECRET: "legacy-secret", LINE_CHANNEL_ACCESS_TOKEN: "legacy-token",
+        LINE_SACRED_HEART_CHANNEL_SECRET: "sacred-secret", LINE_SACRED_HEART_CHANNEL_ACCESS_TOKEN: "sacred-token",
+        LINE_SCHOOL_B_CHANNEL_SECRET: "school-b-secret", LINE_SCHOOL_B_CHANNEL_ACCESS_TOKEN: "duplicate-bot-token"
+      }},
+      lineApi: async () => ({userId: botId})
+    }, ";({saveTenantLineChannel,resolveTenantLineChannel,lineTargetMatchesChannel})"
+  );
+  await assert.rejects(saveTenantLineChannel("school-b", "active", "admin"), /已用於聖心/);
+  assert.equal(rows.size, 0);
+  await saveTenantLineChannel("sacred-heart", "active", "admin");
+  const channel = await resolveTenantLineChannel("sacred-heart");
+  assert.equal(channel.legacy, false);
+  assert.equal(channel.acceptsLegacy, true);
+  assert.equal(channel.accessToken, "sacred-token");
+  assert.equal(lineTargetMatchesChannel({targetId: "original-group"}, channel), true);
+});

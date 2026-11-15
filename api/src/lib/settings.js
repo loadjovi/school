@@ -88,7 +88,7 @@ export async function createLineBindingRequest({schoolId=defaultTenantId(),codeH
   return {expiresAt:String(expiresAt||"")};
 }
 
-export async function findLineBindingRequest(schoolId,codeHash,botUserId){
+export async function findLineBindingRequest(schoolId,codeHash,botUserId,acceptsLegacy=false){
   if(!codeHash)return null;
   await ensureSettingsTable();
   const partition=tenantSchoolPartition(schoolId);
@@ -99,7 +99,7 @@ export async function findLineBindingRequest(schoolId,codeHash,botUserId){
   const matches=[
     ["admin",row.lineBindingCodeHash,row.lineBindingCodeExpiresAt,row.lineBindingBotUserId],
     ["absence",row.lineAbsenceBindingCodeHash,row.lineAbsenceBindingCodeExpiresAt,row.lineAbsenceBindingBotUserId]
-  ].filter(([,hash,expiresAt,requestBot])=>hash===codeHash&&String(requestBot||"")===botUserId&&Date.parse(expiresAt)>now);
+  ].filter(([,hash,expiresAt,requestBot])=>hash===codeHash&&(requestBot?requestBot===botUserId:acceptsLegacy)&&Date.parse(expiresAt)>now);
   return matches.length===1?{purpose:matches[0][0],etag:row.etag}:null;
 }
 
