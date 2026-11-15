@@ -7,7 +7,15 @@ function opts(list,val){return list.map(x=>`<option value="${esc(x)}" ${x===val?
 function toast(msg){const t=$("toast");if(!t)return;t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1800)}
 async function api(url,options={}){const h={"Content-Type":"application/json"};if(state.token)h["X-Google-ID-Token"]=state.token;const schoolContext=sessionStorage.getItem("school_context_id")||"",roleContext=sessionStorage.getItem("role_context")||"";if(schoolContext)h["X-School-Id"]=schoolContext;if(roleContext)h["X-Role-Context"]=roleContext;Object.assign(h,options.headers||{});const method=String(options.method||"GET").toUpperCase(),fetchOptions={...options,headers:h};if(method==="GET"&&String(url).startsWith("/api/")&&!fetchOptions.cache)fetchOptions.cache="no-store";const r=await fetch(url,fetchOptions);const d=await r.json().catch(()=>({}));if(r.status===401){logout(false);throw new Error("登入已失效，請重新使用 Google 登入")};if(!r.ok)throw new Error(d.error||d.message||`HTTP ${r.status}`);return d}
 function logout(reload=true){state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}
-async function boot(){if(!state.token){renderLogin();return}try{await loadProfile()}catch(e){renderLogin(e.message)}}
+async function boot(){
+  const query=new URLSearchParams(location.search);
+  const lineError=query.get("line_error");
+  if(lineError){
+    query.delete("line_error");
+    history.replaceState({}, "", location.pathname+(query.size?"?"+query:""));
+    if(!state.token){renderLogin(lineError==="conflict"?"此校帳號已有綁定，請聯絡管理員確認。":"LINE 驗證未完成，請重新登入。");return}
+  }
+  if(!state.token){renderLogin();return}try{await loadProfile()}catch(e){renderLogin(e.message)}}
 const schoolViewScript="/school-access.js?v=20261027-school-followup";
 let schoolViewLoading=null;
 async function loadSchoolViewModule(){
@@ -88,11 +96,47 @@ async function loadProfile(){
 }
 async function loadAdmin(){const [r,m]=await Promise.all([api("/api/student-registration?status=pending"),api("/api/student-master")]);state.registrations=r.items||[];state.master=m.items||[]}
 async function refreshStudent(){if(!state.student)return;const studentId=String(state.student.studentId),month=new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"}).slice(0,7);const[sum,logs]=await Promise.all([api(`/api/summary?studentId=${encodeURIComponent(studentId)}&month=${month}`),api(`/api/practice?studentId=${encodeURIComponent(studentId)}&month=${month}`)]);if(String(state.student?.studentId)!==studentId)return;state.summary=sum;state.practice=logs.items||[]}
-async function renderLogin(error=""){document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>Google Gmail 登入版 v3<br>家長、老師與管理員共用入口</p>${error?`<div class="error">${esc(error)}</div>`:""}<div id="googleBtn" style="display:flex;justify-content:center;margin-top:18px"></div><div class="notice" style="margin-top:16px">第一次登入若尚未綁定學生，可直接填寫學生資料送交管理員確認。</div></div></div>`;try{const cfg=await fetch("/api/config").then(r=>r.json());if(!cfg.googleClientId){$("googleBtn").innerHTML='<div class="error">尚未設定 GOOGLE_CLIENT_ID</div>';return}let n=0;const wait=setInterval(()=>{n++;if(window.google?.accounts?.id){clearInterval(wait);google.accounts.id.initialize({client_id:cfg.googleClientId,callback:async res=>{state.token=res.credential;sessionStorage.setItem("google_id_token",state.token);try{await loadProfile()}catch(e){renderLogin(e.message)}}});google.accounts.id.renderButton($("googleBtn"),{theme:"outline",size:"large",shape:"pill",text:"signin_with",locale:"zh_TW",width:Math.min(280,Math.max(200,document.getElementById("googleBtn").clientWidth||280))})}else if(n>50){clearInterval(wait);$("googleBtn").innerHTML='<div class="error">Google 登入元件載入失敗</div>'}},100)}catch(e){$("googleBtn").innerHTML=`<div class="error">${esc(e.message)}</div>`}}
+async function renderLineLogin(){
+  const mount=$("tenantLineSignIn");
+  if(!mount)return;
+  try{
+    const response=await fetch("/api/line/login-schools",{cache:"no-store"});
+    if(!response.ok)return;
+    const {items}=await response.json();
+    if(!mount.isConnected||!items?.length)return;
+    const requested=new URLSearchParams(location.search).get("schoolId");
+    mount.innerHTML=`<label for="lineSchoolChoice">選擇家長所屬學校</label>
+      <select id="lineSchoolChoice">${items.map(item=>`<option value="${esc(item.schoolId)}"${item.schoolId===requested?" selected":""}>${esc(item.schoolName)}</option>`).join("")}</select>
+      <button type="button" class="primary" id="lineSchoolSignIn">使用 LINE 登入</button>
+      <p id="lineSignInError" role="status"></p>`;
+    $("lineSchoolSignIn").onclick=async()=>{
+      const button=$("lineSchoolSignIn"),sid=$("lineSchoolChoice").value;
+      button.disabled=true;
+      try{
+        const result=await fetch("/api/line/tenant-login/"+encodeURIComponent(sid)+"/start",{
+          method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"login"})
+        });
+        const data=await result.json();
+        if(!result.ok)throw new Error(data.error||"LINE 登入暫時無法使用");
+        location.assign(data.url);
+      }catch(error){$("lineSignInError").textContent=error.message;button.disabled=false}
+    };
+  }catch(error){console.warn("LINE school list unavailable")}
+}
+
+function tenantServicesEntry(){
+  const me=state.me, options=me?.capabilities||{};
+  if(!["admin","parent","unassigned"].includes(me?.role)||!["home","admin","uniformEvents"].includes(state.page))return "";
+  const billing=options.feeCollections&&me.role!=="unassigned";
+  if(!options.lineAccount&&!billing)return "";
+  const label=options.lineAccount&&billing?"LINE 帳號與費用":options.lineAccount?"管理 LINE 帳號":"收費專案與匯款核帳";
+  return `<div class="card"><a href="/fee-collections.html">${label}</a></div>`;
+}
+async function renderLogin(error=""){document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>Google Gmail 登入版 v3<br>家長、老師與管理員共用入口</p>${error?`<div class="error">${esc(error)}</div>`:""}<div id="googleBtn" style="display:flex;justify-content:center;margin-top:18px"></div><div id="tenantLineSignIn"></div><div class="notice" style="margin-top:16px">第一次登入若尚未綁定學生，可直接填寫學生資料送交管理員確認。</div></div></div>`;renderLineLogin();if(window.__lineEmbedded){$("googleBtn").textContent="Google 登入請使用 Safari 或 Chrome";return}try{const cfg=await fetch("/api/config").then(r=>r.json());if(!cfg.googleClientId){$("googleBtn").innerHTML='<div class="error">尚未設定 GOOGLE_CLIENT_ID</div>';return}let n=0;const wait=setInterval(()=>{n++;if(window.google?.accounts?.id){clearInterval(wait);google.accounts.id.initialize({client_id:cfg.googleClientId,callback:async res=>{state.token=res.credential;sessionStorage.setItem("google_id_token",state.token);try{await loadProfile()}catch(e){renderLogin(e.message)}}});google.accounts.id.renderButton($("googleBtn"),{theme:"outline",size:"large",shape:"pill",text:"signin_with",locale:"zh_TW",width:Math.min(280,Math.max(200,document.getElementById("googleBtn").clientWidth||280))})}else if(n>50){clearInterval(wait);$("googleBtn").innerHTML='<div class="error">Google 登入元件載入失敗</div>'}},100)}catch(e){$("googleBtn").innerHTML=`<div class="error">${esc(e.message)}</div>`}}
 function roleText(){return({parent:"家長／學生",teacher:"老師",sectionTeacher:"分部老師",ensembleTeacher:"合奏老師",comprehensiveTeacher:"綜合課老師",privateTeacher:"個別課老師",admin:"學校管理員",school:"校方查詢",globalAdmin:"Global 管理員",tenantPending:"學校建置中",contextSelector:"選擇身分",contextDenied:"請重新選擇身分",unassigned:"尚未綁定"}[state.me?.role]||"使用者")}
 function navBtn(p,i,l){return `<button class="${state.page===p?"active":""}" onclick="go('${p}')"><span>${i}</span>${l}</button>`}
 function nav(){const r=state.me.role;if(state.page==="contextSelect")return `<nav class="nav"><button></button><button></button><button></button><button></button></nav>`;if(r==="parent")return `<nav class="nav">${navBtn("home","🏠","首頁")}${navBtn("practice","⏱️","自主打卡")}${navBtn("record","📊","紀錄")}${navBtn("uniformEvents","🎻","活動團服")}</nav>`;if(r==="sectionTeacher")return `<nav class="nav">${navBtn("section","🎼","分部點名")}${navBtn("help","ℹ️","說明")}<button></button><button></button></nav>`;if(r==="privateTeacher")return `<nav class="nav">${navBtn("private","🎻","個別課")}${navBtn("help","ℹ️","說明")}<button></button><button></button></nav>`;if(r==="admin")return `<nav class="nav">${navBtn("admin","🏠","工作首頁")}${navBtn("students","👥","學生主檔")}${navBtn("scores","🧮","學期考核")}${navBtn("help","ℹ️","說明")}</nav>`;return `<nav class="nav">${navBtn("home","🏠","登記")}${navBtn("help","ℹ️","說明")}<button></button><button></button></nav>`}
-function shell(content){const multi=(state.me?.contexts||[]).length>1;const roleBadge=multi?`<button class="role" style="border:0;cursor:pointer" onclick="showContextSelector()" title="切換使用身分">${roleText()} ▾</button>`:`<span class="role">${roleText()}</span>`;const onboarding=state.me?.capabilities?.tenantOnboarding===true?`<div class="card" style="border:2px solid #f59e0b"><div class="notice"><b>🟠 Phase 4 隔離驗證模式</b><br>目前只操作「${esc(state.me?.schoolName||"第二校")}」的 Tenant 資料。這不是正式營運狀態，請依 Global Onboarding 清單完成角色隔離測試。</div></div>`:"";return `<div class="shell"><header class="top"><div class="brand">🎻 ${esc(state.me?.systemName||state.me?.schoolName||"聖心小學弦樂團")}</div><div class="sub">${state.me?.schoolName?esc(state.me.schoolName)+"｜":""}Google Gmail 登入版 v3</div><div class="userrow"><div><small>${esc(state.me.displayName||state.me.email)}</small>${roleBadge}</div><button class="logout" onclick="logout()">登出</button></div></header><main class="main">${onboarding}${content}</main>${nav()}</div>`}
+function shell(content){const multi=(state.me?.contexts||[]).length>1;const roleBadge=multi?`<button class="role" style="border:0;cursor:pointer" onclick="showContextSelector()" title="切換使用身分">${roleText()} ▾</button>`:`<span class="role">${roleText()}</span>`;const onboarding=state.me?.capabilities?.tenantOnboarding===true?`<div class="card" style="border:2px solid #f59e0b"><div class="notice"><b>🟠 Phase 4 隔離驗證模式</b><br>目前只操作「${esc(state.me?.schoolName||"第二校")}」的 Tenant 資料。這不是正式營運狀態，請依 Global Onboarding 清單完成角色隔離測試。</div></div>`:"";return `<div class="shell"><header class="top"><div class="brand">🎻 ${esc(state.me?.systemName||state.me?.schoolName||"聖心小學弦樂團")}</div><div class="sub">${state.me?.schoolName?esc(state.me.schoolName)+"｜":""}${state.me?.authProvider==="line"?"LINE 家長登入":"Google 登入"}</div><div class="userrow"><div><small>${esc(state.me.displayName||state.me.email)}</small>${roleBadge}</div><button class="logout" onclick="logout()">登出</button></div></header><main class="main">${onboarding}${tenantServicesEntry()}${content}</main>${nav()}</div>`}
 function parentSelfBindPanel(){
   const b=state.parentSelfBind||{};
   if(!b.schoolId)return "";

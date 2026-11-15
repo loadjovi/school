@@ -41,10 +41,12 @@ export function lineAbsenceMessage({date,items=[],actorName="",appUrl="",platfor
 export async function dispatchLineAbsenceNotifications({schoolId,date,items=[],actorName=""}={}){
   const students=lineAbsenceCandidates(items);
   if(!students.length)return {sent:false,reason:"no_absence",count:0};
-  if(process.env.LAB_ENVIRONMENT==="functional-uat")return {sent:false,reason:"lab_suppressed",count:students.length};
+  const lab=process.env.LAB_ENVIRONMENT==="functional-uat";
+  if(lab&&process.env.LAB_ALLOW_TENANT_LINE_ABSENCE!=="true")return {sent:false,reason:"lab_suppressed",count:students.length};
   const target=await getLineNotificationTarget(schoolId,"absence");
   if(!target.targetId)return {sent:false,reason:"not_bound",count:students.length};
   const channel=await resolveTenantLineChannel(schoolId);
+  if(lab&&(channel.legacy||!channel.loginConfigured))return {sent:false,reason:"lab_suppressed",count:students.length};
   if(!channel.configured)return {sent:false,reason:"not_configured",count:students.length};
   if(!lineTargetMatchesChannel(target,channel))return {sent:false,reason:"rebind_required",count:students.length};
   const text=lineAbsenceMessage({

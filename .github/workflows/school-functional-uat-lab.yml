@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - feat/music-learning-journey-lab-20261031
+      - codex/tenant-line-production-foundation-20261115
   workflow_dispatch:
 
 permissions:
@@ -26,7 +27,7 @@ jobs:
         # Push event uses latest main (matches Production).
         # Workflow_dispatch supports selected candidate branches; never deploys to Production.
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.sha }}
 
       - name: Safety gate - separate deployment token required
         shell: bash
@@ -69,6 +70,7 @@ jobs:
           node --test api/test/teacherParentReviews.test.mjs api/test/teacherAccountType.test.mjs
           node --test api/test/schoolScheduleRestore.test.mjs api/test/teacherLoginHistory.test.mjs api/test/sopLabDemoPreservation.test.mjs
           node --test tests/lab-data-reset.test.mjs tests/lab-private-fixtures.test.mjs
+          node --test tests/tenant-line-isolation.test.mjs tests/tenant-line-workflows.test.mjs tests/fee-collection-rules.test.mjs tests/line-activity-calendar.test.mjs tests/line-latest-announcements.test.mjs tests/line-today-courses.test.mjs
           find .functional-lab-build/api/src -name '*.js' -print0 | xargs -0 -n1 node --check
           find .functional-lab-build/api/src -name '*.mjs' -print0 | xargs -0 -n1 node --check
           find .functional-lab-build/app -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check
@@ -80,6 +82,7 @@ jobs:
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_SCHOOL_FUNCTIONAL_LAB }}
           action: upload
+          deployment_environment: ${{ github.ref_name == 'codex/tenant-line-production-foundation-20261115' && 'lineuat' || '' }}
           app_location: .functional-lab-build/app
           api_location: .functional-lab-build/api
           output_location: "."

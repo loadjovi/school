@@ -2,6 +2,9 @@ import {app} from "@azure/functions";
 import {randomInt} from "node:crypto";
 import {getTenantContext,json} from "../lib/auth.js";
 import {defaultTenantId,tenantIdValue} from "../lib/storage.js";
+import {getTenantLineAccount} from "../lib/tenantLineAccounts.js";
+import {refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
+import {tenantLineParentReply,tenantLineReplyKind} from "../lib/tenantLineReplies.mjs";
 import {resolveTenantLineChannel,lineTargetMatchesChannel,tenantWebhookPath} from "../lib/lineTenantConfig.js";
 import {
   bindLineNotificationTarget,clearLineNotificationTarget,createLineBindingRequest,findLineBindingRequest,
@@ -38,7 +41,20 @@ async function handleLineWebhook(request,schoolId,legacyRoute){
     const events=Array.isArray(payload?.events)?payload.events:[];
     for(const event of events){
       try{
+        const userId=event?.source?.type==="user" ? String(event.source.userId||"") : "";
+        if(channel.loginConfigured&&userId&&event.type==="follow"){
+          await refreshTenantLineMenu(channel,await getTenantLineAccount(schoolId,botUserId,userId),userId);
+          continue;
+        }
         if(event?.type!=="message"||event?.message?.type!=="text")continue;
+        const replyKind=channel.loginConfigured && tenantLineReplyKind(event.message.text);
+        if(replyKind){
+          const account=userId?await getTenantLineAccount(schoolId,botUserId,userId):null;
+          const text=userId?await tenantLineParentReply(replyKind,schoolId,account):"請到此校 LINE 官方帳號的一對一聊天室查詢。";
+          await replyLineMessage(event.replyToken,text,options);
+          if(userId)await refreshTenantLineMenu(channel,account,userId);
+          continue;
+        }
         const code=parseLineBindingCommand(event.message.text);
         if(!code)continue;
         const replyToken=String(event.replyToken||"");

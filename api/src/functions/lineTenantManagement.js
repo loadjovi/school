@@ -28,7 +28,8 @@ app.http("tenantLineChannelConfig", {
       return json({
         schoolId, status: channel.status, legacy: channel.legacy, acceptsLegacy: channel.acceptsLegacy,
         messagingConfigured: channel.configured, channelSecretConfigured: channel.hasSecret,
-        accessTokenConfigured: channel.hasToken,
+        accessTokenConfigured: channel.hasToken, loginConfigured: channel.loginConfigured,
+        loginCallback: channel.loginConfigured ? channel.appOrigin + "/api/line/tenant-login/" + schoolId + "/callback" : "",
         webhookUrl: new URL(tenantWebhookPath(channel), request.url).toString()
       });
     } catch (error) {

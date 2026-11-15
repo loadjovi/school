@@ -1,0 +1,201 @@
+const $=id=>document.getElementById(id);
+const esc=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[char]);
+const money=value=>Number.isSafeInteger(Number(value))?`NT$ ${Number(value).toLocaleString("zh-TW")}`:"待確認";
+const dateTime=value=>value?new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"}):"—";
+const projectLabels={TEAM_T:"團 T",YEAR_END_DINNER:"期末聚餐"},projectStatuses={DRAFT:"草稿",OPEN:"開放繳費",CLOSED:"已結束"},paymentStatuses={AWAITING_TRANSFER:"待匯款",REPORTED_UNVERIFIED:"已回報，待核帳",VERIFIED:"已確認入帳",NOT_REQUIRED:"無須繳費",SOURCE_MISSING:"來源資料遺失"};
+const state={me:null,projects:[],templates:[],activities:[],line:null,busy:false};
+
+function headers(){
+  const token=sessionStorage.getItem("google_id_token")||"",school=sessionStorage.getItem("school_context_id")||"",role=sessionStorage.getItem("role_context")||"";
+  return {"Content-Type":"application/json",...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(school?{"X-School-Id":school}:{}),...(role?{"X-Role-Context":role}:{})};
+}
+async function api(path,options={}){
+  const response=await fetch(`/api/${path}`,{...options,credentials:"same-origin",cache:"no-store",headers:{...headers(),...(options.headers||{})}}),data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||`HTTP ${response.status}`);return data;
+}
+function showStatus(message,type=""){$("status").textContent=message;$('status').className=`notice ${type}`.trim()}
+function statusClass(status){return status==="REPORTED_UNVERIFIED"?"reported":status==="VERIFIED"?"":"closed"}
+
+function renderLineBinding(){
+  const line=state.line;
+  if(!line?.configured){$("lineBinding").innerHTML="";return}
+  const googleAction=line.authProvider==="line"&&!line.googleLinked?'<div id="linkGoogleButton"></div>':"";
+  const detach=line.authProvider==="google"&&line.bound?'<button class="secondary" data-action="unbind-line">解除 LINE 綁定</button>':"";
+  const attach=line.authProvider==="google"&&!line.bound?'<button data-action="link-line">使用 LINE 授權並綁定</button>':"";
+  const sync=line.bound?'<button class="secondary" data-action="sync-line-menu">同步我的 LINE 選單</button>':"";
+  $("lineBinding").innerHTML=`<div class="card"><h2>LINE 帳號</h2>
+    <p>${line.bound?`已連結 ${esc(line.lineDisplayName||"LINE")}`:"可連結此校 LINE 官方帳號，方便登入與接收通知。"}
+    ${line.googleLinked?" · 已連結 Gmail":""}</p>
+    <div class="actions">${attach}${sync}${detach}${googleAction}</div></div>`;
+  if(googleAction)showGoogleLink();
+}
+
+async function showGoogleLink(){
+  const button=$("linkGoogleButton");
+  if(/\bLine\//i.test(navigator.userAgent)){
+    button.textContent="如需連結 Gmail，請在 Safari 或 Chrome 以 LINE 登入後操作。";
+    return;
+  }
+  try{
+    const {googleClientId}=await api("config");
+    if(!googleClientId)throw new Error("此環境尚未設定 Gmail 連結");
+    if(!window.google?.accounts?.id)await new Promise((resolve,reject)=>{
+      const script=document.createElement("script");
+      script.src="https://accounts.google.com/gsi/client";script.onload=resolve;
+      script.onerror=()=>reject(new Error("Gmail 登入元件載入失敗"));
+      document.head.append(script);
+    });
+    if(!button.isConnected)return;
+    google.accounts.id.initialize({client_id:googleClientId,callback:async response=>{
+      try{
+        state.line=await api("line/school-account",{method:"POST",body:JSON.stringify({credential:response.credential})});
+        renderLineBinding();showStatus("已連結 Gmail，兩種登入方式可使用同一個家長帳號。");
+      }catch(error){showStatus(error.message,"error")}
+    }});
+    google.accounts.id.renderButton(button,{theme:"outline",size:"large",text:"continue_with",locale:"zh_TW"});
+  }catch(error){button.textContent=error.message}
+}
+
+function renderAdminCreate(){
+  if(state.me?.role!=="admin"){$("adminCreate").innerHTML="";return}
+  const accounts=state.templates.filter(item=>item.active===true),activities=state.activities;
+  $("adminCreate").innerHTML=`<div class="card"><h2>＋ 建立收費專案</h2><div class="steps"><span>1 建立草稿</span><span>2 同步收費對象</span><span>3 財務開放繳費</span></div><form id="projectForm"><div class="row"><div><label>專案類型</label><select name="kind" id="projectKind"><option value="TEAM_T">團 T</option><option value="YEAR_END_DINNER">期末聚餐</option></select></div><div><label>專案名稱</label><input name="title" maxlength="100" placeholder="例如：115 學年度第二次團 T 加購" required></div></div><div class="row"><div><label>繳費期限</label><input name="dueDate" type="date" required></div><div><label>收款帳戶</label><select name="accountTemplateId" required><option value="">請選擇</option>${accounts.map(item=>`<option value="${esc(item.id)}">${esc(item.label)}｜${esc(item.bankName)} ${esc(item.accountNumber.slice(-4))}</option>`).join("")}</select></div></div><div id="activityField" class="hidden"><label>對應期末聚餐活動</label><select name="activityId"><option value="">請選擇活動</option>${activities.map(item=>`<option value="${esc(item.activityId)}">${esc(item.title)}</option>`).join("")}</select></div><label>家長繳費說明</label><textarea name="instructions" maxlength="1000" placeholder="例如：請於期限內完成匯款，並回填帳號末五碼。"></textarea><div class="actions"><button type="submit" ${accounts.length?"":"disabled"}>建立草稿</button></div>${accounts.length?"":`<div class="notice warn">目前沒有啟用中的收款帳戶，請先至「團服與活動 → 匯款帳戶」建立。</div>`}</form></div>`;
+  const kind=$("projectKind"),toggle=()=>{$("activityField").classList.toggle("hidden",kind.value!=="YEAR_END_DINNER")};kind.addEventListener("change",toggle);toggle();
+  $("projectForm").addEventListener("submit",createProject);
+}
+
+function bankHtml(project){
+  const bank=project.bankAccount;if(!bank)return `<div class="notice muted">專案尚未開放，收款帳戶不顯示。</div>`;
+  return `<div class="bank"><b>收款帳戶</b><br>${esc(bank.bankName)}（${esc(bank.bankCode)}）｜戶名 ${esc(bank.accountHolder)}<br>帳號：<b>${esc(bank.accountNumber)}</b></div>`;
+}
+
+function parentCharge(project,charge){
+  const status=paymentStatuses[charge.paymentStatus]||charge.paymentStatus,correction=charge.correctionReason?`<div class="notice warn"><b>需重新回報：</b>${esc(charge.correctionReason)}</div>`:"";
+  let action="";
+  if(charge.canReport)action=`<form class="transfer-form" data-project="${esc(project.id)}" data-charge="${esc(charge.id)}" data-amount="${esc(charge.amount)}"><div class="row"><div><label>匯款日期</label><input name="transferDate" type="date" required></div><div><label>匯出帳號末五碼</label><input name="lastFive" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" placeholder="12345" required></div></div><label>本次應繳金額</label><input value="${esc(money(charge.amount))}" readonly><div class="actions"><button type="submit">確認已匯款並送出</button></div></form>`;
+  if(charge.paymentStatus==="REPORTED_UNVERIFIED")action=`<div class="notice warn">已於 ${esc(dateTime(charge.transferReport?.reportedAt))} 回報 ${esc(money(charge.transferReport?.amount))}，末五碼 ${esc(charge.transferReport?.lastFive||"—")}。請勿重複匯款。</div>`;
+  if(charge.paymentStatus==="VERIFIED")action=`<div class="notice">✅ 財務已於 ${esc(dateTime(charge.verifiedAt))} 完成核帳。</div>`;
+  return `<div class="charge"><div class="charge-head"><strong>${charge.studentIds?.length?`學生 ${esc(charge.studentIds.join("、"))}`:`學生 ${esc(charge.studentId||"—")}`}</strong><span class="status ${statusClass(charge.paymentStatus)}">${esc(status)}</span></div><p>應繳：<b>${esc(money(charge.amount))}</b></p>${correction}${action}</div>`;
+}
+
+function parentProject(project){
+  return `<article class="card project" data-status="${esc(project.status)}"><div class="charge-head"><div><h2>${esc(project.title)}</h2><span class="muted">${esc(projectLabels[project.kind]||project.kind)}｜期限 ${esc(project.dueDate)}</span></div><span class="status ${project.status==="CLOSED"?"closed":""}">${esc(projectStatuses[project.status]||project.status)}</span></div>${project.instructions?`<div class="notice">${esc(project.instructions)}</div>`:""}${bankHtml(project)}<h3>我的應繳項目</h3>${project.charges.map(charge=>parentCharge(project,charge)).join("")}</article>`;
+}
+
+function financeCharge(project,charge){
+  const status=paymentStatuses[charge.paymentStatus]||charge.paymentStatus,report=charge.transferReport||{};
+  const retry=charge.canRetryNotice?`<button class="secondary" data-action="retry-notice" data-project="${esc(project.id)}" data-charge="${esc(charge.id)}">重試 LINE 通知</button>`:"";
+  const details=charge.paymentStatus==="REPORTED_UNVERIFIED"?`<div class="notice warn">回報 ${esc(money(report.amount))}｜匯款日 ${esc(report.transferDate||"—")}｜帳號末五碼 <b>${esc(report.lastFive||"—")}</b>｜回報時間 ${esc(dateTime(report.reportedAt))}</div>`:"";
+  const forms=charge.paymentStatus==="REPORTED_UNVERIFIED"&&state.me.capabilities?.financeVerifier===true?`<div class="row"><form class="verify-form" data-project="${esc(project.id)}" data-charge="${esc(charge.id)}" data-amount="${esc(charge.amount)}"><label>銀行實際入帳日</label><input name="bankPostedAt" type="date" required><label>核帳備註</label><textarea name="note" maxlength="300" required placeholder="例如：已核對銀行入帳明細"></textarea><button type="submit">確認已入帳</button></form><form class="correction-form" data-project="${esc(project.id)}" data-charge="${esc(charge.id)}"><label>要求補正原因</label><textarea name="reason" maxlength="300" required placeholder="例如：查無此金額，請重新確認日期與末五碼"></textarea><button type="submit" class="warn-action">退回家長補正</button></form></div>`:"";
+  return `<div class="charge"><div class="charge-head"><strong>${esc(charge.parentEmail||"家長帳號待確認")}<br><span class="muted">${esc(charge.studentIds?.join("、")||charge.studentId||"—")}</span></strong><span class="status ${statusClass(charge.paymentStatus)}">${esc(status)}</span></div><p>應繳：<b>${esc(money(charge.amount))}</b>｜來源：${charge.sourceType==="uniform"?"團 T":"期末聚餐"}</p>${details}${forms}${retry}</div>`;
+}
+
+function adminProject(project){
+  const s=project.summary||{},finance=state.me.capabilities?.financeVerifier===true;
+  const buttons=[`<button class="secondary" data-action="sync" data-id="${esc(project.id)}">同步收費對象</button>`];
+  if(project.status==="DRAFT")buttons.push(`<button data-action="open" data-id="${esc(project.id)}" ${finance?"":"disabled"}>開放繳費</button>`);
+  if(project.status==="OPEN")buttons.push(`<button class="warn-action" data-action="close" data-id="${esc(project.id)}" ${finance?"":"disabled"}>結束專案</button>`);
+  if(project.status==="CLOSED")buttons.push(`<button data-action="reopen" data-id="${esc(project.id)}" ${finance?"":"disabled"}>重新開放</button>`);
+  return `<article class="card project" data-status="${esc(project.status)}"><div class="charge-head"><div><h2>${esc(project.title)}</h2><span class="muted">${esc(projectLabels[project.kind]||project.kind)}｜期限 ${esc(project.dueDate)}</span></div><span class="status ${project.status==="CLOSED"?"closed":""}">${esc(projectStatuses[project.status]||project.status)}</span></div><div class="grid"><div class="metric"><b>${s.total||0}</b><span>收費對象</span></div><div class="metric"><b>${s.awaiting||0}</b><span>待匯款</span></div><div class="metric"><b>${s.reported||0}</b><span>待核帳</span></div><div class="metric"><b>${s.verified||0}</b><span>已核帳</span></div></div><p>應收 ${esc(money(s.amount||0))}｜已確認 ${esc(money(s.verifiedAmount||0))}</p>${s.missingSource?`<div class="notice error">有 ${s.missingSource} 筆原始資料遺失，請先檢查。</div>`:""}${bankHtml(project)}<div class="actions">${buttons.join("")}</div><details ${s.reported?"open":""}><summary><b>查看 ${project.charges.length} 筆明細</b></summary>${project.charges.length?project.charges.map(charge=>financeCharge(project,charge)).join(""):`<div class="notice">尚無收費對象，請按「同步收費對象」。</div>`}</details></article>`;
+}
+
+function renderProjects(){
+  if(!state.projects.length){$("projects").innerHTML=`<div class="card"><h2>${state.me?.role==="admin"?"目前沒有收費專案":"目前沒有需要處理的費用"}</h2><p class="muted">${state.me?.role==="admin"?"請先建立草稿，再同步團 T 或期末聚餐的既有資料。":"目前沒有需要您繳費或回報的項目；仍可先完成 LINE 通知綁定，方便日後接收弦樂團的重要資訊。"}</p></div>`;return}
+  $("projects").innerHTML=`<h2>${state.me?.role==="admin"?"收費專案與核帳":"家庭費用資訊"}</h2>${state.projects.map(project=>state.me.role==="admin"?adminProject(project):parentProject(project)).join("")}`;
+  document.querySelectorAll(".transfer-form").forEach(form=>form.addEventListener("submit",reportTransfer));
+  document.querySelectorAll(".verify-form").forEach(form=>form.addEventListener("submit",verifyTransfer));
+  document.querySelectorAll(".correction-form").forEach(form=>form.addEventListener("submit",requestCorrection));
+}
+
+async function createProject(event){
+  event.preventDefault();const form=new FormData(event.currentTarget),body=Object.fromEntries(form.entries());
+  if(body.kind!=="YEAR_END_DINNER")delete body.activityId;
+  if(!confirm(`建立「${body.title}」收費專案草稿？建立後請同步收費對象，再由財務人員開放。`))return;
+  try{showStatus("正在建立收費專案…");await api("fee-collections/projects",{method:"POST",body:JSON.stringify(body)});event.currentTarget.reset();await loadProjects();showStatus("收費專案草稿已建立。") }catch(error){showStatus(error.message,"error")}
+}
+
+async function mutateProject(id,action){
+  const messages={SYNC_SOURCE:"同步既有團 T／聚餐資料",OPEN:"開放家長查看帳戶並回報匯款",CLOSE:"結束本次收費",REOPEN:"重新開放本次收費"};
+  if(!confirm(`確定要${messages[action]}？`))return;
+  try{showStatus("處理中…");const result=await api("fee-collections/projects",{method:"PATCH",body:JSON.stringify({id,action})});await loadProjects();showStatus(action==="SYNC_SOURCE"?`同步完成：${result.sync?.synced||0} 筆。`:"專案狀態已更新。") }catch(error){showStatus(error.message,"error")}
+}
+
+async function reportTransfer(event){
+  event.preventDefault();const form=event.currentTarget,values=new FormData(form),amount=Number(form.dataset.amount);
+  if(!confirm(`確認已匯款 ${money(amount)}，並送出資料供財務核帳？`))return;
+  try{showStatus("正在送出匯款回報…");await api("fee-collections/transfers",{method:"POST",body:JSON.stringify({projectId:form.dataset.project,chargeId:form.dataset.charge,amount,lastFive:values.get("lastFive"),transferDate:values.get("transferDate")})});await loadProjects();showStatus("已收到匯款回報，請等待財務核帳。") }catch(error){showStatus(error.message,"error")}
+}
+
+async function verifyTransfer(event){
+  event.preventDefault();const form=event.currentTarget,values=new FormData(form),amount=Number(form.dataset.amount);
+  if(!confirm("已逐一比對銀行實際入帳日期、金額與末五碼，確認入帳？"))return;
+  try{showStatus("正在完成核帳…");await api("fee-collections/transfers",{method:"PATCH",body:JSON.stringify({projectId:form.dataset.project,chargeId:form.dataset.charge,action:"VERIFY",amount,bankPostedAt:values.get("bankPostedAt"),note:values.get("note")})});await loadProjects();showStatus("核帳完成，原團 T／聚餐紀錄已同步更新。") }catch(error){showStatus(error.message,"error")}
+}
+
+async function requestCorrection(event){
+  event.preventDefault();const form=event.currentTarget,reason=new FormData(form).get("reason");
+  if(!confirm("確定退回家長補正？原匯款回報會保留於稽核歷程。"))return;
+  try{showStatus("正在退回補正…");await api("fee-collections/transfers",{method:"PATCH",body:JSON.stringify({projectId:form.dataset.project,chargeId:form.dataset.charge,action:"REQUEST_CORRECTION",reason})});await loadProjects();showStatus("已退回補正。") }catch(error){showStatus(error.message,"error")}
+}
+
+async function loadProjects(){const data=await api("fee-collections/projects");state.projects=data.items||[];state.activities=data.dinnerActivities||state.activities;renderProjects()}
+async function load(){
+  try{
+    state.me=await api("me");
+    if(!["admin","parent","unassigned"].includes(state.me.role))throw new Error("請切換至家長或學校管理員身分。");
+    $("siteName").textContent=state.me.systemName||state.me.schoolName||"學校平台";
+    const billing=state.me.capabilities?.feeCollections===true&&state.me.role!=="unassigned";
+    $("roleTitle").textContent=billing?"LINE 帳號與收費":"LINE 帳號";
+    $("roleIntro").textContent=state.me.schoolName||"";
+    const [line,templates,projects]=await Promise.all([
+      state.me.capabilities?.lineAccount===true?api("line/school-account"):null,
+      billing&&state.me.role==="admin"?api("uniform-events/payment-account-templates"):null,
+      billing?api("fee-collections/projects"):null
+    ]);
+    state.line=line;state.templates=templates?.items||[];state.projects=projects?.items||[];
+    state.activities=projects?.dinnerActivities||[];
+    renderLineBinding();
+    if(billing){renderAdminCreate();renderProjects()}
+    else $("projects").textContent="";
+    const params=new URLSearchParams(location.search);
+    showStatus(params.has("line_link")?"已完成此校 LINE 帳號綁定。":billing?`已載入 ${state.projects.length} 個收費專案。`:"");
+    if(params.has("line_link"))history.replaceState({},"",location.pathname);
+  }catch(error){showStatus(error.message,"error");$("projects").innerHTML=""}
+}
+
+document.addEventListener("click",async event=>{
+  const target=event.target.closest("[data-action]");if(!target)return;const action=target.dataset.action;
+  if(action==="sync")return mutateProject(target.dataset.id,"SYNC_SOURCE");
+  if(action==="open")return mutateProject(target.dataset.id,"OPEN");
+  if(action==="close")return mutateProject(target.dataset.id,"CLOSE");
+  if(action==="reopen")return mutateProject(target.dataset.id,"REOPEN");
+  target.disabled=true;
+  try{
+    if(action==="link-line"){
+      const {url}=await api("line/tenant-login/"+encodeURIComponent(state.me.schoolId)+"/start",{
+        method:"POST",body:JSON.stringify({mode:"link"})
+      });
+      location.assign(url);
+    }
+    if(action==="sync-line-menu"){
+      const {audience}=await api("line/school-account",{method:"POST",body:JSON.stringify({action:"sync-menu"})});
+      showStatus(audience==="parent"?"已同步家長選單。":audience==="staff"?"已同步教職人員選單。":"已使用預設選單。");
+    }
+    if(action==="unbind-line"&&confirm("確定解除此校 LINE 綁定？")){
+      await api("line/school-account",{method:"DELETE"});
+      await load();showStatus("已解除此校 LINE 綁定。");
+    }
+    if(action==="retry-notice"){
+      const {lineNotification}=await api("fee-collections/transfers",{method:"PATCH",body:JSON.stringify({
+        projectId:target.dataset.project,chargeId:target.dataset.charge,action:"RETRY_LINE_NOTICE"
+      })});
+      const labels={accepted:"LINE 已受理通知。",pending:"尚未確認 LINE 受理，可稍後重試。",not_bound:"家長尚未綁定此校 LINE。",
+        disabled:"此校未啟用 LINE 收費通知。",target_changed:"家長已變更綁定，原通知無法重送。",ineligible:"通知已超過重試期限。"};
+      showStatus(labels[lineNotification?.status]||"無法送出通知。");
+    }
+  }catch(error){showStatus(error.message,"error")}
+  finally{target.disabled=false}
+
+});
+
+load();

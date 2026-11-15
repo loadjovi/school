@@ -39,17 +39,18 @@ export function parseLineBindingCommand(text){
   return match?match[1]:"";
 }
 
-export async function lineApi(path,{method="POST",body,accessToken}={}){
+export async function lineApi(path,{method="POST",body,accessToken,retryKey}={}){
   const token=String(accessToken||"").trim();
   if(!token)throw new Error("LINE_CHANNEL_ACCESS_TOKEN 未設定");
   const response=await fetch(`https://api.line.me${path}`,{
     method,
-    headers:{Authorization:`Bearer ${token}`,...(body?{"Content-Type":"application/json"}:{})},
+    headers:{Authorization:`Bearer ${token}`,...(body?{"Content-Type":"application/json"}:{}),...(retryKey?{"X-Line-Retry-Key":retryKey}:{})},
     ...(body?{body:JSON.stringify(body)}:{}),
     signal:AbortSignal.timeout(10000)
   });
   const responseText=await response.text();
-  if(!response.ok)throw new Error(`LINE Messaging API 回應 ${response.status}`);
+  if(response.status===409&&retryKey&&response.headers.get("x-line-accepted-request-id"))return {accepted:true};
+  if(!response.ok)throw Object.assign(new Error(`LINE Messaging API 回應 ${response.status}`),{status:response.status});
   if(!responseText)return {};
   try{return JSON.parse(responseText)}catch{return {}}
 }
@@ -60,10 +61,10 @@ export async function replyLineMessage(replyToken,text,{accessToken}={}){
   return lineApi("/v2/bot/message/reply",{accessToken,body:{replyToken:token,messages:[{type:"text",text:String(text||"").slice(0,5000)}]}});
 }
 
-export async function pushLineMessage(to,text,{accessToken}={}){
+export async function pushLineMessage(to,text,{accessToken,retryKey}={}){
   const target=String(to||"").trim();
   if(!target)throw new Error("LINE 通知群組尚未綁定");
-  return lineApi("/v2/bot/message/push",{accessToken,body:{to:target,messages:[{type:"text",text:String(text||"").slice(0,5000)}]}});
+  return lineApi("/v2/bot/message/push",{accessToken,retryKey,body:{to:target,messages:[{type:"text",text:String(text||"").slice(0,5000)}]}});
 }
 
 export async function getLineGroupSummary(groupId,{accessToken}={}){

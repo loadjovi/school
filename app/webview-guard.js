@@ -9,10 +9,19 @@
   const embedded=isLine||isSocial||isIOSWebView||isAndroidWebView;
   const current=new URL(location.href);
   if(current.searchParams.get("google_redirect")==="1"){sessionStorage.setItem("google_id_token","cookie-session");current.searchParams.delete("google_redirect");history.replaceState({},"",current.pathname+(current.search?current.search:"")+current.hash)}
+  const lineSchool=current.searchParams.get("line_session");
+  if(lineSchool&&/^[a-z0-9-]{2,60}$/.test(lineSchool)){
+    sessionStorage.setItem("google_id_token","line-session");
+    sessionStorage.setItem("school_context_id",lineSchool);
+    sessionStorage.setItem("role_context","parent");
+    current.searchParams.delete("line_session");
+    history.replaceState({},"",current.pathname+(current.search?current.search:"")+current.hash);
+  }
+  window.__lineEmbedded=isLine;
   function cleanUrl(){const u=new URL(location.href);u.searchParams.delete("openExternalBrowser");u.searchParams.delete("openInAppBrowser");u.searchParams.delete("google_redirect");return u.toString()}
   function lineExternalUrl(){const u=new URL(cleanUrl());u.searchParams.set("openExternalBrowser","1");return u.toString()}
   window.copyOrchestraUrl=async()=>{const url=cleanUrl();try{await navigator.clipboard.writeText(url);alert("網址已複製，請貼到 Safari 或 Chrome 開啟。")}catch{const t=document.createElement("textarea");t.value=url;document.body.appendChild(t);t.select();document.execCommand("copy");t.remove();alert("網址已複製，請貼到 Safari 或 Chrome 開啟。")}};
-  if(embedded){const platform=isIOS?"Safari":isAndroid?"Chrome":"外部瀏覽器";const action=isLine?`<a class="primary" style="display:block;text-align:center;text-decoration:none" href="${lineExternalUrl()}">用 ${platform} 開啟</a>`:`<button class="primary" onclick="copyOrchestraUrl()">複製網址，用 ${platform} 開啟</button>`;document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>Google Gmail 登入</p><div class="error" style="margin-top:16px"><b>目前是在 App 內建瀏覽器中開啟</b><br><br>Google 為保護帳號，不支援 Android／iOS WebView 登入，因此可能只看到白畫面。</div><div class="notice" style="margin-top:12px">請改用 <b>${platform}</b> 開啟本系統，再按「使用 Google 帳戶登入」。${isLine?"<br><br>下方按鈕會要求 LINE 改用外部瀏覽器開啟。":""}</div>${action}<button class="secondary" style="width:100%;margin-top:10px" onclick="copyOrchestraUrl()">複製網站網址</button></div></div>`;return}
+  if(embedded&&!isLine){const platform=isIOS?"Safari":isAndroid?"Chrome":"外部瀏覽器";const action=isLine?`<a class="primary" style="display:block;text-align:center;text-decoration:none" href="${lineExternalUrl()}">用 ${platform} 開啟</a>`:`<button class="primary" onclick="copyOrchestraUrl()">複製網址，用 ${platform} 開啟</button>`;document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>Google Gmail 登入</p><div class="error" style="margin-top:16px"><b>目前是在 App 內建瀏覽器中開啟</b><br><br>Google 為保護帳號，不支援 Android／iOS WebView 登入，因此可能只看到白畫面。</div><div class="notice" style="margin-top:12px">請改用 <b>${platform}</b> 開啟本系統，再按「使用 Google 帳戶登入」。${isLine?"<br><br>下方按鈕會要求 LINE 改用外部瀏覽器開啟。":""}</div>${action}<button class="secondary" style="width:100%;margin-top:10px" onclick="copyOrchestraUrl()">複製網站網址</button></div></div>`;return}
   function appendScript(src,onload,onerror){
     const existing=[...document.scripts].find(s=>s.getAttribute("src")===src);
     if(existing){if(onload)setTimeout(onload,0);return existing}
@@ -59,7 +68,7 @@
       "/school-access.js?v=20261027-school-followup",
       "/school-access-audit-admin.js?v=20261017-simple-records",
       "/school-admin-activity.js?v=20261025-restore",
-      "/school-access-refresh-fix.js?v=20261015-finance-role",
+      "/school-access-refresh-fix.js?v=20261015-finance-role-tenant-line-20261115",
       "/training-attendance.js?v=20261102-activity-boundary"
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
@@ -78,7 +87,7 @@
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20261027-school-followup",
-      "/school-access-refresh-fix.js?v=20261015-finance-role"
+      "/school-access-refresh-fix.js?v=20261015-finance-role-tenant-line-20261115"
     ];
     if(role==="school")return ["/school-access.js?v=20261027-school-followup"];
     if(role==="parent")return [
@@ -94,7 +103,7 @@
     if(role==="globalAdmin")return [
       "/school-access.js?v=20261027-school-followup",
       "/school-access-audit-admin.js?v=20261017-simple-records",
-      "/school-access-refresh-fix.js?v=20261015-finance-role"
+      "/school-access-refresh-fix.js?v=20261015-finance-role-tenant-line-20261115"
     ];
     return [];
   }
@@ -135,13 +144,13 @@
   }
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261102-student-workflow",()=>{
+    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-20261115",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
     });
   }
   function installIOSRedirectMode(){let tries=0;const timer=setInterval(()=>{tries++;if(window.google?.accounts?.id?.initialize){clearInterval(timer);const nativeInitialize=window.google.accounts.id.initialize.bind(window.google.accounts.id);window.google.accounts.id.initialize=(config={})=>{const {callback,...rest}=config;return nativeInitialize({...rest,ux_mode:"redirect",login_uri:`${location.origin}/api/google-login`})};loadApp()}else if(tries>120){clearInterval(timer);loadApp()}},50)}
-  document.addEventListener("click",async e=>{const btn=e.target.closest?.(".logout");if(!btn)return;e.preventDefault();e.stopImmediatePropagation();try{await fetch("/api/google-logout",{method:"POST"})}catch{}sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");location.href="/"},true);
-  if(isIOS)installIOSRedirectMode();else loadApp();
+  document.addEventListener("click",async e=>{const btn=e.target.closest?.(".logout");if(!btn)return;e.preventDefault();e.stopImmediatePropagation();await Promise.allSettled([fetch("/api/google-logout",{method:"POST"}),fetch("/api/line/session/logout",{method:"POST"})]);sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");location.href="/"},true);
+  if(isIOS&&!isLine)installIOSRedirectMode();else loadApp();
 })();

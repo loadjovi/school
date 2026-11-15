@@ -81,9 +81,13 @@
       const label=channel.messagingConfigured?(channel.legacy?"使用原有聖心設定":"已啟用"):channel.status==="disabled"?"已停用":"待設定";
       panel.dataset.legacy=String(channel.legacy);
       panel.innerHTML=`<div class="notice"><b>${esc(label)}</b><br>
+        LINE Login ${channel.loginConfigured?"已設定":"尚未設定"}<br>
+        ${channel.loginCallback?`登入回呼 <code style="overflow-wrap:anywhere">${esc(channel.loginCallback)}</code><br>`:""}
         Webhook URL <code style="overflow-wrap:anywhere">${esc(channel.webhookUrl)}</code><br>
         在 Azure 設定 <code style="overflow-wrap:anywhere">${esc(prefix)}_CHANNEL_SECRET</code> 與
         <code style="overflow-wrap:anywhere">${esc(prefix)}_CHANNEL_ACCESS_TOKEN</code> 後，可啟用或重新驗證。
+        <br>LINE Login 另需設定 <code>${esc(prefix)}_LOGIN_CHANNEL_ID</code>、<code>${esc(prefix)}_LOGIN_CHANNEL_SECRET</code>
+        與 <code>${esc(prefix)}_APP_ORIGIN</code>。
       </div>
       <button class="primary" onclick="loadGlobalLineChannel('${esc(sid)}','active')">驗證並啟用</button>
       ${channel.status!=="disabled"?`<button class="secondary" onclick="loadGlobalLineChannel('${esc(sid)}','disabled')">停用</button>`:""}`;

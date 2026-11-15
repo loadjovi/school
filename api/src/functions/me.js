@@ -1,11 +1,18 @@
 import { app } from "@azure/functions";
 import { getAccess, json, parseJsonEnv } from "../lib/auth.js";
+import {resolveTenantLineChannel,tenantFeeEnabled} from "../lib/lineTenantConfig.js";
+import {getTenantGoogleLink} from "../lib/tenantLineAccounts.js";
 import { recordTeacherLogin } from "../lib/teacherLoginAudit.js";
 import { touchTeacherLastLogin, listTenantRolesByEmail, listTenantDirectory, getTenantDirectory, getTeacherDirectory, activeTeacherSupport, getMappedStudentsByEmail, defaultTenantId, saveUserIdentity } from "../lib/storage.js";
 app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(request)=>{
   const a=await getAccess(request);
   if(!a.authenticated)return json({error:"Unauthorized"},401);
-  try{await saveUserIdentity(a)}catch(e){console.warn("user identity registry update failed",e)}
+  if(a.authProvider==="line"){
+    return json({authProvider:"line",email:a.contactEmail||"",displayName:a.displayName,role:a.role,
+      schoolId:a.schoolId,schoolName:a.schoolName||"",systemName:a.systemName||"",
+      capabilities:{...a.capabilities,lineAccount:true,feeCollections:tenantFeeEnabled(a.schoolId)},contexts:[]});
+  }
+  try{await saveUserIdentity({...a,email:a.contactEmail||a.email})}catch(e){console.warn("user identity registry update failed",e)}
 
   const contexts=[];
   const seen=new Set();
@@ -15,8 +22,9 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
     seen.add(key);contexts.push(x);
   };
 
+  const identityEmail=a.contactEmail||a.email;
   let tenantRoles=[];
-  try{tenantRoles=await listTenantRolesByEmail(a.email,"active")}catch(e){console.warn("context tenant role lookup failed",e)}
+  try{tenantRoles=await listTenantRolesByEmail(identityEmail,"active")}catch(e){console.warn("context tenant role lookup failed",e)}
   if(tenantRoles.some(x=>x.role==="globalAdmin")||a.capabilities?.globalAdmin===true){
     addContext({key:"global",type:"global",role:"globalAdmin",label:"Global 管理中心",icon:"🌐",schoolId:null,schoolName:"",status:"active"});
   }
@@ -41,17 +49,18 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
     const found=[null,null];
     const teacherLookup=(async()=>{
     try{
-      const teacher=await getTeacherDirectory(a.email,schoolId);
+      const teacher=await getTeacherDirectory(identityEmail,schoolId);
       if(teacher?.status==="active")found[0]={key:"teacher:"+schoolId,type:"teacher",role:"teacher",label:schoolName+"｜老師",icon:"🎻",schoolId,schoolName,status:tenantStatus};
       else if(!teacher){
-        const support=await activeTeacherSupport(a.email,schoolId,today);
-        if(support&&(await getTeacherDirectory(a.email,support.sourceSchoolId))?.status==="active")found[0]={key:"teacher:"+schoolId,type:"teacher",role:"teacher",label:schoolName+"｜短期支援（至 "+support.endDate+"）",icon:"🎻",schoolId,schoolName,status:tenantStatus};
+        const support=await activeTeacherSupport(identityEmail,schoolId,today);
+        if(support&&(await getTeacherDirectory(identityEmail,support.sourceSchoolId))?.status==="active")found[0]={key:"teacher:"+schoolId,type:"teacher",role:"teacher",label:schoolName+"｜短期支援（至 "+support.endDate+"）",icon:"🎻",schoolId,schoolName,status:tenantStatus};
       }
     }catch(e){console.warn("teacher context lookup failed",schoolId,e)}
     })();
     const parentLookup=(async()=>{
     try{
-      const staticParent=schoolId===defaultId&&staticParentDefault,dynamic=staticParent?[]:await getMappedStudentsByEmail(a.email,schoolId);
+      const link=await getTenantGoogleLink(schoolId,a.sub);
+      const staticParent=schoolId===defaultId&&staticParentDefault,dynamic=staticParent?[]:await getMappedStudentsByEmail(link?.parentEmail||identityEmail,schoolId);
       if(staticParent||dynamic.length)found[1]={key:"parent:"+schoolId,type:"parent",role:"parent",label:schoolName+"｜家長",icon:"👨‍👩‍👧",schoolId,schoolName,status:tenantStatus};
     }catch(e){console.warn("parent context lookup failed",schoolId,e)}
     })();
@@ -70,6 +79,12 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
     }catch(e){console.warn("teacher login audit update failed",e?.message||String(e))}
   }
 
+  const features = {};
+  if(a.schoolId&&["parent","unassigned","admin"].includes(a.role)){
+    features.feeCollections=tenantFeeEnabled(a.schoolId);
+    try{features.lineAccount=(await resolveTenantLineChannel(a.schoolId)).loginConfigured}
+    catch{console.warn("LINE configuration lookup deferred")}
+  }
   let activeContextKey="";
   if(requestedType==="global")activeContextKey="global";
   else if(requestedType&&requestedSchoolId)activeContextKey=requestedType+":"+requestedSchoolId;
@@ -79,9 +94,9 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
   else if(a.role==="parent"&&a.schoolId)activeContextKey="parent:"+a.schoolId;
 
   return json({
-    identityId:a.sub||"",email:a.email,displayName:a.displayName,role:a.role,section:a.section||null,picture:a.picture||null,
+    identityId:a.sub||"",email:identityEmail,displayName:a.displayName,role:a.role,section:a.section||null,picture:a.picture||null,
     schoolId:a.schoolId||null,schoolName:a.schoolName||"",systemName:a.systemName||"",
-    memberships:a.memberships||[],capabilities:a.capabilities||{},
+    memberships:a.memberships||[],capabilities:{...a.capabilities,...features},
     assignments:a.sectionAssignments||a.assignments||[],ensembleGroups:a.ensembleGroups||[],
     comprehensiveEnabled:a.comprehensiveEnabled===true,privateStudentIds:a.privateStudentIds||[],temporaryAssignment:a.temporaryAssignment||null,
     students:a.role==="parent"?(a.students||[]).map(student=>({studentId:String(student.studentId||""),name:String(student.name||student.studentName||""),groupName:String(student.groupName||"")})).filter(student=>student.studentId):[],
