@@ -244,6 +244,39 @@ test("LINE admin sync protects the existing menu and verifies LINE actually assi
   await assert.rejects(verify(), /未判定為此校管理員/);
 });
 
+test("LINE staff links open the six workspaces only for the matching school administrator", async () => {
+  const script = source("app/webview-guard.js");
+  const routing = script.slice(script.indexOf("  const staffMenuRoutes="), script.indexOf("  window.__lineEmbedded="));
+  const tests = {
+    staff_today_courses: ["attendance", "followup"], staff_activity_calendar: ["workspace", "courses"],
+    staff_announcements: ["activity"], staff_attendance: ["attendance", "regular"],
+    staff_todos: ["workspace", "tasks"], staff_portal: ["workspace", "home"]
+  };
+  for (const [target, expected] of Object.entries(tests)) {
+    for (const me of [{role:"admin",schoolId:"school-a"}, {role:"admin",schoolId:"school-b"}, {role:"parent",schoolId:"school-a"}]) {
+      const current = new URL(`https://uat.example/?line_menu=${target}&schoolId=school-a`);
+      const storage = new Map(), calls = [], warnings = [];
+      const open = runInNewContext(routing + ";openStaffMenuEntry", {
+        current, URL, location: current, state:{me}, history:{replaceState(){}},
+        sessionStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
+        toast: message => warnings.push(message),
+        window:{
+          openSchoolAdminWorkspace: async group => calls.push(["workspace",group]),
+          openSchoolAdminAttendanceTask: async task => calls.push(["attendance",task]),
+          openSchoolAdminActivitySettings: async () => calls.push(["activity"])
+        }
+      });
+      assert.equal(storage.get("school_context_id"), "school-a");
+      assert.equal(storage.get("role_context"), "schoolAdmin");
+      await open();
+      const authorized=me.role==="admin"&&me.schoolId==="school-a";
+      assert.deepEqual(calls, authorized?[expected]:[]);
+      assert.equal(warnings.length, authorized?0:1);
+      assert.equal(storage.has("line_staff_entry"), false);
+    }
+  }
+});
+
 test("fee notification retry keeps the initial target and provider retry key", async () => {
   const calls = [];
   let target = userId;

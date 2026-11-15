@@ -165,6 +165,12 @@
   else if(state.page!=='admin'){await go('admin');state.adminWorkspaceSection=groups[group]?group:'home';render()}else render();
   requestAnimationFrame(()=>{organize();window.scrollTo(0,0)});
  };
+ window.openSchoolAdminActivitySettings=async function(){
+  if(state.me?.role!=='admin')return;
+  await window.openSchoolAdminWorkspace('uniformAdmin');
+  const frame=document.getElementById('awUniformFrame');
+  if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261102-activity-boundary&task=activity';
+ };
  const setGroup=(node,group)=>{if(node.dataset.adminGroup!==group)node.dataset.adminGroup=group};
  function classify(main){
   for(const [id,group] of Object.entries(rootGroups)){const node=document.getElementById(id);if(node&&main.contains(node))setGroup(node,group)}
@@ -361,10 +367,10 @@
   state.adminLearningWorkspaceTask=task;organize();
   requestAnimationFrame(()=>document.querySelector(task==='overview'?'.aw-learning-overview':'.aw-learning-practice')?.scrollIntoView({block:'start',behavior:'smooth'}));
  });
- document.addEventListener('click',async e=>{
-  const button=e.target.closest?.('[data-attendance-work]');if(!button)return;e.preventDefault();
-  const task=button.dataset.attendanceWork;
+ window.openSchoolAdminAttendanceTask=async function(task){
+  if(state.me?.role!=='admin')return;
   if(!['home','regular','followup'].includes(task))return;
+  if(!inScope()||state.adminWorkspaceSection!=='attendance')await window.openSchoolAdminWorkspace('attendance');
   state.adminAttendanceWorkspaceTask=task;organize();
   if(task==='regular')requestAnimationFrame(()=>document.getElementById('adminAttendanceAssist')?.scrollIntoView({block:'start',behavior:'smooth'}));
   if(task==='followup'){
@@ -372,6 +378,10 @@
    organize();requestAnimationFrame(()=>{const panel=[...document.querySelectorAll('#adminOperations .card')].find(card=>card.querySelector('h2')?.textContent.includes('當日未到／請假追蹤'));panel?.scrollIntoView({block:'start',behavior:'smooth'});});
   }
   if(task==='home')requestAnimationFrame(()=>document.querySelector('.aw-attendance-task-picker')?.scrollIntoView({block:'start',behavior:'smooth'}));
+ };
+ document.addEventListener('click',async e=>{
+  const button=e.target.closest?.('[data-attendance-work]');if(!button)return;e.preventDefault();
+  await window.openSchoolAdminAttendanceTask(button.dataset.attendanceWork);
  });
  document.addEventListener('click',async e=>{
   const button=e.target.closest?.('[data-course-work]');if(!button)return;e.preventDefault();
@@ -395,7 +405,7 @@
    if(button.dataset.workspaceGroup)return await window.openSchoolAdminWorkspace(button.dataset.workspaceGroup);
    const key=button.dataset.workspaceAction;
    if(groups[key])return await window.openSchoolAdminWorkspace(key);
-   if(key==='activitySettings'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&v=20261102-activity-boundary&task=activity';return}
+   if(key==='activitySettings')return await window.openSchoolAdminActivitySettings();
    if(key==='uniformAdmin'){await window.openSchoolAdminWorkspace('uniformAdmin');return}
    if(key==='parentCorrection'){state.adminAccountWorkspaceTask='families';if(typeof window.openParentBindingCorrection==='function')window.openParentBindingCorrection();else document.querySelector('#parentBindingStats button')?.click();organize();return}
    if(key==='attendanceTable')return await window.desktopNavigate('attendance');

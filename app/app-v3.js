@@ -40,6 +40,7 @@ async function loadSchoolViewModule(){
 window.retrySchoolView=()=>{state.schoolViewerLoadError="";render();return loadSchoolViewModule()};
 async function loadProfile(){
   state.me=await api("/api/me");
+  window.resumeLineStaffEntry?.();
   const contexts=Array.isArray(state.me.contexts)?state.me.contexts:[];
   const chosen=sessionStorage.getItem("role_context")||"";
   if(["unassigned","contextDenied"].includes(state.me.role)&&!contexts.length){
