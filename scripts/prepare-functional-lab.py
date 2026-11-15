@@ -469,7 +469,7 @@ window.startLabLineAuth=async function(){
     if registration_form not in app_source:
         raise RuntimeError("Frontend registration form changed; review LINE pending-state UI")
     app_source=app_source.replace(registration_form,
-        'function registrationForm(){const pending=(state.registrations||[]).find(x=>x.status==="pending");if(pending)return `<div class="card hero"><h2>學生綁定申請已送出 ✅</h2><div class="notice">${state.me?.authProvider==="line"?"LINE":"Gmail"} 身分已完成驗證；學生 ${esc(pending.studentName||"")}（學號 ${esc(pending.studentNo||"")}）正在等待校方管理員確認。核准前不會開放學生資料。</div></div>`;return `<div class="card"><h2>第一次登入｜綁定學生</h2>',1)
+        'function registrationForm(){const pending=(state.registrations||[]).find(x=>x.status==="pending");if(pending)return `<div class="card hero"><h2>學生綁定申請已送出 ✅</h2><div class="notice">申請目前正在等待學校管理員審核。核准完成後，重新登入即可使用家長功能。</div><p class="muted">為保護學生資料，待審核期間不顯示學生姓名與學號，也不需要再次填寫。</p></div>`;return `<div class="card"><h2>第一次登入｜綁定學生</h2>',1)
     app_source=app_source.replace('await api("/api/student-registration",{method:"POST",body:JSON.stringify(body)});toast("✅ 已送出，等待管理員確認");state.page="home";render()',
         'await api("/api/student-registration",{method:"POST",body:JSON.stringify(body)});const pending=await api("/api/student-registration");state.registrations=pending.items||[];toast("✅ 已送出，等待管理員確認");state.page="home";render()',1)
     app_source=app_source.replace('申請 Gmail：${esc(r.parentEmail)}<br>家長填寫：',
