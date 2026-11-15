@@ -228,6 +228,12 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('connectionSource:"identity_link"',coverage)
         self.assertIn('LINE 登入已連結',ui)
 
+    def test_role_menu_assignment_falls_back_to_the_explicit_lab_identity(self):
+        menu=(ROOT/"scripts/lab-line-rich-menu.mjs").read_text()
+        self.assertIn("process.env.LAB_LINE_TEST_PARENT_EMAIL",menu)
+        self.assertIn("process.env.LAB_LINE_TEST_USER_ID",menu)
+        self.assertIn("binding?.lineUserId||identityLinkedTarget",menu)
+
     def test_single_recipient_endpoint_never_accepts_browser_target_or_message(self):
         oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
         send=oauth.split('app.http("labLineSendTestNotification"',1)[1]
