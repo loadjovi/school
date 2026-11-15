@@ -45,6 +45,18 @@ test("bound and friend status remain separate",()=>{
   assert.equal(result.summary.friendStatusPendingStudents,1);
 });
 
+test("a verified LINE login identity link counts as connected without a legacy binding row",()=>{
+  const email="linked@example.com";
+  const result=buildLabLineStudentCoverage({
+    students:[students[0]],
+    parentLinks:[{studentId:"110001",parentEmail:email,status:"active"}],
+    bindingsByEmail:new Map([[email,{bound:true,friendStatus:"friend",connectionSource:"identity_link",lineDisplayName:"LINE 登入已連結"}]])
+  });
+  assert.equal(result.items[0].status,"NOTIFIABLE");
+  assert.equal(result.items[0].parents[0].connectionSource,"identity_link");
+  assert.equal(result.summary.uniqueBoundParents,1);
+});
+
 test("a bound parent who is not an official-account friend is not counted as notifiable",()=>{
   const result=buildLabLineStudentCoverage({
     schoolId:"school-lab",students:[students[0]],
