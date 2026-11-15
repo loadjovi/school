@@ -45,11 +45,12 @@ test("parent menu keeps exact 2x2 bounds and LAB-only URLs",()=>{
   assert.equal(menu.areas.length,4);
   assert.deepEqual(menu.areas[0].action,{type:"message",label:"今日課程",text:"今日課程"});
   assert.deepEqual(menu.areas[1].action,{type:"message",label:"最新公告",text:"最新公告"});
+  assert.deepEqual(menu.areas[2].action,{type:"message",label:"活動行事曆",text:"活動行事曆"});
   assert.deepEqual(menu.areas.map(x=>x.bounds),[
     {x:0,y:0,width:1250,height:843},{x:1250,y:0,width:1250,height:843},
     {x:0,y:843,width:1250,height:843},{x:1250,y:843,width:1250,height:843}
   ]);
-  assert.ok([menu.areas[2],menu.areas[3]].every(x=>x.action.uri.startsWith("https://lab.example/?line_menu=")));
+  assert.ok(menu.areas[3].action.uri.startsWith("https://lab.example/?line_menu="));
 });
 
 test("staff menu uses exact 2x3 bounds without gaps",()=>{
