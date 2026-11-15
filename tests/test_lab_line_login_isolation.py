@@ -154,6 +154,13 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('assignLabRoleRichMenu({schoolId,email:reg.parentEmail,parentLinked:false})',rejection)
         self.assertNotIn('moveLineAccountBinding',rejection)
 
+    def test_lab_staff_notifications_use_only_the_allowlisted_lab_channel(self):
+        builder=(ROOT/"scripts/prepare-functional-lab.py").read_text()
+        self.assertIn('process.env.LAB_LINE_MESSAGING_ACCESS_TOKEN',builder)
+        self.assertIn('process.env.LAB_LINE_TEST_USER_ID',builder)
+        self.assertIn('LAB LINE 通知對象不在白名單',builder)
+        self.assertNotIn('LAB LINE external messaging is disabled',builder)
+
     def test_identity_link_conflicts_fail_closed_and_secrets_stay_server_side(self):
         rules=(ROOT/"scripts/lab-line-auth-rules.mjs").read_text()
         session=(ROOT/"scripts/lab-line-session.mjs").read_text()
