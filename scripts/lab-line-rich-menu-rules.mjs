@@ -28,11 +28,15 @@ function area(x,y,width,height,label,target){
   return {bounds:{x,y,width,height},action:{type:"uri",label,uri:target}};
 }
 
+function messageArea(x,y,width,height,label,text){
+  return {bounds:{x,y,width,height},action:{type:"message",label,text}};
+}
+
 export function labRichMenuDefinition(audience,origin){
   if(audience===LAB_RICH_MENU_AUDIENCES.PARENT)return {
     size:{width:2500,height:1686},selected:true,name:"LAB 聖心弦樂－家長選單",chatBarText:"家長功能",
     areas:[
-      area(0,0,1250,843,"今日課程",uri(origin,"?line_menu=parent_today_courses")),
+      messageArea(0,0,1250,843,"今日課程","今日課程"),
       area(1250,0,1250,843,"最新公告",uri(origin,"?line_menu=parent_announcements")),
       area(0,843,1250,843,"活動行事曆",uri(origin,"?line_menu=parent_activity_calendar")),
       area(1250,843,1250,843,"開啟家長平台",uri(origin,"?line_menu=parent_portal"))
@@ -41,7 +45,7 @@ export function labRichMenuDefinition(audience,origin){
   if(audience===LAB_RICH_MENU_AUDIENCES.STAFF)return {
     size:{width:2500,height:1686},selected:true,name:"LAB 聖心弦樂－幹部選單",chatBarText:"幹部功能",
     areas:[
-      area(0,0,833,843,"今日課程",uri(origin,"?line_menu=staff_today_courses")),
+      messageArea(0,0,833,843,"今日課程","今日課程"),
       area(833,0,834,843,"活動行事曆",uri(origin,"?line_menu=staff_activity_calendar")),
       area(1667,0,833,843,"最新公告",uri(origin,"?line_menu=staff_announcements")),
       area(0,843,833,843,"點名管理",uri(origin,"?line_menu=staff_attendance")),

@@ -13,6 +13,7 @@ import {
   bindLineAccount,createLineAccountBindingRequest,findLineAccountBindingRequest,
   getLineAccountBinding,unbindLineAccount
 } from "../lib/lineAccountBinding.js";
+import {isTodayCoursesCommand,lineTodayCoursesReply} from "../lib/lineTodayCourses.mjs";
 
 const lineSecret=()=>String(process.env.LINE_CHANNEL_SECRET||"").trim();
 const lineToken=()=>String(process.env.LINE_CHANNEL_ACCESS_TOKEN||"").trim();
@@ -61,6 +62,15 @@ app.http("lineWebhook",{
     for(const event of events){
       try{
         if(event?.type!=="message"||event?.message?.type!=="text")continue;
+        if(isTodayCoursesCommand(event.message.text)){
+          const replyToken=String(event.replyToken||""),lineUserId=String(event.source?.userId||"");
+          if(event.source?.type!=="user"||!lineUserId){
+            await replyLineMessage(replyToken,"今日課程包含學生個人資訊，請在官方帳號的一對一聊天室查詢。");
+            continue;
+          }
+          await replyLineMessage(replyToken,await lineTodayCoursesReply(lineUserId));
+          continue;
+        }
         if(String(event.message.text||"").trim()==="#LAB身分確認"){
           // Opt-in diagnostic only. The user ID is returned solely to the same
           // signed, one-to-one LINE conversation; never placed in logs/storage.
