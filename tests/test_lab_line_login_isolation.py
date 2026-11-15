@@ -266,7 +266,8 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn("LAB_LINE_MESSAGING_CHANNEL_SECRET",builder)
         self.assertIn("LAB_LINE_MESSAGING_ACCESS_TOKEN",builder)
         self.assertIn("LAB_LINE_TEST_USER_ID",builder)
-        self.assertIn("sourceUserId.toLowerCase()!==labAllowed.toLowerCase()",builder)
+        self.assertIn("getLineAccountBindingsByUserId",builder)
+        self.assertIn("if(!exactTester&&!verifiedBindings.length)continue",builder)
         self.assertNotIn("LAB: reject real LINE webhook",builder)
 
     def test_lab_today_courses_fallback_is_exact_user_only(self):
