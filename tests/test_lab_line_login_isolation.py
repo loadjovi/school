@@ -219,6 +219,15 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertIn('/api/line/lab-rich-menus/sync',ui)
         self.assertIn('lab-line-rich-menu-admin.js?v=20261115-role-sync',(ROOT/"scripts/prepare-functional-lab.py").read_text())
 
+    def test_student_coverage_uses_verified_line_identity_link(self):
+        session=(ROOT/"scripts/lab-line-session.mjs").read_text()
+        coverage=(ROOT/"scripts/lab-line-student-coverage-function.js").read_text()
+        ui=(ROOT/"scripts/lab-line-student-coverage.js").read_text()
+        self.assertIn("getLabParentIdentityLinkByEmail",session)
+        self.assertIn('getLabParentIdentityLinkByEmail(email)',coverage)
+        self.assertIn('connectionSource:"identity_link"',coverage)
+        self.assertIn('LINE 登入已連結',ui)
+
     def test_single_recipient_endpoint_never_accepts_browser_target_or_message(self):
         oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
         send=oauth.split('app.http("labLineSendTestNotification"',1)[1]
