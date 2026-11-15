@@ -2,7 +2,7 @@ import {createHash} from "node:crypto";
 import {TableClient} from "@azure/data-tables";
 import {financeAssignments} from "./financeAccess.js";
 import {financeRecipients} from "./financeNoticeRules.mjs";
-import {getLineAccountBinding} from "./lineAccountBinding.js";
+import {getLineAccountBinding,getLineAccountBindingsByUserId} from "./lineAccountBinding.js";
 import {pushLineMessage} from "./lineMessaging.mjs";
 import {getTenantDirectory,listTenantAdmins} from "./storage.js";
 
@@ -32,13 +32,28 @@ async function finish(schoolId,eventKey,recipient,status,error=""){
 
 async function deliver(schoolId,eventKey,recipients,text){
   if(process.env.LAB_ENVIRONMENT!=="functional-uat")return {status:"disabled",sent:0,skipped:recipients.length};
+  const normalizedRecipients=[...new Set(recipients.map(email).filter(Boolean))];
+  const reverseTargets=new Map();
+  const allowedLineUserId=String(process.env.LAB_LINE_TEST_USER_ID||"").trim();
+  if(allowedLineUserId){
+    try{
+      const bindings=await getLineAccountBindingsByUserId(allowedLineUserId,{includeTarget:true});
+      for(const binding of bindings){
+        const recipient=email(binding.parentEmail);
+        if(String(binding.schoolId||"")===String(schoolId)&&normalizedRecipients.includes(recipient)&&binding.lineUserId){
+          reverseTargets.set(recipient,String(binding.lineUserId));
+        }
+      }
+    }catch(error){console.error("staff LINE reverse binding lookup failed",{schoolId,error:error?.message})}
+  }
   let sent=0,skipped=0,failed=0;
-  for(const recipient of [...new Set(recipients.map(email).filter(Boolean))]){
+  for(const recipient of normalizedRecipients){
     let binding;
     try{binding=await getLineAccountBinding(schoolId,recipient,{includeTarget:true})}catch(error){console.error("staff LINE binding lookup failed",{schoolId,recipient,error:error.message});failed++;continue}
-    if(!binding?.lineUserId){skipped++;continue}
+    const lineUserId=String(binding?.lineUserId||reverseTargets.get(recipient)||"").trim();
+    if(!lineUserId){skipped++;continue}
     if(!await claim(schoolId,eventKey,recipient)){skipped++;continue}
-    try{await pushLineMessage(binding.lineUserId,text);await finish(schoolId,eventKey,recipient,"SENT");sent++}
+    try{await pushLineMessage(lineUserId,text);await finish(schoolId,eventKey,recipient,"SENT");sent++}
     catch(error){await finish(schoolId,eventKey,recipient,"FAILED",error?.message||error);console.error("staff LINE push failed",{schoolId,recipient,error:error?.message});failed++}
   }
   return {status:failed?"partial":"complete",sent,skipped,failed};
