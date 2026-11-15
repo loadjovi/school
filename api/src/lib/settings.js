@@ -76,39 +76,49 @@ export async function saveLineNotificationMode({schoolId=defaultTenantId(),mode=
   return getSystemSettings(partition);
 }
 
-export async function createLineBindingRequest({schoolId=defaultTenantId(),codeHash="",expiresAt="",purpose="admin",updatedBy=""}={}){
+export async function createLineBindingRequest({schoolId=defaultTenantId(),codeHash="",botUserId="",expiresAt="",purpose="admin",updatedBy=""}={}){
   await ensureSettingsTable();
   const partition=tenantSchoolPartition(schoolId),now=new Date().toISOString();
   const absence=purpose==="absence";
   await client().upsertEntity({partitionKey:partition,rowKey:"notifications",schoolId:partition,
     [absence?"lineAbsenceBindingCodeHash":"lineBindingCodeHash"]:String(codeHash||""),
+    [absence?"lineAbsenceBindingBotUserId":"lineBindingBotUserId"]:botUserId,
     [absence?"lineAbsenceBindingCodeExpiresAt":"lineBindingCodeExpiresAt"]:String(expiresAt||""),
     updatedAt:now,updatedBy:String(updatedBy||"").slice(0,160)},"Merge");
   return {expiresAt:String(expiresAt||"")};
 }
 
-export async function findLineBindingRequest(codeHash){
+export async function findLineBindingRequest(schoolId,codeHash,botUserId){
+  if(!codeHash)return null;
   await ensureSettingsTable();
-  const safe=String(codeHash||"").replaceAll("'","''");
-  if(!safe)return null;
+  const partition=tenantSchoolPartition(schoolId);
+  let row;
+  try{row=await client().getEntity(partition,"notifications")}
+  catch(error){if(error.statusCode===404)return null;throw error}
   const now=Date.now();
-  for await(const row of client().listEntities({queryOptions:{filter:`RowKey eq 'notifications'`}})){
-    if(String(row.lineBindingCodeHash||"")===safe&&Date.parse(String(row.lineBindingCodeExpiresAt||""))>now)return {schoolId:String(row.partitionKey),expiresAt:String(row.lineBindingCodeExpiresAt||""),purpose:"admin"};
-    if(String(row.lineAbsenceBindingCodeHash||"")===safe&&Date.parse(String(row.lineAbsenceBindingCodeExpiresAt||""))>now)return {schoolId:String(row.partitionKey),expiresAt:String(row.lineAbsenceBindingCodeExpiresAt||""),purpose:"absence"};
-  }
-  return null;
+  const matches=[
+    ["admin",row.lineBindingCodeHash,row.lineBindingCodeExpiresAt,row.lineBindingBotUserId],
+    ["absence",row.lineAbsenceBindingCodeHash,row.lineAbsenceBindingCodeExpiresAt,row.lineAbsenceBindingBotUserId]
+  ].filter(([,hash,expiresAt,requestBot])=>hash===codeHash&&String(requestBot||"")===botUserId&&Date.parse(expiresAt)>now);
+  return matches.length===1?{purpose:matches[0][0],etag:row.etag}:null;
 }
 
-export async function bindLineNotificationTarget({schoolId=defaultTenantId(),targetId="",targetType="group",targetLabel="",purpose="admin",updatedBy="line-webhook"}={}){
+export async function bindLineNotificationTarget({schoolId,targetId,targetType="group",targetLabel="",requestRow,botUserId=""}){
   await ensureSettingsTable();
   const partition=tenantSchoolPartition(schoolId),now=new Date().toISOString();
   if(!String(targetId||"").trim())throw new Error("LINE targetId 不可空白");
-  const absence=purpose==="absence",prefix=absence?"lineAbsence":"line";
-  await client().upsertEntity({
-    partitionKey:partition,rowKey:"notifications",schoolId:partition,
-    [`${prefix}TargetId`]:String(targetId).trim(),[`${prefix}TargetType`]:String(targetType||"group").slice(0,20),[`${prefix}TargetLabel`]:String(targetLabel||(absence?"學生缺席通知群組":"LINE 幹部群組")).slice(0,120),[`${prefix}TargetBoundAt`]:now,
-    [absence?"lineAbsenceBindingCodeHash":"lineBindingCodeHash"]:"",[absence?"lineAbsenceBindingCodeExpiresAt":"lineBindingCodeExpiresAt"]:"",updatedAt:now,updatedBy:String(updatedBy||"").slice(0,160)
-  },"Merge");
+  const absence=requestRow.purpose==="absence",prefix=absence?"lineAbsence":"line";
+  if(!requestRow.etag)throw new Error("LINE 綁定請求缺少版本");
+  try{
+    await client().updateEntity({
+      partitionKey:partition,rowKey:"notifications",schoolId:partition,
+      [`${prefix}TargetId`]:String(targetId).trim(),[`${prefix}TargetType`]:String(targetType||"group").slice(0,20),
+      [`${prefix}TargetLabel`]:String(targetLabel).slice(0,120),[`${prefix}TargetBoundAt`]:now,
+      [`${prefix}TargetBotUserId`]:botUserId,
+      [`${prefix}BindingCodeHash`]:"",[`${prefix}BindingCodeExpiresAt`]:"",[`${prefix}BindingBotUserId`]:"",
+      updatedAt:now,updatedBy:"line-webhook"
+    },"Merge",{etag:requestRow.etag});
+  }catch(error){if(error.statusCode===412||error.statusCode===404)return null;throw error}
   return getSystemSettings(partition);
 }
 
@@ -117,8 +127,8 @@ export async function getLineNotificationTarget(schoolId=defaultTenantId(),purpo
   const partition=tenantSchoolPartition(schoolId);
   try{
     const row=await client().getEntity(partition,"notifications");
-    if(purpose==="absence")return {targetId:String(row.lineAbsenceTargetId||""),targetType:String(row.lineAbsenceTargetType||""),targetLabel:String(row.lineAbsenceTargetLabel||"")};
-    return {targetId:String(row.lineTargetId||""),targetType:String(row.lineTargetType||""),targetLabel:String(row.lineTargetLabel||""),mode:normalizeLineNotificationMode(row.lineNotificationMode)};
+    if(purpose==="absence")return {targetId:String(row.lineAbsenceTargetId||""),botUserId:String(row.lineAbsenceTargetBotUserId||""),targetType:String(row.lineAbsenceTargetType||""),targetLabel:String(row.lineAbsenceTargetLabel||"")};
+    return {targetId:String(row.lineTargetId||""),botUserId:String(row.lineTargetBotUserId||""),targetType:String(row.lineTargetType||""),targetLabel:String(row.lineTargetLabel||""),mode:normalizeLineNotificationMode(row.lineNotificationMode)};
   }catch(error){if(error.statusCode===404)return {targetId:"",targetType:"",targetLabel:"",...(purpose==="absence"?{}:{mode:"important_and_daily"})};throw error}
 }
 
@@ -127,7 +137,7 @@ export async function clearLineNotificationTarget({schoolId=defaultTenantId(),pu
   const partition=tenantSchoolPartition(schoolId),now=new Date().toISOString();
   const absence=purpose==="absence",prefix=absence?"lineAbsence":"line";
   await client().upsertEntity({partitionKey:partition,rowKey:"notifications",schoolId:partition,
-    [`${prefix}TargetId`]:"",[`${prefix}TargetType`]:"",[`${prefix}TargetLabel`]:"",[`${prefix}TargetBoundAt`]:"",
+    [`${prefix}TargetId`]:"",[`${prefix}TargetType`]:"",[`${prefix}TargetLabel`]:"",[`${prefix}TargetBoundAt`]:"",[`${prefix}TargetBotUserId`]:"",
     [absence?"lineAbsenceBindingCodeHash":"lineBindingCodeHash"]:"",[absence?"lineAbsenceBindingCodeExpiresAt":"lineBindingCodeExpiresAt"]:"",updatedAt:now,updatedBy:String(updatedBy||"").slice(0,160)},"Merge");
   return getSystemSettings(partition);
 }

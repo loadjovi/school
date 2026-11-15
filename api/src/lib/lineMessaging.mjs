@@ -39,10 +39,8 @@ export function parseLineBindingCommand(text){
   return match?match[1]:"";
 }
 
-function lineToken(){return String(process.env.LINE_CHANNEL_ACCESS_TOKEN||"").trim()}
-
-async function lineApi(path,{method="POST",body}={}){
-  const token=lineToken();
+export async function lineApi(path,{method="POST",body,accessToken}={}){
+  const token=String(accessToken||"").trim();
   if(!token)throw new Error("LINE_CHANNEL_ACCESS_TOKEN 未設定");
   const response=await fetch(`https://api.line.me${path}`,{
     method,
@@ -56,20 +54,20 @@ async function lineApi(path,{method="POST",body}={}){
   try{return JSON.parse(responseText)}catch{return {}}
 }
 
-export async function replyLineMessage(replyToken,text){
+export async function replyLineMessage(replyToken,text,{accessToken}={}){
   const token=String(replyToken||"").trim();
   if(!token)return {skipped:true};
-  return lineApi("/v2/bot/message/reply",{body:{replyToken:token,messages:[{type:"text",text:String(text||"").slice(0,5000)}]}});
+  return lineApi("/v2/bot/message/reply",{accessToken,body:{replyToken:token,messages:[{type:"text",text:String(text||"").slice(0,5000)}]}});
 }
 
-export async function pushLineMessage(to,text){
+export async function pushLineMessage(to,text,{accessToken}={}){
   const target=String(to||"").trim();
   if(!target)throw new Error("LINE 通知群組尚未綁定");
-  return lineApi("/v2/bot/message/push",{body:{to:target,messages:[{type:"text",text:String(text||"").slice(0,5000)}]}});
+  return lineApi("/v2/bot/message/push",{accessToken,body:{to:target,messages:[{type:"text",text:String(text||"").slice(0,5000)}]}});
 }
 
-export async function getLineGroupSummary(groupId){
+export async function getLineGroupSummary(groupId,{accessToken}={}){
   const id=String(groupId||"").trim();
   if(!id)return null;
-  try{return await lineApi(`/v2/bot/group/${encodeURIComponent(id)}/summary`,{method:"GET"})}catch{return null}
+  try{return await lineApi(`/v2/bot/group/${encodeURIComponent(id)}/summary`,{method:"GET",accessToken})}catch{return null}
 }

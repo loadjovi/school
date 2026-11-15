@@ -1,5 +1,6 @@
 import {getLineNotificationTarget} from "./settings.js";
 import {pushLineMessage} from "./lineMessaging.mjs";
+import {resolveTenantLineChannel,lineTargetMatchesChannel} from "./lineTenantConfig.js";
 
 const allowed=new Set(["section","ensemble","comprehensive","training"]);
 const classLabel={section:"分部課",ensemble:"合奏課",comprehensive:"綜合課",training:"訓練／加練"};
@@ -17,7 +18,7 @@ export function lineAbsenceCandidates(items=[]){
   return [...unique.values()];
 }
 
-export function lineAbsenceMessage({date,items=[],actorName="",appUrl=""}={}){
+export function lineAbsenceMessage({date,items=[],actorName="",appUrl="",platformName="聖心弦樂成長平台"}={}){
   const students=lineAbsenceCandidates(items);
   if(!students.length)return "";
   const lines=[
@@ -32,7 +33,7 @@ export function lineAbsenceMessage({date,items=[],actorName="",appUrl=""}={}){
     lines.push(`${index+1}. ${parts.join("｜")}`);
   });
   if(actorName)lines.push("",`點名人員：${cleanActorName(actorName)}`);
-  lines.push("","請登入「聖心弦樂成長平台 → 出勤與請假」確認學生狀況。","本通知只在學生新標記為缺席時發送；請假、遲到與重複儲存不通知。");
+  lines.push("",`請登入「${clean(platformName,80)} → 出勤與請假」確認學生狀況。`,"本通知只在學生新標記為缺席時發送；請假、遲到與重複儲存不通知。");
   if(appUrl)lines.push(`平台：${clean(appUrl,350)}`);
   return lines.join("\n").slice(0,5000);
 }
@@ -43,7 +44,14 @@ export async function dispatchLineAbsenceNotifications({schoolId,date,items=[],a
   if(process.env.LAB_ENVIRONMENT==="functional-uat")return {sent:false,reason:"lab_suppressed",count:students.length};
   const target=await getLineNotificationTarget(schoolId,"absence");
   if(!target.targetId)return {sent:false,reason:"not_bound",count:students.length};
-  const text=lineAbsenceMessage({date,items:students,actorName,appUrl:process.env.PUBLIC_APP_URL||""});
-  await pushLineMessage(target.targetId,text);
+  const channel=await resolveTenantLineChannel(schoolId);
+  if(!channel.configured)return {sent:false,reason:"not_configured",count:students.length};
+  if(!lineTargetMatchesChannel(target,channel))return {sent:false,reason:"rebind_required",count:students.length};
+  const text=lineAbsenceMessage({
+    date,items:students,actorName,
+    platformName:channel.platformName,
+    appUrl:channel.legacy?process.env.PUBLIC_APP_URL||"":""
+  });
+  await pushLineMessage(target.targetId,text,channel);
   return {sent:true,reason:"sent",count:students.length};
 }
