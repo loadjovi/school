@@ -9,7 +9,7 @@ import {
   lineSessionCookie, linkTenantGoogle, LineAccountConflict, tenantLineSession, unlinkTenantGoogle,
   useTenantLineOAuth, recordTenantLineFriendship
 } from "../lib/tenantLineAccounts.js";
-import {refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
+import {LineMenuSyncError,refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
 
 const loginApi = "https://api.line.me/oauth2/v2.1/";
 const startUrl = "https://access.line.me/oauth2/v2.1/authorize";
@@ -178,7 +178,8 @@ app.http("tenantLineAccount", {
       const body = await request.json().catch(() => ({}));
       if (body?.action === "sync-menu") {
         if (!account) return json({error: "請先連結 LINE 帳號"}, 409);
-        return json({audience: await refreshTenantLineMenu(channel, account)});
+        const result = await refreshTenantLineMenu(channel, account, undefined, {verify: true, expectStaff: access.role === "admin"});
+        return json(typeof result === "string" ? {audience: result} : result);
       }
       if (!line || line.botUserId !== channel.botUserId) return json({error: "請先完成此校 LINE 登入"}, 403);
       const verified = await verifyGoogleToken(body?.credential);
@@ -190,7 +191,7 @@ app.http("tenantLineAccount", {
       return {...json({configured: true, bound: true, googleLinked: true, authProvider: "line", lineDisplayName: linked.displayName}),
         headers: privateHeaders, cookies: [lineSessionCookie(token)]};
     } catch (error) {
-      if (error instanceof LineAccountConflict) return json({error: error.message}, 409);
+      if (error instanceof LineAccountConflict || error instanceof LineMenuSyncError) return json({error: error.message}, 409);
       console.error("Tenant LINE account update failed", {schoolId, status: error?.statusCode});
       return json({error: "LINE 帳號處理失敗"}, 500);
     }

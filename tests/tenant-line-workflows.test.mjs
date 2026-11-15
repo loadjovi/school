@@ -210,6 +210,40 @@ test("parent home keeps the service card and syncs with the active school accoun
   assert.equal(tenantServicesEntry(), "");
 });
 
+test("LINE admin sync protects the existing menu and verifies LINE actually assigned the staff six-grid", async () => {
+  const calls = [];
+  const parentMenuId = "richmenu-" + "1".repeat(32), staffMenuId = "richmenu-" + "2".repeat(32);
+  const account = {lineUserId: userId, googleEmail: google.email};
+  const channel = {schoolId: "sacred-heart", accessToken: "school-token", configured: true, parentMenuId, staffMenuId};
+  let schoolAdmin = true, areaCount = 4, linkedMenuId = parentMenuId;
+  const {refreshTenantLineMenu} = load("api/src/lib/tenantLineMenu.js", {
+    listTenantRolesByEmail: async () => schoolAdmin ? [{role:"schoolAdmin", schoolId:"sacred-heart"}] : [],
+    getTeacherDirectory: async () => null, defaultTenantId: () => "sacred-heart",
+    getMappedStudentsByEmail: async () => [], process: {env: {LAB_ENVIRONMENT: "functional-uat"}},
+    lineApi: async (path, options) => {
+      calls.push({path, method:options.method});
+      assert.equal(options.accessToken, "school-token");
+      if (path.startsWith("/v2/bot/richmenu/")) return {areas: Array(areaCount).fill({})};
+      if (options.method === "GET") return {richMenuId:linkedMenuId};
+      return {};
+    }
+  }, ";({refreshTenantLineMenu})");
+  const verify = changes => refreshTenantLineMenu({...channel,...changes}, account, undefined, {verify:true,expectStaff:true});
+  await assert.rejects(verify({staffMenuId: ""}), /幹部選單尚未設定/);
+  await assert.rejects(verify({staffMenuId: parentMenuId}), /同一個 ID/);
+  assert.equal(calls.length, 0);
+  await assert.rejects(verify(), /六宮格/);
+  assert.equal(calls.length, 1);
+  areaCount = 6;
+  await assert.rejects(verify(), /LINE 尚未確認/);
+  linkedMenuId = staffMenuId;
+  const result = await verify();
+  assert.equal(result.audience, "staff");
+  assert.equal(result.areaCount, 6);
+  schoolAdmin = false;
+  await assert.rejects(verify(), /未判定為此校管理員/);
+});
+
 test("fee notification retry keeps the initial target and provider retry key", async () => {
   const calls = [];
   let target = userId;

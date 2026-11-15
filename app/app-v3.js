@@ -133,7 +133,7 @@ async function syncOwnLineMenu(button){
     const result=await api("/api/line/school-account",{method:"POST",body:JSON.stringify({action:"sync-menu"})});
     const messages={
       parent:"已同步為家長選單，請重新開啟 LINE 聊天室查看。",
-      staff:"此帳號有教職人員權限，已同步為幹部選單。請重新開啟 LINE 聊天室查看。",
+      staff:`LINE 已確認套用幹部選單${result.areaCount===6?"（六宮格）":""}。請重新開啟 LINE 聊天室查看。`,
       default:"目前使用通用選單。若已完成綁定，請確認此校的角色選單設定。",
       unavailable:"目前無法同步，請聯絡學校管理員確認 LINE 選單設定。"
     };

@@ -11,7 +11,9 @@ export async function tenantLineParentStudents(schoolId, parentEmail) {
   return Array.isArray(legacy) ? legacy : (legacy?.students || []);
 }
 
-export async function refreshTenantLineMenu(channel, account, userId = account?.lineUserId) {
+export class LineMenuSyncError extends Error {}
+
+export async function refreshTenantLineMenu(channel, account, userId = account?.lineUserId, {verify = false, expectStaff = false} = {}) {
   if (!channel.configured || !/^U[0-9a-f]{32}$/i.test(userId || "")) return "unavailable";
   const {accessToken, schoolId} = channel;
   let role = "default";
@@ -25,12 +27,39 @@ export async function refreshTenantLineMenu(channel, account, userId = account?.
   if (role === "default" && account && (await tenantLineParentStudents(schoolId, account.parentEmail)).length) role = "parent";
   const menuId = role === "staff" ? channel.staffMenuId : role === "parent" ? channel.parentMenuId : "";
   const resource = "/v2/bot/user/" + encodeURIComponent(userId) + "/richmenu";
-  if (menuId && !/^richmenu-[a-f0-9]{32}$/i.test(menuId)) return "unavailable";
+  if (expectStaff && role !== "staff") throw new LineMenuSyncError("LINE 綁定的 Gmail 未判定為此校管理員或教師，請確認綁定帳號。");
+  if (role === "staff" && (!menuId || menuId === channel.parentMenuId)) {
+    if (verify) throw new LineMenuSyncError(menuId ? "幹部與家長選單使用同一個 ID，請由 Global 管理員確認幹部選單。" : "此校幹部選單尚未設定，請由 Global 管理員設定幹部選單。");
+    return "unavailable";
+  }
+  if (menuId && !/^richmenu-[a-f0-9]{32}$/i.test(menuId)) {
+    if (verify) throw new LineMenuSyncError("LINE 選單 ID 格式不正確，請由 Global 管理員核對設定。");
+    return "unavailable";
+  }
+  let definition;
+  if (verify && menuId) {
+    try {
+      definition = await lineApi("/v2/bot/richmenu/" + menuId, {accessToken, method: "GET"});
+    } catch (error) {
+      if (error.status === 404) throw new LineMenuSyncError("此校官方帳號找不到已設定的選單，請核對選單 ID。");
+      throw error;
+    }
+    if (role === "staff" && schoolId === defaultTenantId() && process.env.LAB_ENVIRONMENT === "functional-uat" && definition.areas?.length !== 6) {
+      throw new LineMenuSyncError("目前設定的幹部選單不是聖心 LAB 六宮格，請核對幹部選單 ID。");
+    }
+  }
   try {
     if (menuId) await lineApi(resource + "/" + menuId, {accessToken});
     else await lineApi(resource, {accessToken, method: "DELETE"});
   } catch (error) {
     if (menuId || error.status !== 404) throw error;
   }
-  return menuId ? role : "default";
+  if (!verify || !menuId) return menuId ? role : "default";
+  try {
+    const assigned = await lineApi(resource, {accessToken, method: "GET"});
+    if (assigned.richMenuId === menuId) return {audience: role, areaCount: definition.areas?.length || 0};
+  } catch (error) {
+    if (error.status !== 404) throw error;
+  }
+  throw new LineMenuSyncError("LINE 尚未確認選單已套用。請確認目前聊天室使用的是綁定的 LINE 帳號，再試一次。");
 }

@@ -144,7 +144,7 @@
   }
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-school-services-20261115",()=>{
+    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-menu-check-20261115",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
