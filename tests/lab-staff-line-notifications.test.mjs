@@ -24,8 +24,14 @@ test("notification delivery is deduplicated and cannot block the primary workflo
   const registration=read("api/src/functions/studentRegistration.js");
   const payments=read("api/src/lib/paymentNotifications.js");
   assert.match(module,/createEntity\(\{partitionKey:String\(schoolId\),rowKey:key/);
-  assert.match(module,/if\(error\.statusCode===409\)return false/);
+  assert.match(module,/if\(error\.statusCode!==409\)throw error/);
   assert.match(module,/return \{status:"failed",sent:0,failed:1\}/);
   assert.match(registration,/await notifyPendingParentRegistration/);
   assert.match(payments,/preview\?\{status:"preview",sent:0\}:await notifyFinanceTransferReports/);
+});
+
+test("a failed LAB delivery can be retried while sent notifications stay deduplicated",()=>{
+  const module=read("api/src/lib/labStaffLineNotifications.mjs");
+  assert.match(module,/if\(row\.status!=="FAILED"\)return false/);
+  assert.match(module,/status:"SENDING"[\s\S]*\{etag:row\.etag\}/);
 });
