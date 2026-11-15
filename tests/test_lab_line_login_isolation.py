@@ -258,6 +258,14 @@ class LabLineLoginIsolationTests(unittest.TestCase):
         self.assertNotIn("LAB_LINE_MESSAGING_ACCESS_TOKEN",webhook)
         self.assertNotIn("LabLineNotificationLog",webhook)
 
+    def test_generated_lab_webhook_is_signed_and_user_allowlisted(self):
+        builder=(ROOT/"scripts/prepare-functional-lab.py").read_text()
+        self.assertIn("LAB_LINE_MESSAGING_CHANNEL_SECRET",builder)
+        self.assertIn("LAB_LINE_MESSAGING_ACCESS_TOKEN",builder)
+        self.assertIn("LAB_LINE_TEST_USER_ID",builder)
+        self.assertIn("sourceUserId.toLowerCase()!==labAllowed.toLowerCase()",builder)
+        self.assertNotIn("LAB: reject real LINE webhook",builder)
+
     def test_rolling_limit_is_atomic_and_has_parallel_regressions(self):
         oauth=(ROOT/"scripts/lab-line-login-function.js").read_text()
         safety=(ROOT/"scripts/lab-line-notification-safety.mjs").read_text()

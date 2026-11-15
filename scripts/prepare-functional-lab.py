@@ -129,20 +129,34 @@ def prepare(output: Path) -> None:
     storage.write_text('import {assertLabIsolation} from "./labIsolation.mjs";\n'+
         original.replace(marker,'const conn=()=>{assertLabIsolation();return process.env.STORAGE_CONNECTION_STRING;};'),
         encoding="utf-8")
-    # Shared Production LINE modules must never call the real Messaging API from
-    # LAB. The separately generated allowlisted single-recipient endpoint below
-    # is the only outbound exception; webhook and shared notification paths stay
-    # disabled even when Production secrets accidentally exist in the LAB app.
+    # The LAB webhook accepts signed events from the same isolated Messaging API
+    # channel used by the role menus, but only for the explicit LAB user.  This
+    # lets a rich-menu message action (for example, "今日課程") receive a reply
+    # without opening Production binding/group commands to any other account.
     line_webhook=fn_dir/"lineWebhook.js"
     webhook_source=line_webhook.read_text(encoding="utf-8")
     secret_expr='const lineSecret=()=>String(process.env.LINE_CHANNEL_SECRET||"").trim();'
     token_expr='const lineToken=()=>String(process.env.LINE_CHANNEL_ACCESS_TOKEN||"").trim();'
     if secret_expr not in webhook_source or token_expr not in webhook_source:
         raise RuntimeError("LINE webhook structure changed; review LAB isolation before deploying")
-    line_webhook.write_text(webhook_source.replace(secret_expr,'const lineSecret=()=>""; // LAB: reject real LINE webhook')
-        .replace(token_expr,'const lineToken=()=>""; // LAB: no real LINE channel')
+    line_webhook.write_text(webhook_source.replace(secret_expr,
+        'const lineSecret=()=>String(process.env.LAB_LINE_MESSAGING_CHANNEL_SECRET||process.env.LINE_CHANNEL_SECRET||"").trim();')
+        .replace(token_expr,'const lineToken=()=>String(process.env.LAB_LINE_MESSAGING_ACCESS_TOKEN||"").trim();')
         .replace('const url=String(process.env.LINE_OFFICIAL_ACCOUNT_URL||"").trim();',
                  'const url=""; // LAB: never link to the Production LINE account'),encoding="utf-8")
+    webhook_source=line_webhook.read_text(encoding="utf-8")
+    webhook_marker='''    for(const event of events){
+      try{
+        if(event?.type!=="message"||event?.message?.type!=="text")continue;'''
+    webhook_guard='''    for(const event of events){
+      try{
+        if(event?.type!=="message"||event?.message?.type!=="text")continue;
+        const labAllowed=String(process.env.LAB_LINE_TEST_USER_ID||"").trim();
+        const sourceUserId=String(event.source?.userId||"").trim();
+        if(!/^U[0-9a-f]{32}$/i.test(labAllowed)||sourceUserId.toLowerCase()!==labAllowed.toLowerCase())continue;'''
+    if webhook_marker not in webhook_source:
+        raise RuntimeError("LINE webhook event loop changed; review LAB inbound allowlist")
+    line_webhook.write_text(webhook_source.replace(webhook_marker,webhook_guard,1),encoding="utf-8")
     # LINE Login OAuth and its pure safety rules exist ONLY in the isolated
     # generated LAB API.
     safety_source=(ROOT/"scripts"/"lab-line-notification-safety.mjs").read_text(encoding="utf-8")
@@ -286,9 +300,9 @@ def prepare(output: Path) -> None:
         return json({bound:false,menuAudience:"unbound"});
       }''',1)
     line_webhook.write_text(webhook_source,encoding="utf-8")
-    # The copied Production webhook stays fail-closed in LAB. Parent account
-    # linking uses the dedicated OAuth endpoints above and never exposes the
-    # legacy six-digit private-chat binding flow.
+    # Parent account linking still uses the dedicated OAuth endpoints. The
+    # copied webhook is reachable only for the explicit LAB LINE user, so legacy
+    # binding/group commands cannot be exercised by other official-account users.
     fee=output/"app"/"fee-collections.js"
     fee_source=fee.read_text(encoding="utf-8")
     render_start=fee_source.find('function renderLineBinding(){')
