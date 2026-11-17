@@ -1,4 +1,4 @@
-import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv,tshirtPurchaseOrderCsv} from "./tshirt-procurement-plan.mjs?v=20261102-purchase-order";
+import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv,tshirtPurchaseOrderCsv} from "./tshirt-procurement-plan.mjs?v=20261117-auto-procurement";
 const $=id=>document.getElementById(id);
 const term=currentTshirtTerm();
 let data=null,plan=null,loading=false,canVerifyFinance=false,links=[],extraBySize={},revision=0,canCreateOrder=false,purchaseOrderRequestKey="";
@@ -42,15 +42,15 @@ function draw(){
  const p=plan,metrics=[["學生首次公費",p.firstUnits],["學生自費加購",p.studentExtraUnits],["幹部／志工需求",p.staffUnits],["本期需求合計",p.totalUnits],["已採購／已交付",p.coveredUnits],["尚需採購（已知尺寸）",p.needUnits??"待盤點"]];
  $("tshirtPlanMetrics").innerHTML=metrics.map(([name,value])=>`<div class="procurement-metric"><span>${name}</span><strong>${value}${typeof value==="number"?" 件":""}</strong></div>`).join("");
  $("tshirtPlanPeriod").textContent=`${p.term.label}｜加購申請期間 ${p.term.start} 起至 ${p.term.end} 前；跨期未結案併入。首次需求依目前在團名冊（儲備團 ${p.reserveCount} 位）。`;
- const knownSizesReady=!p.missingStock.length&&!p.waitingUnits&&!p.warnings.some(x=>/尚未分配尺碼/.test(x));
- $("tshirtPlanStatus").textContent=p.canFinalize?"尺寸、需求與款項資料已齊，請核對下方採購件數與 10 件門檻。":knownSizesReady&&p.unknownUnits?"已知尺寸的需求可先建立採購單；待填尺寸需求會明確排除，補齊後再另行處理。":"目前為採購規劃，仍有資料待補齊；CSV 會一併列出待辦。";
+ const knownSizesReady=!p.missingStock.length&&!p.warnings.some(x=>/尚未分配尺碼/.test(x));
+ $("tshirtPlanStatus").textContent=p.canFinalize?"尺寸、需求與款項資料已齊，請核對下方採購件數與 10 件門檻。":knownSizesReady&&p.unknownUnits?"已知尺寸的需求可先建立採購單；待填尺寸需求會明確排除，補齊後再另行處理。":knownSizesReady&&p.waitingUnits?"已核帳與公費需求已自動列入採購。待審核、匯款或核帳的需求會另列。":"目前為採購規劃，仍有資料待補齊；CSV 會一併列出待辦。";
  $("tshirtPlanWarnings").innerHTML=p.warnings.length?`<ul>${p.warnings.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:"";
  const count=v=>v===null?"待盤點":v;
  $("tshirtPlanSizeRows").innerHTML=p.sizes.map(x=>`<tr><th scope="row">${x.size}</th><td data-label="首次公費">${x.first+x.cadreFirst}</td><td data-label="自費加購">${x.studentExtra+x.cadreExtra+x.volunteerExtra}</td><td data-label="需求合計">${x.total}</td><td data-label="已採購／交付">${x.covered}</td><td data-label="可用庫存">${count(x.available)}</td><td data-label="備貨待到貨">${x.incoming}</td><td data-label="尚需採購"><strong>${count(x.need)}</strong></td><td data-label="另加備貨"><input type="number" min="0" max="100" step="1" inputmode="numeric" value="${x.extra}" data-plan-extra="${x.size}" aria-label="${x.size} 尺寸另加備貨件數"></td><td data-label="規劃採購"><strong>${count(x.order)}</strong></td></tr>`).join("");
  const units=p.orderUnits;
  $("tshirtPlanOrderTotal").textContent=units===null?"規劃採購：待庫存盤點後計算。":`規劃採購 ${units} 件（已知尺寸尚缺 ${p.needUnits} ＋另加備貨 ${p.extraUnits}）。`+(units===0?"目前已知尺寸無需新購。":units<10?`距離最低採購 10 件，尚差 ${10-units} 件；可於各尺寸填寫另加備貨。`:"已達最低採購 10 件。")+(p.unknownUnits?`另有 ${p.unknownUnits} 件待填尺寸，尚未計入採購尺碼。`:"");
  canCreateOrder=Number.isSafeInteger(units)&&units>=10&&knownSizesReady;
- const create=$("confirmTshirtPurchaseOrder");create.disabled=!canCreateOrder;create.title=canCreateOrder?"建立採購單並將尺碼列入已下單待到貨":units===0?"目前沒有需要採購的數量":units!==null&&units<10?"尚未達最低採購 10 件":"請先完成庫存、款項或已採購尺碼資料";
+ const create=$("confirmTshirtPurchaseOrder");create.disabled=!canCreateOrder;create.title=canCreateOrder?"建立採購單並將尺碼列入已下單待到貨":units===0?"目前沒有需要採購的數量":units!==null&&units<10?"尚未達最低採購 10 件":"請先完成庫存或已採購尺碼資料";
  $("tshirtPurchaseOrderHint").textContent=canCreateOrder?(p.unknownUnits?`可建立目前已知的 ${units} 件；尚有 ${p.unknownUnits} 件待填尺寸，本次不會列入。`:`可將目前 ${units} 件正式轉為採購單。`):create.title;
  $("tshirtPlanDetailCount").textContent=`查看需求明細與待辦（${p.rows.length} 筆）`;
  $("tshirtPlanDetailRows").innerHTML=p.rows.map(x=>`<tr><td data-label="姓名">${esc(x.person)}</td><td data-label="類別">${esc(x.category)}</td><td data-label="尺寸">${esc(x.size||"待填寫")}</td><td data-label="件數">${x.quantity}</td><td data-label="進度">${esc(x.status)}</td><td data-label="備註">${esc(x.note)}</td></tr>`).join("")||'<tr><td colspan="6">此學期沒有需求</td></tr>';

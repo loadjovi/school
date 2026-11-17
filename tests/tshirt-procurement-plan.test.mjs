@@ -42,6 +42,26 @@ test("unpaid purchases remain visible in demand but cannot be presented as a fin
  let p=build(a);assert.equal(p.waitingUnits,2);assert.equal(p.canFinalize,false);assert.match(p.warnings.join(" "),/核帳/);
  a.requests[0].paymentStatus="VERIFIED";assert.equal(build(a).canFinalize,true);
 });
+test("finance confirmation alone adds one purchase demand even when other parents are still paying",()=>{
+ const a=args();
+ const paid=request({size:"M",quantity:1,paymentStatus:"REPORTED_UNVERIFIED"});
+ const waiting=request({id:"unpaid",size:"M",quantity:5,paymentStatus:"AWAITING_TRANSFER"});
+ a.requests=[paid,waiting];
+ let p=build(a);
+ let size=p.sizes.find(x=>x.size==="M");
+ assert.equal(size.waiting,6);
+ assert.equal(size.order,0);
+ paid.paymentStatus="VERIFIED";
+ p=build(a);
+ size=p.sizes.find(x=>x.size==="M");
+ assert.equal(size.waiting,5);
+ assert.equal(size.order,1);
+ assert.match(p.rows.find(x=>x.requestId===paid.id).status,/已列入採購需求/);
+ assert.equal(paid.status,"APPROVED");
+ assert.equal(size.incoming,0);
+ a.stock.find(x=>x.key==="regular:M").onHand=1;
+ assert.equal(build(a).sizes.find(x=>x.size==="M").order,0);
+});
 test("staff first, cadre add-ons and volunteer add-ons count separately; volunteer loans do not create purchase demand",()=>{
  const a=args();a.staffDemands=[{id:"f",parentEmail:"a@x.org",parentName:"幹部甲",category:"CADRE_FIRST",size:"M",quantity:1,schoolYear:115,semester:1,status:"APPROVED"},{id:"c",parentEmail:"a@x.org",parentName:"幹部甲",category:"CADRE_EXTRA",size:"L",quantity:2,schoolYear:115,semester:1,status:"APPROVED",paymentStatus:"VERIFIED"},{id:"v",parentEmail:"v@x.org",parentName:"志工乙",category:"VOLUNTEER_EXTRA",size:"S",quantity:3,schoolYear:115,semester:1,status:"APPROVED"}];
  a.parentLoans=[{parentEmail:"v@x.org",parentName:"志工乙",role:"VOLUNTEER",size:"M",status:"BORROWED"}];

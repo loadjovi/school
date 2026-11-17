@@ -47,7 +47,7 @@ export function buildTshirtProcurementPlan({students=[],history=[],requests=[],s
   if(!quantity){warnings.push("部分加購申請件數異常，請核對申請紀錄");continue}
   const covered=["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(request.status);
   const ready=request.status==="APPROVED"&&request.paymentStatus==="VERIFIED";
-  const labels={PENDING:"待審核",APPROVED:request.paymentStatus==="VERIFIED"?"已核帳，待採購":request.paymentStatus==="REPORTED_UNVERIFIED"?"待財務核帳":"待匯款",ORDERED:"已採購待到貨",ARRIVED:"已到貨",READY_FOR_PICKUP:"可領取",FULFILLED:"已領取"};
+  const labels={PENDING:"待審核",APPROVED:request.paymentStatus==="VERIFIED"?"已入帳，已列入採購需求":request.paymentStatus==="REPORTED_UNVERIFIED"?"待財務核帳":"待匯款",ORDERED:"已採購待到貨",ARRIVED:"已到貨",READY_FOR_PICKUP:"可領取",FULFILLED:"已領取"};
   rows.push({type:"STUDENT_EXTRA",category:"學生自費加購",person:String(student.studentName||student.name||request.studentId),studentId:String(request.studentId),group:groupOf(student)==="C"?"儲備團":groupOf(student)+" 團",size:String(request.size||""),quantity,status:labels[request.status]||"狀態待核對",covered,ready,requestId:request.id||"",note:overdue?"跨期未結案，併入目前需求":""});
  }
  const loanMap=new Map(parentLoans.map(x=>[String(x.parentEmail||"").trim().toLowerCase(),x]));
@@ -61,7 +61,7 @@ export function buildTshirtProcurementPlan({students=[],history=[],requests=[],s
   const quantity=positive(demand.quantity);if(!quantity)continue;
   if(!inTerm)carryover++;
   const covered=["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(demand.status);
-  rows.push({type:demand.category,category:STAFF_CATEGORIES[demand.category],person:demand.parentName||demand.parentEmail||"姓名待核對",studentId:demand.studentId||"",group:demand.category.startsWith("CADRE")?"幹部":"志工",size:demand.size||"",quantity,status:({PENDING:"待確認",APPROVED:demand.paymentStatus==="VERIFIED"||demand.category==="CADRE_FIRST"?"已確認，待採購":"待財務核帳",ORDERED:"已採購待到貨",ARRIVED:"已到貨",FULFILLED:"已處理完成"})[demand.status]||demand.status,covered,ready:demand.category==="CADRE_FIRST"||demand.paymentStatus==="VERIFIED",requestId:demand.id||"",note:!inTerm?"跨期未結案，併入目前需求":""});
+  rows.push({type:demand.category,category:STAFF_CATEGORIES[demand.category],person:demand.parentName||demand.parentEmail||"姓名待核對",studentId:demand.studentId||"",group:demand.category.startsWith("CADRE")?"幹部":"志工",size:demand.size||"",quantity,status:({PENDING:"待確認",APPROVED:demand.paymentStatus==="VERIFIED"||demand.category==="CADRE_FIRST"?"已確認，待採購":"待財務核帳",ORDERED:"已採購待到貨",ARRIVED:"已到貨",FULFILLED:"已處理完成"})[demand.status]||demand.status,covered,ready:demand.status==="APPROVED"&&(demand.category==="CADRE_FIRST"||demand.paymentStatus==="VERIFIED"),requestId:demand.id||"",note:!inTerm?"跨期未結案，併入目前需求":""});
  }
  // Unreceived first applications are real demand, including corrected legacy records.
  for(const loan of parentLoans){
@@ -101,9 +101,10 @@ export function buildTshirtProcurementPlan({students=[],history=[],requests=[],s
   const sum=predicate=>list.filter(predicate).reduce((n,x)=>n+x.quantity,0);
   const first=sum(x=>x.type==="STUDENT_FIRST"),studentExtra=sum(x=>x.type==="STUDENT_EXTRA"),cadreFirst=sum(x=>x.type==="CADRE_FIRST"),cadreExtra=sum(x=>x.type==="CADRE_EXTRA"),volunteerExtra=sum(x=>x.type==="VOLUNTEER_EXTRA");
   const covered=sum(x=>x.covered),remaining=sum(x=>!x.covered),waiting=sum(x=>!x.covered&&!x.ready);
+  const eligible=remaining-waiting;
   const incoming=incomingExtras.get(size)||0;
-  const stockUsed=available===null?null:Math.min(available,remaining);
-  const need=available===null?(remaining?null:0):Math.max(0,remaining-available-incoming);
+  const stockUsed=available===null?null:Math.min(available,eligible);
+  const need=available===null?(eligible?null:0):Math.max(0,eligible-available-incoming);
   const extra=Number.isSafeInteger(Number(extraBySize[size]))&&Number(extraBySize[size])>=0&&Number(extraBySize[size])<=100?Number(extraBySize[size]):0;
   return {size,first,studentExtra,cadreFirst,cadreExtra,volunteerExtra,total:first+studentExtra+cadreFirst+cadreExtra+volunteerExtra,covered,remaining,waiting,available,stockUsed,incoming,need,extra,order:need===null?null:need+extra};
  });
@@ -111,10 +112,10 @@ export function buildTshirtProcurementPlan({students=[],history=[],requests=[],s
  const missingStock=sizes.filter(x=>x.need===null).map(x=>x.size);
  const extraUnits=sizes.reduce((n,x)=>n+x.extra,0);
  const need=missingStock.length?null:sizes.reduce((n,x)=>n+x.need,0);
- const waiting=sum(x=>!x.covered&&!x.ready?x.quantity:0),unknownUnits=unknown.filter(x=>!x.covered).reduce((n,x)=>n+x.quantity,0);
+ const waiting=sum(x=>!x.covered&&!x.ready?x.quantity:0),unknownUnits=unknown.filter(x=>!x.covered&&x.ready).reduce((n,x)=>n+x.quantity,0);
  if(unknownUnits)warnings.push(`${unknownUnits} 件待填寫尺寸，尚無法分配採購尺碼`);
  if(missingStock.length)warnings.push(`${missingStock.join("、")} 尺寸尚未完成庫存盤點`);
- if(waiting)warnings.push(`${waiting} 件待審核、匯款或財務核帳`);
+ if(waiting)warnings.push(`${waiting} 件待審核、匯款或財務核帳，尚未列入採購`);
  if(carryover)warnings.push(`${carryover} 筆跨期未結案需求已併入，請核對是否仍需購買`);
  return {term,rows,sizes,warnings:[...new Set(warnings)],currentCount:current.length,reserveCount:current.filter(s=>groupOf(s)==="C").length,firstUnits:sum(x=>x.type==="STUDENT_FIRST"?x.quantity:0),studentExtraUnits:sum(x=>x.type==="STUDENT_EXTRA"?x.quantity:0),staffUnits:sum(x=>STAFF_CATEGORIES[x.type]?x.quantity:0),totalUnits:sum(x=>x.quantity),coveredUnits:sum(x=>x.covered?x.quantity:0),waitingUnits:waiting,unknownUnits,missingStock,needUnits:need,extraUnits,orderUnits:need===null?null:need+extraUnits,canFinalize:!unknownUnits&&!missingStock.length&&!waiting&&!warnings.some(x=>/尚未分配尺碼/.test(x)),excludedRequests,carryover,loans:parentLoans.filter(x=>x.role==="VOLUNTEER"&&["BORROWED","WASHING"].includes(x.status))};
 }
@@ -140,7 +141,7 @@ export function tshirtPlanCsv(plan,{supplierOnly=false,exportedAt=new Date().toI
  for(const x of plan.sizes){
   const row=Array(header.length).fill("");row[0]="尺碼彙總";row[1]=plan.term.label;row[2]=x.size;
   [x.first,x.studentExtra,x.cadreFirst,x.cadreExtra,x.volunteerExtra,x.total,x.covered,x.remaining,x.available??"待盤點",x.stockUsed??"待盤點",x.need??"待盤點",x.extra,x.order??"待盤點",x.waiting].forEach((v,i)=>row[i+3]=v);
-  row[23]=x.remaining&&x.available===null?"庫存未建檔不可視為 0":"";row[24]=x.incoming;lines.push(row);
+  row[23]=x.need===null?"庫存未建檔不可視為 0":"";row[24]=x.incoming;lines.push(row);
  }
  if(!supplierOnly){
   for(const x of plan.rows){const row=Array(header.length).fill("");row[0]="需求明細";row[1]=plan.term.label;row[2]=x.size||"待填寫";row[17]=x.person;row[18]=x.studentId;row[19]=x.category;row[20]=x.quantity;row[21]=x.status;row[22]=x.requestId;row[23]=x.note;lines.push(row)}

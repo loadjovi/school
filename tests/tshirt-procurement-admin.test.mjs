@@ -37,6 +37,17 @@ test("known-size order can be confirmed while an unsized demand remains visibly 
  const target={dataset:{planExtra:"M"},value:"10",setCustomValidity(){}};h.node("tshirtPlanSizeRows").handlers.change({target});
  assert.equal(h.node("confirmTshirtPurchaseOrder").disabled,false);assert.match(h.node("tshirtPurchaseOrderHint").textContent,/1 件待填尺寸/);assert.match(h.node("tshirtPlanStatus").textContent,/可先建立採購單/);
 });
+test("a paid demand can be purchased while other applications remain pending",async()=>{
+ const h=harness();
+ const requests=h.bodies["uniform-events/requests"].items;
+ requests.push({id:"paid",kind:"regularUniform",studentId:"111001",size:"M",quantity:9,status:"APPROVED",paymentStatus:"VERIFIED",createdAt:"2026-11-17T00:00:00Z"});
+ requests.push({...requests[0],id:"unpaid",quantity:2,paymentStatus:"REPORTED_UNVERIFIED"});
+ await h.load();
+ assert.match(h.node("tshirtPlanOrderTotal").textContent,/規劃採購 10 件/);
+ assert.equal(h.node("confirmTshirtPurchaseOrder").disabled,false);
+ assert.match(h.node("tshirtPlanStatus").textContent,/已自動列入採購/);
+ assert.match(h.node("tshirtPlanWarnings").innerHTML,/2 件待審核、匯款或財務核帳，尚未列入採購/);
+});
 test("finance header includes staff demand and does not claim zero before the staff source is available",()=>{
  const source=readFileSync(new URL("../app/uniform-event-admin.js",import.meta.url),"utf8");
  const start=source.indexOf("let cachedStaffFinanceItems=null;"),end=source.indexOf("async function refreshFinancePending",start);
