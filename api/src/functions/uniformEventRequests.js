@@ -146,7 +146,7 @@ app.http("uniformEventRequests",{
         const staffLineStatus=access.role==="parent"?await notifyUniformReview(schoolId,{...payload,id}):undefined;
         if(staffLineStatus&&staffLineStatus!=="sent")console.info("LINE uniform review notification skipped or failed",{schoolId,requestId:id,status:staffLineStatus});
         const paymentNotification=uniformNeedsPayment(payload)?await safePaymentNotifications(schoolId,{scope:{kind:"uniform",id}}):null;
-        return json({item:{...payload,id},masterSyncPending,paymentNotification,notificationStatus:paymentNotificationStatus(paymentNotification)},201);
+        return json({item:{...payload,id},masterSyncPending,paymentNotification,notificationStatus:paymentNotificationStatus(paymentNotification),staffLineStatus},201);
       }
       if(!validId(data.id)||!safe(data.etag,200))return err("Invalid update");
       const previous=await find(client,schoolId,data.id);

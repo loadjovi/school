@@ -32,6 +32,6 @@ test('durable ledger deduplicates each recipient and stage; LAB disabled; stale 
 test('transfer reports and dinner registration notify after successful writes; finance delivery respects LAB and rechecks permissions',()=>{
  const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8');
  const uniform=read('api/src/functions/uniformTransferReport.js');assert.ok(uniform.lastIndexOf('safePaymentNotifications(schoolId')>uniform.lastIndexOf('await t.updateEntity'));
- const family=read('api/src/functions/familyEventRegistration.js');assert.match(family,/payload.paymentStatus==="REPORTED_UNVERIFIED"/);assert.match(family,/body.action==="REPORT_TRANSFER"\?await safePaymentNotifications/);
+ const family=read('api/src/functions/familyEventRegistration.js');assert.match(family,/payload.paymentStatus==="REPORTED_UNVERIFIED"/);assert.match(family,/const reporting=body.action==="REPORT_TRANSFER"/);assert.match(family,/reporting\?safePaymentNotifications/);assert.ok(family.lastIndexOf('notifyFinanceTransfer(schoolId')>family.lastIndexOf('await records.updateEntity'));
  const adapter=read('api/src/lib/paymentNotifications.js');assert.match(adapter,/LAB_ENVIRONMENT==="functional-uat"/);assert.match(adapter,/financeRecipients\(admins,assignments\)/);assert.match(adapter,/rebuilt.some\(n=>paymentNoticeKey\(n\)===paymentNoticeKey\(notice\)\)/);
 });

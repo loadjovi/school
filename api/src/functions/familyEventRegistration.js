@@ -5,6 +5,7 @@ import {getTenantContext,ensureStudentAccess,json} from "../lib/auth.js";
 import {getStudentMaster} from "../lib/storage.js";
 import {familyPaymentInfo} from "../lib/paymentNoticeRules.mjs";
 import {safePaymentNotifications} from "../lib/paymentNotifications.js";
+import {notifyAdminTodo,notifyFinanceTransfer} from "../lib/lineAdminTodoNotification.mjs";
 
 const safeId=s=>typeof s==="string"&&/^[a-zA-Z0-9_-]{1,80}$/.test(s);
 const integer=(n,min,max)=>Number.isSafeInteger(n)&&n>=min&&n<=max;
@@ -104,8 +105,14 @@ app.http("familyEventRegistration",{
     try{await records.createEntity({partitionKey:schoolId,rowKey:id,payload:JSON.stringify(payload),updatedAt:timestamp})}
     catch(e){if(e.statusCode===409)return fail("This family has already registered",409);throw e}
     await log(schoolId,access,"family.registration",id,{studentIds:ids,adults:body.adults,extraChildren:body.extraChildren});
+    const activityLabel=body.kind==="yearEndDinner"?"期末聚餐":cfg.eventType==="exchange"?"他校交流":"演出／快閃活動";
+    const needsVerification=payload.paymentStatus==="REPORTED_UNVERIFIED";
+    const [staffLineStatus,financeLineStatus]=await Promise.all([
+      notifyAdminTodo(schoolId,{id:"registration:"+id,text:`新增 ${activityLabel} 報名待確認。`}),
+      needsVerification?notifyFinanceTransfer(schoolId,{kind:"family",id,reportedAt:payload.transferReport.reportedAt}):undefined
+    ]);
     const paymentNotification=(familyPaymentInfo(cfg,payload).needsPayment||payload.paymentStatus==="REPORTED_UNVERIFIED")?await safePaymentNotifications(schoolId,{scope:{kind:"family",id}}):null;
-    return json({item:{...payload,id},paymentNotification},201);
+    return json({item:{...payload,id},paymentNotification,staffLineStatus,financeLineStatus},201);
    }
    if(request.method!=="PATCH")return fail("Method not allowed",405);
    const id=registrationId(body.kind,body.activityId,access.email);
@@ -140,8 +147,12 @@ app.http("familyEventRegistration",{
    await log(schoolId,access,"family."+body.action,actual,{from:old.paymentStatus,to:next.paymentStatus,amount:next.transferReport?.amount,bankPostedAt:next.bankPostedAt||"",note:next.verificationNote||""});
    try{await records.updateEntity({partitionKey:schoolId,rowKey:actual,payload:JSON.stringify(next),updatedAt:next.updatedAt},"Replace",{etag:previous.etag})}
    catch(e){if(e.statusCode===412)return fail("Record changed, refresh and retry",409);throw e}
-   const paymentNotification=body.action==="REPORT_TRANSFER"?await safePaymentNotifications(schoolId,{scope:{kind:"family",id:actual}}):null;
-   return json({item:{...next,id:actual},paymentNotification});
+   const reporting=body.action==="REPORT_TRANSFER";
+   const [paymentNotification,financeLineStatus]=await Promise.all([
+     reporting?safePaymentNotifications(schoolId,{scope:{kind:"family",id:actual}}):null,
+     reporting?notifyFinanceTransfer(schoolId,{kind:"family",id:actual,reportedAt:next.transferReport.reportedAt}):undefined
+   ]);
+   return json({item:{...next,id:actual},paymentNotification,financeLineStatus});
   }catch(e){console.error("familyEventRegistration",e);return fail("Unable to process family registration",500)}
  }
 });

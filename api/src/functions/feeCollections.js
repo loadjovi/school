@@ -5,6 +5,7 @@ import {ensureStudentAccess,getTenantContext,json} from "../lib/auth.js";
 import {listUserStudentMappings} from "../lib/storage.js";
 import {tenantFeeEnabled} from "../lib/lineTenantConfig.js";
 import {sendTenantFeeLine} from "../lib/tenantLineFeeNotice.js";
+import {notifyFinanceTransfer} from "../lib/lineAdminTodoNotification.mjs";
 import {
   FEE_PROJECT_KINDS,FEE_PROJECT_STATUSES,PAYMENT_STATUSES,canParentReport,isIsoDate,isSafeId,
   maskBankAccount,normalizeFeeProject,projectSourceType,validateTransferReport,validateVerification
@@ -271,8 +272,12 @@ app.http("feeCollectionTransfers",{
         const report=validateTransferReport(body,amount),next={...sourcePayload,paymentStatus:PAYMENT_STATUSES.REPORTED_UNVERIFIED,transferReport:{...report,expectedAmount:amount,reportedAt:timestamp},correctionReason:"",paymentHistory:[...history,{action:"REPORTED",at:timestamp,amount:report.amount,lineRecipient:access.email}],updatedAt:timestamp};
         await audit(schoolId,access,"fee.transfer.report",`${project.id}:${association.id}`,{sourceType:association.sourceType,sourceId:association.sourceId,amount:report.amount,transferDate:report.transferDate});
         await sourceClient.updateEntity({partitionKey:schoolId,rowKey:association.sourceId,payload:JSON.stringify(next),updatedAt:timestamp},"Replace",{etag:loaded.row.etag});
-        const lineNotification=await notifyParent(schoolId,project,association,next.paymentHistory.at(-1),next.paymentHistory.at(-1).lineRecipient);
-        return json({paymentStatus:next.paymentStatus,reportedAt:timestamp,lineNotification});
+        const event=next.paymentHistory.at(-1);
+        const [lineNotification,financeLineStatus]=await Promise.all([
+          notifyParent(schoolId,project,association,event,event.lineRecipient),
+          notifyFinanceTransfer(schoolId,{kind:association.sourceType,id:association.sourceId,reportedAt:timestamp})
+        ]);
+        return json({paymentStatus:next.paymentStatus,reportedAt:timestamp,lineNotification,financeLineStatus});
       }
       if(access.role!=="admin"||access.capabilities?.financeVerifier!==true)return fail("僅指定財務人員可核帳",403);
       const action=String(body.action||"");

@@ -99,15 +99,21 @@ test("webhook links use configured public origin or a relative path",()=>{
     "https://school.example.test/api/line/webhook/sacred-heart");
 });
 
-test("pending T-shirts and competition uniforms notify only the school's bound admin group in immediate modes", async () => {
+test("pending uniforms notify the same school's group and active bound administrators in immediate modes", async () => {
   const env = {};
   const outbound = [];
   const target = {targetId:"group-a", targetType:"group", botUserId:"bot-a", mode:"important_and_daily"};
   const channel = {configured:true, loginConfigured:true, botUserId:"bot-a", accessToken:"token-a"};
+  let admins = [];
   const notify = load("lineAdminTodoNotification.mjs", {
-    process:{env},
+    process:{env},createHash,
     getLineNotificationTarget: async school => {assert.equal(school,"sacred-heart");return target;},
     resolveTenantLineChannel: async school => {assert.equal(school,"sacred-heart");return channel;},
+    listTenantAdmins: async (school,status) => {assert.deepEqual([school,status],["sacred-heart","active"]);return admins;},
+    getTenantLineRecipient: async (school,email,bot) => {
+      assert.deepEqual([school,email,bot],["sacred-heart","active@example.test","bot-a"]);
+      return {lineUserId:"staff-user"};
+    },
     lineTargetMatchesChannel:(group, bot) => group.botUserId === bot.botUserId,
     pushLineMessage: async (...args) => outbound.push(args)
   }, "notifyUniformReview");
@@ -136,11 +142,41 @@ test("pending T-shirts and competition uniforms notify only the school's bound a
   const shirt = {...request, kind:"regularUniform", id:"shirt-request"};
   assert.equal(await notify("sacred-heart", {...shirt, status:"APPROVED"}), undefined);
   assert.equal(await notify("sacred-heart", {...shirt, kind:"fieldTrip"}), undefined);
+  admins = [{status:"active",role:"schoolAdmin",partitionKey:"active@example.test"},{status:"inactive",role:"schoolAdmin",partitionKey:"inactive@example.test"}];
   assert.equal(await notify("sacred-heart", shirt), "sent");
-  assert.equal(outbound.length, 2);
+  assert.equal(outbound.length, 3);
   assert.equal(outbound[1][0], group);
   assert.match(outbound[1][1], /團 T 申請待審/);
   assert.equal(outbound[1][2].retryKey, shirt.id);
+  assert.equal(outbound[2][0],"staff-user");
+  assert.match(outbound[2][2].retryKey,/^[0-9a-f-]{36}$/);
+});
+
+test("finance LINE dispatch contains no transfer details and only reaches assigned, active staff",async()=>{
+  const outbound=[];
+  const registered=[
+    {status:"active",role:"schoolAdmin",partitionKey:"finance@example.test"},
+    {status:"active",role:"schoolAdmin",partitionKey:"staff@example.test"}
+  ];
+  const {financeRecipients}=await import("../api/src/lib/financeNoticeRules.mjs");
+  const notify=load("lineAdminTodoNotification.mjs",{
+    process:{env:{}},createHash,financeRecipients,
+    resolveTenantLineChannel:async()=>({loginConfigured:true,paymentLineEnabled:true,botUserId:"bot-a",accessToken:"token-a"}),
+    listTenantAdmins:async()=>registered,
+    financeAssignments:async()=>[{email:"finance@example.test",status:"active"},{email:"staff@example.test",status:"inactive"}],
+    getTenantLineRecipient:async (school,email,bot)=>{
+      assert.deepEqual([school,email,bot],["sacred-heart","finance@example.test","bot-a"]);
+      return {lineUserId:"finance-user"};
+    },
+    pushLineMessage:async (...args)=>outbound.push(args)
+  },"notifyFinanceTransfer");
+  const event={kind:"uniform",id:"private-request-id",reportedAt:"2026-11-17T09:38:00.000Z"};
+  assert.equal(await notify("sacred-heart",event),"sent");
+  assert.equal(await notify("sacred-heart",event),"sent");
+  assert.equal(outbound[0][0],"finance-user");
+  assert.match(outbound[0][1],/財務待辦/);
+  assert.doesNotMatch(outbound[0][1],/private-request-id/);
+  assert.equal(outbound[0][2].retryKey,outbound[1][2].retryKey);
 });
 
 test("uniform cancellation sends the stored reason only to the original applicant's school LINE account", async () => {

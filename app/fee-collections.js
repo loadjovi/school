@@ -22,7 +22,7 @@ function renderLineBinding(){
   const googleAction=line.authProvider==="line"&&!line.googleLinked?'<div id="linkGoogleButton"></div>':"";
   const detach=line.authProvider==="google"&&line.bound?'<button class="secondary" data-action="unbind-line">解除 LINE 綁定</button>':"";
   const attach=line.authProvider==="google"&&!line.bound?'<button data-action="link-line">使用 LINE 授權並綁定</button>':"";
-  const sync=line.bound?'<button class="secondary" data-action="sync-line-menu">同步我的 LINE 選單</button>':"";
+  const sync=line.bound&&["admin","parent","unassigned"].includes(state.me?.role)?'<button class="secondary" data-action="sync-line-menu">同步我的 LINE 選單</button>':"";
   $("lineBinding").innerHTML=`<div class="card"><h2>LINE 帳號</h2>
     <p>${line.bound?`已連結 ${esc(line.lineDisplayName||"LINE")}`:"可連結此校 LINE 官方帳號，方便登入與接收通知。"}
     ${line.googleLinked?" · 已連結 Gmail":""}</p>
@@ -144,7 +144,7 @@ async function loadProjects(){const data=await api("fee-collections/projects");s
 async function load(){
   try{
     state.me=await api("me");
-    if(!["admin","parent","unassigned"].includes(state.me.role))throw new Error("請切換至家長或學校管理員身分。");
+    if(!["admin","parent","unassigned","teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me.role))throw new Error("請切換至此校已授權的身分。");
     $("siteName").textContent=state.me.systemName||state.me.schoolName||"學校平台";
     const billing=state.me.capabilities?.feeCollections===true&&state.me.role!=="unassigned";
     $("roleTitle").textContent=billing?"LINE 帳號與收費":"LINE 帳號";

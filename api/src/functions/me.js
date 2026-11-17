@@ -80,8 +80,8 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
   }
 
   const features = {};
-  if(a.schoolId&&["parent","unassigned","admin"].includes(a.role)){
-    features.feeCollections=tenantFeeEnabled(a.schoolId);
+  if(a.schoolId&&(["parent","unassigned","admin"].includes(a.role)||teacherRoles.includes(a.role))){
+    features.feeCollections=["parent","admin"].includes(a.role)&&tenantFeeEnabled(a.schoolId);
     try{
       const channel=await resolveTenantLineChannel(a.schoolId);
       features.lineAccount=channel.loginConfigured;

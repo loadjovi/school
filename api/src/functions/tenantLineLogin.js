@@ -14,6 +14,7 @@ import {LineMenuSyncError,refreshTenantLineMenu} from "../lib/tenantLineMenu.js"
 const loginApi = "https://api.line.me/oauth2/v2.1/";
 const startUrl = "https://access.line.me/oauth2/v2.1/authorize";
 const privateHeaders = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"};
+const accountRoles = new Set(["parent","unassigned","admin","teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"]);
 
 function allowedOrigin(request, origin) {
   return Boolean(origin && request.headers.get("origin") === origin);
@@ -83,8 +84,8 @@ app.http("tenantLineLoginStart", {
       if (!google) return json({error: "請先用 Gmail 登入"}, 401);
       const context = await getTenantContext(request, {allowUnassigned: true});
       if (context.error) return context.error;
-      if (context.schoolId !== schoolId || !["parent", "unassigned", "admin"].includes(context.access.role)) {
-        return json({error: "請先切換至此校家長身分"}, 403);
+      if (context.schoolId !== schoolId || !accountRoles.has(context.access.role)) {
+        return json({error: "請先切換至此校已授權的身分"}, 403);
       }
     }
     const txn = await createTenantLineOAuth(schoolId, channel, google);
@@ -156,7 +157,7 @@ app.http("tenantLineAccount", {
     const context = await getTenantContext(request, {allowUnassigned: true});
     if (context.error) return context.error;
     const {schoolId, access} = context;
-    if (!["parent", "unassigned", "admin"].includes(access.role)) return json({error: "無權操作此校帳號"}, 403);
+    if (!accountRoles.has(access.role)) return json({error: "無權操作此校帳號"}, 403);
     const channel = await resolveTenantLineChannel(schoolId);
     if (!channel.loginConfigured) return json({configured: false, bound: false});
     const google = await verifyGoogle(request);

@@ -181,6 +181,9 @@ function tenantServicesEntry(){
     const actions=options.lineAccount?`<button type="button" class="primary" style="width:100%" onclick="location.href='/fee-collections.html#lineBinding'">管理我的 LINE 帳號 →</button><button type="button" class="secondary" style="width:100%;margin-top:8px" onclick="syncOwnLineMenu(this)">重新同步我的 LINE 選單</button><div class="muted" role="status" data-line-menu-result></div>`:"";
     return `${fees}<section class="card" data-admin-group="home" aria-labelledby="schoolLineServicesTitle"><h2 id="schoolLineServicesTitle">LINE 角色選單</h2><div class="notice">${status}</div>${actions}</section>`;
   }
+  if(options.lineAccount&&["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(me.role)){
+    return '<section class="card"><h2>LINE 通知</h2><a href="/fee-collections.html#lineBinding">管理我的 LINE 綁定</a></section>';
+  }
   if(!options.lineAccount&&!billing)return "";
   if(options.lineAccount&&["parent","unassigned"].includes(me.role)){
     const description=billing

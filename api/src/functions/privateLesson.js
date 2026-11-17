@@ -6,6 +6,7 @@ import {
 } from "../lib/storage.js";
 import { sendPrivateLessonWorkflowEmail } from "../lib/email.js";
 import { getSystemSettings } from "../lib/settings.js";
+import {notifyAdminTodo} from "../lib/lineAdminTodoNotification.mjs";
 import {normalizeWeeklyGoals,readWeeklyGoals,isPublishedLesson} from "../lib/musicLearningGoals.mjs";
 
 const attendanceStatuses=new Set(["present","late","leave","absent"]);
@@ -359,8 +360,12 @@ app.http("privateLesson",{
       emailNotificationResendCount:0,emailNotificationLastResentAt:"",emailNotificationLastResentBy:"",cancelledAt:"",cancelledBy:"",cancelReason:""
     };
     await table("tenantPrivateLesson").createEntity(entity);
-    const studentName=clean(master?.studentName||body.studentName||"學生",80),result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"scheduled",target:"parents",actorEmail:a.email,actorName:a.displayName||teacherName});
+    const studentName=clean(master?.studentName||body.studentName||"學生",80);
+    const [result,staffLineStatus]=await Promise.all([
+      notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"scheduled",target:"parents",actorEmail:a.email,actorName:a.displayName||teacherName}),
+      notifyAdminTodo(schoolId,{id:"private-lesson:"+lessonId,text:"新增個別課預約，請至個課紀錄查看。"})
+    ]);
     const notificationAuditPersisted=await persistNotificationAudit(entity,"scheduled",result,a.email);
-    return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted},201);
+    return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted,staffLineStatus},201);
   }
 });
