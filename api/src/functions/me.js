@@ -5,12 +5,20 @@ import {getTenantGoogleLink} from "../lib/tenantLineAccounts.js";
 import { recordTeacherLogin } from "../lib/teacherLoginAudit.js";
 import { touchTeacherLastLogin, listTenantRolesByEmail, listTenantDirectory, getTenantDirectory, getTeacherDirectory, activeTeacherSupport, getMappedStudentsByEmail, defaultTenantId, saveUserIdentity } from "../lib/storage.js";
 app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(request)=>{
-  const a=await getAccess(request);
+  const a=await getAccess(request,{includeContexts:true});
   if(!a.authenticated)return json({error:"Unauthorized"},401);
   if(a.authProvider==="line"){
+    const capabilities={...a.capabilities,lineAccount:true,feeCollections:["parent","admin"].includes(a.role)&&tenantFeeEnabled(a.schoolId)};
+    if(a.role==="admin"){
+      const channel=await resolveTenantLineChannel(a.schoolId);
+      capabilities.lineRoleMenus={
+        parent:/^richmenu-[a-f0-9]{32}$/i.test(channel.parentMenuId),
+        staff:/^richmenu-[a-f0-9]{32}$/i.test(channel.staffMenuId)
+      };
+    }
     return json({authProvider:"line",email:a.contactEmail||"",displayName:a.displayName,role:a.role,
       schoolId:a.schoolId,schoolName:a.schoolName||"",systemName:a.systemName||"",
-      capabilities:{...a.capabilities,lineAccount:true,feeCollections:tenantFeeEnabled(a.schoolId)},contexts:[]});
+      capabilities,contexts:a.contexts||[],activeContextKey:a.activeContextKey||""});
   }
   try{await saveUserIdentity({...a,email:a.contactEmail||a.email})}catch(e){console.warn("user identity registry update failed",e)}
 

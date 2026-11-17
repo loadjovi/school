@@ -259,6 +259,58 @@ test("LINE authentication never reads students for a different school or staff c
   assert.equal(reads, 0);
 });
 
+test("verified LINE staff gets current school permissions and can still select parent access",async()=>{
+  const account={botUserId:botId,lineUserId:userId,parentEmail:"line-account@example.com",googleSub:google.sub,googleEmail:google.email};
+  const assignment={role:"schoolAdmin",schoolId:"school-a",status:"active"};
+  let link={...account},roles=[assignment],finance=true;
+  let studentReads=0,roleReads=0;
+  const {lineParentAccess,googleToken}=load("api/src/lib/auth.js",{
+    OAuth2Client:class{},
+    tenantLineSession:async()=>({schoolId:"school-a",account}),
+    getTenantDirectory:async()=>({status:"active",schoolName:"甲校"}),
+    resolveTenantLineChannel:async()=>({loginConfigured:true,botUserId:botId}),
+    getTenantGoogleLink:async(school,sub)=>{assert.deepEqual([school,sub],["school-a",google.sub]);return link},
+    listTenantRolesByEmail:async(email,status)=>{roleReads++;assert.deepEqual([email,status],[google.email,"active"]);return roles},
+    financeAssigned:async(school,email)=>{assert.deepEqual([school,email],["school-a",google.email]);return finance},
+    tenantLineParentStudents:async()=>{
+      studentReads++;
+      return [{studentId:"990101",name:"家長身分"}];
+    },
+    listStudentMaster:async()=>[],listUserStudentMappings:async()=>[],tenantIdValue:value=>value,defaultTenantId:()=>"sacred-heart"
+  },";({lineParentAccess,googleToken})");
+  const check=(role="",school="school-a",contexts=false)=>lineParentAccess({headers:new Headers({
+    "X-Role-Context":role,"X-School-Id":school
+  })},contexts);
+  assert.equal((await check("schoolAdmin","school-b")).role,"contextDenied");
+  assert.equal((await check("global")).role,"contextDenied");
+  assert.equal(roleReads,0);
+  const first=await check();
+  assert.equal(first.role,"admin");
+  assert.equal(first.email,google.email);
+  assert.equal(first.capabilities.financeVerifier,true);
+  assert.equal(studentReads,0);
+  const profile=await check("schoolAdmin","school-a",true);
+  assert.equal(Array.from(profile.contexts,x=>x.type).join(","),"schoolAdmin,parent");
+  assert.equal(profile.activeContextKey,"schoolAdmin:school-a");
+  const parent=await check("parent");
+  assert.equal(parent.role,"parent");
+  assert.equal(parent.email,account.parentEmail);
+  assert.equal(parent.capabilities.financeVerifier,undefined);
+  finance=false;
+  assert.equal((await check("schoolAdmin")).capabilities.financeVerifier,false);
+  roles=[{...assignment,status:"inactive"},{...assignment,role:"globalAdmin"},{...assignment,schoolId:"school-b"}];
+  assert.equal((await check("schoolAdmin")).role,"contextDenied");
+  assert.equal((await check()).role,"parent");
+  roles=[assignment];
+  link={...account,lineUserId:"U"+"d".repeat(32)};
+  assert.equal((await check("schoolAdmin")).role,"contextDenied");
+  link=null;
+  assert.equal((await check("schoolAdmin")).role,"contextDenied");
+  const cookie="orchestra_google_id_token=other-account";
+  assert.equal(googleToken({headers:new Headers({cookie,"X-Google-ID-Token":"line-session"})}),"");
+  assert.equal(googleToken({headers:new Headers({cookie})}),"other-account");
+});
+
 test("student parent links expose LINE status only to the school's admin", async () => {
   let handler;
   let role = "parent";
@@ -427,13 +479,14 @@ test("LINE staff links open the six workspaces only for the matching school admi
   }
 });
 
-test("a new LINE staff tab resumes a verified Google cookie only for the requested school", async () => {
+test("a new staff tab resumes a verified Google or LINE session only for the requested school", async () => {
   const script = source("app/app-v3.js");
   const bootScript = script.slice(script.indexOf("async function restoreLineStaffSession("), script.indexOf("const schoolViewScript="));
   const entry = {target:"staff_attendance", schoolId:"school-a"};
   const authorized = {role:"admin", schoolId:"school-a"};
   const cases = [
     {entry, profile:authorized, resumes:true},
+    {entry, profile:{...authorized,authProvider:"line"}, resumes:true},
     {entry, status:401},
     {entry, status:403},
     {entry, profile:{role:"admin", schoolId:"school-b"}},
@@ -464,9 +517,10 @@ test("a new LINE staff tab resumes a verified Google cookie only for the request
       assert.equal(requests[0].options.headers["X-Role-Context"],"schoolAdmin");
     }
     if (resumes) {
-      assert.deepEqual(profiles,[authorized]);
-      assert.equal(state.token,"cookie-session");
-      assert.equal(storage.get("google_id_token"),"cookie-session");
+      assert.deepEqual(profiles,[profile]);
+      const session=profile.authProvider==="line"?"line-session":"cookie-session";
+      assert.equal(state.token,session);
+      assert.equal(storage.get("google_id_token"),session);
       assert.equal(storage.get("school_context_id"),"school-a");
       assert.equal(storage.get("role_context"),"schoolAdmin");
     } else {

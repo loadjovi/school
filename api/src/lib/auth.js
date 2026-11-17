@@ -29,9 +29,10 @@ function cookieValue(request,name){
 }
 
 function googleToken(request){
+  const custom=String(request.headers.get("x-google-id-token")||"").trim();
+  if(custom==="line-session")return "";
   const session=cookieValue(request,"orchestra_google_id_token");
   if(session)return session;
-  const custom=String(request.headers.get("x-google-id-token")||"").trim();
   if(custom&&custom!=="cookie-session"&&custom!=="line-session")return custom;
   const auth=String(request.headers.get("authorization")||"");
   if(!auth.toLowerCase().startsWith("bearer "))return "";
@@ -243,30 +244,59 @@ export async function getStudentIdAliases(studentId,schoolId=defaultTenantId()){
   return (await getStudentAliasInfo(studentId,schoolId)).aliases;
 }
 
-async function lineParentAccess(request) {
+async function lineParentAccess(request, includeContexts = false) {
   const session = await tenantLineSession(request);
   if (!session) return {authenticated: false};
   const {schoolId, account} = session;
   const requestedSchool = request.headers.get("x-school-id");
   const requestedRole = request.headers.get("x-role-context");
-  if ((requestedSchool && requestedSchool !== schoolId) || (requestedRole && requestedRole !== "parent")) {
-    return {authenticated: true, authProvider: "line", role: "contextDenied", schoolId, capabilities: {}};
-  }
+  const denied = {authenticated:true,authProvider:"line",role:"contextDenied",schoolId,capabilities:{}};
+  if ((requestedSchool && requestedSchool !== schoolId) ||
+      (requestedRole && !["parent","schoolAdmin"].includes(requestedRole))) return denied;
+
   const [tenant, channel] = await Promise.all([getTenantDirectory(schoolId), resolveTenantLineChannel(schoolId)]);
-  if (!channel.loginConfigured || channel.botUserId !== account.botUserId) return {authenticated: false};
-  const students = await canonicalizeStudents(await tenantLineParentStudents(schoolId, account.parentEmail), schoolId);
-  return {
-    authenticated: true, authProvider: "line", role: students.length ? "parent" : "unassigned",
-    schoolId, schoolName: tenant.schoolName, systemName: tenant.systemName,
-    email: account.parentEmail, contactEmail: account.googleEmail || "", parentAlias: account.parentAlias || "",
-    displayName: account.displayName || "LINE 家長", students,
-    capabilities: {tenantOnboarding: tenant.status === "onboarding"}
+  if (!tenant || !channel.loginConfigured || channel.botUserId !== account.botUserId) return {authenticated:false};
+
+  let isAdmin = false;
+  if (account.googleSub && account.googleEmail && ["active","onboarding"].includes(tenant.status)) {
+    const link = await getTenantGoogleLink(schoolId,account.googleSub);
+    if (link?.googleSub === account.googleSub && link.googleEmail === account.googleEmail &&
+        link.lineUserId === account.lineUserId && link.botUserId === channel.botUserId &&
+        link.parentEmail === account.parentEmail) {
+      const roles = await listTenantRolesByEmail(account.googleEmail,"active");
+      isAdmin = roles.some(row=>row.status==="active"&&row.role==="schoolAdmin"&&row.schoolId===schoolId);
+    }
+  }
+  const canUseAdmin = isAdmin && (!requestedRole || requestedRole === "schoolAdmin");
+  const mapped = !canUseAdmin || includeContexts ? await tenantLineParentStudents(schoolId,account.parentEmail) : [];
+  const students = canUseAdmin ? [] : await canonicalizeStudents(mapped,schoolId);
+  const schoolName = tenant.schoolName || schoolId;
+  const common = {
+    authenticated:true,authProvider:"line",schoolId,schoolName,systemName:tenant.systemName || schoolName,
+    displayName:account.displayName || "LINE 使用者",contactEmail:account.googleEmail || ""
   };
+  const context = (type,role,label,icon) => ({
+    key:type+":"+schoolId,type,role,label:schoolName+"｜"+label,icon,schoolId,schoolName,status:tenant.status
+  });
+  const contexts = [
+    ...(isAdmin ? [context("schoolAdmin","schoolAdmin","學校管理員","🏫")] : []),
+    ...(mapped.length ? [context("parent","parent","家長","👨‍👩‍👧")] : [])
+  ];
+  if (requestedRole === "schoolAdmin" && !isAdmin) return {...denied,...common,contexts};
+  if (canUseAdmin) {
+    return {...common,role:"admin",email:account.googleEmail,contexts,activeContextKey:"schoolAdmin:"+schoolId,
+      capabilities:{admin:true,tenantAdmin:true,tenantOnboarding:tenant.status==="onboarding",
+        financeVerifier:await financeAssigned(schoolId,account.googleEmail)}};
+  }
+  return {...common,role:students.length ? "parent" : "unassigned",
+    email:account.parentEmail,parentAlias:account.parentAlias || "",students,contexts,
+    activeContextKey:students.length ? "parent:"+schoolId : "",
+    capabilities:{tenantOnboarding:tenant.status==="onboarding"}};
 }
 
-export async function getAccess(request){
+export async function getAccess(request,{includeContexts=false}={}){
   const identity=await verifyGoogle(request);
-  if(!identity)return lineParentAccess(request);
+  if(!identity)return lineParentAccess(request,includeContexts);
   const email=identity.email;
   const parentMap=parseJsonEnv("STUDENT_MAP_JSON",{});
   const admins=String(process.env.ADMIN_EMAILS||"").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean);

@@ -13,7 +13,7 @@
   if(lineSchool&&/^[a-z0-9-]{2,60}$/.test(lineSchool)){
     sessionStorage.setItem("google_id_token","line-session");
     sessionStorage.setItem("school_context_id",lineSchool);
-    sessionStorage.setItem("role_context","parent");
+    sessionStorage.removeItem("role_context");
     current.searchParams.delete("line_session");
     history.replaceState({},"",current.pathname+(current.search?current.search:"")+current.hash);
   }
@@ -36,6 +36,8 @@
     sessionStorage.setItem("role_context","schoolAdmin");
   }else if(requestedEntry.target){
     sessionStorage.removeItem(staffEntryKey);
+  }else if(lineSchool&&getLineStaffEntry()?.schoolId===lineSchool){
+    sessionStorage.setItem("role_context","schoolAdmin");
   }
   function getLineStaffEntry(){
     try{
@@ -54,7 +56,7 @@
       history.replaceState(history.state,"",url.pathname+url.search+url.hash);
     }
     if(state.me?.role!=="admin"||state.me.schoolId!==entry.schoolId){
-      toast("請用該校已獲指派的管理員 Gmail 登入，再點選 LINE 幹部選單。");
+      toast("請使用已綁定此校管理員 Gmail 的 LINE 帳號登入。");
       return;
     }
     try{
@@ -68,11 +70,6 @@
   function cleanUrl(){const u=new URL(location.href);u.searchParams.delete("openExternalBrowser");u.searchParams.delete("openInAppBrowser");u.searchParams.delete("google_redirect");return u.toString()}
   function lineExternalUrl(){const u=new URL(cleanUrl());u.searchParams.set("openExternalBrowser","1");return u.toString()}
   window.copyOrchestraUrl=async()=>{const url=cleanUrl();try{await navigator.clipboard.writeText(url);alert("網址已複製，請貼到 Safari 或 Chrome 開啟。")}catch{const t=document.createElement("textarea");t.value=url;document.body.appendChild(t);t.select();document.execCommand("copy");t.remove();alert("網址已複製，請貼到 Safari 或 Chrome 開啟。")}};
-  if(isLine&&validStaffEntry(requestedEntry)){
-    window.lineStaffExternalUrl=lineExternalUrl;
-    document.getElementById("app").innerHTML='<div class="login-wrap"><div class="login-card"><h1>學校後台</h1><p>請使用 Safari 或 Chrome 開啟，再以獲指派的 Gmail 登入。</p><button class="primary" onclick="location.href=lineStaffExternalUrl()">用瀏覽器開啟</button><button class="secondary" onclick="copyOrchestraUrl()">複製連結</button></div></div>';
-    return;
-  }
   if(embedded&&!isLine){const platform=isIOS?"Safari":isAndroid?"Chrome":"外部瀏覽器";const action=isLine?`<a class="primary" style="display:block;text-align:center;text-decoration:none" href="${lineExternalUrl()}">用 ${platform} 開啟</a>`:`<button class="primary" onclick="copyOrchestraUrl()">複製網址，用 ${platform} 開啟</button>`;document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>Google Gmail 登入</p><div class="error" style="margin-top:16px"><b>目前是在 App 內建瀏覽器中開啟</b><br><br>Google 為保護帳號，不支援 Android／iOS WebView 登入，因此可能只看到白畫面。</div><div class="notice" style="margin-top:12px">請改用 <b>${platform}</b> 開啟本系統，再按「使用 Google 帳戶登入」。${isLine?"<br><br>下方按鈕會要求 LINE 改用外部瀏覽器開啟。":""}</div>${action}<button class="secondary" style="width:100%;margin-top:10px" onclick="copyOrchestraUrl()">複製網站網址</button></div></div>`;return}
   function appendScript(src,onload,onerror){
     const existing=[...document.scripts].find(s=>s.getAttribute("src")===src);
@@ -198,7 +195,7 @@
   window.resumeLineStaffEntry=()=>{if(sessionStorage.getItem(staffEntryKey))loadRoleModules()};
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity",()=>{
+    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity-school-admin",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);
