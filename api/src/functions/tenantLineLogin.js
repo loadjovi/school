@@ -10,6 +10,7 @@ import {
   useTenantLineOAuth, recordTenantLineFriendship
 } from "../lib/tenantLineAccounts.js";
 import {LineMenuSyncError,refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
+import {restoreLabGoogleLineLink} from "../lib/tenantLineLegacyLab.js";
 
 const loginApi = "https://api.line.me/oauth2/v2.1/";
 const startUrl = "https://access.line.me/oauth2/v2.1/authorize";
@@ -113,6 +114,7 @@ app.http("tenantLineLoginCallback", {
     try {
       const txn = await useTenantLineOAuth(request, schoolId, state, channel);
       if (!txn || !code) throw new Error("Expired or invalid authorization");
+      if(txn.googleSub)resultUrl.pathname="/fee-collections.html";
       const tokens = await lineOAuthRequest("token", {
         grant_type: "authorization_code", code, redirect_uri: callbackUrl(channel), client_id: channel.loginId,
         client_secret: channel.loginSecret, code_verifier: txn.verifier
@@ -164,11 +166,14 @@ app.http("tenantLineAccount", {
     const session = !google ? await tenantLineSession(request) : null;
     const line = session?.schoolId === schoolId ? session.account : null;
     const link = google && await getTenantGoogleLink(schoolId, google.sub);
-    const account = line || (link?.botUserId === channel.botUserId && link.lineUserId ? link : null);
+    const sameOrigin=allowedOrigin(request,channel.appOrigin);
+    const currentLink=google&&access.role==="parent"&&(request.method==="GET"||request.method==="POST"&&sameOrigin)
+      ? await restoreLabGoogleLineLink(schoolId,channel,google,link):link;
+    const account = line || (currentLink?.botUserId === channel.botUserId && currentLink.lineUserId ? currentLink : null);
     const result = {configured: true, bound: Boolean(account), googleLinked: Boolean(account?.googleSub),
       authProvider: line ? "line" : "google", lineDisplayName: account?.displayName || ""};
     if (request.method === "GET") return {...json(result), headers: privateHeaders};
-    if (!allowedOrigin(request, channel.appOrigin)) return json({error: "來源不符"}, 403);
+    if (!sameOrigin) return json({error: "來源不符"}, 403);
     try {
       if (request.method === "DELETE") {
         if (!google) return json({error: "請切換為 Gmail 登入後再解除 LINE 綁定"}, 409);

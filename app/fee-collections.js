@@ -160,8 +160,10 @@ async function load(){
     if(billing){renderAdminCreate();renderProjects()}
     else $("projects").textContent="";
     const params=new URLSearchParams(location.search);
-    showStatus(params.has("line_link")?"已完成此校 LINE 帳號綁定。":billing?`已載入 ${state.projects.length} 個收費專案。`:"");
-    if(params.has("line_link"))history.replaceState({},"",location.pathname);
+    const lineError=params.get("line_error");
+    const message=lineError==="conflict"?"這個 Gmail 或 LINE 已有其他綁定，請聯絡學校管理員核對。":lineError?"LINE 授權未完成，請從本頁重新授權。":"";
+    showStatus(message||(params.has("line_link")?"已完成此校 LINE 帳號綁定。":billing?`已載入 ${state.projects.length} 個收費專案。`:""),message?"error":"");
+    if(params.has("line_link")||lineError)history.replaceState({},"",location.pathname);
   }catch(error){showStatus(error.message,"error");$("projects").innerHTML=""}
 }
 

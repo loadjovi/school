@@ -92,6 +92,49 @@ test("ambiguous links with both accounts holding school history do not change ei
   assert.equal(await store.getTenantGoogleLink("school-a", google.sub), null);
 });
 
+test("legacy LAB restores a confirmed Google and LINE pair only on the current school bot", async () => {
+  const store=identities(new Set(["sacred-heart|"+google.email]));
+  const lineHash=value=>createHash("sha256").update(value).digest("hex"), hash=lineHash(userId);
+  const pair={status:"ACTIVE",parentEmail:google.email,lineUserIdHash:hash,pairKey:lineHash(hash+":"+google.email)};
+  const rows=new Map([
+    ["TenantLineAccountBinding/sacred-heart/email_"+lineHash(google.email).slice(0,40),
+      {...pair,lineUserId:userId,schoolId:"sacred-heart"}],
+    ["LabParentIdentityLinks/IDENTITY/gmail_"+lineHash(google.email).slice(0,48),{...pair,kind:"GMAIL"}],
+    ["LabParentIdentityLinks/IDENTITY/line_"+hash.slice(0,48),{...pair,kind:"LINE"}]
+  ]);
+  const env={LAB_ENVIRONMENT:"functional-uat"};
+  const channel={schoolId:"sacred-heart",loginConfigured:true,botUserId:botId,accessToken:"current-token"};
+  let verifiedUser="U"+"c".repeat(32),calls=0;
+  const restore=load("api/src/lib/tenantLineLegacyLab.js",{
+    ...store,lineHash,process:{env},
+    TableClient:{fromConnectionString:(_conn,name)=>({getEntity:async(partition,key)=>{
+      const row=rows.get([name,partition,key].join("/"));
+      if(!row)throw missing(404);
+      return row;
+    }})},
+    lineApi:async(path,options)=>{
+      assert.equal(path,"/v2/bot/profile/"+userId);
+      assert.equal(options.accessToken,"current-token");
+      calls++;
+      return {userId:verifiedUser,displayName:"LAB 家長"};
+    }
+  },";restoreLabGoogleLineLink");
+  assert.equal(await restore("other-school",channel,google,null),null);
+  assert.equal(await restore("sacred-heart",channel,google,null),null);
+  assert.equal(await store.getTenantGoogleLink("sacred-heart",google.sub),null);
+  verifiedUser=userId;
+  const linked=await restore("sacred-heart",channel,google,null);
+  assert.equal(linked.parentEmail,google.email);
+  assert.equal((await store.getTenantGoogleLink("sacred-heart",google.sub)).lineUserId,userId);
+  assert.equal((await store.getTenantLineRecipient("sacred-heart",google.email,botId)).googleSub,google.sub);
+  await store.unlinkTenantGoogle("sacred-heart",google.sub);
+  const unlinked=await store.getTenantGoogleLink("sacred-heart",google.sub);
+  assert.equal((await restore("sacred-heart",channel,google,unlinked)).lineUserId,undefined);
+  assert.equal(calls,2);
+  const newAccount=await store.getOrCreateTenantLineAccount("sacred-heart",botId,userId,"家長");
+  await assert.rejects(store.linkTenantGoogle("sacred-heart",newAccount,google,{requireAbsentGoogleLink:true}),/已有其他/);
+});
+
 test("LINE OAuth state is one-use and bound to browser, school, and configuration", async () => {
   const store = identities(), config = {oauthVersion: "A"};
   const txn = await store.createTenantLineOAuth("school-a", config, google);

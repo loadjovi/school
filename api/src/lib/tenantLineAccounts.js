@@ -135,13 +135,13 @@ async function hasParentHistory(schoolId, email) {
   return Boolean(students.length || registrations.length);
 }
 
-export async function linkTenantGoogle(schoolId, line, google) {
+export async function linkTenantGoogle(schoolId, line, google, {requireAbsentGoogleLink=false}={}) {
   const partitionKey = tenantSchoolPartition(schoolId);
   const [googleLink, oldParentIndex] = await Promise.all([
     getTenantGoogleLink(schoolId, google.sub), read(partitionKey, emailKey(line.parentEmail))
   ]);
   if (line.googleSub === google.sub && googleLink?.lineUserId === line.lineUserId) return line;
-  if (line.googleSub || googleLink?.lineUserId || !oldParentIndex) {
+  if (line.googleSub || googleLink?.lineUserId || (requireAbsentGoogleLink && googleLink) || !oldParentIndex) {
     throw new LineAccountConflict("其中一個帳號已有其他 LINE 或 Gmail 綁定");
   }
   const googleParent = googleLink?.parentEmail || google.email;
