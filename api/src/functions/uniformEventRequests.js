@@ -9,7 +9,7 @@ import {uniformNeedsPayment} from "../lib/paymentNoticeRules.mjs";
 import { getUniformPrice } from "../lib/uniformPricing.js";
 import {upsertCurrentCompetitionMaster,latestCompetitionRequest} from "../lib/competitionUniformMaster.js";
 
-import {notifyUniformReview} from "../lib/lineAdminTodoNotification.mjs";
+import {notifyUniformReview,notifyUniformCancellation} from "../lib/lineAdminTodoNotification.mjs";
 
 const kinds=new Set(["regularUniform","competitionUniform","fieldTrip","yearEndDinner"]);
 // 已核對的歷史公費配發，依校別與學生 ID 登錄；不依姓名或尺寸推定資格。
@@ -235,6 +235,7 @@ app.http("uniformEventRequests",{
           await upsertCurrentCompetitionMaster(schoolId,student,latestCompetitionRequest(candidates,next.studentId),access.email||"admin");
         }catch(error){masterSyncPending=true;console.error("competition master pending after request update",data.id,error)}
       }
+      const applicantLineStatus=shouldNotify?await notifyUniformCancellation(schoolId,{...next,id:data.id}):undefined;
       let notificationStatus="not_attempted",paymentNotification=null;
       if(shouldNotify&&uniformNeedsPayment(next)){
         paymentNotification=await safePaymentNotifications(schoolId,{scope:{kind:"uniform",id:data.id}});
@@ -253,7 +254,7 @@ app.http("uniformEventRequests",{
           if(result.status!=="sent")console.warn("uniform request email not fully sent",{requestId:data.id,status:result.status,recipientCount:result.recipientCount||0});
         }catch(e){notificationStatus="failed";console.error("uniform request email failed",{requestId:data.id,error:e?.message||String(e)})}
       }
-      return json({item:{...next,id:data.id},notificationStatus,masterSyncPending,paymentNotification});
+      return json({item:{...next,id:data.id},notificationStatus,masterSyncPending,paymentNotification,applicantLineStatus});
     }catch(e){
       if(e instanceof SyntaxError||String(e.message||"").startsWith("Invalid")||String(e.message||"").startsWith("Only"))return err(e.message);
       console.error("uniformEventRequests",e);return err("Request processing failed",500);

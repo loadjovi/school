@@ -142,3 +142,32 @@ test("pending T-shirts and competition uniforms notify only the school's bound a
   assert.match(outbound[1][1], /團 T 申請待審/);
   assert.equal(outbound[1][2].retryKey, shirt.id);
 });
+
+test("uniform cancellation sends the stored reason only to the original applicant's school LINE account", async () => {
+  const outbound = [];
+  const applicant = "original@example.test";
+  const request = {id:"request", kind:"regularUniform", status:"CANCELLED", parentEmail:applicant, cancelReason:"尺寸請重新確認"};
+  let account = null;
+  const cancel = load("lineAdminTodoNotification.mjs", {
+    process:{env:{}},
+    resolveTenantLineChannel:async school => {
+      assert.equal(school,"sacred-heart");
+      return {loginConfigured:true, botUserId:"school-bot", accessToken:"school-token"};
+    },
+    getTenantLineRecipient:async (school, email, bot) => {
+      assert.deepEqual([school,email,bot],["sacred-heart",applicant,"school-bot"]);
+      return account;
+    },
+    pushLineMessage:async (...args) => outbound.push(args)
+  }, "notifyUniformCancellation");
+  assert.equal(await cancel("sacred-heart",{...request,status:"PENDING"}),undefined);
+  assert.equal(await cancel("sacred-heart",{...request,parentEmail:""}),"applicant_unknown");
+  assert.equal(await cancel("sacred-heart",request),"not_bound");
+  assert.equal(outbound.length,0);
+  account = {lineUserId:"applicant-line"};
+  assert.equal(await cancel("sacred-heart",request),"accepted");
+  assert.equal(outbound.length,1);
+  assert.equal(outbound[0][0],"applicant-line");
+  assert.match(outbound[0][1],/團 T 申請。\n原因：尺寸請重新確認/);
+  assert.equal(outbound[0][2].accessToken,"school-token");
+});

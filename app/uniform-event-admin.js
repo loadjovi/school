@@ -775,7 +775,16 @@ async function updateUniformRequest(row,body,{expectedStatus="",expectedProcurem
   if(index>=0)cachedRequests[index]={...cachedRequests[index],...result.item};
   pendingRequestIds.delete(row.id);renderModuleRequests();
   el("status").textContent=body.action==="SET_PROCUREMENT_QUANTITY"?successText:successText+(result.notificationStatus==="sent"?"，已寄送家長通知信":"；家長頁面已同步，通知信未確認送達");
+  const lineStatus={
+   accepted:"；LINE 已受理原申請人的通知",
+   not_bound:"；原申請人尚未綁定 LINE",
+   applicant_unknown:"；這筆申請沒有原申請人資料",
+   not_configured:"；此校的 LINE 尚未啟用",
+   lab_suppressed:"；此 LAB 未啟用 LINE 私訊",
+   failed:"；LINE 通知發送失敗"
+  }[result.applicantLineStatus]||"";
   await load();
+  if(lineStatus)el("status").textContent=successText+lineStatus;
  }catch(error){
   try{
    const data=await api("uniform-events/requests"),updated=(data.items||[]).find(x=>x.id===row.id);
