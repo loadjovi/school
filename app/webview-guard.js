@@ -106,7 +106,7 @@
       "/roster-support.js",
       "/student-number-support.js?v=20260918-1105",
       "/student-change-admin.js?v=20261102-student-workflow",
-      "/parent-link-admin.js?v=20261115-line-coverage-summary",
+      "/parent-link-admin.js?v=20261115-line-coverage-summary-parent-identity",
       "/teacher-settings.js?v=20261002-teacher-types",
       "/teacher-admin.js?v=20261025-parent-review-student",
       "/batch-upgrade.js?v=20261102-student-workflow",

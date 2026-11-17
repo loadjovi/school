@@ -155,9 +155,14 @@ app.http("studentParentLinks",{
       } catch (error) {
         console.warn("Student parent LINE status unavailable", {schoolId, status: error?.statusCode});
       }
+      // The former LINE-only enrollment is retained for historical records under its original key.
+      for (let i = items.length - 1; i >= 0; i--) {
+        if (statuses?.get(items[i].parentEmail)?.linkedParentEmail) items.splice(i, 1);
+      }
       for (const item of items) {
         const line = statuses?.get(item.parentEmail);
         item.lineBound = statuses ? Boolean(line) : null;
+        if (line?.googleEmail) item.lineGoogleEmail = line.googleEmail;
         item.lineFriendStatus = line?.status || null;
         item.lineFriendCheckedAt = line?.checkedAt || null;
       }

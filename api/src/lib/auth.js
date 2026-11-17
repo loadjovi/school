@@ -258,7 +258,7 @@ async function lineParentAccess(request) {
   return {
     authenticated: true, authProvider: "line", role: students.length ? "parent" : "unassigned",
     schoolId, schoolName: tenant.schoolName, systemName: tenant.systemName,
-    email: account.parentEmail, contactEmail: account.googleEmail || "",
+    email: account.parentEmail, contactEmail: account.googleEmail || "", parentAlias: account.parentAlias || "",
     displayName: account.displayName || "LINE 家長", students,
     capabilities: {tenantOnboarding: tenant.status === "onboarding"}
   };
@@ -374,7 +374,7 @@ export async function getAccess(request){
   let parentIdentity = identity;
   if(roleTenantAvailable&&(!requestedContext||requestedContext==="parent")){
     const link = await getTenantGoogleLink(roleSchoolId, identity.sub);
-    if(link)parentIdentity = {...identity,email:link.parentEmail,contactEmail:identity.email};
+    if(link)parentIdentity = {...identity,email:link.parentEmail,contactEmail:identity.email,parentAlias:link.parentAlias||""};
     const legacy = roleSchoolId===defaultId && parentMap[parentIdentity.email];
     const dynamicStudents = legacy ? (Array.isArray(legacy) ? legacy : legacy.students || []) : await getMappedStudentsByEmail(parentIdentity.email, roleSchoolId);
     if(dynamicStudents?.length){

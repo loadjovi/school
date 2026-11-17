@@ -29,6 +29,12 @@ const decode=e=>({...JSON.parse(e.payload||"{}"),id:e.rowKey,etag:e.etag});
 const digest=s=>createHash("sha256").update(s).digest("hex").slice(0,32);
 const registrationId=(kind,activityId,email)=>"family:"+kind+":"+activityId+":"+digest(email);
 const now=()=>new Date().toISOString();
+function ownsRegistration(access, item) {
+ if (item.parentEmail === access.email) return true;
+ return Boolean(access.parentAlias && item.parentEmail === access.parentAlias &&
+   Array.isArray(item.studentIds) && item.studentIds.length &&
+   item.studentIds.every(id => ensureStudentAccess(access, id)));
+}
 async function log(schoolId,access,action,id,details){
  const a=await table("TenantUniformEventAudit");
  await a.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action,subjectId:id,actor:String(access.email||"unknown").slice(0,200),at:now(),details:JSON.stringify(details).slice(0,16000)});
@@ -61,7 +67,7 @@ app.http("familyEventRegistration",{
     const list=[],configs=await table(process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig"),configCache=new Map();
     for await(const row of records.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
      const r=decode(row);
-     if(access.role==="admin"||r.parentEmail===access.email){
+     if(access.role==="admin"||ownsRegistration(access,r)){
       const key=r.kind+":"+r.activityId;
       if(!configCache.has(key)){const config=await get(configs,schoolId,key);configCache.set(key,config?JSON.parse(config.payload||"{}"):null)}
       const config=configCache.get(key),payment=familyPaymentInfo(config,r);
@@ -98,7 +104,9 @@ app.http("familyEventRegistration",{
     }
     const id=registrationId(body.kind,body.activityId,access.email);
     const previous=await get(records,schoolId,id);
-    if(previous)return fail("This family has already registered; contact administrator to change attendees",409);
+    const aliasId=access.parentAlias&&registrationId(body.kind,body.activityId,access.parentAlias);
+    const aliasRecord=aliasId&&await get(records,schoolId,aliasId);
+    if(previous||(aliasRecord&&ownsRegistration(access,decode(aliasRecord))))return fail("This family has already registered; contact administrator to change attendees",409);
     const timestamp=now();
     const initialRates=["studentFee","firstAdultFee","extraAdultFee","extraChildFee"].every(k=>integer(cfg[k],0,1000000));
     const estimate=initialRates?(body.kind==="yearEndDinner"?0:cfg.studentFee)*ids.length+cfg.firstAdultFee+(body.adults-1)*cfg.extraAdultFee+body.extraChildren*cfg.extraChildFee:null;
@@ -117,13 +125,15 @@ app.http("familyEventRegistration",{
    }
    if(request.method!=="PATCH")return fail("Method not allowed",405);
    const id=registrationId(body.kind,body.activityId,access.email);
-   // Parent may only submit transfer information for their own deterministic family key.
-   const actual=access.role==="admin"?String(body.registrationId||""):id;
-   if(access.role==="admin"&&!/^family:(fieldTrip|yearEndDinner):[A-Za-z0-9_-]{1,80}:[a-f0-9]{32}$/.test(actual))return fail("Invalid registration ID");
-   const previous=await get(records,schoolId,actual);
+   const aliasId=access.parentAlias&&registrationId(body.kind,body.activityId,access.parentAlias);
+   const requestedId=String(body.registrationId||"");
+   if(access.role==="admin"&&!/^family:(fieldTrip|yearEndDinner):[A-Za-z0-9_-]{1,80}:[a-f0-9]{32}$/.test(requestedId))return fail("Invalid registration ID");
+   if(access.role==="parent"&&requestedId&&requestedId!==id&&requestedId!==aliasId)return fail("Forbidden",403);
+   let previous=await get(records,schoolId,requestedId||id);
+   if(!previous&&access.role==="parent"&&!requestedId&&aliasId)previous=await get(records,schoolId,aliasId);
    if(!previous)return fail("Registration not found",404);
-   const old=decode(previous);
-   if(access.role==="parent"&&old.parentEmail!==access.email)return fail("Forbidden",403);
+   const old=decode(previous),actual=old.id;
+   if(access.role==="parent"&&!ownsRegistration(access,old))return fail("Forbidden",403);
    if(old.registrationStatus!=="REGISTERED")return fail("Registration not active",409);
    const next={...JSON.parse(previous.payload)};
    if(body.action==="REPORT_TRANSFER"){

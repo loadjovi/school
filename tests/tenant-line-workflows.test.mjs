@@ -55,7 +55,10 @@ function identities(studentRows = new Set()) {
   return load("api/src/lib/tenantLineAccounts.js", {
     ...dataTables(), createHash, randomBytes, randomUUID, process: {env: {}},
     defaultTenantId: () => "sacred-heart", tenantSchoolPartition: value => value,
-    getMappedStudentsByEmail: async (email, school) => studentRows.has(school + "|" + email) ? [{}] : [],
+    getMappedStudentsByEmail: async (email, school) => {
+      const key = school + "|" + email;
+      return studentRows instanceof Map ? studentRows.get(key) || [] : studentRows.has(key) ? [{}] : [];
+    },
     getRegistrationsByEmail: async () => []
   }, ";({getOrCreateTenantLineAccount,getTenantGoogleLink,getTenantLineRecipient,getTenantLineParentContact,linkTenantGoogle,unlinkTenantGoogle,createTenantLineSession,tenantLineSession,createTenantLineOAuth,useTenantLineOAuth,recordTenantLineFriendship,listTenantLineRecipientStatuses})");
 }
@@ -92,8 +95,59 @@ test("ambiguous links with both accounts holding school history do not change ei
   assert.equal(await store.getTenantGoogleLink("school-a", google.sub), null);
 });
 
+test("verified dual enrollment keeps Gmail primary and preserves historical LINE ownership", async () => {
+  const students = new Map(), store = identities(students);
+  const school = "school-a";
+  const line = await store.getOrCreateTenantLineAccount(school, botId, userId, "家長");
+  students.set(school + "|" + line.parentEmail, [{studentId:"100001"}, {studentId:"100002"}]);
+  students.set(school + "|" + google.email, [{studentId:"100001"}, {studentId:"100003"}]);
+  await assert.rejects(store.linkTenantGoogle(school, line, google), /各有學生紀錄/);
+  students.set(school + "|" + google.email, [{studentId:"100002"}, {studentId:"100001"}]);
+  const linked = await store.linkTenantGoogle(school, line, google);
+  assert.equal(linked.parentEmail, google.email);
+  assert.equal(linked.parentAlias, line.parentEmail);
+  assert.equal((await store.getTenantGoogleLink(school, google.sub)).parentAlias, line.parentEmail);
+  assert.equal((await store.getTenantLineRecipient(school, line.parentEmail, botId)).lineUserId, userId);
+  assert.equal(await store.getTenantLineParentContact(school, line.parentEmail), google.email);
+  await store.recordTenantLineFriendship(school, botId, userId, true, 1000);
+  const statuses = await store.listTenantLineRecipientStatuses(school, botId);
+  assert.equal(statuses.get(google.email).status, "friend");
+  assert.equal(statuses.get(line.parentEmail).linkedParentEmail, google.email);
+  await store.unlinkTenantGoogle(school, google.sub);
+  assert.equal(await store.getTenantLineRecipient(school, line.parentEmail, botId), null);
+  assert.equal(await store.getTenantLineRecipient(school, google.email, botId), null);
+  assert.equal((await store.getTenantGoogleLink(school, google.sub)).parentAlias, line.parentEmail);
+  assert.equal((await store.listTenantLineRecipientStatuses(school, botId)).get(line.parentEmail).linkedParentEmail, google.email);
+  const replacement = await store.getOrCreateTenantLineAccount(school, botId, userId, "家長");
+  const reconnected = await store.linkTenantGoogle(school, replacement, google);
+  assert.equal(reconnected.parentAlias, line.parentEmail);
+  assert.equal((await store.getTenantLineRecipient(school, line.parentEmail, botId)).lineUserId, userId);
+});
+
+test("historical family and fee records require both verified account and current student access", () => {
+  const alias = "line-00000000-0000-0000-0000-000000000000@line.invalid";
+  const access = {role:"parent", email:google.email, parentAlias:alias, students:["100001"]};
+  const globals = {app:{http(){}}, process:{env:{}}, ensureStudentAccess:(access, id) => access.students.includes(id)};
+  const ownsRegistration = load("api/src/functions/familyEventRegistration.js", {...globals}, ";ownsRegistration");
+  const ownsCharge = load("api/src/functions/feeCollections.js", {...globals}, ";ownsCharge");
+  const allowed = {parentEmail:alias, studentIds:["100001"], studentId:"100001"};
+  const differentStudent = {...allowed, studentIds:["100001","100002"], studentId:"100002"};
+  const otherParent = {...allowed, parentEmail:"other@example.com"};
+  for (const owns of [ownsRegistration, (access, record) => ownsCharge(access, {sourceType:"family"}, record)]) {
+    assert.equal(owns(access, allowed), true);
+    assert.equal(owns(access, differentStudent), false);
+    assert.equal(owns(access, otherParent), false);
+    assert.equal(owns({...access,parentAlias:""}, allowed), false);
+  }
+  assert.equal(ownsCharge(access, {sourceType:"uniform"}, allowed), true);
+  assert.equal(ownsCharge(access, {sourceType:"uniform"}, differentStudent), false);
+});
+
 test("legacy LAB restores a confirmed Google and LINE pair only on the current school bot", async () => {
-  const store=identities(new Set(["sacred-heart|"+google.email]));
+  const students = new Map([["sacred-heart|" + google.email, [{studentId:"100001"}]]]);
+  const store = identities(students);
+  const lineOnly = await store.getOrCreateTenantLineAccount("sacred-heart", botId, userId, "LAB 家長");
+  students.set("sacred-heart|" + lineOnly.parentEmail, [{studentId:"100001"}]);
   const lineHash=value=>createHash("sha256").update(value).digest("hex"), hash=lineHash(userId);
   const pair={status:"ACTIVE",parentEmail:google.email,lineUserIdHash:hash,pairKey:lineHash(hash+":"+google.email)};
   const rows=new Map([
@@ -169,6 +223,7 @@ test("student parent links expose LINE status only to the school's admin", async
   let role = "parent";
   let lookups = 0;
   let botAvailable = true;
+  const oldParent = "line-00000000-0000-0000-0000-000000000000@line.invalid";
   load("api/src/functions/studentParentLinks.js", {
     app: {http(name, options) { handler = options.handler; }},
     getTenantContext: async () => ({schoolId: "school-a", access: {role}}),
@@ -176,6 +231,7 @@ test("student parent links expose LINE status only to the school's admin", async
     ensureTenantTables: async () => {}, tenantSchoolPartition: id => id,
     table: () => ({async *listEntities() {
       yield {rowKey: "100001", parentEmail: google.email};
+      yield {rowKey: "100001", parentEmail: oldParent};
       yield {rowKey: "100002", parentEmail: "other@example.com"};
     }}),
     resolveTenantLineChannel: async () => ({botUserId: botAvailable ? botId : ""}),
@@ -183,7 +239,8 @@ test("student parent links expose LINE status only to the school's admin", async
       lookups++;
       assert.equal(schoolId, "school-a");
       assert.equal(bot, botId);
-      return new Map([[google.email, {status: "friend", checkedAt: 1000}]]);
+      return new Map([[google.email, {status: "friend", checkedAt: 1000, googleEmail: google.email}],
+        [oldParent, {linkedParentEmail: google.email}]]);
     }
   });
   const request = {method: "GET", query: new URLSearchParams("includeLineStatus=1")};
@@ -191,6 +248,8 @@ test("student parent links expose LINE status only to the school's admin", async
   assert.equal(lookups, 0);
   role = "admin";
   const linked = (await handler(request)).items.items;
+  assert.equal(linked.length, 2);
+  assert.equal(linked[0].lineGoogleEmail, google.email);
   assert.equal(linked[0].lineBound, true);
   assert.equal(linked[0].lineFriendStatus, "friend");
   assert.equal(linked[0].lineFriendCheckedAt, 1000);

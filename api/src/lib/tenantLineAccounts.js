@@ -92,17 +92,27 @@ export async function listTenantLineRecipientStatuses(schoolId, botUserId) {
     }
     return result;
   }
-  const [recipients, friendships] = await Promise.all([
-    rows("email", ["parentEmail", "lineUserId"]), rows("friend", ["RowKey", "friend", "checkedAt"])
+  const [recipients, friendships, historicalParents] = await Promise.all([
+    rows("email", ["parentEmail", "lineUserId", "googleEmail", "lookupEmail"]),
+    rows("friend", ["RowKey", "friend", "checkedAt"]),
+    rows("contact", ["lookupEmail", "linkedParentEmail"])
   ]);
   const byUser = new Map(friendships.map(row => [row.rowKey, row]));
-  return new Map(recipients.filter(row => row.parentEmail && row.lineUserId).map(row => {
+  const statuses = new Map(recipients.filter(row => row.parentEmail && row.lineUserId).map(row => {
     const entry = byUser.get(friendshipKey(botUserId, row.lineUserId));
-    return [row.parentEmail, {
+    return [row.lookupEmail || row.parentEmail, {
+      ...(row.lookupEmail ? {linkedParentEmail: row.parentEmail} : {}),
+      ...(row.googleEmail ? {googleEmail: row.googleEmail} : {}),
       status: entry ? (entry.friend ? "friend" : "not_friend") : "unknown",
       checkedAt: entry?.checkedAt || null
     }];
   }));
+  for (const row of historicalParents) {
+    if (row.lookupEmail && row.linkedParentEmail && !statuses.has(row.lookupEmail)) {
+      statuses.set(row.lookupEmail, {linkedParentEmail: row.linkedParentEmail});
+    }
+  }
+  return statuses;
 }
 
 export async function getOrCreateTenantLineAccount(schoolId, botUserId, userId, displayName) {
@@ -128,11 +138,14 @@ export async function getOrCreateTenantLineAccount(schoolId, botUserId, userId, 
 
 export class LineAccountConflict extends Error {}
 
-async function hasParentHistory(schoolId, email) {
+async function readParentHistory(schoolId, email) {
   const [students, registrations] = await Promise.all([
     getMappedStudentsByEmail(email, schoolId), getRegistrationsByEmail(email, schoolId)
   ]);
-  return Boolean(students.length || registrations.length);
+  return {
+    present: Boolean(students.length || registrations.length),
+    studentIds: new Set(students.map(student => student.studentId).filter(Boolean))
+  };
 }
 
 export async function linkTenantGoogle(schoolId, line, google, {requireAbsentGoogleLink=false}={}) {
@@ -146,19 +159,28 @@ export async function linkTenantGoogle(schoolId, line, google, {requireAbsentGoo
   }
   const googleParent = googleLink?.parentEmail || google.email;
   const [lineHistory, googleHistory] = await Promise.all([
-    hasParentHistory(schoolId, line.parentEmail), hasParentHistory(schoolId, googleParent)
+    readParentHistory(schoolId, line.parentEmail), readParentHistory(schoolId, googleParent)
   ]);
   let legacyParents = {};
   if (schoolId === defaultTenantId()) {
     try { legacyParents = JSON.parse(process.env.STUDENT_MAP_JSON || "{}") || {}; } catch {}
   }
-  if (lineHistory && (googleHistory || legacyParents[googleParent])) {
+  // Keep the Gmail enrollment authoritative when two verified logins already enroll the same students.
+  const sameStudents = lineHistory.studentIds.size > 0 &&
+    lineHistory.studentIds.size === googleHistory.studentIds.size &&
+    [...lineHistory.studentIds].every(id => googleHistory.studentIds.has(id));
+  const joinExisting = sameStudents && !legacyParents[googleParent] &&
+    /^line-[a-f0-9-]{36}@line\.invalid$/.test(line.parentEmail) && googleParent === google.email &&
+    (!googleLink?.parentAlias || googleLink.parentAlias === line.parentEmail);
+  if (lineHistory.present && (googleHistory.present || legacyParents[googleParent]) && !joinExisting) {
     throw new LineAccountConflict("兩個帳號各有學生紀錄，請由本校管理員確認後處理");
   }
-  const parentEmail = lineHistory ? line.parentEmail : googleParent;
+  const parentEmail = lineHistory.present && !joinExisting ? line.parentEmail : googleParent;
+  const parentAlias = joinExisting ? line.parentEmail : googleLink?.parentAlias;
   const next = {
     partitionKey, rowKey: line.rowKey, botUserId: line.botUserId, lineUserId: line.lineUserId,
     parentEmail, googleSub: google.sub, googleEmail: google.email,
+    ...(parentAlias ? {parentAlias} : {}),
     displayName: line.displayName, linkedAt: new Date().toISOString()
   };
   const emailRow = {...next, rowKey: emailKey(parentEmail)};
@@ -170,14 +192,23 @@ export async function linkTenantGoogle(schoolId, line, google, {requireAbsentGoo
   if (parentEmail === line.parentEmail) {
     actions.push(["update", emailRow, "Replace", {etag: oldParentIndex.etag}]);
   } else {
-    actions.push(["create", emailRow], ["delete", oldParentIndex]);
+    actions.push(["create", emailRow]);
+    if (!joinExisting) actions.push(["delete", oldParentIndex]);
   }
-  if (parentEmail.endsWith("@line.invalid")) {
-    const existingContact = await read(partitionKey, contactKey(parentEmail));
+  if (parentAlias) {
+    const aliasRow = {...next, rowKey: emailKey(parentAlias), lookupEmail: parentAlias};
+    actions.push(joinExisting ? ["update", aliasRow, "Replace", {etag: oldParentIndex.etag}] : ["create", aliasRow]);
+  }
+  const contactEmail = parentAlias || parentEmail;
+  if (contactEmail.endsWith("@line.invalid")) {
+    const existingContact = await read(partitionKey, contactKey(contactEmail));
     if (existingContact && existingContact.googleSub !== google.sub) {
       throw new LineAccountConflict("此校家長帳號已連結其他 Gmail");
     }
-    const contact = {partitionKey, rowKey: contactKey(parentEmail), googleSub: google.sub, googleEmail: google.email};
+    const contact = {
+      partitionKey, rowKey: contactKey(contactEmail), googleSub: google.sub, googleEmail: google.email,
+      ...(parentAlias ? {botUserId: line.botUserId, lookupEmail: parentAlias, linkedParentEmail: parentEmail} : {})
+    };
     actions.push(existingContact ? ["update", contact, "Replace", {etag: existingContact.etag}] : ["create", contact]);
   }
   try {
@@ -194,14 +225,18 @@ export async function unlinkTenantGoogle(schoolId, googleSub) {
   if (!row?.lineUserId) return null;
   const identity = await getTenantLineAccount(schoolId, row.botUserId, row.lineUserId);
   const target = await read(row.partitionKey, emailKey(row.parentEmail));
-  if (identity?.googleSub !== googleSub || target?.googleSub !== googleSub) {
+  const alias = row.parentAlias ? await read(row.partitionKey, emailKey(row.parentAlias)) : null;
+  if (identity?.googleSub !== googleSub || target?.googleSub !== googleSub ||
+      (row.parentAlias && (alias?.googleSub !== googleSub || alias.parentEmail !== row.parentEmail))) {
     throw new LineAccountConflict("此校綁定狀態已變更，請重新登入");
   }
   await (await writableStore()).submitTransaction([
     ["update", {partitionKey: row.partitionKey, rowKey: row.rowKey, parentEmail: row.parentEmail,
-      googleSub, googleEmail: row.googleEmail}, "Replace", {etag: row.etag}],
+      googleSub, googleEmail: row.googleEmail, ...(row.parentAlias ? {parentAlias: row.parentAlias} : {})},
+      "Replace", {etag: row.etag}],
     ["delete", identity],
-    ["delete", target]
+    ["delete", target],
+    ...(alias ? [["delete", alias]] : [])
   ]);
   return identity;
 }

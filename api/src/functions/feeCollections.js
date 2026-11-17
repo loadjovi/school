@@ -88,8 +88,14 @@ function dinnerAmount(config,item){
 
 function ownsCharge(access,association,source){
   const email=String(source.parentEmail||association.parentEmail||"").trim().toLowerCase();
-  if(email)return email===String(access.email||"").toLowerCase();
-  return association.sourceType==="uniform"&&ensureStudentAccess(access,String(source.studentId||association.studentId||""));
+  const studentId=String(source.studentId||association.studentId||"");
+  if(email===String(access.email||"").toLowerCase()&&email)return true;
+  if(email){
+    if(!access.parentAlias||email!==access.parentAlias)return false;
+    const ids=association.sourceType==="family"?source.studentIds:[studentId].filter(Boolean);
+    return Array.isArray(ids)&&ids.length>0&&ids.every(id=>ensureStudentAccess(access,id));
+  }
+  return association.sourceType==="uniform"&&ensureStudentAccess(access,studentId);
 }
 
 function safeTransfer(item,allowFinancial){

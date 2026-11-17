@@ -76,7 +76,7 @@
       const rel=esc(p.relationship||"家長"),name=p.parentName?` ${esc(p.parentName)}`:"";
       const oldId=p.sourceStudentId&&p.sourceStudentId!==s.studentId?`<small style="display:block;margin-top:2px">歷史學生 ID：${esc(p.sourceStudentId)}</small>`:"";
       const parentEmail=String(p.parentEmail||"");
-      const contact=parentEmail.endsWith("@line.invalid")?"LINE 建立的家長帳號":esc(parentEmail);
+      const contact=p.lineGoogleEmail?esc(p.lineGoogleEmail):parentEmail.endsWith("@line.invalid")?"LINE 建立的家長帳號":esc(parentEmail);
       const friendStatus=p.lineFriendStatus==="friend"?"曾確認為好友":p.lineFriendStatus==="not_friend"?"未加入或已封鎖":"好友狀態待確認";
       const lineStatus=p.lineBound===true?`LINE 已綁定｜${friendStatus}`:p.lineBound===false?"LINE 未綁定":"LINE 狀態無法確認";
       const checkedAt=p.lineFriendCheckedAt?`<small style="display:block">最後確認 ${esc(new Date(p.lineFriendCheckedAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}))}</small>`:"";
