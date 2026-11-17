@@ -418,21 +418,43 @@ function focusUniformPayment(id){
 document.getElementById("refreshUniformRequests")?.addEventListener("click",loadUniformRequestProgress);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)loadUniformRequestProgress()});
 loadUniformRequestProgress();
+const activityCurrency=amount=>"NT$ "+amount.toLocaleString("zh-TW");
+function activityFeeRates(config){
+ if(!config||!["fieldTrip","yearEndDinner"].includes(config.module))return null;
+ const amounts=[config.module==="yearEndDinner"?0:config.studentFee??0,config.firstAdultFee,config.extraAdultFee,config.extraChildFee];
+ if(amounts.some(amount=>!Number.isSafeInteger(amount)||amount<0))return null;
+ return ["弦樂團學生","首位陪同者","第二位起陪同者","6 歲以下兒童（非團員）"].map((label,i)=>({label,amount:amounts[i]}));
+}
+function appendActivityRates(card,config){
+ const rates=activityFeeRates(config),published=config.feeStatus==="PUBLISHED";
+ const box=element("div",undefined,"activity-rate-box");
+ box.append(element("strong",published?"活動費用":"活動費用（預估）"));
+ if(!rates||!published&&!rates.some(rate=>rate.amount>0)){
+  box.append(element("p","費用尚待學校公布。","hint"));card.append(box);return;
+ }
+ const list=element("dl",undefined,"activity-rate-list");
+ for(const {label,amount} of rates){
+  list.append(element("dt",label),element("dd",amount===0?"免收費":activityCurrency(amount)+"／位"));
+ }
+ box.append(list);
+ if(!published)box.append(element("p","最終金額以學校公布為準。","hint"));
+ else if(config.module==="fieldTrip"&&!config.collectionOpen)box.append(element("p","請等候學校開放收款，再辦理匯款。","hint"));
+ card.append(box);
+}
 function appendActivityFeeBreakdown(card,config,registration){
- if(!config||!["fieldTrip","yearEndDinner"].includes(config.module))return;
- const currency=n=>"NT$ "+Number(n).toLocaleString("zh-TW");
- const rateKeys=["firstAdultFee","extraAdultFee","extraChildFee"];
- if(!rateKeys.every(k=>Number.isFinite(Number(config[k]))&&Number(config[k])>=0))return;
- const dinner=config.module==="yearEndDinner";
+ const rates=activityFeeRates(config);
+ if(!rates)return;
  const students=(registration.studentIds||[]).length,adults=Math.max(0,Number(registration.adults)||0),children=Math.max(0,Number(registration.extraChildren)||0);
- const studentRate=dinner?0:Number(config.studentFee||0),firstRate=Number(config.firstAdultFee),extraRate=Number(config.extraAdultFee),childRate=Number(config.extraChildFee);
- const lines=[["弦樂團學生",students,studentRate],["首位陪同者",Math.min(adults,1),firstRate],["第二位起陪同者",Math.max(adults-1,0),extraRate],["6 歲以下兒童（非團員）",children,childRate]];
+ const counts=[students,Math.min(adults,1),Math.max(adults-1,0),children];
  const wrap=element("div",undefined,"activity-fee-breakdown");wrap.style.margin="12px 0";wrap.style.padding="12px";wrap.style.border="1px solid #dbe1eb";wrap.style.borderRadius="8px";
  wrap.append(element("strong","本次報名費用明細（依學校活動設定）"));
  let total=0;
- for(const [label,count,rate] of lines){total+=count*rate;wrap.append(element("p",label+"："+count+" 位 × "+currency(rate)+"／位 = "+currency(count*rate)))}
- wrap.append(element("strong","應繳合計："+currency(total)));
- if(registration.estimatedAmount!=null&&Number(registration.estimatedAmount)!==total)wrap.append(element("p","注意：報名時登記金額為 "+currency(registration.estimatedAmount)+"，與目前費率試算不同，請先向學校確認。","hint"));
+ for(const [i,{label,amount}] of rates.entries()){
+  const count=counts[i];total+=count*amount;
+  wrap.append(element("p",label+"："+count+" 位 × "+activityCurrency(amount)+"／位 = "+activityCurrency(count*amount)));
+ }
+ wrap.append(element("strong","應繳合計："+activityCurrency(total)));
+ if(registration.estimatedAmount!=null&&Number(registration.estimatedAmount)!==total)wrap.append(element("p","注意：報名時登記金額為 "+activityCurrency(Number(registration.estimatedAmount))+"，與目前費率試算不同，請先向學校確認。","hint"));
  card.append(wrap);
 }
 function activityPaymentLabel(item,config){
@@ -533,6 +555,7 @@ async function renderInlineActivities(){
     const already=(registration.items||[]).find(x=>x.kind===item.module&&x.activityId===item.id);
     if(already){card.append(element("p",(already.paymentStatus==="VERIFIED"?"報名完成":"已送出報名")+"・"+activityPaymentLabel(already,item),"status-pill"));appendActivityFeeBreakdown(card,item,already);await appendActivityPayment(card,already,item);host.append(card);continue}
     if(!["yearEndDinner","fieldTrip"].includes(item.module)){card.append(element("p","活動資訊依校方公告。","hint"));host.append(card);continue}
+    appendActivityRates(card,item);
     const now=Date.now();
     if(item.openAt&&Date.parse(item.openAt)>now){card.append(element("p","報名尚未開始，請於開放時間再回來查看。","status-pill"));host.append(card);continue}
     if(item.closeAt&&Date.parse(item.closeAt)<now){card.append(element("p","報名已於 "+formatDate(item.closeAt)+" 截止。收款開放僅供已報名家庭回報匯款；若需補報名，請聯絡學校延長報名期限。","status-pill"));host.append(card);continue}
@@ -545,8 +568,16 @@ async function renderInlineActivities(){
     const adultLabel=element("label","陪同者人數（大人及 7 歲以上非團員）"),childLabel=element("label","6 歲以下兒童（非團員）數量");adultLabel.append(adults);childLabel.append(children);
     const total=element("p","","amount-summary");
     const dinner=item.module==="yearEndDinner";
-    const rates=["firstAdultFee","extraAdultFee","extraChildFee"].every(k=>Number.isSafeInteger(item[k])&&item[k]>=0);
-    const calc=()=>{const n=studentWrap.querySelectorAll("input:checked").length,a=Number(adults.value),c=Number(children.value);const amount=rates?(dinner?0:Number(item.studentFee||0)*n)+item.firstAdultFee+(a-1)*item.extraAdultFee+c*item.extraChildFee:null;total.textContent="團員 "+n+" 位＋陪同者 "+a+" 位＋6 歲以下兒童（非團員） "+c+" 位｜"+(amount===null?"費率尚未公布":"合計 NT$ "+amount.toLocaleString("zh-TW"));return amount};
+    const rates=activityFeeRates(item);
+    const calc=()=>{
+     const n=studentWrap.querySelectorAll("input:checked").length,a=Number(adults.value),c=Number(children.value);
+     const counts=[n,Math.min(a,1),Math.max(0,a-1),c];
+     const amount=rates?.reduce((sum,rate,index)=>sum+rate.amount*counts[index],0)??null;
+     const label=item.feeStatus==="PUBLISHED"?"合計":"預估合計";
+     total.textContent="團員 "+n+" 位＋陪同者 "+a+" 位＋6 歲以下兒童（非團員） "+c+" 位｜"+
+      (amount===null?"費率尚未公布":label+" "+activityCurrency(amount));
+     return amount;
+    };
     for(const input of [adults,children,studentWrap])input.addEventListener("change",calc);
     form.append(studentWrap,adultLabel,childLabel,total);
     let lastFive=null,transferDate=null,accountReady=!dinner;

@@ -141,3 +141,20 @@ test("paid activity link resumes only for an authorized parent of the intended s
   assert.equal(rules.openPaidActivity(entry,{role:"parent",schoolId:"school-a"}),true);
   assert.equal(redirects[0],"/parent-uniform-events.html?view=events&activity=yearEndDinner%3Ad1");
 });
+
+test("parents can read all fee rates before choosing attendance or opening the form",()=>{
+  const file=source("app/parent-uniform-events.js");
+  const rates=runInNewContext(file.slice(file.indexOf("const activityCurrency="),file.indexOf("function activityPaymentLabel"))+
+    "\n({appendActivityRates})",{element:(tag,text)=>node(tag,text)});
+  function node(tag,text){return {tag,text,children:[],append(...children){this.children.push(...children)}}}
+  const card=node("article");
+  rates.appendActivityRates(card,{...dinner,extraAdultFee:1000,extraChildFee:400});
+  const fees=card.children[0];
+  assert.equal(fees.children[0].text,"活動費用");
+  assert.deepEqual(fees.children[1].children.map(child=>child.text),
+    ["弦樂團學生","免收費","首位陪同者","NT$ 800／位","第二位起陪同者","NT$ 1,000／位","6 歲以下兒童（非團員）","NT$ 400／位"]);
+  const preview=node("article");
+  rates.appendActivityRates(preview,{...trip,firstAdultFee:100,extraAdultFee:80,extraChildFee:0,feeStatus:"DRAFT"});
+  assert.equal(preview.children[0].children[0].text,"活動費用（預估）");
+  assert.match(file,/appendActivityRates\(card,item\);[\s\S]+我要報名此活動/);
+});
