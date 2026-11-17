@@ -161,6 +161,11 @@ def prepare(output: Path, *, line_uat: bool = False) -> None:
     install_sop_parent_binding(api)
     install_sop_data_tools(api,app)
     if line_uat:
+        todo_notifications=lib/"lineAdminTodoNotification.mjs"
+        current=todo_notifications.read_text(encoding="utf-8")
+        marker="const buildEnablesLabAdminTodos = false;"
+        if marker not in current:raise RuntimeError("LAB admin todo flag has changed")
+        todo_notifications.write_text(current.replace(marker,"const buildEnablesLabAdminTodos = true;"),encoding="utf-8")
         config=lib/"lineTenantConfig.js"
         current=config.read_text(encoding="utf-8")
         marker="const buildEnablesDemoFees = false;"

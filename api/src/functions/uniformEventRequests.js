@@ -9,6 +9,8 @@ import {uniformNeedsPayment} from "../lib/paymentNoticeRules.mjs";
 import { getUniformPrice } from "../lib/uniformPricing.js";
 import {upsertCurrentCompetitionMaster,latestCompetitionRequest} from "../lib/competitionUniformMaster.js";
 
+import {notifyCompetitionUniformReview} from "../lib/lineAdminTodoNotification.mjs";
+
 const kinds=new Set(["regularUniform","competitionUniform","fieldTrip","yearEndDinner"]);
 // 已核對的歷史公費配發，依校別與學生 ID 登錄；不依姓名或尺寸推定資格。
 const historicalPublicIssues={"sacred-heart":new Set(["112068"])};
@@ -141,6 +143,8 @@ app.http("uniformEventRequests",{
           try{await upsertCurrentCompetitionMaster(schoolId,student,{...payload,id},access.email||"parent")}
           catch(error){masterSyncPending=true;console.error("competition master pending after request creation",id,error)}
         }
+        const staffLineStatus=access.role==="parent"?await notifyCompetitionUniformReview(schoolId,{...payload,id}):undefined;
+        if(staffLineStatus&&staffLineStatus!=="sent")console.info("LINE competition-uniform review notification skipped or failed",{schoolId,requestId:id,status:staffLineStatus});
         const paymentNotification=uniformNeedsPayment(payload)?await safePaymentNotifications(schoolId,{scope:{kind:"uniform",id}}):null;
         return json({item:{...payload,id},masterSyncPending,paymentNotification,notificationStatus:paymentNotificationStatus(paymentNotification)},201);
       }

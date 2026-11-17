@@ -98,3 +98,39 @@ test("webhook links use configured public origin or a relative path",()=>{
   assert.equal(links({...channel,appOrigin:"https://school.example.test"}).webhookUrl,
     "https://school.example.test/api/line/webhook/sacred-heart");
 });
+
+test("pending competition uniforms notify only the school's bound admin group in immediate modes", async () => {
+  const env = {};
+  const outbound = [];
+  const target = {targetId:"group-a", targetType:"group", botUserId:"bot-a", mode:"important_and_daily"};
+  const channel = {configured:true, loginConfigured:true, botUserId:"bot-a", accessToken:"token-a"};
+  const notify = load("lineAdminTodoNotification.mjs", {
+    process:{env},
+    getLineNotificationTarget: async school => {assert.equal(school,"sacred-heart");return target;},
+    resolveTenantLineChannel: async school => {assert.equal(school,"sacred-heart");return channel;},
+    lineTargetMatchesChannel:(group, bot) => group.botUserId === bot.botUserId,
+    pushLineMessage: async (...args) => outbound.push(args)
+  }, "notifyCompetitionUniformReview");
+  const request = {kind:"competitionUniform", status:"PENDING", id:"test-request", studentId:"private-id"};
+  assert.equal(await notify("sacred-heart", {...request, status:"APPROVED"}), undefined);
+  target.mode = "daily_only";
+  assert.equal(await notify("sacred-heart", request), "daily_only");
+  target.mode = "off";
+  assert.equal(await notify("sacred-heart", request), "off");
+  target.mode = "instant_only";
+  target.botUserId = "other-bot";
+  assert.equal(await notify("sacred-heart", request), "rebind_required");
+  target.botUserId = "bot-a";
+  env.LAB_ENVIRONMENT = "functional-uat";
+  assert.equal(await notify("sacred-heart", request), "lab_suppressed");
+  assert.equal(outbound.length, 0);
+  delete env.LAB_ENVIRONMENT;
+  assert.equal(await notify("sacred-heart", request), "sent");
+  assert.equal(outbound.length, 1);
+  const [[group, text, options]] = outbound;
+  assert.equal(group, "group-a");
+  assert.match(text, /比賽服申請待審/);
+  assert.doesNotMatch(text, /private-id/);
+  assert.equal(options.accessToken, "token-a");
+  assert.equal(options.retryKey, request.id);
+});
