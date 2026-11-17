@@ -24,6 +24,44 @@ async function restoreLineStaffSession(){
   sessionStorage.setItem("role_context","schoolAdmin");
   return profile;
 }
+const paidActivityEntryKey="paid_activity_entry";
+function paidActivityEntry(){
+  const query=new URLSearchParams(location.search);
+  const supplied={activity:query.get("paidActivity"),schoolId:query.get("schoolId")};
+  const valid=entry=>entry&&/^(yearEndDinner|fieldTrip):[A-Za-z0-9_-]{1,80}$/.test(entry.activity||"")&&/^[a-z0-9-]{2,60}$/.test(entry.schoolId||"");
+  if(valid(supplied)){
+    sessionStorage.setItem(paidActivityEntryKey,JSON.stringify(supplied));
+    return supplied;
+  }
+  try{
+    const stored=JSON.parse(sessionStorage.getItem(paidActivityEntryKey)||"null");
+    return valid(stored)?stored:null;
+  }catch{return null}
+}
+function choosePaidActivityContext(entry){
+  sessionStorage.setItem("school_context_id",entry.schoolId);
+  sessionStorage.setItem("role_context","parent");
+}
+async function restorePaidActivitySession(entry){
+  const response=await fetch("/api/me",{credentials:"same-origin",cache:"no-store",headers:{
+    "X-School-Id":entry.schoolId,"X-Role-Context":"parent"
+  }});
+  if(!response.ok)return;
+  const profile=await response.json();
+  if(profile.role!=="parent"||profile.schoolId!==entry.schoolId)return;
+  state.token=profile.authProvider==="line"?"line-session":"cookie-session";
+  sessionStorage.setItem("google_id_token",state.token);
+  return profile;
+}
+function openPaidActivity(entry,profile){
+  if(!entry||profile.role!=="parent"||profile.schoolId!==entry.schoolId)return false;
+  sessionStorage.removeItem(paidActivityEntryKey);
+  const query=new URLSearchParams({
+    view:entry.activity.startsWith("yearEndDinner:")?"events":"performance",activity:entry.activity
+  });
+  location.replace("/parent-uniform-events.html?"+query);
+  return true;
+}
 async function boot(){
   const query=new URLSearchParams(location.search);
   const lineError=query.get("line_error");
@@ -33,7 +71,9 @@ async function boot(){
     if(!state.token){renderLogin(lineError==="conflict"?"此校帳號已有綁定，請聯絡管理員確認。":"LINE 驗證未完成，請重新登入。");return}
   }
   try{
-    const profile=state.token?undefined:await restoreLineStaffSession();
+    const entry=window.getLineStaffEntry?.()?null:paidActivityEntry();
+    if(entry)choosePaidActivityContext(entry);
+    const profile=state.token?undefined:await (entry?restorePaidActivitySession(entry):restoreLineStaffSession());
     if(!state.token){renderLogin();return}
     await loadProfile(profile);
   }catch(error){renderLogin(error.message)}
@@ -61,7 +101,10 @@ async function loadSchoolViewModule(){
 }
 window.retrySchoolView=()=>{state.schoolViewerLoadError="";render();return loadSchoolViewModule()};
 async function loadProfile(profile){
+  const entry=window.getLineStaffEntry?.()?null:paidActivityEntry();
+  if(entry&&!sessionStorage.getItem("role_context"))choosePaidActivityContext(entry);
   state.me=profile??await api("/api/me");
+  if(openPaidActivity(entry,state.me))return;
   window.resumeLineStaffEntry?.();
   const contexts=Array.isArray(state.me.contexts)?state.me.contexts:[];
   const chosen=sessionStorage.getItem("role_context")||"";
@@ -127,7 +170,7 @@ async function renderLineLogin(){
     if(!response.ok)return;
     const {items}=await response.json();
     if(!mount.isConnected||!items?.length)return;
-    const requested=new URLSearchParams(location.search).get("schoolId");
+    const requested=new URLSearchParams(location.search).get("schoolId")||paidActivityEntry()?.schoolId;
     mount.innerHTML=`<label for="lineSchoolChoice">選擇家長所屬學校</label>
       <select id="lineSchoolChoice">${items.map(item=>`<option value="${esc(item.schoolId)}"${item.schoolId===requested?" selected":""}>${esc(item.schoolName)}</option>`).join("")}</select>
       <button type="button" class="primary" id="lineSchoolSignIn">使用 LINE 登入</button>

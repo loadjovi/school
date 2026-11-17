@@ -17,7 +17,7 @@ export async function notifyTenantPaymentVerified(schoolId, {kind, id, at, paren
   const uniform = kind === "regularUniform" || kind === "competitionUniform";
   const nextStep = uniform && requestStatus === "APPROVED"
     ? "團服已進入備貨／採購流程，請至平台查看領取進度。"
-    : uniform ? "請至平台查看團服領取進度。" : "請至平台查看報名與繳費紀錄。";
+    : uniform ? "請至平台查看團服領取進度。" : "報名已完成，請至平台查看報名與繳費紀錄。";
   const labLabel = process.env.LAB_ENVIRONMENT === "functional-uat" ? "【LAB】" : "";
   return sendTenantFeeLine(schoolId, {
     id: `${uniform ? "uniform" : "family"}:${id}:verified:${at}`,

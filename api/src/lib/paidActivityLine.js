@@ -1,0 +1,115 @@
+import {createHash} from "node:crypto";
+import {TableClient} from "@azure/data-tables";
+import {getTenantLineRecipient} from "./tenantLineAccounts.js";
+import {lineAudienceStudents,resolveLineAudience} from "./lineAudience.js";
+import {workflowLineEnabled,workflowLineRetryKey} from "./lineAdminTodoNotification.mjs";
+import {resolveTenantLineChannel} from "./lineTenantConfig.js";
+import {lineApi} from "./lineMessaging.mjs";
+
+const groupCode = value => {
+  const group = String(value || "").trim().replace(/團$/, "").toUpperCase();
+  return group === "儲備" || group === "預備" ? "C" : group;
+};
+const targetGroups = activity => String(activity.targetGroups || "ALL").split(",").map(groupCode);
+export function activityAllowsGroup(activity, group) {
+  const target = targetGroups(activity);
+  return target.includes("ALL") || target.includes(groupCode(group));
+}
+
+export function isPaidActivityOpen(activity, now = Date.now()) {
+  if (!activity?.enabled || (activity.closeAt && Date.parse(activity.closeAt) <= now)) return false;
+  if (activity.module === "yearEndDinner") {
+    return activity.paymentOpen === true && activity.feeStatus === "PUBLISHED" &&
+      [activity.firstAdultFee,activity.extraAdultFee,activity.extraChildFee].some(fee => fee > 0);
+  }
+  return activity.module === "fieldTrip" &&
+    [activity.studentFee,activity.firstAdultFee,activity.extraAdultFee,activity.extraChildFee].some(fee => fee > 0);
+}
+
+const collectingTrip = activity => activity?.module === "fieldTrip" && activity.enabled &&
+  activity.collectionOpen === true && activity.paymentOpen === true && activity.feeStatus === "PUBLISHED" &&
+  [activity.studentFee,activity.firstAdultFee,activity.extraAdultFee,activity.extraChildFee].some(fee => fee > 0);
+
+export function paidActivityNotificationKind(previous, next, now) {
+  if (isPaidActivityOpen(next,now) && !isPaidActivityOpen(previous,now)) return "registration";
+  if (collectingTrip(next) && !collectingTrip(previous)) return "payment";
+  return null;
+}
+
+async function registeredPaymentAudience(schoolId, botUserId, activityId) {
+  const client = TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantFamilyEventRegistration");
+  const emails = new Set();
+  try {
+    for await (const row of client.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})) {
+      const item = JSON.parse(row.payload || "{}");
+      if (item.kind === "fieldTrip" && item.activityId === activityId && item.registrationStatus === "REGISTERED" &&
+          ["NOT_OPEN","AWAITING_TRANSFER"].includes(item.paymentStatus) && item.parentEmail) emails.add(item.parentEmail);
+    }
+  } catch (error) {
+    if (error.statusCode !== 404) throw error;
+  }
+  const accounts = await Promise.all([...emails].map(email=>getTenantLineRecipient(schoolId,email,botUserId)));
+  return {
+    targets:[...new Set(accounts.map(account=>account?.lineUserId).filter(id=>/^U[0-9a-f]{32}$/i.test(id||"")))].sort(),
+    unbound:accounts.filter(account=>!account?.lineUserId).length
+  };
+}
+
+async function activityParentAudience(schoolId, botUserId, activity) {
+  const students = (await lineAudienceStudents(schoolId))
+    .filter(student=>activityAllowsGroup(activity,student.groupName));
+  return resolveLineAudience(schoolId,botUserId,{students,roles:["parent"],groups:[]});
+}
+
+export async function notifyPaidActivityOpened(schoolId, activity, openedAt, kind) {
+  if (!workflowLineEnabled()) return {status:"disabled"};
+  try {
+    const channel = await resolveTenantLineChannel(schoolId);
+    if (!channel.loginConfigured || !channel.botUserId) return {status:"disabled"};
+    const payment = kind === "payment";
+    const audience = payment
+      ? await registeredPaymentAudience(schoolId,channel.botUserId,activity.id)
+      : await activityParentAudience(schoolId,channel.botUserId,activity);
+    const counts = {accepted:0,failed:0,unbound:audience.unbound};
+    if (!audience.targets.length) return {...counts,status:"no_recipients"};
+    const url = new URL("/", channel.appOrigin);
+    url.searchParams.set("schoolId", schoolId);
+    url.searchParams.set("paidActivity", activity.module + ":" + activity.id);
+    const format = new Intl.DateTimeFormat("zh-TW", {timeZone:"Asia/Taipei",dateStyle:"short",timeStyle:"short",hour12:false});
+    const future = activity.openAt && Date.parse(activity.openAt) > Date.parse(openedAt);
+    const dinner = activity.module === "yearEndDinner";
+    const text = [
+      process.env.LAB_ENVIRONMENT === "functional-uat" ? "【LAB｜付費活動】" : "【付費活動】",
+      activity.title,
+      payment ? "已開放已報名家庭繳款。" : future ? "報名開放 " + format.format(new Date(activity.openAt)) : "已開放報名。",
+      !payment && activity.closeAt ? "報名截止 " + format.format(new Date(activity.closeAt)) : "",
+      payment ? "請到平台核對應繳金額，依指示匯款並回報。" : dinner ? "請到平台查看活動與費用，決定是否參加。若參加，請依平台指示匯款並回報。"
+        : "請到平台查看活動與費用，決定是否報名，再依平台的收款進度繳款。",
+      url.toString()
+    ].filter(Boolean).join("\n");
+    for (let index = 0; index < audience.targets.length; index += 500) {
+      const recipients = audience.targets.slice(index,index + 500);
+      const fingerprint = createHash("sha256").update(JSON.stringify(recipients)).digest("hex");
+      const options = {
+        accessToken:channel.accessToken,
+        retryKey:workflowLineRetryKey(schoolId, [activity.module,activity.id,kind,openedAt].join(":"), fingerprint),
+        body:{to:recipients,messages:[{type:"text",text}]}
+      };
+      try {
+        await lineApi("/v2/bot/message/multicast",options).catch(error => {
+          if (error.status && error.status < 500) throw error;
+          return lineApi("/v2/bot/message/multicast",options);
+        });
+        counts.accepted += recipients.length;
+      } catch (error) {
+        counts.failed += recipients.length;
+        console.warn("Paid activity LINE batch failed", {schoolId,status:error?.status});
+      }
+    }
+    const status = counts.failed ? (counts.accepted ? "partial" : "failed") : "accepted";
+    return {...counts,status};
+  } catch (error) {
+    console.warn("Paid activity LINE invitation failed", {schoolId,status:error?.status||error?.statusCode});
+    return {status:"failed"};
+  }
+}

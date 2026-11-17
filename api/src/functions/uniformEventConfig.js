@@ -3,6 +3,7 @@ import { TableClient } from "@azure/data-tables";
 import { randomUUID } from "node:crypto";
 import { getTenantContext, json } from "../lib/auth.js";
 import { syncActivityCalendar, deleteActivityCalendar } from "./calendarEvents.js";
+import {paidActivityNotificationKind,notifyPaidActivityOpened} from "../lib/paidActivityLine.js";
 import {safePaymentNotifications} from "../lib/paymentNotifications.js";
 
 // Phase 2: tenant-scoped administrative configuration. No automatic activation.
@@ -34,7 +35,7 @@ function validate(data){
     if(!cleanText(data.note||"詳情待公告",1000)||String(data.timeLabel||"").length>80)throw new Error("備註或時間說明過長");
     if(data.openAt||data.closeAt||data.collectionOpen||["studentFee","firstAdultFee","extraAdultFee","extraChildFee"].some(f=>Number(data[f]||0)!==0))throw new Error("演出／競賽公告不接受報名或收費");
   }
-  if(["fieldTrip","calendarActivity"].includes(data.module)&&(!data.targetGroups||!/^ALL$|^(?:A|B|C)(?:,(?:A|B|C))*$/.test(data.targetGroups)||new Set(data.targetGroups.split(",")).size!==data.targetGroups.split(",").length))throw new Error("請選擇有效的活動對象團別");
+  if((["fieldTrip","calendarActivity"].includes(data.module)||data.module==="yearEndDinner"&&data.targetGroups!==undefined)&&(!data.targetGroups||!/^ALL$|^(?:A|B|C)(?:,(?:A|B|C))*$/.test(data.targetGroups)||new Set(data.targetGroups.split(",")).size!==data.targetGroups.split(",").length))throw new Error("請選擇有效的活動對象團別");
   if(data.endAt){if(!Number.isFinite(Date.parse(data.endAt)))throw new Error("Invalid endAt");if(Date.parse(data.endAt)<Date.parse(data.startAt))throw new Error("Activity end must not precede start");}
   if(data.openAt&&!Number.isFinite(Date.parse(data.openAt)))throw new Error("Invalid openAt");
   if(data.closeAt&&!Number.isFinite(Date.parse(data.closeAt)))throw new Error("Invalid closeAt");
@@ -116,11 +117,22 @@ app.http("uniformEventConfig",{
       try{before=await client.getEntity(schoolId,record.rowKey)}catch(e){if(e.statusCode!==404)throw e}
       const audit=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantUniformEventAudit");
       await audit.createTable().catch(e=>{if(e.statusCode!==409)throw e});
-      await client.upsertEntity(record,"Replace");
+      const previous = before ? JSON.parse(before.payload||"{}") : null;
+      try{
+        if (before) await client.updateEntity(record,"Replace",{etag:before.etag});
+        else await client.createEntity(record);
+      }catch(error){
+        if ([409,412].includes(error.statusCode)) return json({error:"活動設定已變更，請重新整理後再儲存。"},409);
+        throw error;
+      }
       await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"config.save",subjectId:record.rowKey,actor:String(access.email||"admin").slice(0,200),at:record.updatedAt,details:JSON.stringify({before:before?JSON.parse(before.payload||"{}"):null,after:JSON.parse(record.payload)}).slice(0,20000)});
-      if(["fieldTrip","calendarActivity"].includes(data.module))await syncActivityCalendar(schoolId,access,data);
-      const paymentNotification=["fieldTrip","yearEndDinner"].includes(data.module)?await safePaymentNotifications(schoolId,{scope:{kind:"activity",module:data.module,id:data.id}}):null;
-      return json({item:publicValue(record),paymentNotification});
+      const lineNotice = paidActivityNotificationKind(previous,data,Date.parse(record.updatedAt));
+      const [paymentNotification,activityLineNotification] = await Promise.all([
+        ["fieldTrip","yearEndDinner"].includes(data.module)?safePaymentNotifications(schoolId,{scope:{kind:"activity",module:data.module,id:data.id}}):null,
+        lineNotice?notifyPaidActivityOpened(schoolId,data,record.updatedAt,lineNotice):null,
+        ["fieldTrip","calendarActivity"].includes(data.module)?syncActivityCalendar(schoolId,access,data):null
+      ]);
+      return json({item:publicValue(record),paymentNotification,activityLineNotification});
     }catch(error){
       if(error instanceof SyntaxError||String(error.message||"").startsWith("Invalid")||String(error.message||"").includes("requires")||/^(活動|時間|備註|請選擇|演出)/.test(String(error.message||"")))return json({error:error.message},400);
       console.error("uniformEventConfig error",error);

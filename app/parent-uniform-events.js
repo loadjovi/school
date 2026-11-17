@@ -494,7 +494,7 @@ async function renderInlineActivities(){
    const match=cfg.find(x=>x.module===item.kind&&x.id===item.activityId);
    const card=element("div",undefined,"card");card.id="family-payment-"+item.id;card.append(element("strong",match?.title||item.activityId));
    card.append(element("p","學生 "+(item.studentIds||[]).length+" 位｜陪同者 "+item.adults+" 位｜6 歲以下兒童（非團員） "+item.extraChildren+" 位"));
-   card.append(element("p","報名："+(item.registrationStatus==="REGISTERED"?"已送出":item.registrationStatus)+"｜付款："+activityPaymentLabel(item,match)));
+   card.append(element("p","報名："+(item.registrationStatus==="REGISTERED"?(item.paymentStatus==="VERIFIED"?"報名完成":"已送出"):item.registrationStatus)+"｜付款："+activityPaymentLabel(item,match)));
    if(item.estimatedAmount!=null)card.append(element("p","登記金額 NT$ "+Number(item.estimatedAmount).toLocaleString("zh-TW")));
    appendActivityFeeBreakdown(card,match,item);
    await appendActivityPayment(card,item,match);
@@ -503,7 +503,9 @@ async function renderInlineActivities(){
   const categories={events:["yearEndDinner"],performance:["fieldTrip","calendarActivity","performance","flashMob","schoolExchange","jointConcert"]};
   const normalizeGroup=value=>{const group=String(value||"").trim().replace(/團$/,"").toUpperCase();return group==="儲備"||group==="預備"?"C":group};
   const studentGroups=new Set(students.map(st=>normalizeGroup(st.groupName||st.group)).filter(Boolean));
-  const forFamily=item=>{const groups=String(item.targetGroups||"ALL").split(",").map(normalizeGroup);return groups.includes("ALL")||groups.some(group=>studentGroups.has(group))};
+  const targetGroupCodes=item=>String(item.targetGroups||"ALL").split(",").map(normalizeGroup);
+  const forFamily=item=>{const groups=targetGroupCodes(item);return groups.includes("ALL")||groups.some(group=>studentGroups.has(group))};
+  const forStudent=(item,student)=>{const groups=targetGroupCodes(item);return groups.includes("ALL")||groups.includes(normalizeGroup(student.groupName||student.group))};
   for(const [category,host] of Object.entries(hosts)){
    if(category==="history")continue;host.replaceChildren();
    const taipeiDay=value=>{if(!value)return "";const d=new Date(value);return Number.isNaN(d.getTime())?"":d.toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"})};
@@ -529,14 +531,14 @@ async function renderInlineActivities(){
      host.append(card);continue;
     }
     const already=(registration.items||[]).find(x=>x.kind===item.module&&x.activityId===item.id);
-    if(already){card.append(element("p","已報名・"+activityPaymentLabel(already,item),"status-pill"));appendActivityFeeBreakdown(card,item,already);await appendActivityPayment(card,already,item);host.append(card);continue}
+    if(already){card.append(element("p",(already.paymentStatus==="VERIFIED"?"報名完成":"已送出報名")+"・"+activityPaymentLabel(already,item),"status-pill"));appendActivityFeeBreakdown(card,item,already);await appendActivityPayment(card,already,item);host.append(card);continue}
     if(!["yearEndDinner","fieldTrip"].includes(item.module)){card.append(element("p","活動資訊依校方公告。","hint"));host.append(card);continue}
     const now=Date.now();
     if(item.openAt&&Date.parse(item.openAt)>now){card.append(element("p","報名尚未開始，請於開放時間再回來查看。","status-pill"));host.append(card);continue}
     if(item.closeAt&&Date.parse(item.closeAt)<now){card.append(element("p","報名已於 "+formatDate(item.closeAt)+" 截止。收款開放僅供已報名家庭回報匯款；若需補報名，請聯絡學校延長報名期限。","status-pill"));host.append(card);continue}
     const action=element("details",undefined,"activity-details"),summary=element("summary",item.module==="yearEndDinner"?"我要報名餐會":"我要報名此活動");action.append(summary);const form=element("form");form.className="inline-activity-form";
     const studentWrap=element("fieldset");studentWrap.append(element("legend","參加學生"));
-    for(const st of students){const label=element("label");const input=element("input");input.type="checkbox";input.value=st.studentId;label.append(input,document.createTextNode(" "+(st.name||st.studentName||st.studentId)));studentWrap.append(label)}
+    for(const st of students.filter(student=>forStudent(item,student))){const label=element("label");const input=element("input");input.type="checkbox";input.value=st.studentId;label.append(input,document.createTextNode(" "+(st.name||st.studentName||st.studentId)));studentWrap.append(label)}
     const adults=element("select"),children=element("select");
     for(let i=1;i<=5;i++)adults.add(new Option(i+" 位陪同者",i));
     for(let i=0;i<=5;i++)children.add(new Option(i+" 位 6 歲以下兒童（非團員）",i));

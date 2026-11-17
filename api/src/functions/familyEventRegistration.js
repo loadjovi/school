@@ -6,6 +6,7 @@ import {getStudentMaster} from "../lib/storage.js";
 import {familyPaymentInfo} from "../lib/paymentNoticeRules.mjs";
 import {safePaymentNotifications} from "../lib/paymentNotifications.js";
 import {notifyAdminTodo,notifyFinanceTransfer,retryFinanceTransfer} from "../lib/lineAdminTodoNotification.mjs";
+import {activityAllowsGroup} from "../lib/paidActivityLine.js";
 import {notifyTenantPaymentVerified} from "../lib/tenantLineFeeNotice.js";
 
 const safeId=s=>typeof s==="string"&&/^[a-zA-Z0-9_-]{1,80}$/.test(s);
@@ -92,7 +93,10 @@ app.http("familyEventRegistration",{
     const ids=body.studentIds;
     if(!Array.isArray(ids)||ids.length<1||ids.length>10||new Set(ids).size!==ids.length||!ids.every(s=>safeId(s)&&ensureStudentAccess(access,s)))return fail("Select authorized students");
     if(!integer(body.adults,1,20)||!integer(body.extraChildren,0,20))return fail("At least one adult required");
-    for(const id of ids)if(!await getStudentMaster(id,schoolId))return fail("Student not found",403);
+    for(const id of ids){
+     const student=await getStudentMaster(id,schoolId);
+     if(!student||student.status==="inactive"||!activityAllowsGroup(cfg,student.groupName))return fail("所選學生不在此活動的開放團別。",403);
+    }
     if(body.kind==="yearEndDinner"){
      if(!integer(cfg.firstAdultFee,0,1000000)||!integer(cfg.extraAdultFee,0,1000000)||!integer(cfg.extraChildFee,0,1000000))return fail("Dinner rates are not configured",409);
      if(cfg.feeStatus!=="PUBLISHED"||cfg.paymentOpen!==true)return fail("Dinner payment has not been opened",409);

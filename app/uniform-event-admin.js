@@ -447,7 +447,7 @@ el("config").addEventListener("input",e=>{if(e.target.matches('input[name$="Fee"
 el("config").addEventListener("change",updateActivityAudiencePreview);
 function updateActivityAudiencePreview(){
  const form=el("config"),module=el("configModule").value,groups=form.elements[module==="calendarActivity"?"calendarTargetGroups":"targetGroups"].value;
- const groupText={ALL:"A、B、儲備團",A:"A 團",B:"B 團",C:"儲備團","A,B":"A、B 團","A,C":"A、儲備團","B,C":"B、儲備團"}[module==="yearEndDinner"?"ALL":groups]||"所選團別";
+ const groupText={ALL:"A、B、儲備團",A:"A 團",B:"B 團",C:"儲備團","A,B":"A、B 團","A,C":"A、儲備團","B,C":"B、儲備團"}[groups]||"所選團別";
  const visible=form.elements.enabled.value==="true";
  const closeAt=form.elements.closeAt?.value,registrationClosed=closeAt&&Date.parse(closeAt)<Date.now();
  const collecting=module==="yearEndDinner"?form.elements.enabled.value==="true":module==="fieldTrip"&&form.elements.collectionOpen.value==="true";
@@ -462,7 +462,7 @@ function syncConfig(){
  form.querySelectorAll("[data-activity-field]").forEach(x=>x.hidden=!activityTypes.has(module));
  el("calendarActivityFields").hidden=!calendarOnly;
  el("activityFeePreview").hidden=calendarOnly;
- form.elements.targetGroups.closest("label").hidden=module!=="fieldTrip";
+ form.elements.targetGroups.closest("label").hidden=!["fieldTrip","yearEndDinner"].includes(module);
  const stagePanel=el("fieldTripCollectionPanel");if(stagePanel)stagePanel.hidden=module!=="fieldTrip";
  const fixedUniform=["regularUniform","competitionUniform"].includes(module);
  el("configEnabledWrap").hidden=fixedUniform;form.elements.enabled.disabled=fixedUniform;form.elements.enabled.value=fixedUniform?"true":form.elements.enabled.value;
@@ -744,7 +744,7 @@ el("config").onsubmit=async e=>{
   }else if(activity){
    for(const key of ["openAt","closeAt"])if(f.get(key))item[key]=new Date(f.get(key)).toISOString();
    item.title=String(f.get("title")||"");item.location=String(f.get("location")||"");
-   if(module==="fieldTrip")item.targetGroups=String(f.get("targetGroups")||"ALL");
+   item.targetGroups=String(f.get("targetGroups")||"ALL");
    if(f.get("startAt"))item.startAt=new Date(module==="fieldTrip"?String(f.get("startAt")).slice(0,10)+"T12:00:00+08:00":f.get("startAt")).toISOString();
    if(f.get("endAt"))item.endAt=new Date(module==="fieldTrip"?String(f.get("endAt")).slice(0,10)+"T12:00:00+08:00":f.get("endAt")).toISOString();
    if(item.endAt&&item.startAt&&Date.parse(item.endAt)<Date.parse(item.startAt))throw Error("活動結束時間不可早於開始時間");
@@ -782,6 +782,12 @@ el("config").onsubmit=async e=>{
    ?"活動已建立並確認成功："+(persisted.title||module)+"（暫不顯示）。"+(bankVerifiedOnSave||window.dinnerBankSelection?.()?"收款帳戶已綁定，可將家長端改為「顯示」並儲存。":"請選擇下方收款帳戶並儲存，再將家長端改為「顯示」。")
    :"設定已儲存並確認成功："+(persisted.title||module)+(["fieldTrip","calendarActivity"].includes(module)?"；已依對象團別同步至家長行事曆（"+(persisted.enabled?"顯示中":"已取消")+"）。":"。")+(module==="calendarActivity"?"此公告免報名、免收費。":module==="yearEndDinner"?"收款帳戶已綁定；是否可報名依報名期間判定。":bankVerifiedOnSave?"收款帳戶已綁定；開放家長報名後，可再設定第二階段收款。":"是否可報名依活動顯示狀態與報名期間判定；收款需另行開放。");
   if(configResult.paymentNotification?.total)feedback.textContent+=" 匯款通知："+(window.paymentEmailSummaryText?.(configResult.paymentNotification)||configResult.paymentNotification.status);
+  const invitation=configResult.activityLineNotification;
+  if(invitation){
+   const status={disabled:"此環境尚未啟用活動 LINE 通知。",no_recipients:"指定團別目前沒有可發送的 LINE 家長帳號。",failed:"活動 LINE 通知未能全部送出。"};
+   const counts=invitation.accepted>0?"LINE 已受理 "+invitation.accepted+" 位家長的活動通知。":"";
+   feedback.textContent+=" "+(counts||"")+(invitation.failed>0?"發送失敗 "+invitation.failed+" 位。":status[invitation.status]||"")+(invitation.unbound?"另有 "+invitation.unbound+" 個家長帳號尚未綁定 LINE。":"");
+  }
   el("status").textContent=feedback.textContent;
  }catch(err){
   if(savedActivityId){try{await load();el("existingActivity").value=savedActivityId;syncConfig();el("existingActivity").dispatchEvent(new Event("change"))}catch(refreshError){console.warn("活動已儲存，但重新讀取失敗",refreshError)}}
