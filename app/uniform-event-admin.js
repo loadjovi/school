@@ -594,7 +594,25 @@ function financeCard(item,type){
  date.type="date";date.required=true;note.required=true;note.maxLength=300;note.rows=2;submit.type="submit";submit.textContent="確認已入帳";message.setAttribute("role","status");
  for(const [label,input] of [["銀行實際入帳日期",date],["核帳備註（記錄銀行查核依據）",note]]){const row=document.createElement("label");row.textContent=label;row.append(input);form.append(row)}
  if(!Number.isSafeInteger(expected)||expected<=0||amount!==expected){submit.disabled=true;message.textContent="回報金額與應繳金額不同，請先查明差額。"}
- form.append(submit,message);card.append(title,info,form);
+ const retry=document.createElement("button"),retryMessage=document.createElement("p");
+ retry.type="button";retry.className="small";retry.textContent="補送財務 LINE 通知";
+ retryMessage.setAttribute("role","status");
+ retry.addEventListener("click",async()=>{
+  retry.disabled=true;
+  retryMessage.textContent="正在補送通知…";
+  try{
+   const body={action:"RETRY_FINANCE_LINE",etag:item.etag};
+   const path=type==="uniform"?"uniform-events/uniform-transfer-report":"uniform-events/family-registration";
+   if(type==="uniform")body.requestId=item.id;
+   else Object.assign(body,{kind:item.kind,activityId:item.activityId,registrationId:item.id});
+   const {financeLineStatus}=await api(path,{method:"PATCH",body:JSON.stringify(body)});
+   const labels={sent:"LINE 已受理。請在財務人員的 LINE 確認收件。",partial:"LINE 只受理部分通知，可再試一次。",not_assigned:"請由 Global 管理中心指派此校財務人員。",not_bound:"已指派的財務人員尚未綁定此校 LINE。",not_configured:"此校尚未開啟財務 LINE 通知。",lab_suppressed:"這個 LAB 環境未開放財務 LINE 通知。",ineligible:"只可補送回報未滿 23 小時、且仍待核帳的匯款。"};
+   retryMessage.textContent=labels[financeLineStatus]||"通知未成功送出，請稍後重試。";
+   if(financeLineStatus==="sent")return;
+  }catch(error){retryMessage.textContent=error.message}
+  retry.disabled=false;
+ });
+ form.append(submit,message);card.append(title,info,form,retry,retryMessage);
  form.addEventListener("submit",async event=>{
   event.preventDefault();if(!note.value.trim()){message.textContent="請填寫核帳備註。";return}
   if(!confirm("已比對銀行實際入帳日期、金額及帳號末五碼，確認此款項已入帳？"))return;

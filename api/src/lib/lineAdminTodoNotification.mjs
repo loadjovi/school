@@ -78,15 +78,25 @@ export async function notifyAdminTodo(schoolId, {id, text, groupRetryKey}) {
   }
 }
 
+export async function retryFinanceTransfer(schoolId, kind, id, report) {
+  // Reuse the original provider retry key while its deduplication window is open.
+  const reportedAt = report.transferReport?.reportedAt;
+  const age = Date.now() - Date.parse(reportedAt);
+  if (report.paymentStatus !== "REPORTED_UNVERIFIED" || !(age >= 0 && age < 23 * 60 * 60 * 1000)) return "ineligible";
+  return notifyFinanceTransfer(schoolId,{kind,id,reportedAt});
+}
+
 export async function notifyFinanceTransfer(schoolId, {kind,id,reportedAt}) {
   if (!id || !reportedAt || !["uniform","family"].includes(kind)) return "ineligible";
   const lab = labEnvironment();
   if (lab && !buildEnablesLabAdminTodos) return "lab_suppressed";
   try {
     const channel = await resolveTenantLineChannel(schoolId);
-    if (!channel.loginConfigured || !channel.botUserId || !channel.paymentLineEnabled) return "not_configured";
+    if (!channel.loginConfigured || !channel.botUserId || !channel.financeTransferLineEnabled) return "not_configured";
     const [admins,assignments] = await Promise.all([listTenantAdmins(schoolId,"active"),financeAssignments(schoolId)]);
-    const recipients = await boundRecipients(schoolId,financeRecipients(admins,assignments),channel.botUserId);
+    const emails = financeRecipients(admins,assignments);
+    if (!emails.length) return "not_assigned";
+    const recipients = await boundRecipients(schoolId,emails,channel.botUserId);
     return await sendToTargets(schoolId,channel,new Map([...recipients].map(userId => [userId,undefined])),
       `finance:${kind}:${id}:${reportedAt}`,
       (lab ? "【LAB】" : "") + "【財務待辦】\n家長已回報匯款，請登入學校後台核對。");

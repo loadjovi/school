@@ -31,8 +31,12 @@ function httpsOrigin(value) {
   } catch { return ""; }
 }
 
+function labDemoFeesEnabled(schoolId) {
+  return buildEnablesDemoFees && process.env.LAB_ENVIRONMENT === "functional-uat" && schoolId === defaultTenantId();
+}
+
 export function tenantFeeEnabled(schoolId) {
-  if (buildEnablesDemoFees && process.env.LAB_ENVIRONMENT === "functional-uat" && schoolId === defaultTenantId()) return true;
+  if (labDemoFeesEnabled(schoolId)) return true;
   const prefix = "LINE_" + tenantSchoolPartition(schoolId).replaceAll("-", "_").toUpperCase();
   return process.env[prefix + "_FEE_COLLECTIONS_ENABLED"] === "true";
 }
@@ -42,13 +46,16 @@ function credentials(schoolId, legacy = false) {
   const setting = key => (process.env[`${prefix}_${key}`] || "").trim();
   const loginId = setting("LOGIN_CHANNEL_ID"), loginSecret = setting("LOGIN_CHANNEL_SECRET");
   const appOrigin = httpsOrigin(setting("APP_ORIGIN"));
+  const paymentNotifications = setting("PAYMENT_NOTIFICATIONS_ENABLED");
   const loginFingerprint = !legacy && /^\d{6,20}$/.test(loginId) && loginSecret && appOrigin
     ? fingerprint(JSON.stringify([loginId, loginSecret, appOrigin])) : "";
   return {
     channelSecret: setting("CHANNEL_SECRET"), accessToken: setting("CHANNEL_ACCESS_TOKEN"),
     loginId, loginSecret, loginFingerprint, appOrigin,
     parentMenuId: setting("PARENT_RICH_MENU_ID"), staffMenuId: setting("STAFF_RICH_MENU_ID"),
-    paymentLineEnabled: setting("PAYMENT_NOTIFICATIONS_ENABLED") === "true"
+    paymentLineEnabled: paymentNotifications === "true",
+    financeTransferLineEnabled: paymentNotifications === "true" ||
+      (!paymentNotifications && !legacy && labDemoFeesEnabled(schoolId))
   };
 }
 
@@ -78,7 +85,7 @@ export async function listTenantLineLoginSchools(tenants) {
 
 function resolveChannel(id, tenant, row) {
   const legacy = id === defaultTenantId() && !row;
-  const {channelSecret, accessToken, loginId, loginSecret, loginFingerprint, appOrigin, parentMenuId, staffMenuId, paymentLineEnabled} = credentials(id, legacy);
+  const {channelSecret, accessToken, loginId, loginSecret, loginFingerprint, appOrigin, parentMenuId, staffMenuId, paymentLineEnabled, financeTransferLineEnabled} = credentials(id, legacy);
   const status = row?.status || (legacy && channelSecret && accessToken ? "active" : "setup");
   const configured = Boolean(
     (tenant?.status === "active" || tenant?.status === "onboarding") &&
@@ -96,7 +103,7 @@ function resolveChannel(id, tenant, row) {
     loginConfigured, loginId: loginConfigured ? loginId : "",
     loginSecret: loginConfigured ? loginSecret : "", appOrigin: loginConfigured ? appOrigin : "",
     oauthVersion: loginConfigured ? fingerprint(row.botUserId + loginFingerprint) : "",
-    parentMenuId, staffMenuId, paymentLineEnabled
+    parentMenuId, staffMenuId, paymentLineEnabled, financeTransferLineEnabled
   };
 }
 

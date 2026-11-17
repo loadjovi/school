@@ -1,5 +1,5 @@
 import {safePaymentNotifications} from "../lib/paymentNotifications.js";
-import {notifyFinanceTransfer,workflowLineEnabled} from "../lib/lineAdminTodoNotification.mjs";
+import {notifyFinanceTransfer,retryFinanceTransfer,workflowLineEnabled} from "../lib/lineAdminTodoNotification.mjs";
 import {sendTenantFeeLine} from "../lib/tenantLineFeeNotice.js";
 import {app} from "@azure/functions";
 import {TableClient} from "@azure/data-tables";
@@ -23,6 +23,10 @@ app.http("uniformTransferReport",{methods:["POST","PATCH"],authLevel:"anonymous"
   if(!["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(old.status)||!Number.isSafeInteger(old.amount)||old.amount<=0)return fail("Order not payable",409);
   if(request.method==="PATCH"){
    if(old.paymentStatus!=="REPORTED_UNVERIFIED")return fail("此訂單尚無待核對匯款",409);
+   if(b.action==="RETRY_FINANCE_LINE"){
+    if(b.etag!==row.etag)return fail("資料已變更，請重新整理",409);
+    return json({financeLineStatus:await retryFinanceTransfer(schoolId,"uniform",b.requestId,old)});
+   }
    if(b.etag!==row.etag||!Number.isSafeInteger(b.amount)||b.amount!==old.amount||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(b.bankPostedAt||"")||!Number.isFinite(Date.parse(b.bankPostedAt))||typeof b.note!=="string"||!b.note.trim()||b.note.length>300)return fail("請核對實際入帳日期、金額，填寫核帳備註後重新讀取訂單",400);
    const stamp=new Date().toISOString(),next={...old,paymentStatus:"VERIFIED",verifiedBy:access.email,verifiedAt:stamp,bankPostedAt:b.bankPostedAt,verificationNote:b.note.trim(),updatedAt:stamp};
    const audit=await db("TenantUniformEventAudit");

@@ -5,7 +5,7 @@ import {getTenantContext,ensureStudentAccess,json} from "../lib/auth.js";
 import {getStudentMaster} from "../lib/storage.js";
 import {familyPaymentInfo} from "../lib/paymentNoticeRules.mjs";
 import {safePaymentNotifications} from "../lib/paymentNotifications.js";
-import {notifyAdminTodo,notifyFinanceTransfer,workflowLineEnabled} from "../lib/lineAdminTodoNotification.mjs";
+import {notifyAdminTodo,notifyFinanceTransfer,retryFinanceTransfer,workflowLineEnabled} from "../lib/lineAdminTodoNotification.mjs";
 import {sendTenantFeeLine} from "../lib/tenantLineFeeNotice.js";
 
 const safeId=s=>typeof s==="string"&&/^[a-zA-Z0-9_-]{1,80}$/.test(s);
@@ -135,6 +135,12 @@ app.http("familyEventRegistration",{
    const old=decode(previous),actual=old.id;
    if(access.role==="parent"&&!ownsRegistration(access,old))return fail("Forbidden",403);
    if(old.registrationStatus!=="REGISTERED")return fail("Registration not active",409);
+   if(body.action==="RETRY_FINANCE_LINE"){
+    if(access.role!=="admin"||access.capabilities?.financeVerifier!==true)return fail("僅指定財務人員可補送通知",403);
+    if(old.kind!==body.kind||old.activityId!==body.activityId)return fail("Invalid registration ID");
+    if(body.etag!==previous.etag)return fail("資料已變更，請重新整理",409);
+    return json({financeLineStatus:await retryFinanceTransfer(schoolId,"family",actual,old)});
+   }
    const next={...JSON.parse(previous.payload)};
    if(body.action==="REPORT_TRANSFER"){
     if(access.role!=="parent")return fail("Parent only",403);

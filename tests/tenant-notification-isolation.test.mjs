@@ -153,6 +153,29 @@ test("pending uniforms notify the same school's group and active bound administr
   assert.match(outbound[2][2].retryKey,/^[0-9a-f-]{36}$/);
 });
 
+test("the named LINE UAT defaults only Sacred Heart finance transfer LINE notifications to enabled", () => {
+  const source = readFileSync(new URL(root + "lineTenantConfig.js", import.meta.url),"utf8");
+  const config = source.replace(/^import .+;$/gm,"").replace(/^export /gm,"");
+  const env = {LAB_ENVIRONMENT:"functional-uat"};
+  const get = (builtForLineUat) => runInNewContext(
+    config.replace("const buildEnablesDemoFees = false;", "const buildEnablesDemoFees = " + builtForLineUat + ";") + ";credentials",
+    {process:{env},defaultTenantId,URL}
+  );
+  const namedLab = get(true), defaultLab = get(false);
+  assert.equal(defaultLab("sacred-heart").financeTransferLineEnabled,false);
+  assert.equal(namedLab("sacred-heart").financeTransferLineEnabled,true);
+  assert.equal(namedLab("sacred-heart").paymentLineEnabled,false);
+  assert.equal(namedLab("sacred-heart",true).financeTransferLineEnabled,false);
+  assert.equal(namedLab("other-school").financeTransferLineEnabled,false);
+  env.LINE_SACRED_HEART_PAYMENT_NOTIFICATIONS_ENABLED="false";
+  assert.equal(namedLab("sacred-heart").financeTransferLineEnabled,false);
+  delete env.LINE_SACRED_HEART_PAYMENT_NOTIFICATIONS_ENABLED;
+  delete env.LAB_ENVIRONMENT;
+  assert.equal(namedLab("sacred-heart").financeTransferLineEnabled,false);
+  env.LINE_SACRED_HEART_PAYMENT_NOTIFICATIONS_ENABLED="true";
+  assert.equal(namedLab("sacred-heart").financeTransferLineEnabled,true);
+});
+
 test("finance LINE dispatch contains no transfer details and only reaches assigned, active staff",async()=>{
   const outbound=[];
   const registered=[
@@ -160,9 +183,10 @@ test("finance LINE dispatch contains no transfer details and only reaches assign
     {status:"active",role:"schoolAdmin",partitionKey:"staff@example.test"}
   ];
   const {financeRecipients}=await import("../api/src/lib/financeNoticeRules.mjs");
-  const notify=load("lineAdminTodoNotification.mjs",{
+  const channel={loginConfigured:true,financeTransferLineEnabled:true,botUserId:"bot-a",accessToken:"token-a"};
+  const {notifyFinanceTransfer:notify,retryFinanceTransfer:retry}=load("lineAdminTodoNotification.mjs",{
     process:{env:{}},createHash,financeRecipients,
-    resolveTenantLineChannel:async()=>({loginConfigured:true,paymentLineEnabled:true,botUserId:"bot-a",accessToken:"token-a"}),
+    resolveTenantLineChannel:async()=>channel,
     listTenantAdmins:async()=>registered,
     financeAssignments:async()=>[{email:"finance@example.test",status:"active"},{email:"staff@example.test",status:"inactive"}],
     getTenantLineRecipient:async (school,email,bot)=>{
@@ -170,10 +194,17 @@ test("finance LINE dispatch contains no transfer details and only reaches assign
       return {lineUserId:"finance-user"};
     },
     pushLineMessage:async (...args)=>outbound.push(args)
-  },"notifyFinanceTransfer");
-  const event={kind:"uniform",id:"private-request-id",reportedAt:"2026-11-17T09:38:00.000Z"};
+  },"{notifyFinanceTransfer,retryFinanceTransfer}");
+  const event={kind:"uniform",id:"private-request-id",reportedAt:new Date(Date.now()-1000).toISOString()};
+  channel.financeTransferLineEnabled=false;
+  assert.equal(await notify("sacred-heart",event),"not_configured");
+  assert.equal(outbound.length,0);
+  channel.financeTransferLineEnabled=true;
   assert.equal(await notify("sacred-heart",event),"sent");
-  assert.equal(await notify("sacred-heart",event),"sent");
+  const record={paymentStatus:"REPORTED_UNVERIFIED",transferReport:{reportedAt:event.reportedAt}};
+  assert.equal(await retry("sacred-heart",event.kind,event.id,{...record,paymentStatus:"VERIFIED"}),"ineligible");
+  assert.equal(await retry("sacred-heart",event.kind,event.id,{...record,transferReport:{reportedAt:"2020-01-01T00:00:00Z"}}),"ineligible");
+  assert.equal(await retry("sacred-heart",event.kind,event.id,record),"sent");
   assert.equal(outbound[0][0],"finance-user");
   assert.match(outbound[0][1],/財務待辦/);
   assert.doesNotMatch(outbound[0][1],/private-request-id/);
