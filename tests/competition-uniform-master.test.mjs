@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
+import {runInNewContext} from "node:vm";
 import {originalCompetitionRoster,baseForStudent,latestCompetitionRequest,overlayMaster,comparable} from "../api/src/lib/competitionMasterRules.mjs";
 const st={rowKey:"113001",studentName:"李旭恩",grade:"4C",instrument:"大提琴"};
 const applicant=(acquisition,status="PENDING",createdAt="2026-10-18T08:00:00Z")=>({
@@ -65,4 +66,35 @@ test("school roster and CSV are generated from the persistent master only",()=>{
  assert.doesNotMatch(file,/from "\.\/competition-roster-data/);
  assert.match(file,/A團比賽服_正式主檔\.csv/);
  assert.match(file,/unmatched\.length/);
+});
+test("historical public issuance closes the order without inventing arrival data",async()=>{
+ const source=readFileSync(new URL("../api/src/functions/competitionDirectIssue.js",import.meta.url),"utf8")
+  .replace(/^import .*;$/gm,"");
+ const rows=new Map([
+  ["order",{etag:"v1",payload:JSON.stringify(applicant("PUBLIC","ORDERED"))}]
+ ]);
+ const missing=()=>Object.assign(Error("missing"),{statusCode:404});
+ const table={
+  createTable:async()=>{},
+  async getEntity(school,key){assert.equal(school,"sacred-heart");if(!rows.has(key))throw missing();return rows.get(key)},
+  async createEntity(row){assert.equal(row.rowKey,"issued:order");rows.set(row.rowKey,row)},
+  async updateEntity(row,mode,options){assert.equal(options.etag,"v1");rows.set(row.rowKey,row)}
+ };
+ let handler;
+ runInNewContext(source,{
+  app:{http:(_name,route)=>{handler=route.handler}},
+  TableClient:{fromConnectionString:()=>table},
+  getTenantContext:async()=>({schoolId:"sacred-heart",access:{role:"admin",email:"admin@example.invalid"}}),
+  process:{env:{STORAGE_CONNECTION_STRING:"mock"}},
+  json:(value,status=200)=>({value,status})
+ });
+ const submit=()=>handler({json:async()=>({id:"order",etag:"v1",historicalConfirmation:true,note:"校方確認先前已領取"})});
+ const result=await submit();
+ assert.equal(result.status,200);
+ assert.equal(result.value.item.status,"FULFILLED");
+ assert.ok(result.value.item.receiptConfirmedAt);
+ assert.equal(result.value.item.stockReceivedDate,undefined);
+ assert.equal(result.value.item.receivedBy,undefined);
+ assert.equal(rows.get("issued:order").issuedAt,undefined);
+ assert.equal((await submit()).value.alreadyCompleted,true);
 });
