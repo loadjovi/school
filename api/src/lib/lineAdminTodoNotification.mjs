@@ -79,6 +79,7 @@ export async function notifyAdminTodo(schoolId, {id, text, groupRetryKey}) {
 }
 
 export async function retryFinanceTransfer(schoolId, kind, id, report) {
+  if (!labEnvironment() || !buildEnablesLabAdminTodos) return "lab_suppressed";
   // Reuse the original provider retry key while its deduplication window is open.
   const reportedAt = report.transferReport?.reportedAt;
   const age = Date.now() - Date.parse(reportedAt);

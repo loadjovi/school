@@ -537,3 +537,30 @@ test("fee notification retry keeps the initial target and provider retry key", a
   assert.equal(calls[0].request.retryKey, calls[1].request.retryKey);
   assert.equal(calls[1].request.accessToken, "token-school-a");
 });
+
+test("confirmed payments privately notify the bound parent using the correct next step and send once", async () => {
+  const {notifyTenantPaymentVerified:notify}=load("api/src/lib/tenantLineFeeNotice.js",{
+    ...dataTables(),randomUUID,process:{env:{LAB_ENVIRONMENT:"functional-uat"}},
+    workflowLineEnabled:()=>true, lineHash:value=>createHash("sha256").update(value).digest("hex"),
+    resolveTenantLineChannel:async school=>{
+      assert.equal(school,"school-a");
+      return {loginConfigured:true,paymentConfirmationLineEnabled:true,paymentLineEnabled:false,botUserId:botId,accessToken:"school-token"};
+    },
+    getTenantLineRecipient:async (school,email,bot)=>{
+      assert.deepEqual([school,email,bot],["school-a",google.email,botId]);
+      return {lineUserId:userId};
+    },
+    pushLineMessage:async (...args)=>calls.push(args)
+  },";({notifyTenantPaymentVerified})");
+  const calls=[];
+  const order={kind:"regularUniform",id:"order-1",at:new Date().toISOString(),parentEmail:google.email,requestStatus:"APPROVED",verificationNote:"internal only"};
+  assert.equal((await notify("school-a",order)).status,"accepted");
+  assert.equal((await notify("school-a",order)).status,"accepted");
+  assert.equal(calls.length,1);
+  assert.equal(calls[0][0],userId);
+  assert.match(calls[0][1],/【LAB】.*團 T[\s\S]+匯款入帳[\s\S]+備貨／採購/);
+  assert.doesNotMatch(calls[0][1],/internal only/);
+  assert.equal((await notify("school-a",{...order,kind:"yearEndDinner",id:"family-1"})).status,"accepted");
+  assert.doesNotMatch(calls[1][1],/採購/);
+  assert.equal((await notify("school-a",{...order,parentEmail:""})).status,"not_bound");
+});

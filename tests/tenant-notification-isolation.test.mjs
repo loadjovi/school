@@ -6,8 +6,8 @@ import {runInNewContext} from "node:vm";
 import {validateParentLessonReview} from "../api/src/lib/privateLessonReview.mjs";
 
 const root = "../api/src/lib/";
-const load = (name, globals, result) => runInNewContext(
-  readFileSync(new URL(root + name, import.meta.url), "utf8")
+const load = (name, globals, result, transform = source => source) => runInNewContext(
+  transform(readFileSync(new URL(root + name, import.meta.url), "utf8"))
     .replace(/^import .+;$/gm, "").replace(/^export /gm, "") + ";(" + result + ")", globals
 );
 const defaultTenantId = () => "sacred-heart";
@@ -153,7 +153,7 @@ test("pending uniforms notify the same school's group and active bound administr
   assert.match(outbound[2][2].retryKey,/^[0-9a-f-]{36}$/);
 });
 
-test("the named LINE UAT defaults only Sacred Heart finance transfer LINE notifications to enabled", () => {
+test("the named LINE UAT enables Sacred Heart finance transfer and parent confirmation LINE notifications", () => {
   const source = readFileSync(new URL(root + "lineTenantConfig.js", import.meta.url),"utf8");
   const config = source.replace(/^import .+;$/gm,"").replace(/^export /gm,"");
   const env = {LAB_ENVIRONMENT:"functional-uat"};
@@ -165,10 +165,14 @@ test("the named LINE UAT defaults only Sacred Heart finance transfer LINE notifi
   assert.equal(defaultLab("sacred-heart").financeTransferLineEnabled,false);
   assert.equal(namedLab("sacred-heart").financeTransferLineEnabled,true);
   assert.equal(namedLab("sacred-heart").paymentLineEnabled,false);
+  assert.equal(defaultLab("sacred-heart").paymentConfirmationLineEnabled,false);
+  assert.equal(namedLab("sacred-heart").paymentConfirmationLineEnabled,true);
+  assert.equal(namedLab("other-school").paymentConfirmationLineEnabled,false);
   assert.equal(namedLab("sacred-heart",true).financeTransferLineEnabled,false);
   assert.equal(namedLab("other-school").financeTransferLineEnabled,false);
   env.LINE_SACRED_HEART_PAYMENT_NOTIFICATIONS_ENABLED="false";
   assert.equal(namedLab("sacred-heart").financeTransferLineEnabled,false);
+  assert.equal(namedLab("sacred-heart").paymentConfirmationLineEnabled,false);
   delete env.LINE_SACRED_HEART_PAYMENT_NOTIFICATIONS_ENABLED;
   delete env.LAB_ENVIRONMENT;
   assert.equal(namedLab("sacred-heart").financeTransferLineEnabled,false);
@@ -184,8 +188,9 @@ test("finance LINE dispatch contains no transfer details and only reaches assign
   ];
   const {financeRecipients}=await import("../api/src/lib/financeNoticeRules.mjs");
   const channel={loginConfigured:true,financeTransferLineEnabled:true,botUserId:"bot-a",accessToken:"token-a"};
-  const {notifyFinanceTransfer:notify,retryFinanceTransfer:retry}=load("lineAdminTodoNotification.mjs",{
-    process:{env:{}},createHash,financeRecipients,
+  const env={};
+  const globals={
+    process:{env},createHash,financeRecipients,
     resolveTenantLineChannel:async()=>channel,
     listTenantAdmins:async()=>registered,
     financeAssignments:async()=>[{email:"finance@example.test",status:"active"},{email:"staff@example.test",status:"inactive"}],
@@ -194,7 +199,12 @@ test("finance LINE dispatch contains no transfer details and only reaches assign
       return {lineUserId:"finance-user"};
     },
     pushLineMessage:async (...args)=>outbound.push(args)
-  },"{notifyFinanceTransfer,retryFinanceTransfer}");
+  };
+  const bind=(namedLab=false)=>load("lineAdminTodoNotification.mjs",{...globals},"{notifyFinanceTransfer,retryFinanceTransfer}",source=>
+    namedLab?source.replace("const buildEnablesLabAdminTodos = false;","const buildEnablesLabAdminTodos = true;"):source
+  );
+  const {notifyFinanceTransfer:notify,retryFinanceTransfer:retryProduction}=bind();
+  const {retryFinanceTransfer:retryNamedLab}=bind(true);
   const event={kind:"uniform",id:"private-request-id",reportedAt:new Date(Date.now()-1000).toISOString()};
   channel.financeTransferLineEnabled=false;
   assert.equal(await notify("sacred-heart",event),"not_configured");
@@ -202,9 +212,14 @@ test("finance LINE dispatch contains no transfer details and only reaches assign
   channel.financeTransferLineEnabled=true;
   assert.equal(await notify("sacred-heart",event),"sent");
   const record={paymentStatus:"REPORTED_UNVERIFIED",transferReport:{reportedAt:event.reportedAt}};
-  assert.equal(await retry("sacred-heart",event.kind,event.id,{...record,paymentStatus:"VERIFIED"}),"ineligible");
-  assert.equal(await retry("sacred-heart",event.kind,event.id,{...record,transferReport:{reportedAt:"2020-01-01T00:00:00Z"}}),"ineligible");
-  assert.equal(await retry("sacred-heart",event.kind,event.id,record),"sent");
+  assert.equal(await retryProduction("sacred-heart",event.kind,event.id,record),"lab_suppressed");
+  assert.equal(await retryNamedLab("sacred-heart",event.kind,event.id,record),"lab_suppressed");
+  env.LAB_ENVIRONMENT="functional-uat";
+  assert.equal(await retryProduction("sacred-heart",event.kind,event.id,record),"lab_suppressed");
+  assert.equal(outbound.length,1);
+  assert.equal(await retryNamedLab("sacred-heart",event.kind,event.id,{...record,paymentStatus:"VERIFIED"}),"ineligible");
+  assert.equal(await retryNamedLab("sacred-heart",event.kind,event.id,{...record,transferReport:{reportedAt:"2020-01-01T00:00:00Z"}}),"ineligible");
+  assert.equal(await retryNamedLab("sacred-heart",event.kind,event.id,record),"sent");
   assert.equal(outbound[0][0],"finance-user");
   assert.match(outbound[0][1],/財務待辦/);
   assert.doesNotMatch(outbound[0][1],/private-request-id/);

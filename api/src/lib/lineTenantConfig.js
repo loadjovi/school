@@ -47,6 +47,8 @@ function credentials(schoolId, legacy = false) {
   const loginId = setting("LOGIN_CHANNEL_ID"), loginSecret = setting("LOGIN_CHANNEL_SECRET");
   const appOrigin = httpsOrigin(setting("APP_ORIGIN"));
   const paymentNotifications = setting("PAYMENT_NOTIFICATIONS_ENABLED");
+  const isolatedPaymentFlow = paymentNotifications === "true" ||
+    (!paymentNotifications && !legacy && labDemoFeesEnabled(schoolId));
   const loginFingerprint = !legacy && /^\d{6,20}$/.test(loginId) && loginSecret && appOrigin
     ? fingerprint(JSON.stringify([loginId, loginSecret, appOrigin])) : "";
   return {
@@ -54,8 +56,8 @@ function credentials(schoolId, legacy = false) {
     loginId, loginSecret, loginFingerprint, appOrigin,
     parentMenuId: setting("PARENT_RICH_MENU_ID"), staffMenuId: setting("STAFF_RICH_MENU_ID"),
     paymentLineEnabled: paymentNotifications === "true",
-    financeTransferLineEnabled: paymentNotifications === "true" ||
-      (!paymentNotifications && !legacy && labDemoFeesEnabled(schoolId))
+    financeTransferLineEnabled: isolatedPaymentFlow,
+    paymentConfirmationLineEnabled: isolatedPaymentFlow
   };
 }
 
@@ -85,7 +87,7 @@ export async function listTenantLineLoginSchools(tenants) {
 
 function resolveChannel(id, tenant, row) {
   const legacy = id === defaultTenantId() && !row;
-  const {channelSecret, accessToken, loginId, loginSecret, loginFingerprint, appOrigin, parentMenuId, staffMenuId, paymentLineEnabled, financeTransferLineEnabled} = credentials(id, legacy);
+  const {channelSecret, accessToken, loginId, loginSecret, loginFingerprint, appOrigin, parentMenuId, staffMenuId, paymentLineEnabled, financeTransferLineEnabled, paymentConfirmationLineEnabled} = credentials(id, legacy);
   const status = row?.status || (legacy && channelSecret && accessToken ? "active" : "setup");
   const configured = Boolean(
     (tenant?.status === "active" || tenant?.status === "onboarding") &&
@@ -103,7 +105,7 @@ function resolveChannel(id, tenant, row) {
     loginConfigured, loginId: loginConfigured ? loginId : "",
     loginSecret: loginConfigured ? loginSecret : "", appOrigin: loginConfigured ? appOrigin : "",
     oauthVersion: loginConfigured ? fingerprint(row.botUserId + loginFingerprint) : "",
-    parentMenuId, staffMenuId, paymentLineEnabled, financeTransferLineEnabled
+    parentMenuId, staffMenuId, paymentLineEnabled, financeTransferLineEnabled, paymentConfirmationLineEnabled
   };
 }
 

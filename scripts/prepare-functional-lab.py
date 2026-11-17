@@ -172,8 +172,15 @@ def prepare(output: Path, *, line_uat: bool = False) -> None:
         if marker not in current:raise RuntimeError("DEMO fee flag has changed")
         config.write_text(current.replace(marker,"const buildEnablesDemoFees = true;"),encoding="utf-8")
         shutil.copyfile(ROOT/"scripts"/"line-uat-fee-fixture.js",fn_dir/"lineUatFeeFixture.js")
-        fee_page=app/"fee-collections.html"
-        fee_page.write_text(fee_page.read_text(encoding="utf-8").replace('<html lang="zh-Hant">','<html lang="zh-Hant" data-line-uat-fees>'),encoding="utf-8")
+        for filename,attribute in (
+            ("fee-collections.html","data-line-uat-fees"),
+            ("uniform-event-admin.html","data-line-uat-finance-retry"),
+        ):
+            page=app/filename
+            contents=page.read_text(encoding="utf-8")
+            if '<html lang="zh-Hant">' not in contents:
+                raise RuntimeError(f"Unexpected HTML root in {filename}")
+            page.write_text(contents.replace('<html lang="zh-Hant">',f'<html lang="zh-Hant" {attribute}>',1),encoding="utf-8")
 
     # No real identities/records or copied secret settings in the release.
     for forbidden in (api/"local.settings.json",app/".env"):

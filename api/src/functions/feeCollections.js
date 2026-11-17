@@ -4,7 +4,7 @@ import {TableClient} from "@azure/data-tables";
 import {ensureStudentAccess,getTenantContext,json} from "../lib/auth.js";
 import {listUserStudentMappings} from "../lib/storage.js";
 import {tenantFeeEnabled} from "../lib/lineTenantConfig.js";
-import {sendTenantFeeLine} from "../lib/tenantLineFeeNotice.js";
+import {notifyTenantPaymentVerified,sendTenantFeeLine} from "../lib/tenantLineFeeNotice.js";
 import {notifyFinanceTransfer} from "../lib/lineAdminTodoNotification.mjs";
 import {
   FEE_PROJECT_KINDS,FEE_PROJECT_STATUSES,PAYMENT_STATUSES,canParentReport,isIsoDate,isSafeId,
@@ -189,10 +189,14 @@ async function saveProjectRow(client,schoolId,project,row,access,action){
   return next;
 }
 
-function notifyParent(schoolId, project, association, event, parentEmail){
+function notifyParent(schoolId, project, association, event, parentEmail, source){
+  if(event.action==="VERIFIED"){
+    return notifyTenantPaymentVerified(schoolId,{
+      id:association.sourceId,at:event.at,parentEmail:recipient(parentEmail),kind:source.kind,requestStatus:source.status
+    });
+  }
   const labels={
     REPORTED:"已收到匯款回報，等待財務核帳",
-    VERIFIED:"匯款已確認入帳",
     CORRECTION_REQUESTED:"匯款資料需要補正，請登入平台查看"
   };
   return sendTenantFeeLine(schoolId,{
@@ -265,7 +269,7 @@ app.http("feeCollectionTransfers",{
         if(access.role!=="admin"||access.capabilities?.financeVerifier!==true)return fail("僅指定財務人員可重試通知",403);
         const event=history.at(-1);
         if(!event||!["REPORTED","VERIFIED","CORRECTION_REQUESTED"].includes(event.action)||!event.lineRecipient)return fail("目前沒有可重試的 LINE 通知",409);
-        const lineNotification=await notifyParent(schoolId,project,association,event,event.lineRecipient);
+        const lineNotification=await notifyParent(schoolId,project,association,event,event.lineRecipient,source);
         return json({lineNotification});
       }
       if(association.sourceType==="uniform"&&(source.kind!=="regularUniform"||["PENDING","CANCELLED"].includes(source.status))||
@@ -290,10 +294,10 @@ app.http("feeCollectionTransfers",{
       if(source.paymentStatus!==PAYMENT_STATUSES.REPORTED_UNVERIFIED)return fail("此筆目前沒有待核對的匯款",409);
       if(action==="VERIFY"){
         if(source.transferReport?.amount!==amount)return fail("家長回報金額與應繳金額不同，請先要求補正",409);
-        const verified=validateVerification(body,source.transferReport.amount),next={...sourcePayload,paymentStatus:PAYMENT_STATUSES.VERIFIED,verifiedBy:String(access.email||"finance"),verifiedAt:timestamp,bankPostedAt:verified.bankPostedAt,verificationNote:verified.note,correctionReason:"",paymentHistory:[...history,{action:"VERIFIED",at:timestamp,amount:verified.amount,actor:String(access.email||""),lineRecipient:history.at(-1)?.lineRecipient||source.parentEmail||association.parentEmail||""}],updatedAt:timestamp};
+        const verified=validateVerification(body,source.transferReport.amount),next={...sourcePayload,paymentStatus:PAYMENT_STATUSES.VERIFIED,verifiedBy:String(access.email||"finance"),verifiedAt:timestamp,bankPostedAt:verified.bankPostedAt,verificationNote:verified.note,correctionReason:"",paymentHistory:[...history,{action:"VERIFIED",at:timestamp,amount:verified.amount,actor:String(access.email||""),lineRecipient:source.parentEmail||history.at(-1)?.lineRecipient||association.parentEmail||""}],updatedAt:timestamp};
         await audit(schoolId,access,"fee.transfer.verify",`${project.id}:${association.id}`,{sourceType:association.sourceType,sourceId:association.sourceId,amount:verified.amount,bankPostedAt:verified.bankPostedAt,note:verified.note});
         await sourceClient.updateEntity({partitionKey:schoolId,rowKey:association.sourceId,payload:JSON.stringify(next),updatedAt:timestamp},"Replace",{etag:loaded.row.etag});
-        const lineNotification=await notifyParent(schoolId,project,association,next.paymentHistory.at(-1),next.paymentHistory.at(-1).lineRecipient);
+        const lineNotification=await notifyParent(schoolId,project,association,next.paymentHistory.at(-1),next.paymentHistory.at(-1).lineRecipient,next);
         return json({paymentStatus:next.paymentStatus,verifiedAt:timestamp,lineNotification});
       }
       if(action==="REQUEST_CORRECTION"){
@@ -301,7 +305,7 @@ app.http("feeCollectionTransfers",{
         const next={...sourcePayload,paymentStatus:PAYMENT_STATUSES.AWAITING_TRANSFER,lastTransferReport:source.transferReport||null,transferReport:null,correctionReason:reason,paymentHistory:[...history,{action:"CORRECTION_REQUESTED",at:timestamp,actor:String(access.email||""),reason,lineRecipient:history.at(-1)?.lineRecipient||source.parentEmail||association.parentEmail||""}],updatedAt:timestamp};
         await audit(schoolId,access,"fee.transfer.correction",`${project.id}:${association.id}`,{sourceType:association.sourceType,sourceId:association.sourceId,reason});
         await sourceClient.updateEntity({partitionKey:schoolId,rowKey:association.sourceId,payload:JSON.stringify(next),updatedAt:timestamp},"Replace",{etag:loaded.row.etag});
-        const lineNotification=await notifyParent(schoolId,project,association,next.paymentHistory.at(-1),next.paymentHistory.at(-1).lineRecipient);
+        const lineNotification=await notifyParent(schoolId,project,association,next.paymentHistory.at(-1),next.paymentHistory.at(-1).lineRecipient,next);
         return json({paymentStatus:next.paymentStatus,correctionReason:reason,lineNotification});
       }
       return fail("不支援的核帳操作");

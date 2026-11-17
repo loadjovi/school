@@ -140,7 +140,9 @@ async function reportTransfer(event){
 async function verifyTransfer(event){
   event.preventDefault();const form=event.currentTarget,values=new FormData(form),amount=Number(form.dataset.amount);
   if(!confirm("已逐一比對銀行實際入帳日期、金額與末五碼，確認入帳？"))return;
-  try{showStatus("正在完成核帳…");await api("fee-collections/transfers",{method:"PATCH",body:JSON.stringify({projectId:form.dataset.project,chargeId:form.dataset.charge,action:"VERIFY",amount,bankPostedAt:values.get("bankPostedAt"),note:values.get("note")})});await loadProjects();showStatus("核帳完成，原團 T／聚餐紀錄已同步更新。") }catch(error){showStatus(error.message,"error")}
+  try{showStatus("正在完成核帳…");const {lineNotification}=await api("fee-collections/transfers",{method:"PATCH",body:JSON.stringify({projectId:form.dataset.project,chargeId:form.dataset.charge,action:"VERIFY",amount,bankPostedAt:values.get("bankPostedAt"),note:values.get("note")})});await loadProjects();
+    const labels={accepted:"LINE 已受理家長通知。",not_bound:"家長尚無此校 LINE 綁定，請家長至平台查看。",disabled:"此校尚未開啟家長入帳 LINE 通知。"};
+    showStatus("已確認入帳。"+(labels[lineNotification?.status]||"家長 LINE 通知尚未確認送出。")) }catch(error){showStatus(error.message,"error")}
 }
 
 async function requestCorrection(event){

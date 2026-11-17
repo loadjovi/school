@@ -584,16 +584,7 @@ async function start(){
  }catch(e){setAuthGate("管理員驗證未完成："+(e.message||String(e))+"。請重新檢查登入。")}
 }
 el("reload").onclick=()=>load().catch(e=>el("status").textContent=e.message);
-function financeCard(item,type){
- const card=document.createElement("div");card.className="inline-finance-item";
- const report=item.transferReport||{},amount=Number(report.amount||item.amount||0);
- const expected=type==="uniform"?item.amount:report.expectedAmount;
- const title=document.createElement("strong");title.textContent=(type==="uniform"?(item.kind==="regularUniform"?"團 T":"A 團比賽服"):(item.kind==="yearEndDinner"?"期末聚餐":"交流／快閃活動"))+"｜"+(type==="uniform"?(uniformStudentNames.get(String(item.studentId))||item.studentId):item.parentEmail);
- const info=document.createElement("p");info.textContent="應繳 NT$ "+Number(expected||0).toLocaleString("zh-TW")+"｜回報 NT$ "+amount.toLocaleString("zh-TW")+"｜家長回報日期 "+(report.transferDate||"未提供")+"｜匯出帳號末五碼 "+(report.lastFive||"未提供");
- const form=document.createElement("form"),date=document.createElement("input"),note=document.createElement("textarea"),submit=document.createElement("button"),message=document.createElement("p");
- date.type="date";date.required=true;note.required=true;note.maxLength=300;note.rows=2;submit.type="submit";submit.textContent="確認已入帳";message.setAttribute("role","status");
- for(const [label,input] of [["銀行實際入帳日期",date],["核帳備註（記錄銀行查核依據）",note]]){const row=document.createElement("label");row.textContent=label;row.append(input);form.append(row)}
- if(!Number.isSafeInteger(expected)||expected<=0||amount!==expected){submit.disabled=true;message.textContent="回報金額與應繳金額不同，請先查明差額。"}
+function appendLabFinanceRetry(card,item,type){
  const retry=document.createElement("button"),retryMessage=document.createElement("p");
  retry.type="button";retry.className="small";retry.textContent="補送財務 LINE 通知";
  retryMessage.setAttribute("role","status");
@@ -612,15 +603,32 @@ function financeCard(item,type){
   }catch(error){retryMessage.textContent=error.message}
   retry.disabled=false;
  });
- form.append(submit,message);card.append(title,info,form,retry,retryMessage);
+ card.append(retry,retryMessage);
+}
+function financeCard(item,type){
+ const card=document.createElement("div");card.className="inline-finance-item";
+ const report=item.transferReport||{},amount=Number(report.amount||item.amount||0);
+ const expected=type==="uniform"?item.amount:report.expectedAmount;
+ const title=document.createElement("strong");title.textContent=(type==="uniform"?(item.kind==="regularUniform"?"團 T":"A 團比賽服"):(item.kind==="yearEndDinner"?"期末聚餐":"交流／快閃活動"))+"｜"+(type==="uniform"?(uniformStudentNames.get(String(item.studentId))||item.studentId):item.parentEmail);
+ const info=document.createElement("p");info.textContent="應繳 NT$ "+Number(expected||0).toLocaleString("zh-TW")+"｜回報 NT$ "+amount.toLocaleString("zh-TW")+"｜家長回報日期 "+(report.transferDate||"未提供")+"｜匯出帳號末五碼 "+(report.lastFive||"未提供");
+ const form=document.createElement("form"),date=document.createElement("input"),note=document.createElement("textarea"),submit=document.createElement("button"),message=document.createElement("p");
+ date.type="date";date.required=true;note.required=true;note.maxLength=300;note.rows=2;submit.type="submit";submit.textContent="確認已入帳";message.setAttribute("role","status");
+ for(const [label,input] of [["銀行實際入帳日期",date],["核帳備註（記錄銀行查核依據）",note]]){const row=document.createElement("label");row.textContent=label;row.append(input);form.append(row)}
+ if(!Number.isSafeInteger(expected)||expected<=0||amount!==expected){submit.disabled=true;message.textContent="回報金額與應繳金額不同，請先查明差額。"}
+ form.append(submit,message);card.append(title,info,form);
+ if(document.documentElement.hasAttribute("data-line-uat-finance-retry"))appendLabFinanceRetry(card,item,type);
  form.addEventListener("submit",async event=>{
   event.preventDefault();if(!note.value.trim()){message.textContent="請填寫核帳備註。";return}
   if(!confirm("已比對銀行實際入帳日期、金額及帳號末五碼，確認此款項已入帳？"))return;
   submit.disabled=true;message.textContent="核帳中…";
   try{
-   if(type==="uniform")await api("uniform-events/uniform-transfer-report",{method:"PATCH",body:JSON.stringify({requestId:item.id,etag:item.etag,amount,bankPostedAt:date.value,note:note.value.trim()})});
-   else await api("uniform-events/family-registration",{method:"PATCH",body:JSON.stringify({kind:item.kind,activityId:item.activityId,registrationId:item.id,action:"VERIFY_PAYMENT",amount,bankPostedAt:date.value,note:note.value.trim()})});
-   message.textContent="已確認入帳";await load();await loadInlineFinance();
+   const result=type==="uniform"
+    ?await api("uniform-events/uniform-transfer-report",{method:"PATCH",body:JSON.stringify({requestId:item.id,etag:item.etag,amount,bankPostedAt:date.value,note:note.value.trim()})})
+    :await api("uniform-events/family-registration",{method:"PATCH",body:JSON.stringify({kind:item.kind,activityId:item.activityId,registrationId:item.id,action:"VERIFY_PAYMENT",amount,bankPostedAt:date.value,note:note.value.trim()})});
+   const labels={accepted:"LINE 已受理家長通知。",not_bound:"家長尚無此校 LINE 綁定，請家長至平台查看。",disabled:"此校尚未開啟家長入帳 LINE 通知。"};
+   await load();await loadInlineFinance();
+   el("inlineFinanceStatus").prepend("已確認入帳。"+(labels[result.lineNotification?.status]||"家長 LINE 通知尚未確認送出。")+" ");
+
   }catch(error){message.textContent="核帳失敗："+error.message;submit.disabled=false}
  });
  return card;
