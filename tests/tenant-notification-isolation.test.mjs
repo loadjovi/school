@@ -99,7 +99,7 @@ test("webhook links use configured public origin or a relative path",()=>{
     "https://school.example.test/api/line/webhook/sacred-heart");
 });
 
-test("pending competition uniforms notify only the school's bound admin group in immediate modes", async () => {
+test("pending T-shirts and competition uniforms notify only the school's bound admin group in immediate modes", async () => {
   const env = {};
   const outbound = [];
   const target = {targetId:"group-a", targetType:"group", botUserId:"bot-a", mode:"important_and_daily"};
@@ -110,7 +110,7 @@ test("pending competition uniforms notify only the school's bound admin group in
     resolveTenantLineChannel: async school => {assert.equal(school,"sacred-heart");return channel;},
     lineTargetMatchesChannel:(group, bot) => group.botUserId === bot.botUserId,
     pushLineMessage: async (...args) => outbound.push(args)
-  }, "notifyCompetitionUniformReview");
+  }, "notifyUniformReview");
   const request = {kind:"competitionUniform", status:"PENDING", id:"test-request", studentId:"private-id"};
   assert.equal(await notify("sacred-heart", {...request, status:"APPROVED"}), undefined);
   target.mode = "daily_only";
@@ -133,4 +133,12 @@ test("pending competition uniforms notify only the school's bound admin group in
   assert.doesNotMatch(text, /private-id/);
   assert.equal(options.accessToken, "token-a");
   assert.equal(options.retryKey, request.id);
+  const shirt = {...request, kind:"regularUniform", id:"shirt-request"};
+  assert.equal(await notify("sacred-heart", {...shirt, status:"APPROVED"}), undefined);
+  assert.equal(await notify("sacred-heart", {...shirt, kind:"fieldTrip"}), undefined);
+  assert.equal(await notify("sacred-heart", shirt), "sent");
+  assert.equal(outbound.length, 2);
+  assert.equal(outbound[1][0], group);
+  assert.match(outbound[1][1], /團 T 申請待審/);
+  assert.equal(outbound[1][2].retryKey, shirt.id);
 });
