@@ -395,6 +395,7 @@ function table(id,rows,columns,actions=false){
    const issue=r.status==="READY_FOR_PICKUP"&&mayCollect&&(r.received||existingStock)?"<button type='button' data-issue='"+i+"'>"+(r.received?"確認實際發放":"以現有庫存發放")+"</button>":"";
    const needsReceipt=r.status==="ORDERED"||(r.status==="ARRIVED"||r.status==="READY_FOR_PICKUP")&&!r.received;
    const directIssue=r.kind==="A 團比賽服"&&r.status==="ORDERED"&&!r.received&&mayCollect?"<button type='button' data-direct-issue='"+i+"'>驗收到貨並直接交付</button>":"";
+   const historicalIssue=directIssue&&r.acquisition==="PUBLIC"&&r.paymentStatus==="NOT_REQUIRED"?"<button type='button' data-historical-issue='"+i+"'>補登既有領用並結案</button>":"";
    const receive=needsReceipt?"<button type='button' data-receive='"+i+"'>"+(r.received?"同步已入庫狀態":r.status==="ORDERED"?r.kind==="A 團比賽服"?"到貨後入庫（暫不交付）":"驗收到貨並入庫":"補登驗收入庫")+"</button>":"";
    const progress=r.status==="ORDERED"?"<button type='button' data-cancel='"+i+"'>取消申請</button>":next.length?"<select data-index='"+i+"'><option value=''>選擇下一步</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>選擇後執行</button>"+(r.status==="ARRIVED"&&mayCollect&&r.received?"<p class='hint'>選擇「開放領取」後，家長畫面會顯示可以領取，並寄送通知信；實際交付時再按「確認實際發放」。</p>":""):issue||"<span>"+esc(r.statusLabel||r.status)+"</span>";
    const mail=window.uniformPaymentEmailStates?.[r.id];
@@ -402,7 +403,7 @@ function table(id,rows,columns,actions=false){
    const time=value=>value?new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}):"—";
    const notification=payable?"<div class='payment-email-record' role='status'><strong>匯款通知："+esc(mail?labels[mail.status]||"待確認":"通知紀錄未載入，請更新通知紀錄")+"</strong>"+(mail?.lastSentAt?"<p>最後成功寄送："+esc(time(mail.lastSentAt))+"（台灣時間）｜累計 "+Number(mail.sentCount||0)+" 封</p>":"")+(mail?.recipients?.length?"<details><summary>查看各家長通知紀錄</summary>"+mail.recipients.map(p=>"<p>"+esc(p.recipient)+"｜"+esc(labels[p.status]||"待確認")+"<br>最後寄送："+esc(time(p.lastSentAt))+"｜成功 "+Number(p.sentCount||0)+" 次</p>").join("")+"</details>":"")+"</div>":"";
    const remind=payable&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&["","AWAITING_TRANSFER"].includes(String(r.paymentStatus||""))&&Number.isSafeInteger(r.amount)&&r.amount>0?"<button type='button' data-payment-reminder='"+i+"'"+(mail?.reminderSentToday?" disabled":"")+">"+(mail?.reminderSentToday?"今日已通知":"再次寄送匯款提醒 Email")+"</button><p class='hint'>僅提醒尚未回報匯款的家長；同一筆款項每天最多一次。已通知不代表已匯款。</p>":"";
-   controls="<td data-label='狀態管理'>"+directIssue+receive+(r.status==="APPROVED"&&!mayOrder?"<p class='hint'>待財務確認入帳後，才能更新為已統一採購。</p>":"")+progress+procurementAdjust+amount+notification+remind+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
+   controls="<td data-label='狀態管理'>"+directIssue+historicalIssue+receive+(r.status==="APPROVED"&&!mayOrder?"<p class='hint'>待財務確認入帳後，才能更新為已統一採購。</p>":"")+progress+procurementAdjust+amount+notification+remind+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
   }
   return "<tr>"+cells+controls+"</tr>";
@@ -914,6 +915,25 @@ el("requests").addEventListener("click",async e=>{
   finally{await window.refreshPaymentEmailStatus?.();reminder.disabled=false}return;
  }
 
+ if(e.target.dataset.historicalIssue!==undefined){
+  const row=visibleModuleRequests[Number(e.target.dataset.historicalIssue)];
+  if(!row||row.kind!=="competitionUniform"||row.status!=="ORDERED"||pendingRequestIds.has(row.id))return;
+  const student=uniformStudentNames.get(String(row.studentId))||String(row.studentId);
+  if(!confirm("確認 "+student+" 已領用比賽服並結案？本次會記錄補登時間。"))return;
+  pendingRequestIds.add(row.id);
+  e.target.disabled=true;
+  try{
+   await api("uniform-events/competition-direct-issue",{method:"POST",body:JSON.stringify({
+    id:row.id,etag:row.etag,historicalConfirmation:true,note:"校方確認先前已完成領用，補登結案。"
+   })});
+   await load();
+   el("status").textContent="已補登領用並結案";
+  }catch(error){
+   await load();
+   el("status").textContent="補登結果待核對："+error.message;
+  }finally{pendingRequestIds.delete(row.id);e.target.disabled=false}
+  return;
+ }
  if(e.target.dataset.directIssue!==undefined){
   const row=visibleModuleRequests[Number(e.target.dataset.directIssue)];if(!row||row.kind!=="competitionUniform"||row.status!=="ORDERED"||pendingRequestIds.has(row.id))return;
   const cell=e.target.closest("td"),button=e.target;if(cell.querySelector("form"))return;

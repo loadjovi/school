@@ -22,7 +22,7 @@ async function getClients(){
 async function lookup(client,schoolId,id){
  try{return await client.getEntity(schoolId,String(id))}catch(e){if(e.statusCode===404)return null;throw e}
 }
-export async function upsertCurrentCompetitionMaster(schoolId,student,request,actor="system"){
+export async function upsertCurrentCompetitionMaster(schoolId,student,request,actor="system",confirmHistoricalReceipt=false){
  const id=String(student?.rowKey||student?.studentId||"");
  const base=baseForStudent(student);
  if(!id||!base)return null;
@@ -32,11 +32,11 @@ export async function upsertCurrentCompetitionMaster(schoolId,student,request,ac
   const old=prev?JSON.parse(prev.payload||"{}"):base;
   // Rebuild current mutable fields from the original migration seed each time:
   // cancelling an unfulfilled request restores the genuine original state.
-  const current=overlayMaster({...base,received:old.received===true||base.received},request,student);
+  const current=overlayMaster({...base,received:old.received===true||base.received||confirmHistoricalReceipt},request,student);
   if(prev&&comparable(old)===comparable(current))return {...current,studentId:id};
   const changed=comparable(old)!==comparable(current);
   if(changed){
-   await auditClient.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"competition.master.replace",
+   await auditClient.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:confirmHistoricalReceipt?"competition.master.confirm_receipt":"competition.master.replace",
     subjectId:id,actor:String(actor).slice(0,200),at:new Date().toISOString(),
     details:JSON.stringify({before:old,after:current}).slice(0,30000)});
   }

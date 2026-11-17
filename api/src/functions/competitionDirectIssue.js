@@ -15,10 +15,11 @@ app.http("competitionDirectIssue",{
   if(ctx.access.role!=="admin")return fail("僅校方管理員可確認到貨與交付",403);
   try{
    const input=await request.json();
+   const historical=input?.historicalConfirmation===true;
    if(!validId(input?.id)||typeof input.etag!=="string"||input.etag.length>200||
-      typeof input.receivedDate!=="string"||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(input.receivedDate)||
+      (!historical&&(typeof input.receivedDate!=="string"||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(input.receivedDate)||
       !Number.isFinite(Date.parse(input.receivedDate))||
-      typeof input.receivedBy!=="string"||!input.receivedBy.trim()||input.receivedBy.length>100||
+      typeof input.receivedBy!=="string"||!input.receivedBy.trim()||input.receivedBy.length>100))||
       typeof input.note!=="string"||!input.note.trim()||input.note.length>300)
     return fail("請填寫到貨日期、實際領取人及驗收交付備註，並重新載入申請資料",400);
    const conn=process.env.STORAGE_CONNECTION_STRING;if(!conn)throw Error("Storage unavailable");
@@ -28,33 +29,34 @@ app.http("competitionDirectIssue",{
    const before=JSON.parse(order.payload||"{}");
    if(before.kind!=="competitionUniform"||before.status!=="ORDERED"&&before.status!=="FULFILLED")return fail("僅可將已採購的 A 團比賽服直接交付",409);
    if(!["PUBLIC","PURCHASE"].includes(before.acquisition))return fail("請先確認此筆比賽服的取得方式",409);
+   if(historical&&(before.acquisition!=="PUBLIC"||before.paymentStatus!=="NOT_REQUIRED"))return fail("補登限無須付款的公費比賽服",409);
    if(before.acquisition==="PURCHASE"&&before.paymentStatus!=="VERIFIED")return fail("買斷申請須先完成財務核帳，才可交付",409);
+   const source=historical?"historical_confirmation":"direct_arrival";
    const issuedKey="issued:"+input.id,issued=await get(inventory,schoolId,issuedKey);
    if(before.status==="FULFILLED"){
-    if(issued?.source==="direct_arrival")return json({item:{...before,id:input.id,etag:order.etag},alreadyCompleted:true});
+    if(issued?.source===source)return json({item:{...before,id:input.id,etag:order.etag},alreadyCompleted:true});
     return fail("這筆申請已有其他發放紀錄，請重新整理",409);
    }
-   if(issued&&issued.source!=="direct_arrival")return fail("已有其他發放紀錄，請先核對",409);
+   if(issued&&issued.source!==source)return fail("已有其他發放紀錄，請先核對",409);
    if(!issued){
     if(input.etag!==order.etag)return fail("申請資料已更新，請重新整理後再確認",409);
     if(await get(inventory,schoolId,"received:"+input.id))return fail("此筆已辦理正式入庫，請使用原本的庫存發放流程",409);
     const now=new Date().toISOString();
     const ledger={partitionKey:schoolId,rowKey:issuedKey,requestId:input.id,studentId:before.studentId,
      kind:before.kind,style:before.style||"",size:before.size,quantity:1,
-     source:"direct_arrival",receivedDate:input.receivedDate,receivedAt:now,
-     issuedAt:now,issuedBy:String(ctx.access.email||"admin"),receivedBy:input.receivedBy.trim(),note:input.note.trim()};
+     source,issuedBy:String(ctx.access.email||"admin"),note:input.note.trim(),
+     ...(historical?{confirmedAt:now}:{receivedDate:input.receivedDate,receivedAt:now,issuedAt:now,receivedBy:input.receivedBy.trim()})};
     try{await inventory.createEntity(ledger)}catch(error){
      if(error.statusCode===409)return fail("此筆已有人確認交付，請重新整理",409);
      if(!await get(inventory,schoolId,issuedKey))throw error;
     }
    }
    const record=issued||await get(inventory,schoolId,issuedKey);
-   if(record?.source!=="direct_arrival"||record.requestId!==input.id||record.studentId!==before.studentId||record.quantity!==1)
+   if(record?.source!==source||record.requestId!==input.id||record.studentId!==before.studentId||record.quantity!==1)
     return fail("交付紀錄與申請不符，請人工核對",409);
    const updatedAt=new Date().toISOString();
-   const next={...before,status:"FULFILLED",stockReceivedAt:record.receivedAt,stockReceivedDate:record.receivedDate,
-    issuedAt:record.issuedAt,issuedBy:record.issuedBy,receivedBy:record.receivedBy,
-    issuedQuantity:1,issueNote:record.note,fulfillmentSource:"direct_arrival",updatedAt};
+   const next={...before,status:"FULFILLED",issuedBy:record.issuedBy,issuedQuantity:1,issueNote:record.note,fulfillmentSource:source,updatedAt,
+    ...(historical?{receiptConfirmedAt:record.confirmedAt}:{stockReceivedAt:record.receivedAt,stockReceivedDate:record.receivedDate,issuedAt:record.issuedAt,receivedBy:record.receivedBy})};
    try{await orders.updateEntity({partitionKey:schoolId,rowKey:input.id,payload:JSON.stringify(next),updatedAt},"Replace",{etag:order.etag})}
    catch(error){if(error.statusCode===412)return fail("交付紀錄已建立，申請狀態待同步；請重新整理後重試，不會重複發放或異動庫存",409);throw error}
    return json({item:{...next,id:input.id},alreadyCompleted:Boolean(issued)});

@@ -4,7 +4,7 @@ const safe=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt
 const norm=value=>String(value||"").trim().normalize("NFC");
 const root=document.getElementById("competitionRosterPreview");
 if(root){
- let masterRows=[],returns=[],issues=[],unmatched=[],loaded=false,lastError="";
+ let masterRows=[],returns=[],issues=[],unmatched=[],loaded=false,historicalReceiptAvailable=false,lastError="";
  const sourceLabel={PUBLIC:"公費",PURCHASE:"買斷",RENTAL:"租借",PENDING:"待確認"};
  const stepLabel={PENDING:"待審核",APPROVED:"已核准",ORDERED:"已採購",ARRIVED:"已到貨",READY_FOR_PICKUP:"待領取",FULFILLED:"已完成領用",CANCELLED:"已取消"};
  const paymentLabel={AWAITING_TRANSFER:"待匯款",REPORTED_UNVERIFIED:"待核帳",VERIFIED:"已核帳",NOT_REQUIRED:"無須付款"};
@@ -49,6 +49,22 @@ if(root){
     '<td><details class="competition-roster-detail"><summary class="roster-status'+(returned||!row.received?' is-pending':'')+'">'+safe(received)+'</summary><div>'+
     safe(detail)+'<br>樂器：'+safe(row.instrument||"—")+'<br>學號：'+safe(row.studentId)+
     (returned?'<br>歸還入庫日期：'+safe(date(returned.stockedAt)):'')+'</div></details></td>';
+   if(historicalReceiptAvailable&&!returned&&!row.received&&!row.requestId){
+    const button=document.createElement("button");
+    button.type="button";
+    button.textContent="補登既有領用";
+    button.addEventListener("click",async()=>{
+     if(!confirm("確認 "+row.studentName+" 已經領用比賽服？"))return;
+     button.disabled=true;
+     try{
+      await fetchJson("uniform-events/competition-master",{
+       method:"POST",body:JSON.stringify({studentId:String(row.studentId)})
+      });
+      await reload();
+     }catch(error){alert("補登未完成："+error.message);button.disabled=false}
+    });
+    tr.lastElementChild.append(button);
+   }
    body.append(tr);
   }
   table.append(body);container.append(table);root.append(container);
@@ -56,8 +72,9 @@ if(root){
   foot.textContent="匯出只包含正式主檔的當前資料；新申請已覆蓋原始登記的取得方式／尺寸。每次覆蓋均留下稽核紀錄。";
   root.append(foot);
  }
- async function fetchJson(path){
-  const response=await fetch("/api/"+path,{credentials:"same-origin",cache:"no-store",headers:window.uniformEventAuthHeaders?.()||{}});
+ async function fetchJson(path,options={}){
+  const response=await fetch("/api/"+path,{...options,credentials:"same-origin",cache:"no-store",
+   headers:{"Content-Type":"application/json",...window.uniformEventAuthHeaders?.()}});
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw Error(data.error||"HTTP "+response.status);
   return data;
@@ -70,6 +87,7 @@ if(root){
    const [master,returnData]=await Promise.all([fetchJson("uniform-events/competition-master"),fetchJson("uniform-events/competition-returns")]);
    masterRows=(master.items||[]).slice().sort((a,b)=>shownClass(a).localeCompare(shownClass(b),"en",{numeric:true})||String(a.studentName).localeCompare(String(b.studentName),"zh-Hant"));
    unmatched=master.unmatched||[];returns=returnData.items||[];issues=returnData.issues||[];
+   historicalReceiptAvailable=master.historicalReceiptAvailable===true;
    loaded=true;lastError="";
   }catch(error){loaded=false;lastError="正式比賽服主檔讀取失敗："+error.message+"。請勿以舊名單匯出，稍後重新整理。"}
   finally{loading=false;render()}
