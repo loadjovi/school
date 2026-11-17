@@ -26,15 +26,9 @@ export function isPaidActivityOpen(activity, now = Date.now()) {
     [activity.studentFee,activity.firstAdultFee,activity.extraAdultFee,activity.extraChildFee].some(fee => fee > 0);
 }
 
-const collectingTrip = activity => activity?.module === "fieldTrip" && activity.enabled &&
+export const collectingTrip = activity => activity?.module === "fieldTrip" && activity.enabled &&
   activity.collectionOpen === true && activity.paymentOpen === true && activity.feeStatus === "PUBLISHED" &&
   [activity.studentFee,activity.firstAdultFee,activity.extraAdultFee,activity.extraChildFee].some(fee => fee > 0);
-
-export function paidActivityNotificationKind(previous, next, now) {
-  if (isPaidActivityOpen(next,now) && !isPaidActivityOpen(previous,now)) return "registration";
-  if (collectingTrip(next) && !collectingTrip(previous)) return "payment";
-  return null;
-}
 
 async function registeredPaymentAudience(schoolId, botUserId, activityId) {
   const client = TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantFamilyEventRegistration");
@@ -62,6 +56,7 @@ async function activityParentAudience(schoolId, botUserId, activity) {
 }
 
 export async function notifyPaidActivityOpened(schoolId, activity, openedAt, kind) {
+  if (activity.openAt && Date.parse(activity.openAt) > Date.now()) return {status:"scheduled"};
   if (!workflowLineEnabled()) return {status:"disabled"};
   try {
     const channel = await resolveTenantLineChannel(schoolId);
@@ -76,12 +71,11 @@ export async function notifyPaidActivityOpened(schoolId, activity, openedAt, kin
     url.searchParams.set("schoolId", schoolId);
     url.searchParams.set("paidActivity", activity.module + ":" + activity.id);
     const format = new Intl.DateTimeFormat("zh-TW", {timeZone:"Asia/Taipei",dateStyle:"short",timeStyle:"short",hour12:false});
-    const future = activity.openAt && Date.parse(activity.openAt) > Date.parse(openedAt);
     const dinner = activity.module === "yearEndDinner";
     const text = [
       process.env.LAB_ENVIRONMENT === "functional-uat" ? "【LAB｜付費活動】" : "【付費活動】",
       activity.title,
-      payment ? "已開放已報名家庭繳款。" : future ? "報名開放 " + format.format(new Date(activity.openAt)) : "已開放報名。",
+      payment ? "已開放已報名家庭繳款。" : "已開放報名。",
       !payment && activity.closeAt ? "報名截止 " + format.format(new Date(activity.closeAt)) : "",
       payment ? "請到平台核對應繳金額，依指示匯款並回報。" : dinner ? "請到平台查看活動與費用，決定是否參加。若參加，請依平台指示匯款並回報。"
         : "請到平台查看活動與費用，決定是否報名，再依平台的收款進度繳款。",

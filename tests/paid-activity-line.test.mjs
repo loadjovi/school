@@ -36,20 +36,65 @@ function fixture(){
     },
     lineApi:async(path,options)=>calls.push([path,options])
   };
-  const {paidActivityNotificationKind,notifyPaidActivityOpened}=run("api/src/lib/paidActivityLine.js",scope,"({paidActivityNotificationKind,notifyPaidActivityOpened})");
-  return {calls,registrations,paidActivityNotificationKind,notifyPaidActivityOpened};
+  const logic=run("api/src/lib/paidActivityLine.js",scope,"({isPaidActivityOpen,collectingTrip,notifyPaidActivityOpened})");
+  const schedule=run("api/src/lib/paidActivitySchedule.js",{...logic},"({paidActivitySchedule,dispatchPaidActivityNotices})");
+  return {calls,registrations,...logic,...schedule};
 }
 
-test("paid activities notify when opened or when second-stage payment opens",()=>{
-  const {paidActivityNotificationKind:kind}=fixture();
-  assert.equal(kind({...dinner,enabled:false},dinner,now),"registration");
-  assert.equal(kind(dinner,{...dinner,title:"修正活動名稱"},now),null);
-  assert.equal(kind(null,{...dinner,module:"calendarActivity"},now),null);
-  assert.equal(kind(null,{...dinner,firstAdultFee:0},now),null);
-  assert.equal(kind(null,{...dinner,paymentOpen:false},now),null);
-  assert.equal(kind(null,trip,now),"registration");
-  assert.equal(kind(trip,collection,now),"payment");
-  assert.equal(kind(collection,collection,now),null);
+test("paid activity schedule follows the opening time, including staged collection",()=>{
+  const {paidActivitySchedule:schedule}=fixture();
+  const nextOpening=new Date(now+60000).toISOString();
+  const futureDinner={...dinner,openAt:nextOpening};
+  const make=(beforeRow,previous,next)=>schedule({updatedAt:stamp},beforeRow,previous,next,now);
+  const scheduled=make(null,null,futureDinner);
+  const scheduledNotices=JSON.parse(scheduled.paidLineNotices);
+  assert.equal(scheduled.paidLineDueAt,nextOpening);
+  assert.equal(scheduledNotices.registration.state,"queued");
+  assert.equal(make(scheduled,futureDinner,{...futureDinner,title:"更新名稱"}).paidLineNotices,scheduled.paidLineNotices);
+  const delayed={...futureDinner,openAt:new Date(now+120000).toISOString()};
+  assert.equal(make(scheduled,futureDinner,delayed).paidLineDueAt,delayed.openAt);
+  assert.equal(make(scheduled,futureDinner,{...futureDinner,enabled:false}).paidLineDueAt,"");
+  assert.equal(make(null,null,{...dinner,module:"calendarActivity"}).paidLineDueAt,"");
+  assert.equal(make(null,null,{...dinner,firstAdultFee:0}).paidLineDueAt,"");
+  assert.equal(make(null,null,{...dinner,paymentOpen:false}).paidLineDueAt,"");
+  assert.equal(make(null,null,trip).paidLineDueAt,stamp);
+  assert.equal(JSON.parse(make(null,trip,collection).paidLineNotices).payment.state,"queued");
+  const futureTrip={...trip,openAt:nextOpening};
+  const futureCollection={...collection,openAt:nextOpening,closeAt:new Date(now+180000).toISOString()};
+  const both=make(null,futureTrip,futureCollection);
+  assert.equal(JSON.parse(both.paidLineNotices).payment.at,nextOpening);
+});
+
+test("provider is never called before either kind of notification opens",async()=>{
+  const {calls,notifyPaidActivityOpened:notify}=fixture();
+  const openAt=new Date(Date.now()+60000).toISOString();
+  assert.equal((await notify("school-a",{...dinner,openAt},stamp,"registration")).status,"scheduled");
+  assert.equal((await notify("school-a",{...collection,openAt},stamp,"payment")).status,"scheduled");
+  assert.equal(calls.length,0);
+});
+
+test("due notice dispatch claims an activity once and only inside the opened window",async()=>{
+  const {paidActivitySchedule:schedule,dispatchPaidActivityNotices:dispatch,calls}=fixture();
+  const now=Date.now(), openAt=new Date(now+1000).toISOString();
+  const activity={...dinner,openAt}, data={partitionKey:"school-a",rowKey:"yearEndDinner:d1",
+    updatedAt:new Date(now).toISOString(),payload:JSON.stringify(activity)};
+  let row={...schedule(data,null,null,activity,now),etag:"1"};
+  const table={
+    async getEntity(){return {...row}},
+    async updateEntity(next,mode,{etag}){
+      if(etag!==row.etag)throw Object.assign(new Error("changed"),{statusCode:412});
+      row={...next,etag:String(Number(etag)+1)};
+    }
+  };
+  const snapshot={...row};
+  await dispatch(table,snapshot,now);
+  assert.equal(calls.length,0);
+  // Use an opening already reached for the live-time check inside dispatch.
+  const opened={...activity,openAt:new Date(now-1000).toISOString()};
+  row={...schedule({...data,payload:JSON.stringify(opened)},null,null,opened,now),etag:"2"};
+  await Promise.all([dispatch(table,{...row},now),dispatch(table,{...row},now)]);
+  assert.equal(calls.filter(([path])=>path.startsWith("/v2/")).length,1);
+  assert.equal(row.paidLineDueAt,"");
 });
 
 test("activity announcement targets only the configured group and provides the school's sign-in link",async()=>{

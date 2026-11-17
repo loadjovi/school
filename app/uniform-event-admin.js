@@ -785,6 +785,11 @@ el("config").onsubmit=async e=>{
   const invitation=configResult.activityLineNotification;
   if(invitation){
    const status={disabled:"此環境尚未啟用活動 LINE 通知。",no_recipients:"指定團別目前沒有可發送的 LINE 家長帳號。",failed:"活動 LINE 通知未能全部送出。"};
+   if(invitation.scheduledAt){
+    const time=new Date(invitation.scheduledAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false});
+    status.scheduled="LINE 通知已排程，將於 "+time+"（台灣時間）開放後送出。";
+    status.scheduler_unconfigured="LINE 通知將等到 "+time+"（台灣時間）。排程服務尚未設定，無法自動送出。";
+   }
    const counts=invitation.accepted>0?"LINE 已受理 "+invitation.accepted+" 位家長的活動通知。":"";
    feedback.textContent+=" "+(counts||"")+(invitation.failed>0?"發送失敗 "+invitation.failed+" 位。":status[invitation.status]||"")+(invitation.unbound?"另有 "+invitation.unbound+" 個家長帳號尚未綁定 LINE。":"");
   }

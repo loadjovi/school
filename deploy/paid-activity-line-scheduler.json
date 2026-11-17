@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "workflowName": {"type": "string"},
+    "applicationOrigin": {"type": "string"},
+    "schedulerToken": {"type": "secureString", "minLength": 32}
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('workflowName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "state": "Enabled",
+        "definition": {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "origin": {"type": "String"},
+            "token": {"type": "SecureString"}
+          },
+          "triggers": {
+            "Every_minute": {
+              "type": "Recurrence",
+              "recurrence": {"frequency": "Minute", "interval": 1}
+            }
+          },
+          "actions": {
+            "Send_due_LINE_notices": {
+              "type": "Http",
+              "runAfter": {},
+              "inputs": {
+                "method": "POST",
+                "uri": "@concat(parameters('origin'), '/api/line/paid-activity-notices/dispatch')",
+                "headers": {"Authorization": "@concat('Bearer ', parameters('token'))"}
+              },
+              "runtimeConfiguration": {"secureData": {"properties": ["inputs"]}}
+            }
+          },
+          "outputs": {}
+        },
+        "parameters": {
+          "origin": {"value": "[parameters('applicationOrigin')]"},
+          "token": {"value": "[parameters('schedulerToken')]"}
+        }
+      }
+    }
+  ]
+}

@@ -3,7 +3,7 @@ import { TableClient } from "@azure/data-tables";
 import { randomUUID } from "node:crypto";
 import { getTenantContext, json } from "../lib/auth.js";
 import { syncActivityCalendar, deleteActivityCalendar } from "./calendarEvents.js";
-import {paidActivityNotificationKind,notifyPaidActivityOpened} from "../lib/paidActivityLine.js";
+import {paidActivitySchedule,dispatchPaidActivityNotices} from "../lib/paidActivitySchedule.js";
 import {safePaymentNotifications} from "../lib/paymentNotifications.js";
 
 // Phase 2: tenant-scoped administrative configuration. No automatic activation.
@@ -108,7 +108,7 @@ app.http("uniformEventConfig",{
         const info=JSON.parse(bank.payload||"{}");
         if(!info.bankName||!info.accountHolder||!/^[0-9]{3}$/.test(info.bankCode||"")||!/^[0-9]{6,30}$/.test(info.accountNumber||""))return json({error:"校外活動收款帳戶資料不完整。"},400);
       }
-      const record={
+      let record={
         partitionKey:schoolId,rowKey:rowKey(data.module,data.id),
         payload:JSON.stringify({...data,enabled:data.enabled===true}),
         updatedAt:new Date().toISOString(),updatedBy:String(access.email||"admin").slice(0,255)
@@ -118,6 +118,8 @@ app.http("uniformEventConfig",{
       const audit=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantUniformEventAudit");
       await audit.createTable().catch(e=>{if(e.statusCode!==409)throw e});
       const previous = before ? JSON.parse(before.payload||"{}") : null;
+      const savedAt = Date.parse(record.updatedAt);
+      record = paidActivitySchedule(record,before,previous,data,savedAt);
       try{
         if (before) await client.updateEntity(record,"Replace",{etag:before.etag});
         else await client.createEntity(record);
@@ -126,12 +128,15 @@ app.http("uniformEventConfig",{
         throw error;
       }
       await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"config.save",subjectId:record.rowKey,actor:String(access.email||"admin").slice(0,200),at:record.updatedAt,details:JSON.stringify({before:before?JSON.parse(before.payload||"{}"):null,after:JSON.parse(record.payload)}).slice(0,20000)});
-      const lineNotice = paidActivityNotificationKind(previous,data,Date.parse(record.updatedAt));
-      const [paymentNotification,activityLineNotification] = await Promise.all([
+      const [paymentNotification,lineResults] = await Promise.all([
         ["fieldTrip","yearEndDinner"].includes(data.module)?safePaymentNotifications(schoolId,{scope:{kind:"activity",module:data.module,id:data.id}}):null,
-        lineNotice?notifyPaidActivityOpened(schoolId,data,record.updatedAt,lineNotice):null,
+        record.paidLineDueAt && Date.parse(record.paidLineDueAt)<=Date.now()
+          ? client.getEntity(schoolId,record.rowKey).then(row=>dispatchPaidActivityNotices(client,row)) : [],
         ["fieldTrip","calendarActivity"].includes(data.module)?syncActivityCalendar(schoolId,access,data):null
       ]);
+      const scheduledAt = record.paidLineDueAt;
+      const activityLineNotification = lineResults[0] || (scheduledAt && Date.parse(scheduledAt)>savedAt
+        ? {status:process.env.LINE_PAID_ACTIVITY_SCHEDULER_TOKEN ? "scheduled" : "scheduler_unconfigured",scheduledAt} : null);
       return json({item:publicValue(record),paymentNotification,activityLineNotification});
     }catch(error){
       if(error instanceof SyntaxError||String(error.message||"").startsWith("Invalid")||String(error.message||"").includes("requires")||/^(活動|時間|備註|請選擇|演出)/.test(String(error.message||"")))return json({error:error.message},400);
