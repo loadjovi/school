@@ -4,21 +4,16 @@ import {
   ensureTenantTables,table,rowKey,listByStudent,getTeacherDirectory,listUserStudentMappings,getStudentMaster,getTenantDirectory,
   tenantStudentPartition,activityStudentId
 } from "../lib/storage.js";
-import { sendPrivateLessonWorkflowEmail } from "../lib/email.js";
+import { formatPrivateLessonNotice,sendPrivateLessonWorkflowEmail } from "../lib/email.js";
 import { getSystemSettings } from "../lib/settings.js";
 import {notifyAdminTodo} from "../lib/lineAdminTodoNotification.mjs";
+import {notifyPrivateLessonLine} from "../lib/linePrivateLesson.js";
+import {validateParentLessonReview} from "../lib/privateLessonReview.mjs";
 import {normalizeWeeklyGoals,readWeeklyGoals,isPublishedLesson} from "../lib/musicLearningGoals.mjs";
 
 const attendanceStatuses=new Set(["present","late","leave","absent"]);
 const teacherCompletionStatuses=new Set(["scheduled","completion_issue"]);
 function clean(v,max=300){return String(v??"").trim().slice(0,max)}
-export function validateParentLessonReview(ratingValue,reviewValue){
-  const rating=Number(ratingValue||0),review=clean(reviewValue,800);
-  if(rating&&(!Number.isInteger(rating)||rating<1||rating>5))return {error:"老師評價必須為 1～5 顆星"};
-  if(rating&&!review)return {error:"已選擇星等，請填寫老師教學評論後再確認完成上課"};
-  if(review&&!rating)return {error:"若要留下老師教學評論，請先選擇 1～5 顆星"};
-  return {rating,review};
-}
 function validTime(v){return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(v||""))}
 function timeMinutes(v){if(!validTime(v))return -1;const [h,m]=String(v).split(":").map(Number);return h*60+m}
 function minutesBetween(start,end){const a=timeMinutes(start),b=timeMinutes(end);return a>=0&&b>a?b-a:-1}
@@ -146,20 +141,26 @@ async function persistNotificationAudit(entity,eventType,result,actorEmail,optio
   try{await table("tenantPrivateLesson").updateEntity(patch,"Merge");return true}
   catch(e){console.error(`Private lesson ${eventType} notification audit failed:`,e);return false}
 }
-async function notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType,target="parents",actorEmail="",actorName="",previous={}}){
+async function notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType,target="parents",actorEmail="",actorName="",previous={},notifyLine=true}){
   try{
     const settings=await getSystemSettings(schoolId);
-    if(!settings.emailNotificationsEnabled)return {status:"disabled",recipientCount:0,sentCount:0,failedCount:0};
     const recipients=[];
     if(target==="parents"||target==="both")recipients.push(...await parentEmailsForStudent(activityStudentId(entity),schoolId));
     if(target==="teacher"||target==="both")recipients.push(String(entity.teacher||"").trim().toLowerCase());
     const unique=[...new Set(recipients.filter(x=>x&&x!==String(actorEmail||"").trim().toLowerCase()))],appUrl=publicAppUrl(request);
     if(!appUrl)console.warn("Unable to resolve public app URL for private lesson email; set APP_PUBLIC_URL in Azure environment variables.");
-    return await sendPrivateLessonWorkflowEmail({schoolId,
+    const notice={schoolId,
       recipients:unique,eventType,schoolName,studentName,teacherName,lessonDate:String(entity.eventDate||""),startTime:String(entity.startTime||""),endTime:String(entity.endTime||""),minutes:Number(entity.minutes||0),
       lessonContent:String(entity.lessonContent||""),previousDate:String(previous.lessonDate||""),previousStartTime:String(previous.startTime||""),previousEndTime:String(previous.endTime||""),
       reason:String(eventType==="rescheduled"?entity.rescheduleReason||"":entity.cancelReason||""),note:String(entity.parentNote||""),actorName,appUrl
-    });
+    };
+    const [mail,lineStatus]=await Promise.all([
+      settings.emailNotificationsEnabled?sendPrivateLessonWorkflowEmail(notice):{status:"disabled",recipientCount:0,sentCount:0,failedCount:0},
+      notifyLine?notifyPrivateLessonLine(schoolId,{
+        recipients:unique,entity,eventType,format:origin=>formatPrivateLessonNotice({...notice,appUrl:origin}).plainText
+      }):undefined
+    ]);
+    return {...mail,lineStatus};
   }catch(e){console.error(`Private lesson ${eventType} email failed:`,e);return {status:"failed",recipientCount:0,sentCount:0,failedCount:1,error:clean(e?.message||e,300)}}
 }
 function emailResponse(result,entity){return {
@@ -310,7 +311,7 @@ app.http("privateLesson",{
         if(!(isAdmin||isTeacher))return json({error:"只有管理員或個別課老師可以重寄個別課 Email"},403);
         const workflow=workflowStatus(entity),eventType=workflow==="scheduled"?"scheduled":workflow==="awaiting_parent"?"completed":"";
         if(!eventType)return json({error:"這筆紀錄目前沒有可重寄的通知"},409);
-        const result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType,target:"parents",actorEmail:"",actorName:a.displayName||teacherName});
+        const result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType,target:"parents",actorEmail:"",actorName:a.displayName||teacherName,notifyLine:false});
         const notificationAuditPersisted=await persistNotificationAudit(entity,eventType,result,a.email,{resend:true});
         return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted});
       }
@@ -326,12 +327,17 @@ app.http("privateLesson",{
         if(validation.error)return json({error:validation.error},400);
         const {rating,review}=validation;
         entity.status=["present","late"].includes(String(entity.actualAttendanceStatus||""))?String(entity.actualAttendanceStatus):"present";
-        entity.teacherRating=rating;entity.teacherReview=review;entity.teacherRatedAt=(rating||review)?now:"";entity.teacherRatedBy=(rating||review)?a.email:"";entity.finalizedAt=now;
+        if(rating||review){
+          entity.teacherRating=rating;entity.teacherReview=review;entity.teacherRatedAt=now;entity.teacherRatedBy=a.email;
+        }
+        entity.finalizedAt=now;
       }else{
         entity.actualAttendanceStatus=["present","late"].includes(String(entity.actualAttendanceStatus||entity.status||""))?String(entity.actualAttendanceStatus||entity.status):"present";
         entity.status="completion_issue";
       }
-      entity.updatedAt=now;await table("tenantPrivateLesson").updateEntity(entity,"Merge");
+      entity.updatedAt=now;
+      try{await table("tenantPrivateLesson").updateEntity(entity,"Merge",{etag:entity.etag})}
+      catch(error){if(error.statusCode===412)return json({error:"個課紀錄剛更新，請重新讀取後再確認"},409);throw error}
       const eventType=action==="confirmed"?"confirmed":"issue",result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType,target:"teacher",actorEmail:a.email,actorName:a.displayName||"家長"});
       const notificationAuditPersisted=await persistNotificationAudit(entity,eventType,result,a.email);
       return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted});

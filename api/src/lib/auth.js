@@ -54,7 +54,7 @@ export async function verifyGoogleToken(token){
 
 export async function verifyGoogle(request){return verifyGoogleToken(googleToken(request))}
 
-function normalizeProfile(profile){
+export function normalizeProfile(profile){
   const sectionAssignments=(parseJsonValue(profile?.sectionAssignments,[])||[]).map(x=>({groupName:String(x?.groupName||"").trim(),section:String(x?.section||"").trim()})).filter(x=>x.groupName&&x.section);
   const ensembleGroups=[...new Set((parseJsonValue(profile?.ensembleGroups,[])||[]).map(String).filter(x=>["A","B"].includes(x)))];
   const comprehensiveEnabled=profile?.comprehensiveEnabled===true;

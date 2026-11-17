@@ -107,15 +107,10 @@ const privateLessonMailCopy={
   issue:{title:"家長回報個別課問題",lead:"家長對本次個別課完成紀錄提出問題，請登入系統確認。",action:"查看回報內容"}
 };
 
-export async function sendPrivateLessonWorkflowEmail({
-  schoolId,recipients=[],eventType="completed",schoolName="",studentName="",teacherName="",lessonDate="",startTime="",endTime="",minutes=0,
+export function formatPrivateLessonNotice({
+  eventType="completed",schoolName="",studentName="",teacherName="",lessonDate="",startTime="",endTime="",minutes=0,
   lessonContent="",previousDate="",previousStartTime="",previousEndTime="",reason="",note="",actorName="",appUrl="",confirmUrl=""
 }={}){
-  const emails=await recipientList(schoolId,recipients);
-  if(!emails.length)return {status:"no_recipients",recipientCount:0,sentCount:0,failedCount:0};
-  const c=tenantEmailConfig(schoolId);
-  if(!c.connectionString||!c.senderAddress)return {status:"not_configured",recipientCount:emails.length,sentCount:0,failedCount:0};
-
   const type=Object.hasOwn(privateLessonMailCopy,eventType)?eventType:"completed",copy=privateLessonMailCopy[type];
   const school=clean(schoolName,120)||"弦樂團管理系統";
   const subject=`【${school}】${clean(studentName,80)||"學生"} ${copy.title}`;
@@ -124,7 +119,7 @@ export async function sendPrivateLessonWorkflowEmail({
   const oldDate=clean(previousDate,20),oldTimeText=[clean(previousStartTime,10),clean(previousEndTime,10)].filter(Boolean).join("～");
   const content=clean(lessonContent,500);
   const why=clean(reason,300),parentNote=clean(note,500),actor=clean(actorName,100);
-  const link=clean(c.appUrl||appUrl||confirmUrl,1000);
+  const link=clean(appUrl||confirmUrl,1000);
   const plainText=[
     `${school}｜${copy.title}`,
     "",
@@ -145,8 +140,18 @@ export async function sendPrivateLessonWorkflowEmail({
   ].filter(Boolean).join("\n");
   const html=`<div style="font-family:Arial,'Noto Sans TC',sans-serif;line-height:1.7;color:#173d31;max-width:640px"><h2 style="color:#1f5a46">🎻 ${esc(school)}｜${esc(copy.title)}</h2><p>${esc(copy.lead)}</p><table style="border-collapse:collapse">${actor?`<tr><td style="padding:4px 12px 4px 0"><b>異動人員</b></td><td>${esc(actor)}</td></tr>`:""}${oldDate?`<tr><td style="padding:4px 12px 4px 0"><b>原日期</b></td><td>${esc(oldDate)}</td></tr>`:""}${oldTimeText?`<tr><td style="padding:4px 12px 4px 0"><b>原時間</b></td><td>${esc(oldTimeText)}</td></tr>`:""}<tr><td style="padding:4px 12px 4px 0"><b>學生</b></td><td>${esc(studentName)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>老師</b></td><td>${esc(teacher)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>日期</b></td><td>${esc(date)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>時間</b></td><td>${esc(timeText)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>分鐘</b></td><td>${Number(minutes||0)} 分鐘</td></tr>${content?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>課程內容</b></td><td>${esc(content)}</td></tr>`:""}${why?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>原因</b></td><td>${esc(why)}</td></tr>`:""}${parentNote?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>備註</b></td><td>${esc(parentNote)}</td></tr>`:""}</table>${link?`<p style="margin-top:20px"><a href="${esc(link)}" style="display:inline-block;background:#1f5a46;color:white;text-decoration:none;padding:10px 18px;border-radius:8px">${esc(copy.action)}</a></p>`:""}<p style="font-size:12px;color:#6c7f77">此信由 ${esc(school)} 系統自動寄出，請勿直接回覆。</p></div>`;
 
+  return {subject,plainText,html};
+}
+
+export async function sendPrivateLessonWorkflowEmail(options={}){
+  const {schoolId,recipients=[]}=options;
+  const emails=await recipientList(schoolId,recipients);
+  if(!emails.length)return {status:"no_recipients",recipientCount:0,sentCount:0,failedCount:0};
+  const c=tenantEmailConfig(schoolId);
+  if(!c.connectionString||!c.senderAddress)return {status:"not_configured",recipientCount:emails.length,sentCount:0,failedCount:0};
+  const message=formatPrivateLessonNotice({...options,appUrl:c.appUrl||options.appUrl});
   const client=new EmailClient(c.connectionString);
-  const results=await Promise.allSettled(emails.map(address=>queueOne(client,c.senderAddress,address,{subject,plainText,html})));
+  const results=await Promise.allSettled(emails.map(address=>queueOne(client,c.senderAddress,address,message)));
   const accepted=results.filter(r=>r.status==="fulfilled").length;
   const failed=results.length-accepted;
   return {

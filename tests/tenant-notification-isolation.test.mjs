@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
+import {validateParentLessonReview} from "../api/src/lib/privateLessonReview.mjs";
 
 const root = "../api/src/lib/";
 const load = (name, globals, result) => runInNewContext(
@@ -206,4 +207,58 @@ test("uniform cancellation sends the stored reason only to the original applican
   assert.equal(outbound[0][0],"applicant-line");
   assert.match(outbound[0][1],/團 T 申請。\n原因：尺寸請重新確認/);
   assert.equal(outbound[0][2].accessToken,"school-token");
+});
+
+test("announcement previews support a new group and deduplicate households and roles",async()=>{
+  const students=[{rowKey:"student-a",groupName:"新團"},{rowKey:"student-b",groupName:"新團"},{rowKey:"student-c",groupName:"A"}];
+  const target="U"+"a".repeat(32);
+  const audience=load("lineAudience.js",{
+    listUserStudentMappings:async schoolStatus=>{
+      assert.equal(schoolStatus,"active");
+      return [{studentId:"student-a",parentEmail:"same@example.test"},{studentId:"student-b",parentEmail:"same@example.test"},{studentId:"student-c",parentEmail:"other@example.test"}];
+    },
+    getStudentAliasInfo:async(id,school)=>{assert.equal(school,"sacred-heart");return {canonicalStudentId:id}},
+    listTenantAdmins:async()=>[{role:"schoolAdmin",status:"active",partitionKey:"same@example.test"}],
+    getTenantLineRecipient:async(school,email,bot)=>{
+      assert.deepEqual([school,email,bot],["sacred-heart","same@example.test","bot-one"]);
+      return {lineUserId:target};
+    }
+  },"{lineAudienceGroups,resolveLineAudience}");
+  assert.ok(audience.lineAudienceGroups(students).includes("新團"));
+  const result=await audience.resolveLineAudience("sacred-heart","bot-one",{students,groups:["新團"],roles:["parent","staff"]});
+  assert.equal(result.matched,1);
+  assert.deepEqual([...result.targets],[target]);
+});
+
+test("a LINE review is restricted to the original recipient, active family link and completed lesson",async()=>{
+  const code="0123456789ABCD",owner="U"+"b".repeat(32),bot="U"+"a".repeat(32);
+  const lesson={completedAt:"lesson-version",status:"teacher_completed",eventDate:"2026-11-17",etag:"v1"};
+  const row={userId:owner,email:"parent@example.test",studentId:"student1",lessonId:"lesson1",
+    completedAt:lesson.completedAt,expiresAt:Date.now()+60_000};
+  let authorized=true,saved;
+  const receive=load("linePrivateLesson.js",{
+    process:{env:{STORAGE_CONNECTION_STRING:"mock"}},workflowLineEnabled:()=>true,validateParentLessonReview,
+    TableClient:{fromConnectionString:()=>({getEntity:async(partition,key)=>{
+      assert.deepEqual([partition,key],[`sacred-heart|${bot}`,code]);return row;
+    }})},
+    getTenantLineRecipient:async()=>({lineUserId:owner}),
+    getMappedStudentsByEmail:async()=>authorized?[{studentId:"student1"}]:[],
+    getStudentAliasInfo:async id=>({canonicalStudentId:id}),
+    ensureTenantTables:async()=>{},
+    tenantStudentPartition:(school,student)=>`${school}|${student}`,
+    table:()=>({getEntity:async()=>lesson,updateEntity:async(patch,_mode,constraints)=>{
+      assert.equal(constraints.etag,"v1");saved=patch;Object.assign(lesson,patch);
+    }})
+  },"receivePrivateLessonReview");
+  const channel={schoolId:"sacred-heart",botUserId:bot};
+  const message="#個課評鑑 "+code+" 5 感謝老師耐心指導";
+  assert.match(await receive(channel,"U"+"c".repeat(32),message),/失效/);
+  authorized=false;
+  assert.match(await receive(channel,owner,message),/失效/);
+  authorized=true;
+  assert.match(await receive(channel,owner,message),/已記錄.*5 星/);
+  assert.equal(saved.teacherRating,5);
+  assert.equal(saved.teacherReview,"感謝老師耐心指導");
+  assert.equal(saved.parentConfirmation,undefined);
+  assert.match(await receive(channel,owner,message),/已收到評鑑/);
 });

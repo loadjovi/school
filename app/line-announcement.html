@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LINE 公告</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    main { max-width: 720px; margin: 0 auto; padding: 20px }
+    fieldset { margin: 18px 0; padding: 12px; border: 1px solid #a9bbb0; border-radius: 8px }
+    fieldset label { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px 8px 0 }
+    fieldset input { width: auto; margin: 0 }
+    textarea { width: 100%; min-height: 130px }
+    #result { min-height: 1.5rem }
+  </style>
+</head>
+<body>
+  <main>
+    <p><a href="/">返回學校後台</a></p>
+    <h1>LINE 公告</h1>
+    <form class="card" id="announcement">
+      <fieldset>
+        <legend>收件角色</legend>
+        <label><input type="checkbox" name="role" value="parent">家長</label>
+        <label><input type="checkbox" name="role" value="teacher">老師</label>
+        <label><input type="checkbox" name="role" value="staff">幹部</label>
+        <label><input type="checkbox" name="role" value="finance">財務幹部</label>
+      </fieldset>
+      <fieldset>
+        <legend>家長與老師的團別範圍</legend>
+        <label><input type="checkbox" name="allSchool">全校</label>
+        <div id="teams"></div>
+        <p>幹部與財務幹部依學校權限選取。</p>
+      </fieldset>
+      <label for="message">公告內容</label>
+      <textarea id="message" name="message" maxlength="1000" required></textarea>
+      <p id="result" aria-live="polite"></p>
+      <button type="submit" class="primary" id="preview" disabled>預覽收件人</button>
+      <button type="button" class="secondary" id="send" hidden>發送至 LINE</button>
+    </form>
+  </main>
+  <script type="module" src="/line-announcement.js"></script>
+</body>
+</html>

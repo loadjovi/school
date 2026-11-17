@@ -36,6 +36,7 @@ function privateLessonHarness({failNotificationAudit=false}={}){
     getStudentMaster:async()=>({studentName:"測試學生"}),getTenantDirectory:async()=>({timezone:"Asia/Taipei",systemName:"測試平台"}),
     tenantStudentPartition:(school,id)=>`${school}|student|${id}`,activityStudentId:row=>row.studentId,
     sendPrivateLessonWorkflowEmail:async options=>{sent.push(options);return {status:"accepted",recipientCount:1,acceptedCount:1,sentCount:0,failedCount:0}},
+    notifyPrivateLessonLine:async()=>"disabled",
     getSystemSettings:async()=>({emailNotificationsEnabled:true}),normalizeWeeklyGoals,readWeeklyGoals,isPublishedLesson,
     process:{env:{}},console:{...console,error:(...args)=>errors.push(args)},Date,Intl,URL,JSON,Set,Map,String,Number,Error,Promise,Array,Object
   };

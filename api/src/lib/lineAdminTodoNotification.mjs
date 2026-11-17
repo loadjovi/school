@@ -8,10 +8,11 @@ import {pushLineMessage} from "./lineMessaging.mjs";
 import {resolveTenantLineChannel,lineTargetMatchesChannel} from "./lineTenantConfig.js";
 
 const buildEnablesLabAdminTodos = false;
+export const workflowLineEnabled = () => !labEnvironment() || buildEnablesLabAdminTodos;
 const immediateModes = new Set(["important_and_daily", "instant_only"]);
 const labEnvironment = () => process.env.LAB_ENVIRONMENT === "functional-uat";
 
-function retryKey(schoolId, eventId, targetId) {
+export function workflowLineRetryKey(schoolId, eventId, targetId) {
   const hex = createHash("sha256").update(JSON.stringify([schoolId,eventId,targetId])).digest("hex");
   return `${hex.slice(0,8)}-${hex.slice(8,12)}-5${hex.slice(13,16)}-a${hex.slice(17,20)}-${hex.slice(20,32)}`;
 }
@@ -24,7 +25,7 @@ async function boundRecipients(schoolId, emails, botUserId) {
 async function sendToTargets(schoolId, channel, targets, eventId, text) {
   if (!targets.size) return "not_bound";
   const results = await Promise.allSettled([...targets].map(([id,key]) =>
-    pushLineMessage(id,text,{accessToken:channel.accessToken,retryKey:key || retryKey(schoolId,eventId,id)})));
+    pushLineMessage(id,text,{accessToken:channel.accessToken,retryKey:key || workflowLineRetryKey(schoolId,eventId,id)})));
   const accepted = results.filter(result => result.status === "fulfilled").length;
   return accepted === targets.size ? "sent" : accepted ? "partial" : "failed";
 }

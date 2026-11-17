@@ -5,7 +5,8 @@ import {getTenantContext,ensureStudentAccess,json} from "../lib/auth.js";
 import {getStudentMaster} from "../lib/storage.js";
 import {familyPaymentInfo} from "../lib/paymentNoticeRules.mjs";
 import {safePaymentNotifications} from "../lib/paymentNotifications.js";
-import {notifyAdminTodo,notifyFinanceTransfer} from "../lib/lineAdminTodoNotification.mjs";
+import {notifyAdminTodo,notifyFinanceTransfer,workflowLineEnabled} from "../lib/lineAdminTodoNotification.mjs";
+import {sendTenantFeeLine} from "../lib/tenantLineFeeNotice.js";
 
 const safeId=s=>typeof s==="string"&&/^[a-zA-Z0-9_-]{1,80}$/.test(s);
 const integer=(n,min,max)=>Number.isSafeInteger(n)&&n>=min&&n<=max;
@@ -152,7 +153,11 @@ app.http("familyEventRegistration",{
      reporting?safePaymentNotifications(schoolId,{scope:{kind:"family",id:actual}}):null,
      reporting?notifyFinanceTransfer(schoolId,{kind:"family",id:actual,reportedAt:next.transferReport.reportedAt}):undefined
    ]);
-   return json({item:{...next,id:actual},paymentNotification,financeLineStatus});
+   const lineNotification=body.action==="VERIFY_PAYMENT"&&workflowLineEnabled()?await sendTenantFeeLine(schoolId,{
+     id:`family:${actual}:verified:${next.verifiedAt}`,at:next.verifiedAt,parentEmail:old.parentEmail,
+     text:`繳費通知｜${old.kind==="yearEndDinner"?"期末聚餐":"活動報名"}\n匯款已確認入帳，請在平台查看。`
+   }):undefined;
+   return json({item:{...next,id:actual},paymentNotification,financeLineStatus,lineNotification});
   }catch(e){console.error("familyEventRegistration",e);return fail("Unable to process family registration",500)}
  }
 });

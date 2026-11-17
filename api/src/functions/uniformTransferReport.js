@@ -1,5 +1,6 @@
 import {safePaymentNotifications} from "../lib/paymentNotifications.js";
-import {notifyFinanceTransfer} from "../lib/lineAdminTodoNotification.mjs";
+import {notifyFinanceTransfer,workflowLineEnabled} from "../lib/lineAdminTodoNotification.mjs";
+import {sendTenantFeeLine} from "../lib/tenantLineFeeNotice.js";
 import {app} from "@azure/functions";
 import {TableClient} from "@azure/data-tables";
 import {randomUUID} from "node:crypto";
@@ -28,7 +29,11 @@ app.http("uniformTransferReport",{methods:["POST","PATCH"],authLevel:"anonymous"
    await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"uniform.transfer.verify",subjectId:b.requestId,actor:String(access.email||"finance"),at:stamp,details:JSON.stringify({amount:old.amount,bankPostedAt:b.bankPostedAt,report:old.transferReport,note:next.verificationNote})});
    try{await t.updateEntity({partitionKey:schoolId,rowKey:b.requestId,payload:JSON.stringify(next),updatedAt:stamp},"Replace",{etag:row.etag})}
    catch(e){if(e.statusCode===412)return fail("Order changed; refresh",409);throw e}
-   return json({paymentStatus:next.paymentStatus,verifiedAt:stamp,verifiedBy:access.email});
+   const lineNotification=workflowLineEnabled()?await sendTenantFeeLine(schoolId,{
+     id:`uniform:${b.requestId}:verified:${stamp}`,at:stamp,parentEmail:old.parentEmail,
+     text:`繳費通知｜${old.kind==="regularUniform"?"團 T":"A 團比賽服"}\n匯款已確認入帳，請在平台查看。`
+   }):undefined;
+   return json({paymentStatus:next.paymentStatus,verifiedAt:stamp,verifiedBy:access.email,lineNotification});
   }
   if(old.paymentStatus==="VERIFIED")return fail("Already verified",409);
   if(old.paymentStatus==="REPORTED_UNVERIFIED")return fail("Transfer already reported",409);

@@ -4,6 +4,7 @@ import {getTenantContext,json} from "../lib/auth.js";
 import {defaultTenantId,tenantIdValue} from "../lib/storage.js";
 import {getTenantLineAccount,recordTenantLineFriendship} from "../lib/tenantLineAccounts.js";
 import {refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
+import {receivePrivateLessonReview} from "../lib/linePrivateLesson.js";
 import {tenantLineParentReply,tenantLineReplyKind,tenantLineStaffReply,tenantLineStaffReplyKind} from "../lib/tenantLineReplies.mjs";
 import {resolveTenantLineChannel,lineTargetMatchesChannel,tenantWebhookLinks} from "../lib/lineTenantConfig.js";
 import {
@@ -50,6 +51,11 @@ async function handleLineWebhook(request,schoolId,legacyRoute){
           continue;
         }
         if(event?.type!=="message"||event?.message?.type!=="text")continue;
+        if(channel.loginConfigured&&/^#個課評鑑(?:\s|$)/u.test(event.message.text)){
+          const result=await receivePrivateLessonReview(channel,userId,event.message.text);
+          await replyLineMessage(event.replyToken,result,options);
+          continue;
+        }
         const staffKind=channel.loginConfigured && tenantLineStaffReplyKind(event.message.text);
         if(staffKind){
           if(userId){
