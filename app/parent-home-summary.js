@@ -18,6 +18,8 @@
   state.parentActivityConfigs=state.parentActivityConfigs||[];
   state.parentActivityLoadedAt=0;
   state.parentActivityLoading=false;
+  let activityScope="",taskBoundary,taskDialog,taskDialogContent="";
+  const shownTasks=new Map();
   state.parentTshirtSizes=null;
   state.parentTshirtSizesLoadedAt=0;
   state.parentTshirtSizesLoading=false;
@@ -42,7 +44,7 @@
       const response=await fetch("/api/uniform-events/tshirt-historical-size",{credentials:"same-origin",cache:"no-store",headers});
       const data=await response.json().catch(()=>({}));
       if(!response.ok){
-        if(response.status===403&&String(data.error||"").includes("尚未啟用")){if(parentTshirtSizeScope()===requestScope)state.parentTshirtSizes=[];return}
+        if(response.status===403&&String(data.error||"").includes("未啟用")){if(parentTshirtSizeScope()===requestScope)state.parentTshirtSizes=[];return}
         throw Error(data.error||("HTTP "+response.status));
       }
       if(parentTshirtSizeScope()===requestScope)state.parentTshirtSizes=Array.isArray(data.items)?data.items:[];
@@ -77,22 +79,97 @@
 
   async function loadParentActivityAlerts(){
     if(state.parentActivityLoading||state.me?.role!=="parent")return;
+    const scope=activityScope;
     state.parentActivityLoading=true;
     try{
       const token=sessionStorage.getItem("google_id_token")||"",school=sessionStorage.getItem("school_context_id")||"",role=sessionStorage.getItem("role_context")||"";
       const headers={...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(school?{"X-School-Id":school}:{}),...(role?{"X-Role-Context":role}:{})};
       const response=await fetch("/api/uniform-events/config",{credentials:"same-origin",cache:"no-store",headers});
       if(!response.ok)throw Error("HTTP "+response.status);
-      const data=await response.json();state.parentActivityConfigs=data.items||[];state.parentActivityLoadedAt=Date.now();
-      if(state.page==="home")render();
-    }catch(error){console.warn("家長活動提醒讀取失敗",error);state.parentActivityLoadedAt=Date.now()}
-    finally{state.parentActivityLoading=false}
+      const data=await response.json();
+      if(isParent()&&parentTshirtSizeScope()===scope)state.parentActivityConfigs=data.items||[];
+    }catch(error){
+      console.warn("家長活動提醒讀取失敗",error);
+      if(isParent()&&parentTshirtSizeScope()===scope)state.parentActivityConfigs=[];
+    }finally{
+      if(isParent()&&parentTshirtSizeScope()===scope){
+        state.parentActivityLoadedAt=Date.now();state.parentActivityLoading=false;
+        if(state.page==="home")render();
+      }
+    }
   }
-  function parentActivityAlert(){
-    const notices=window.parentActivityNotice?.unseen(state.parentActivityConfigs,state.me,state.students||state.me?.students||[state.student])||[];
-    if(!notices.length)return "";
-    return `<div class="notice" style="margin:10px 0;background:#fff4dc;border:1px solid #d8a752"><b>🔔 有 ${notices.length} 筆新活動或活動更新</b><br>${notices.slice(0,2).map(x=>`<span style="display:block;margin-top:6px">${esc(x.title||"活動")}｜${esc(window.parentActivityNotice.activityDate(x))}</span>`).join("")}<a href="/parent-uniform-events.html?view=${notices[0].module==="yearEndDinner"?"events":"performance"}&activity=${encodeURIComponent(window.parentActivityNotice.key(notices[0]))}" style="display:inline-block;margin-top:8px;font-weight:800">查看新活動 ›</a></div>`;
+
+  function parentTasks(){
+    const notice=window.parentActivityNotice;
+    const activities=notice?.registrationTasks(state.parentActivityConfigs,window.getParentActivityRegistrations?.(),state.students)||[];
+    const tasks=activities.map(item=>{
+      const key=notice.key(item);
+      const deadline=item.closeAt?new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",dateStyle:"short",timeStyle:"short",hourCycle:"h23"}).format(new Date(item.closeAt)):"";
+      const view=item.module==="yearEndDinner"?"events":"performance";
+      return {key:key+":"+String(item.closeAt||""),title:item.title||"活動",detail:deadline?"報名截止 "+deadline:notice.activityDate(item),action:"前往報名",href:"/parent-uniform-events.html?view="+view+"&activity="+encodeURIComponent(key)};
+    });
+    for(const item of state.parentTshirtSizes||[]){
+      const issued=item.historicalIssued===true&&item.received!==false;
+      const action=!item.size?"填寫尺寸":item.schoolIssuedAt&&!issued?"確認領取":"";
+      if(!action||!item.studentId)continue;
+      tasks.push({key:"tshirt:"+item.studentId+":"+action,title:"團 T｜"+(item.studentName||item.studentId),action,href:"/parent-uniform-events.html?focus=tshirt-size&studentId="+encodeURIComponent(item.studentId)});
+    }
+    return tasks;
   }
+
+  function tasksDialog(tasks,manual=false){
+    if(!isParent()||state.page!=="home"||!tasks.length){
+      if(taskDialog?.open)taskDialog.close();
+      return;
+    }
+    const scope=parentTshirtSizeScope();
+    const storageKey="parent-tasks-shown:"+scope;
+    if(!shownTasks.has(scope)){
+      let previous=[];
+      try{previous=JSON.parse(sessionStorage.getItem(storageKey)||"[]")}catch{}
+      shownTasks.set(scope,new Set(Array.isArray(previous)?previous:[]));
+    }
+    const shown=shownTasks.get(scope),hasNew=tasks.some(task=>!shown.has(task.key));
+    if(!manual&&!hasNew&&!taskDialog?.open)return;
+    if(!taskDialog){
+      taskDialog=document.createElement("dialog");
+      taskDialog.className="parent-task-dialog";
+      taskDialog.setAttribute("aria-labelledby","parent-task-dialog-title");
+      taskDialog.innerHTML='<h2 id="parent-task-dialog-title">待報名與待處理事項</h2><ul></ul><form method="dialog"><button type="submit" class="secondary" autofocus>稍後處理</button></form>';
+      document.body.append(taskDialog);
+    }
+    const content=tasks.map(task=>`<li><a href="${esc(task.href)}"><strong>${esc(task.title)}</strong>${task.detail?`<small>${esc(task.detail)}</small>`:""}<span>${esc(task.action)} ›</span></a></li>`).join("");
+    if(content!==taskDialogContent){taskDialog.querySelector("ul").innerHTML=content;taskDialogContent=content;}
+    if(!taskDialog.open)taskDialog.showModal();
+    for(const task of tasks)shown.add(task.key);
+    try{sessionStorage.setItem(storageKey,JSON.stringify([...shown]))}catch{}
+  }
+
+  function syncParentTasks(){
+    clearTimeout(taskBoundary);
+    if(!isParent()||state.page!=="home"||!state.student){tasksDialog([]);return}
+    const now=Date.now();
+    const next=state.parentActivityConfigs.flatMap(item=>[Date.parse(item.openAt),Date.parse(item.closeAt)])
+      .reduce((earliest,at)=>at>now?Math.min(earliest,at):earliest,Infinity);
+    if(Number.isFinite(next))taskBoundary=setTimeout(()=>render(),Math.min(next-now,2147483647));
+    if(!state.parentActivityLoading&&!state.parentTshirtSizesLoading)tasksDialog(parentTasks());
+  }
+
+  function parentTaskLauncher(){
+    const count=parentTasks().length;
+    return count?`<button type="button" class="secondary parent-task-launcher" onclick="showParentTasks()">查看待報名與待處理事項（${count}） ›</button>`:"";
+  }
+  window.showParentTasks=()=>tasksDialog(parentTasks(),true);
+  const renderWithParentHome=render;
+  render=function(){const output=renderWithParentHome();syncParentTasks();return output};
+  window.addEventListener("pageshow",event=>{
+    if(!event.persisted||!isParent()||state.page!=="home")return;
+    if(taskDialog?.open)taskDialog.close();
+    state.parentActivityConfigs=[];state.parentActivityLoadedAt=0;
+    state.parentTshirtSizes=null;state.parentTshirtSizesLoadedAt=0;
+    window.refreshParentUniformPayments?.();
+    render();
+  });
 
   const baseRefreshStudent=refreshStudent;
   refreshStudent=async function(){
@@ -324,14 +401,19 @@
 
   home=function(){
     if(!isParent()||!state.student||!baseHome)return baseHome?baseHome():"";
-    syncParentTshirtSizeScope();
-    if(!state.parentActivityLoading&&Date.now()-state.parentActivityLoadedAt>120000)setTimeout(loadParentActivityAlerts,0);
+    const scope=syncParentTshirtSizeScope();
+    if(scope!==activityScope){
+      activityScope=scope;state.parentActivityConfigs=[];state.parentActivityLoadedAt=0;state.parentActivityLoading=false;
+    }
+    if(!state.parentActivityLoading&&Date.now()-state.parentActivityLoadedAt>120000){
+      state.parentActivityLoadedAt=Date.now();setTimeout(loadParentActivityAlerts,0);
+    }
     if(!state.parentTshirtSizesLoading&&Date.now()-state.parentTshirtSizesLoadedAt>120000){state.parentTshirtSizesLoadedAt=Date.now();setTimeout(loadParentTshirtSizes,0)}
     const s=state.summary||{},sectionName=String(state.student.section||"").trim(),latest=latestPractice(),todayRows=todayPractices(),todayMinutes=todayRows.reduce((n,x)=>n+Number(x.minutes||0),0),latestText=latest?`${shortDate(latest.practiceDate)}・${Number(latest.minutes||0)} 分鐘`:"尚無紀錄",todayDone=todayRows.length>0;
     const feedbackStudentId=String(state.student.studentId||"");if(state.parentPracticeFeedbackStudentId!==feedbackStudentId&&!state.parentPracticeFeedbackLoading){state.parentPracticeFeedbackStudentId=feedbackStudentId;setTimeout(()=>loadParentPracticeFeedback(feedbackStudentId),0)}
     const action=todayDone?`<div class="notice"><b>✅ 今天已完成自主練習</b><br><span style="display:block;margin-top:6px">${todayMinutes} 分鐘｜今天已有 ${todayRows.length} 筆紀錄</span></div><button class="primary" onclick="go('record')">查看今日／近期紀錄</button><button class="secondary" style="width:100%;margin-top:10px" onclick="go('practice')">＋ 補登另一筆練習</button>`:`<div class="notice"><b>🎻 今天尚未有自主練習紀錄</b><br><span style="display:block;margin-top:6px">完成練習後，記得幫${esc(state.student.name)}留下紀錄。</span></div><button class="primary" onclick="go('practice')">立即自主練習打卡</button>`;
     const privateLessonPanel=typeof window.privateLessonParentPanels==="function"?window.privateLessonParentPanels("home"):"";
-    return `${tshirtSizeShortcut()}${todayCourseReminder()}<div class="card" id="parentUniformEventsEntry"><h2>🎻 活動與團服</h2>${parentActivityAlert()}<div class="notice">團 T 尺寸補登、比賽服、期末聚餐、校際交流與快閃演出，集中查詢與辦理。</div><button type="button" class="secondary" style="width:100%;margin-top:10px" onclick="go('uniformEvents')">查看我的活動與團服 ›</button></div>${privateLessonPanel}<div class="card hero"><div class="student"><div class="studentleft"><div class="avatar">${esc(state.student.name?.[0]||"學")}</div><div><div class="name">${esc(state.student.name)}</div><div class="muted">${esc(state.student.groupName)}團${sectionName?`｜${esc(sectionName)}`:""}｜${esc(state.student.instrument)}｜${esc(state.student.grade)}</div></div></div><div class="pill">${new Date().getMonth()+1}月</div></div><div style="margin-top:14px;font-weight:900">本月自主練習</div><div class="grid" style="margin-top:8px"><div class="kpi"><b>${s.practiceQualifiedDays||0} 天</b><span>練習達標天數</span></div><div class="kpi"><b>${s.practiceMinutes||0} 分鐘</b><span>累計練習時間</span></div></div><div class="notice" style="margin-top:10px"><b>最近一次自主練習</b><br>${esc(latestText)}</div>${parentMonthlyScoreOverview()}${parentFeedbackCard()}<div class="parent-detail-heading"><b>本月上課出勤明細</b><small>分部／合奏／綜合課與個別課的實際點名紀錄；上課開始後超過 10 分鐘才到課記為遲到，10 分鐘內記為出席。</small></div><div class="grid" style="margin-top:8px">${attendanceKpi("分部課",s.sectionPresent,s.sectionTotal,s.sectionLeave,s.sectionAbsent,sectionName||"目前分部")}${attendanceKpi("合奏課",s.ensemblePresent,s.ensembleTotal,s.ensembleLeave,s.ensembleAbsent,"A／B 團合奏")}${attendanceKpi("綜合課（團體課）",s.comprehensivePresent,s.comprehensiveTotal,s.comprehensiveLeave,s.comprehensiveAbsent,"A／B／儲備團")}${attendanceKpi("個別課",s.privatePresent,s.privateTotal,s.privateLeave,s.privateAbsent,"不納入課程點名 5%")}</div><button class="secondary" style="width:100%;margin-top:12px" onclick="go('record')">查看整學期上課紀錄 ›</button></div>${parentPracticeLeaderboardCard()}<div class="card"><h2>今天要做什麼？</h2>${action}</div><div class="card"><h2>📌 自主練習登記提醒</h2><div class="notice">自主練習紀錄將作為後續練習統計與成績計算依據。為保障學生權益，請家長於每次練習完成後確認紀錄已成功送出，並可至「紀錄」頁再次核對。<br><br><b>達標規則：單日累計自主練習達 20 分鐘以上，計為 1 個達標日；同一天多筆紀錄的分鐘數會累計，但達標日仍以 1 天計算。</b><br><br>若主要登記之家長因出差、工作或其他因素無法操作，可由另一位已綁定之監護人登入完成登記。<b>系統以「學生」為統計單位</b>，不同監護人登記的紀錄皆累計於同一位學生名下。</div></div>${studentSwitcher()}`;
+    return `${tshirtSizeShortcut()}${todayCourseReminder()}<div class="card" id="parentUniformEventsEntry"><h2>🎻 活動與團服</h2>${parentTaskLauncher()}<div class="notice">團 T 尺寸補登、比賽服、期末聚餐、校際交流與快閃演出，集中查詢與辦理。</div><button type="button" class="secondary" style="width:100%;margin-top:10px" onclick="go('uniformEvents')">查看我的活動與團服 ›</button></div>${privateLessonPanel}<div class="card hero"><div class="student"><div class="studentleft"><div class="avatar">${esc(state.student.name?.[0]||"學")}</div><div><div class="name">${esc(state.student.name)}</div><div class="muted">${esc(state.student.groupName)}團${sectionName?`｜${esc(sectionName)}`:""}｜${esc(state.student.instrument)}｜${esc(state.student.grade)}</div></div></div><div class="pill">${new Date().getMonth()+1}月</div></div><div style="margin-top:14px;font-weight:900">本月自主練習</div><div class="grid" style="margin-top:8px"><div class="kpi"><b>${s.practiceQualifiedDays||0} 天</b><span>練習達標天數</span></div><div class="kpi"><b>${s.practiceMinutes||0} 分鐘</b><span>累計練習時間</span></div></div><div class="notice" style="margin-top:10px"><b>最近一次自主練習</b><br>${esc(latestText)}</div>${parentMonthlyScoreOverview()}${parentFeedbackCard()}<div class="parent-detail-heading"><b>本月上課出勤明細</b><small>分部／合奏／綜合課與個別課的實際點名紀錄；上課開始後超過 10 分鐘才到課記為遲到，10 分鐘內記為出席。</small></div><div class="grid" style="margin-top:8px">${attendanceKpi("分部課",s.sectionPresent,s.sectionTotal,s.sectionLeave,s.sectionAbsent,sectionName||"目前分部")}${attendanceKpi("合奏課",s.ensemblePresent,s.ensembleTotal,s.ensembleLeave,s.ensembleAbsent,"A／B 團合奏")}${attendanceKpi("綜合課（團體課）",s.comprehensivePresent,s.comprehensiveTotal,s.comprehensiveLeave,s.comprehensiveAbsent,"A／B／儲備團")}${attendanceKpi("個別課",s.privatePresent,s.privateTotal,s.privateLeave,s.privateAbsent,"不納入課程點名 5%")}</div><button class="secondary" style="width:100%;margin-top:12px" onclick="go('record')">查看整學期上課紀錄 ›</button></div>${parentPracticeLeaderboardCard()}<div class="card"><h2>今天要做什麼？</h2>${action}</div><div class="card"><h2>📌 自主練習登記提醒</h2><div class="notice">自主練習紀錄將作為後續練習統計與成績計算依據。為保障學生權益，請家長於每次練習完成後確認紀錄已成功送出，並可至「紀錄」頁再次核對。<br><br><b>達標規則：單日累計自主練習達 20 分鐘以上，計為 1 個達標日；同一天多筆紀錄的分鐘數會累計，但達標日仍以 1 天計算。</b><br><br>若主要登記之家長因出差、工作或其他因素無法操作，可由另一位已綁定之監護人登入完成登記。<b>系統以「學生」為統計單位</b>，不同監護人登記的紀錄皆累計於同一位學生名下。</div></div>${studentSwitcher()}`;
   };
   if(baseNav){nav=function(){if(state.page==="contextSelect")return baseNav();if(isParent())return `<nav class="nav">${navBtn("home","🏠","首頁")}${navBtn("practice","⏱️","自主打卡")}${navBtn("record","📊","紀錄")}${navBtn("uniformEvents","🎻","活動團服")}</nav>`;return baseNav()}}
   window.parentHomeSummaryReady=true;

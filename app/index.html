@@ -26,7 +26,17 @@
 <body>
   <div id="app"><div class="loading">🎻 系統載入中…</div></div>
   <div id="toast" class="toast"></div>
-  <script src="/webview-guard.js?v=20261107-line-absence-group-tenant-line-20261116-line-staff-session-teacher-line-announcement-parent-identity-paid-activity-school-admin" defer></script>
+  <style>
+    .parent-task-dialog{box-sizing:border-box;width:min(440px,calc(100% - 24px));max-height:calc(100dvh - 32px);overflow:auto;padding:20px;border:1px solid var(--border,#d5e1dc);border-radius:18px;background:#fff;color:var(--text,#16352b);box-shadow:0 12px 46px #16352b33}
+    .parent-task-dialog::backdrop{background:#10241bbb}
+    .parent-task-dialog h2{margin:0 0 12px;font-size:20px}
+    .parent-task-dialog ul{list-style:none;padding:0;margin:0 0 12px;display:grid;gap:8px}
+    .parent-task-dialog a{display:grid;gap:4px;padding:12px;background:var(--notice-bg,#f2f7f5);border:1px solid var(--border,#d5e1dc);border-radius:10px;color:inherit;text-decoration:none;overflow-wrap:anywhere}
+    .parent-task-dialog a span{color:var(--main,#245746);font-weight:700}
+    .parent-task-dialog button,.parent-task-launcher{width:100%;min-height:44px}
+    .parent-task-launcher{margin:0 0 10px}
+  </style>
+  <script src="/webview-guard.js?v=20261107-line-absence-group-tenant-line-20261116-line-staff-session-teacher-line-announcement-parent-identity-paid-activity-school-admin-parent-tasks" defer></script>
   <script>
     (()=>{
       let tries=0;

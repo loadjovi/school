@@ -5,7 +5,7 @@ import {getTenantContext,ensureStudentAccess,json} from "../lib/auth.js";
 import {getStudentMaster} from "../lib/storage.js";
 import {familyPaymentInfo} from "../lib/paymentNoticeRules.mjs";
 import {safePaymentNotifications} from "../lib/paymentNotifications.js";
-import {notifyAdminTodo,notifyFinanceTransfer,retryFinanceTransfer} from "../lib/lineAdminTodoNotification.mjs";
+import {notifyFinanceTransfer,retryFinanceTransfer} from "../lib/lineAdminTodoNotification.mjs";
 import {activityAllowsGroup} from "../lib/paidActivityLine.js";
 import {notifyTenantPaymentVerified} from "../lib/tenantLineFeeNotice.js";
 
@@ -89,7 +89,7 @@ app.http("familyEventRegistration",{
     if(cfg.enabled!==true)return fail("Activity closed",403);
     const time=Date.now();
     if(cfg.openAt&&Date.parse(cfg.openAt)>time)return fail("報名尚未開始，請於開放時間再申請。",403);
-    if(cfg.closeAt&&Date.parse(cfg.closeAt)<time)return fail("活動報名已截止；已報名家庭仍可回報匯款。如需補報名，請聯絡學校。",403);
+    if(cfg.closeAt&&Date.parse(cfg.closeAt)<=time)return fail("活動報名已截止；已報名家庭仍可回報匯款。如需補報名，請聯絡學校。",403);
     const ids=body.studentIds;
     if(!Array.isArray(ids)||ids.length<1||ids.length>10||new Set(ids).size!==ids.length||!ids.every(s=>safeId(s)&&ensureStudentAccess(access,s)))return fail("Select authorized students");
     if(!integer(body.adults,1,20)||!integer(body.extraChildren,0,20))return fail("At least one adult required");
@@ -112,20 +112,21 @@ app.http("familyEventRegistration",{
     const aliasRecord=aliasId&&await get(records,schoolId,aliasId);
     if(previous||(aliasRecord&&ownsRegistration(access,decode(aliasRecord))))return fail("This family has already registered; contact administrator to change attendees",409);
     const timestamp=now();
+    const dinner=body.kind==="yearEndDinner";
     const initialRates=["studentFee","firstAdultFee","extraAdultFee","extraChildFee"].every(k=>integer(cfg[k],0,1000000));
-    const estimate=initialRates?(body.kind==="yearEndDinner"?0:cfg.studentFee)*ids.length+cfg.firstAdultFee+(body.adults-1)*cfg.extraAdultFee+body.extraChildren*cfg.extraChildFee:null;
-    const payload={estimatedAmount:estimate,estimateNotice:body.kind==="yearEndDinner"?"依校方公告費率計算，款項待人工核帳":"初步報價，非實際應繳金額；待報名結束後另行通知匯款",kind:body.kind,activityId:body.activityId,studentIds:ids,studentId:ids[0],adults:body.adults,extraChildren:body.extraChildren,parentEmail:access.email,registrationStatus:"REGISTERED",paymentStatus:body.kind==="yearEndDinner"?"REPORTED_UNVERIFIED":"NOT_OPEN",...(body.kind==="yearEndDinner"?{transferReport:{amount:estimate,lastFive:body.lastFive,transferDate:body.transferDate,reportedAt:timestamp,expectedAmount:estimate}}:{}),createdAt:timestamp,updatedAt:timestamp};
+    const estimate=dinner?feeOf(cfg,body):initialRates?cfg.studentFee*ids.length+cfg.firstAdultFee+(body.adults-1)*cfg.extraAdultFee+body.extraChildren*cfg.extraChildFee:null;
+    const reportsPayment=dinner&&estimate>0;
+    const paymentStatus=reportsPayment?"REPORTED_UNVERIFIED":dinner?"NOT_REQUIRED":"NOT_OPEN";
+    const payload={estimatedAmount:estimate,estimateNotice:dinner?"依校方公告費率計算":"初步報價，非實際應繳金額；待報名結束後另行通知匯款",kind:body.kind,activityId:body.activityId,studentIds:ids,studentId:ids[0],adults:body.adults,extraChildren:body.extraChildren,parentEmail:access.email,registrationStatus:"REGISTERED",paymentStatus,...(reportsPayment?{transferReport:{amount:estimate,lastFive:body.lastFive,transferDate:body.transferDate,reportedAt:timestamp,expectedAmount:estimate}}:{}),createdAt:timestamp,updatedAt:timestamp};
     try{await records.createEntity({partitionKey:schoolId,rowKey:id,payload:JSON.stringify(payload),updatedAt:timestamp})}
     catch(e){if(e.statusCode===409)return fail("This family has already registered",409);throw e}
     await log(schoolId,access,"family.registration",id,{studentIds:ids,adults:body.adults,extraChildren:body.extraChildren});
-    const activityLabel=body.kind==="yearEndDinner"?"期末聚餐":cfg.eventType==="exchange"?"他校交流":"演出／快閃活動";
     const needsVerification=payload.paymentStatus==="REPORTED_UNVERIFIED";
-    const [staffLineStatus,financeLineStatus]=await Promise.all([
-      notifyAdminTodo(schoolId,{id:"registration:"+id,text:`新增 ${activityLabel} 報名待確認。`}),
-      needsVerification?notifyFinanceTransfer(schoolId,{kind:"family",id,reportedAt:payload.transferReport.reportedAt}):undefined
+    const [paymentNotification,financeLineStatus]=await Promise.all([
+      (familyPaymentInfo(cfg,payload).needsPayment||needsVerification)?safePaymentNotifications(schoolId,{scope:{kind:"family",id}}):null,
+      needsVerification?notifyFinanceTransfer(schoolId,{kind:"family",id,reportedAt:payload.transferReport.reportedAt}):undefined,
     ]);
-    const paymentNotification=(familyPaymentInfo(cfg,payload).needsPayment||payload.paymentStatus==="REPORTED_UNVERIFIED")?await safePaymentNotifications(schoolId,{scope:{kind:"family",id}}):null;
-    return json({item:{...payload,id},paymentNotification,staffLineStatus,financeLineStatus},201);
+    return json({item:{...payload,id},paymentNotification,financeLineStatus},201);
    }
    if(request.method!=="PATCH")return fail("Method not allowed",405);
    const id=registrationId(body.kind,body.activityId,access.email);
@@ -152,7 +153,7 @@ app.http("familyEventRegistration",{
     if(cfg.paymentOpen!==true||cfg.feeStatus!=="PUBLISHED")return fail("Payment not open",409);
     const due=feeOf(cfg,old);
     if(due===null||due<=0)return fail("Invalid payment configuration",409);
-    if(!integer(body.amount,1,10000000)||!/^[0-9]{5}$/.test(body.lastFive||"")||!/^\d{4}-\d{2}-\d{2}$/.test(body.transferDate||""))return fail("Transfer date, amount and last five digits required");
+    if(!integer(body.amount,1,10000000)||!/^[0-9]{5}$/.test(body.lastFive||"")||!/^\d{4}-\d{2}-\d{2}$/.test(body.transferDate||"")||!Number.isFinite(Date.parse(body.transferDate)))return fail("Transfer date, amount and last five digits required");
     next.paymentStatus="REPORTED_UNVERIFIED";
     next.transferReport={amount:body.amount,lastFive:body.lastFive,transferDate:body.transferDate,reportedAt:now(),expectedAmount:due};
    }else if(body.action==="VERIFY_PAYMENT"){

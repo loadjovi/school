@@ -1,5 +1,5 @@
 import {confirmedReceived} from "./competition-paper-receipts.js";
-import "./parent-activity-notice.js";
+import "./parent-activity-notice.js?v=20261016-new-activity-alert-parent-tasks";
 import "./uniform-payment-state.js?v=20261026-payment-email";
 import {buildUniformGrowth} from "./uniform-growth.js?v=20261017-first-public";
 import {roster as competitionRoster} from "./competition-roster-data.js";
@@ -86,6 +86,7 @@ eligibleUniforms();
 
 let currentUniformPrices=null;
 const uniformPricePromise=parentApi("uniform-events/prices").then(data=>{currentUniformPrices=data.items||{};return currentUniformPrices});
+let tshirtTaskFocused=false;
 const TSHIRT_SIZES=["8","10","12","XS","S","M","L","XL","2L","3L","5L"];
 async function loadInlineSizes(){
  const host=document.getElementById("inlineTshirtSizes"),status=document.getElementById("inlineTshirtStatus");
@@ -103,7 +104,7 @@ async function loadInlineSizes(){
    const issued=item.historicalIssued===true&&item.received!==false;
    const gradeLabel=grade?grade+"年級領取":"領取年級待確認";
    const line=document.createElement("p");line.textContent=(item.studentName||item.studentId)+"｜團 T："+(item.size||"待填寫")+"｜"+(issued?"已領取 1 件｜"+(item.receivedAt?"家長確認："+new Date(item.receivedAt).toLocaleDateString("zh-TW",{timeZone:"Asia/Taipei"}):gradeLabel):item.schoolIssuedAt?"學校已發放，待家長確認":item.size?"待學校發放":"待填寫尺寸")+"｜"+(item.size?"尺寸已登錄":"尺寸待填寫");summary.append(line);
-   const box=document.createElement("div");box.className="size-row";
+   const box=document.createElement("div");box.className="size-row";box.id="tshirt-size-"+item.studentId;
    const title=document.createElement("strong");title.textContent=(item.studentName||item.studentId)+"｜"+(issued?"已領取 1 件｜僅核對尺寸":item.schoolIssuedAt?"學校已發放，待家長確認":item.size?"待學校發放":"尚未領取｜待填寫尺寸");
    const label=document.createElement("label");label.textContent=issued?"已領取團 T 尺寸":"預計首次公費領用團 T 尺寸";
    const sel=document.createElement("select");sel.setAttribute("aria-label",(item.studentName||item.studentId)+"的團 T 尺寸");
@@ -161,8 +162,15 @@ async function loadInlineSizes(){
    host.append(box);
   }
   renderTshirtPurchase(data.items.filter(item=>item.historicalIssued===true));
-  if(new URLSearchParams(location.search).get("focus")==="tshirt-size"&&window.parent!==window){
-   requestAnimationFrame(()=>window.parent.postMessage({type:"parent-uniform-size-focus"},location.origin));
+  const query=new URLSearchParams(location.search);
+  if(query.get("focus")==="tshirt-size"&&!tshirtTaskFocused){
+   tshirtTaskFocused=true;
+   if(window.parent!==window)requestAnimationFrame(()=>window.parent.postMessage({type:"parent-uniform-size-focus"},location.origin));
+   else {
+    select("uniform");
+    const target=document.getElementById("tshirt-size-"+query.get("studentId"))||host;
+    requestAnimationFrame(()=>{target.scrollIntoView({block:"start"});target.setAttribute("tabindex","-1");target.focus({preventScroll:true})});
+   }
   }
  }catch(e){growthTshirtsLoaded=true;growthTshirtsError=e.message;renderUniformGrowth();host.textContent="無法讀取尺寸補登資料";status.textContent=e.message}
 }
@@ -493,7 +501,7 @@ async function renderInlineActivities(){
   const notice=document.getElementById("newActivityNotice");
   const activityNotice=window.parentActivityNotice;
   function drawNotice(){
-   const unseen=activityNotice?.unseen(cfg,me,students)||[];
+   const unseen=activityNotice.unseen(cfg,me,students).filter(item=>item.module==="calendarActivity"||activityNotice.registrationOpen(item));
    notice.replaceChildren();notice.hidden=!unseen.length;
    if(!unseen.length)return;
    notice.append(element("h2","🔔 新活動或活動更新（"+unseen.length+"）"),element("p","請留意活動日期與注意事項。點選後可直接查看活動。","muted"));
@@ -507,8 +515,12 @@ async function renderInlineActivities(){
    const category=item.module==="yearEndDinner"?"events":"performance";
    select(category);activityNotice.mark(item,me,students);drawNotice();
    const card=document.getElementById("activity_"+activityNotice.key(item));
-   card?.scrollIntoView({behavior:"smooth",block:"start"});
-   card?.querySelector("details.activity-details")?.setAttribute("open","");
+   if(!card)return;
+   const details=card.querySelector("details.activity-details");
+   if(details)details.open=true;
+   const target=details?.querySelector("summary")||card;
+   if(target===card)card.tabIndex=-1;
+   target.focus({preventScroll:true});target.scrollIntoView({block:"start"});
   }
   const history=hosts.history;history.replaceChildren();
   if(!(registration.items||[]).length)history.append(element("p","目前沒有活動報名或付款紀錄。","muted"));
@@ -558,7 +570,7 @@ async function renderInlineActivities(){
     appendActivityRates(card,item);
     const now=Date.now();
     if(item.openAt&&Date.parse(item.openAt)>now){card.append(element("p","報名尚未開始，請於開放時間再回來查看。","status-pill"));host.append(card);continue}
-    if(item.closeAt&&Date.parse(item.closeAt)<now){card.append(element("p","報名已於 "+formatDate(item.closeAt)+" 截止。收款開放僅供已報名家庭回報匯款；若需補報名，請聯絡學校延長報名期限。","status-pill"));host.append(card);continue}
+    if(item.closeAt&&Date.parse(item.closeAt)<=now){card.append(element("p","報名已於 "+formatDate(item.closeAt)+" 截止。收款開放僅供已報名家庭回報匯款；若需補報名，請聯絡學校延長報名期限。","status-pill"));host.append(card);continue}
     const action=element("details",undefined,"activity-details"),summary=element("summary",item.module==="yearEndDinner"?"我要報名餐會":"我要報名此活動");action.append(summary);const form=element("form");form.className="inline-activity-form";
     const studentWrap=element("fieldset");studentWrap.append(element("legend","參加學生"));
     for(const st of students.filter(student=>forStudent(item,student))){const label=element("label");const input=element("input");input.type="checkbox";input.value=st.studentId;label.append(input,document.createTextNode(" "+(st.name||st.studentName||st.studentId)));studentWrap.append(label)}
@@ -615,8 +627,7 @@ async function renderInlineActivities(){
    window.__parentActivityDeepLinkHandled=true;
    const query=new URLSearchParams(location.search),target=query.get("activity"),view=query.get("view");
    const item=cfg.find(x=>activityNotice.key(x)===target);
-   if(item&&activityNotice.unseen([item],me,students).length)openActivity(item);
-   else if(item){select(item.module==="yearEndDinner"?"events":"performance");document.getElementById("activity_"+target)?.scrollIntoView({behavior:"smooth",block:"start"})}
+   if(item&&document.getElementById("activity_"+target))openActivity(item);
    else if(["events","performance","history","uniform"].includes(view))select(view);
   }
  }catch(e){for(const host of Object.values(hosts)){host.replaceChildren();host.append(element("p","資料讀取失敗："+e.message,"hint"))}}

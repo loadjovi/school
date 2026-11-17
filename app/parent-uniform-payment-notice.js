@@ -1,20 +1,22 @@
 (()=>{
   "use strict";
   const baseHome=home,baseGo=go,model=window.uniformPaymentState;
-  let context="",items=null,loading=false,loadedAt=0,error="",generation=0;
+  let context="",items=null,registrations=null,loading=false,loadedAt=0,error="",generation=0;
   const parent=()=>state.me?.role==="parent";
   const scope=()=>parent()?[String(state.me.email||""),sessionStorage.getItem("school_context_id")||state.me.schoolId||""].join("|"):"";
   function syncScope(){
     const next=scope();if(next===context)return;
-    context=next;items=null;loading=false;loadedAt=0;error="";generation++;
+    context=next;items=null;registrations=null;loading=false;loadedAt=0;error="";generation++;
   }
   async function load(){
     syncScope();if(!parent()||loading)return;
     const current=context,version=++generation;loading=true;loadedAt=Date.now();
     try{
-      const [data,families]=await Promise.all([api("/api/uniform-events/requests"),api("/api/uniform-events/family-registration")]);
-      if(!Array.isArray(data.items)||!Array.isArray(families.items))throw Error("付款資料格式不完整");
+      const [uniformResult,familyResult]=await Promise.allSettled([api("/api/uniform-events/requests"),api("/api/uniform-events/family-registration")]);
       if(scope()!==current||generation!==version)return;
+      const data=uniformResult.value,families=familyResult.value;
+      registrations=Array.isArray(families?.items)?families.items:null;
+      if(!Array.isArray(data?.items)||!registrations)throw Error("付款資料格式不完整");
       items=[...data.items,...families.items];error="";
     }catch(cause){
       if(scope()!==current||generation!==version)return;
@@ -24,7 +26,8 @@
     }
   }
   window.refreshParentUniformPayments=()=>{syncScope();return load()};
-  function invalidate(){items=null;loadedAt=0;error="";generation++;loading=false}
+  window.getParentActivityRegistrations=()=>scope()===context?registrations:null;
+  function invalidate(){items=null;registrations=null;loadedAt=0;error="";generation++;loading=false}
   window.openParentUniformPayment=function(id){
     if(!parent()||!items?.some(item=>String(item.id)===id&&(model.due(item)||model.reported(item))))return;
     const item=items.find(item=>String(item.id)===id),family=model.family(item);

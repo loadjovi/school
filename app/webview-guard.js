@@ -140,13 +140,13 @@
     ];
     if(role==="school")return ["/school-access.js?v=20261027-school-followup"];
     if(role==="parent")return [
-      "/parent-activity-notice.js?v=20261016-new-activity-alert",
+      "/parent-activity-notice.js?v=20261016-new-activity-alert-parent-tasks",
       "/uniform-payment-state.js?v=20261026-payment-email",
       "/practice-timer.js?v=20261004-manual4h",
       "/private-lesson-confirmation.js?v=20260929-late10",
       "/parent-semester-attendance.js?v=20261003-practice20",
-      "/parent-home-summary.js?v=20261103-tshirt-size-reminder",
-      "/parent-uniform-payment-notice.js?v=20261026-payment-email",
+      "/parent-home-summary.js?v=20261103-tshirt-size-reminder-parent-tasks",
+      "/parent-uniform-payment-notice.js?v=20261026-payment-email-parent-tasks",
       "/parent-practice-history.js?v=20261003-practice-history-toggle"
     ];
     if(role==="globalAdmin")return [
