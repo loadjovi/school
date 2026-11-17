@@ -7,7 +7,8 @@ import {
   clearOAuthCookie, clearTenantLineSession, createTenantLineOAuth, createTenantLineSession,
   getOrCreateTenantLineAccount, getTenantGoogleLink, lineCookie,
   lineSessionCookie, linkTenantGoogle, LineAccountConflict, tenantLineSession, unlinkTenantGoogle,
-  useTenantLineOAuth, recordTenantLineFriendship
+  useTenantLineOAuth, recordTenantLineFriendship, getTenantLineAccount,
+  createTenantLineLinkConfirmation, readTenantLineLinkConfirmation, clearTenantLineLinkConfirmation
 } from "../lib/tenantLineAccounts.js";
 import {LineMenuSyncError,refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
 import {restoreLabGoogleLineLink} from "../lib/tenantLineLegacyLab.js";
@@ -97,7 +98,7 @@ app.http("tenantLineLoginStart", {
       code_challenge: createHash("sha256").update(txn.verifier).digest("base64url"),
       code_challenge_method: "S256", bot_prompt: "normal"
     });
-    return {...json({url: url.toString()}), headers: privateHeaders, cookies: [txn.cookie]};
+    return {...json({url: url.toString()}), headers: privateHeaders, cookies: [txn.cookie, clearTenantLineLinkConfirmation()]};
   }
 });
 
@@ -126,17 +127,18 @@ app.http("tenantLineLoginCallback", {
         throw new Error("Unverified LINE identity");
       }
       const userId = identity.sub.toLowerCase().replace(/^u/, "U");
-      let account = await getOrCreateTenantLineAccount(schoolId, channel.botUserId, userId, identity.name);
+      const account = await getOrCreateTenantLineAccount(schoolId, channel.botUserId, userId, identity.name);
       if (txn.googleSub) {
-        account = await linkTenantGoogle(schoolId, account, {sub: txn.googleSub, email: txn.googleEmail});
-        resultUrl.pathname = "/fee-collections.html";
-        resultUrl.searchParams.set("line_link", "ok");
+        const pending = await createTenantLineLinkConfirmation(schoolId, account,
+          {sub: txn.googleSub, email: txn.googleEmail}, "google");
+        cookies.push(pending.cookie);
+        resultUrl.searchParams.set("line_link", "confirm");
       } else {
         cookies.push(lineSessionCookie(await createTenantLineSession(schoolId, account)));
         cookies.push(lineCookie("orchestra_google_id_token", "", 0));
         resultUrl.searchParams.set("line_session", schoolId);
       }
-      await Promise.all([tryMenuSync(channel, account), checkFriendship(channel, userId, tokens.access_token)]);
+      await Promise.all([txn.googleSub ? undefined : tryMenuSync(channel, account), checkFriendship(channel, userId, tokens.access_token)]);
     } catch (error) {
       resultUrl.searchParams.set("line_error", error instanceof LineAccountConflict ? "conflict" : "verification");
     }
@@ -149,7 +151,7 @@ app.http("tenantLineLogout", {
   handler: async request => {
     if (request.headers.get("sec-fetch-site") === "cross-site") return json({error: "來源不符"}, 403);
     await clearTenantLineSession(request);
-    return {...json({ok: true}), headers: privateHeaders, cookies: [lineSessionCookie(""), clearOAuthCookie()]};
+    return {...json({ok: true}), headers: privateHeaders, cookies: [lineSessionCookie(""), clearOAuthCookie(), clearTenantLineLinkConfirmation()]};
   }
 });
 
@@ -167,11 +169,13 @@ app.http("tenantLineAccount", {
     const line = session?.schoolId === schoolId ? session.account : null;
     const link = google && await getTenantGoogleLink(schoolId, google.sub);
     const sameOrigin=allowedOrigin(request,channel.appOrigin);
-    const currentLink=google&&access.role==="parent"&&(request.method==="GET"||request.method==="POST"&&sameOrigin)
+    const pending = await readTenantLineLinkConfirmation(request, channel, google, line);
+    const currentLink=!pending&&google&&access.role==="parent"&&(request.method==="GET"||request.method==="POST"&&sameOrigin)
       ? await restoreLabGoogleLineLink(schoolId,channel,google,link):link;
     const account = line || (currentLink?.botUserId === channel.botUserId && currentLink.lineUserId ? currentLink : null);
     const result = {configured: true, bound: Boolean(account), googleLinked: Boolean(account?.googleSub),
-      authProvider: line ? "line" : "google", lineDisplayName: account?.displayName || ""};
+      authProvider: line ? "line" : "google", lineDisplayName: account?.displayName || "",
+      ...(pending ? {pendingLink: {confirmationId: pending.rowKey, googleEmail: pending.googleEmail, lineDisplayName: pending.lineDisplayName}} : {})};
     if (request.method === "GET") return {...json(result), headers: privateHeaders};
     if (!sameOrigin) return json({error: "來源不符"}, 403);
     try {
@@ -187,15 +191,30 @@ app.http("tenantLineAccount", {
         const result = await refreshTenantLineMenu(channel, account, undefined, {verify: true, expectStaff: access.role === "admin"});
         return json(typeof result === "string" ? {audience: result} : result);
       }
+      if (["confirm-link", "cancel-link"].includes(body.action)) {
+        const confirmationId = typeof body.confirmationId === "string" ? body.confirmationId : "";
+        const pair = await readTenantLineLinkConfirmation(request, channel, google, line, confirmationId);
+        if (!pair) return json({error: "帳號確認已逾時或變更，請重新核對 Gmail 與 LINE"}, 409);
+        const cleared = [clearTenantLineLinkConfirmation()];
+        if (body.action === "cancel-link") return {...json({ok: true}), headers: privateHeaders, cookies: cleared};
+        const verifiedLine = await getTenantLineAccount(schoolId, channel.botUserId, pair.lineUserId);
+        if (!verifiedLine) return {...json({error: "LINE 帳號已變更，請重新開始綁定"}, 409), cookies: cleared};
+        const linked = await linkTenantGoogle(schoolId, verifiedLine, {sub: pair.googleSub, email: pair.googleEmail});
+        if (line) {
+          const token = await createTenantLineSession(schoolId, linked);
+          await clearTenantLineSession(request);
+          cleared.push(lineSessionCookie(token));
+        }
+        await tryMenuSync(channel, linked);
+        return {...json({configured: true, bound: true, googleLinked: true, authProvider: line ? "line" : "google",
+          lineDisplayName: linked.displayName}), headers: privateHeaders, cookies: cleared};
+      }
       if (!line || line.botUserId !== channel.botUserId) return json({error: "請先完成此校 LINE 登入"}, 403);
       const verified = await verifyGoogleToken(body?.credential);
       if (!verified) return json({error: "Gmail 驗證失敗"}, 401);
-      const linked = await linkTenantGoogle(schoolId, line, verified);
-      const token = await createTenantLineSession(schoolId, linked);
-      await clearTenantLineSession(request);
-      await tryMenuSync(channel, linked);
-      return {...json({configured: true, bound: true, googleLinked: true, authProvider: "line", lineDisplayName: linked.displayName}),
-        headers: privateHeaders, cookies: [lineSessionCookie(token)]};
+      const {cookie, confirmationId} = await createTenantLineLinkConfirmation(schoolId, line, verified, "line");
+      return {...json({...result, pendingLink: {confirmationId, googleEmail: verified.email, lineDisplayName: line.displayName || ""}}),
+        headers: privateHeaders, cookies: [cookie]};
     } catch (error) {
       if (error instanceof LineAccountConflict || error instanceof LineMenuSyncError) return json({error: error.message}, 409);
       console.error("Tenant LINE account update failed", {schoolId, status: error?.statusCode});

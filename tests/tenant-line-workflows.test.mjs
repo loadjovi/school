@@ -60,7 +60,7 @@ function identities(studentRows = new Set()) {
       return studentRows instanceof Map ? studentRows.get(key) || [] : studentRows.has(key) ? [{}] : [];
     },
     getRegistrationsByEmail: async () => []
-  }, ";({getOrCreateTenantLineAccount,getTenantGoogleLink,getTenantLineRecipient,getTenantLineParentContact,linkTenantGoogle,unlinkTenantGoogle,createTenantLineSession,tenantLineSession,createTenantLineOAuth,useTenantLineOAuth,recordTenantLineFriendship,listTenantLineRecipientStatuses})");
+  }, ";({getOrCreateTenantLineAccount,getTenantGoogleLink,getTenantLineRecipient,getTenantLineParentContact,linkTenantGoogle,unlinkTenantGoogle,createTenantLineSession,tenantLineSession,createTenantLineOAuth,useTenantLineOAuth,recordTenantLineFriendship,listTenantLineRecipientStatuses,createTenantLineLinkConfirmation,readTenantLineLinkConfirmation})");
 }
 
 test("both login methods resolve a single account without crossing schools", async () => {
@@ -122,6 +122,47 @@ test("verified dual enrollment keeps Gmail primary and preserves historical LINE
   const reconnected = await store.linkTenantGoogle(school, replacement, google);
   assert.equal(reconnected.parentAlias, line.parentEmail);
   assert.equal((await store.getTenantLineRecipient(school, line.parentEmail, botId)).lineUserId, userId);
+});
+
+test("two guardians of the same student retain separate verified Gmail and LINE pairs", async () => {
+  const students = new Map(), store = identities(students);
+  const school = "school-a", secondLine = "U" + "c".repeat(32);
+  const secondGoogle = {sub:"second-google-id",email:"second-parent@example.com"};
+  const first = await store.getOrCreateTenantLineAccount(school, botId, userId, "家長");
+  const second = await store.getOrCreateTenantLineAccount(school, botId, secondLine, "家長");
+  for (const email of [first.parentEmail, second.parentEmail, google.email, secondGoogle.email]) {
+    students.set(school + "|" + email, [{studentId:"100001"}]);
+  }
+  await store.linkTenantGoogle(school, first, google);
+  await store.linkTenantGoogle(school, second, secondGoogle);
+  await assert.rejects(store.linkTenantGoogle(school, second, google), /已有其他/);
+  assert.equal((await store.getTenantLineRecipient(school, google.email, botId)).lineUserId, userId);
+  assert.equal((await store.getTenantLineRecipient(school, secondGoogle.email, botId)).lineUserId, secondLine);
+});
+
+test("a link confirmation requires the displayed preview, original login, school and bot", async () => {
+  const store = identities(), schoolId = "school-a", channel = {schoolId, botUserId:botId};
+  const first = await store.getOrCreateTenantLineAccount(schoolId, botId, userId, "家長甲");
+  const second = await store.getOrCreateTenantLineAccount(schoolId, botId, "U"+"c".repeat(32), "家長乙");
+  const otherGoogle = {sub:"other-google",email:"other@example.com"};
+  const chosen = await store.createTenantLineLinkConfirmation(schoolId, first, google, "google");
+  const other = await store.createTenantLineLinkConfirmation(schoolId, second, google, "google");
+  const requestFor = pending => ({headers:new Headers({cookie:pending.cookie.name+"="+pending.cookie.value})});
+  const request = requestFor(chosen);
+  const check = store.readTenantLineLinkConfirmation;
+  assert.equal((await check(request, channel, google, null)).lineDisplayName, "家長甲");
+  assert.equal(await check(request, {...channel,schoolId:"school-b"}, google, null), null);
+  assert.equal(await check(request, {...channel,botUserId:second.lineUserId}, google, null), null);
+  assert.equal(await check(request, channel, otherGoogle, null, chosen.confirmationId), null);
+  assert.equal(await check(requestFor(other), channel, google, null, chosen.confirmationId), null);
+  assert.equal(await check(request, channel, google, null, ""), null);
+  assert.equal(await store.getTenantGoogleLink(schoolId, google.sub), null);
+  const outcomes = await Promise.all([1,2].map(() => check(request, channel, google, null, chosen.confirmationId)));
+  assert.equal(outcomes.filter(Boolean).length, 1);
+  assert.equal(outcomes.find(Boolean).lineUserId, first.lineUserId);
+  const linePending = await store.createTenantLineLinkConfirmation(schoolId, second, otherGoogle, "line");
+  assert.equal(await check(requestFor(linePending), channel, null, first, linePending.confirmationId), null);
+  assert.equal((await check(requestFor(linePending), channel, null, second, linePending.confirmationId)).googleEmail, otherGoogle.email);
 });
 
 test("historical family and fee records require both verified account and current student access", () => {

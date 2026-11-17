@@ -314,3 +314,42 @@ export async function useTenantLineOAuth(request, schoolId, state, config) {
     throw error;
   }
 }
+
+const linkConfirmationCookie = "__Host-school-line-link";
+
+export function clearTenantLineLinkConfirmation() {
+  return lineCookie(linkConfirmationCookie, "", 0);
+}
+
+export async function createTenantLineLinkConfirmation(schoolId, account, google, initiatedBy) {
+  const token = lineRandom();
+  const confirmationId = lineHash(token);
+  await (await writableStore()).createEntity({
+    partitionKey: "link-" + tenantSchoolPartition(schoolId), rowKey: confirmationId,
+    botUserId: account.botUserId, lineUserId: account.lineUserId, lineDisplayName: account.displayName || "",
+    googleSub: google.sub, googleEmail: google.email, initiatedBy, expires: Date.now() + 300000
+  });
+  return {cookie: lineCookie(linkConfirmationCookie, token, 300), confirmationId};
+}
+
+export async function readTenantLineLinkConfirmation(request, channel, google, line, confirmationId) {
+  const token = readCookie(request, linkConfirmationCookie);
+  if (!token) return null;
+  const partitionKey = "link-" + tenantSchoolPartition(channel.schoolId);
+  const row = await read(partitionKey, lineHash(token));
+  if (!row || row.expires <= Date.now() || row.botUserId !== channel.botUserId) return null;
+  const matches = row.initiatedBy === "google"
+    ? row.googleSub === google?.sub && row.googleEmail === google?.email
+    : row.initiatedBy === "line" && row.lineUserId === line?.lineUserId && row.botUserId === line?.botUserId;
+  if (!matches) return null;
+  if (confirmationId !== undefined) {
+    if (row.rowKey !== confirmationId) return null;
+    try {
+      await store().deleteEntity(partitionKey, row.rowKey, {etag: row.etag});
+    } catch (error) {
+      if ([404, 412].includes(error.statusCode)) return null;
+      throw error;
+    }
+  }
+  return row;
+}

@@ -19,6 +19,15 @@ function statusClass(status){return status==="REPORTED_UNVERIFIED"?"reported":st
 function renderLineBinding(){
   const line=state.line;
   if(!line?.configured){$("lineBinding").innerHTML="";return}
+  if(line.pendingLink){
+    const {confirmationId,googleEmail,lineDisplayName}=line.pendingLink;
+    $("lineBinding").innerHTML=`<div class="card"><h2>確認要綁定的帳號</h2>
+      <p>請確認 Gmail 與 LINE 都是您自己的帳號。</p>
+      <dl><dt>Gmail</dt><dd>${esc(googleEmail)}</dd><dt>LINE 名稱</dt><dd>${esc(lineDisplayName||"未提供名稱")}</dd></dl>
+      <div class="actions"><button data-action="confirm-line-link" data-confirmation="${esc(confirmationId)}">確認綁定</button>
+      <button class="secondary" data-action="cancel-line-link" data-confirmation="${esc(confirmationId)}">取消</button></div></div>`;
+    return;
+  }
   const googleAction=line.authProvider==="line"&&!line.googleLinked?'<div id="linkGoogleButton"></div>':"";
   const detach=line.authProvider==="google"&&line.bound?'<button class="secondary" data-action="unbind-line">解除 LINE 綁定</button>':"";
   const attach=line.authProvider==="google"&&!line.bound?'<button data-action="link-line">使用 LINE 授權並綁定</button>':"";
@@ -49,7 +58,7 @@ async function showGoogleLink(){
     google.accounts.id.initialize({client_id:googleClientId,callback:async response=>{
       try{
         state.line=await api("line/school-account",{method:"POST",body:JSON.stringify({credential:response.credential})});
-        renderLineBinding();showStatus("已連結 Gmail，兩種登入方式可使用同一個家長帳號。");
+        renderLineBinding();showStatus("請核對 Gmail 與 LINE 名稱，再確認綁定。");
       }catch(error){showStatus(error.message,"error")}
     }});
     google.accounts.id.renderButton(button,{theme:"outline",size:"large",text:"continue_with",locale:"zh_TW"});
@@ -162,7 +171,7 @@ async function load(){
     const params=new URLSearchParams(location.search);
     const lineError=params.get("line_error");
     const message=lineError==="conflict"?"這個 Gmail 或 LINE 已有其他綁定，請聯絡學校管理員核對。":lineError?"LINE 授權未完成，請從本頁重新授權。":"";
-    showStatus(message||(params.has("line_link")?"已完成此校 LINE 帳號綁定。":billing?`已載入 ${state.projects.length} 個收費專案。`:""),message?"error":"");
+    showStatus(message||(params.get("line_link")==="confirm"?(state.line?.pendingLink?"請核對 Gmail 與 LINE 名稱，再確認綁定。":"綁定確認已逾時，請重新開始。"):billing?`已載入 ${state.projects.length} 個收費專案。`:""),message?"error":"");
     if(params.has("line_link")||lineError)history.replaceState({},"",location.pathname);
   }catch(error){showStatus(error.message,"error");$("projects").innerHTML=""}
 }
@@ -185,6 +194,18 @@ document.addEventListener("click",async event=>{
         method:"POST",body:JSON.stringify({mode:"link"})
       });
       location.assign(url);
+    }
+    if(action==="confirm-line-link"||action==="cancel-line-link"){
+      const confirmed=action==="confirm-line-link";
+      try{
+        await api("line/school-account",{method:"POST",body:JSON.stringify({action:confirmed?"confirm-link":"cancel-link",confirmationId:target.dataset.confirmation})});
+        await load();
+        showStatus(confirmed?"已完成此校 Gmail 與 LINE 綁定。":"已取消此次綁定。");
+      }catch(error){
+        state.line=await api("line/school-account").catch(()=>null);
+        renderLineBinding();
+        throw error;
+      }
     }
     if(action==="sync-line-menu"){
       const {audience,areaCount,chatActionsVerified}=await api("line/school-account",{method:"POST",body:JSON.stringify({action:"sync-menu"})});
