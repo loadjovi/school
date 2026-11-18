@@ -66,6 +66,8 @@ test("overdue class has an independent content editor and save control",()=>{
  assert.match(html,/先儲存上課內容/);
  assert.match(html,/savePrivateLessonContent\('s1','oct29'\)/);
  assert.match(html,/completePrivateLesson\('s1','oct29'\)/);
+ assert.match(html,/<option value="mistaken_booking">誤約取消（不計差勤）<\/option>/);
+ assert.match(html,/送出上課結果/);
  assert.match(html,/新建立的下一堂預約不影響本筆紀錄/);
 });
 
@@ -82,4 +84,19 @@ test("backend allows past scheduled lesson content updates but rejects future le
  assert.match(backend,/entity\.status="teacher_completed"/);
  assert.match(backend,/entity\.parentConfirmation="pending"/);
  assert.match(backend,/if\(!teacherCompletionStatuses\.has/);
+});
+
+test("submitting an erroneous booking skips the normal completion and sends only the cancellation action",async()=>{
+ const state={privateLessons:[rows[0]],expandedPrivateLessonId:"oct29"};
+ const requests=[],confirmations=[];
+ const ctx={state,window:{},lessonDomKey:x=>x,workflow:flow,canComplete:()=>true,
+   document:{getElementById:id=>id==="completeAttendance_oct29"?{value:"mistaken_booking"}:{value:"draft"}},
+   currentStudentName:()=>"測試學生",confirm:text=>{confirmations.push(text);return true},
+   api:async(url,options)=>{assert.equal(url,"/api/private-lesson");requests.push(JSON.parse(options.body))},
+   notifyToast:()=>{},loadPrivateLessons:async()=>{},render:()=>{},toast:message=>assert.fail(message)};
+ vm.runInNewContext(fragment("  async function cancelMistakenBooking","  window.resendPrivateLessonEmail="),ctx);
+ await ctx.window.completePrivateLesson("s1","oct29");
+ assert.match(confirmations[0],/測試學生.*2026-10-29/);
+ assert.deepEqual(requests,[{studentId:"s1",lessonId:"oct29",action:"cancel_mistaken_booking"}]);
+ assert.equal(state.expandedPrivateLessonId,"");
 });
