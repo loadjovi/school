@@ -19,6 +19,43 @@ test("student ID anchors historical migration and is not confused by display nam
  assert.equal(base.size,"S");
  assert.equal(base.acquisition,"PENDING");
 });
+test("Sacred Heart's two public acquisition corrections apply to persisted historical receipts only in that school",async()=>{
+ const source=readFileSync(new URL("../api/src/lib/competitionUniformMaster.js",import.meta.url),"utf8")
+  .replace(/^import .*;$/gm,"").replace(/^export \{.*\};$/gm,"").replace(/^export /gm,"");
+ const rows=new Map(),audit=[];
+ const store={
+  async createTable(){},
+  async getEntity(school,id){return rows.get(school+"|"+id)},
+  async updateEntity(entity,_mode,{etag}){
+   assert.equal(etag,"v1");
+   rows.set(entity.partitionKey+"|"+entity.rowKey,{...entity,etag:"v1"});
+  }
+ };
+ const update=runInNewContext(source+"\nupsertCurrentCompetitionMaster",{
+  baseForStudent,overlayMaster,comparable,randomUUID:()=>String(audit.length),
+  process:{env:{STORAGE_CONNECTION_STRING:"mock"}},
+  TableClient:{fromConnectionString:(_connection,tableName)=>tableName==="TenantUniformEventAudit"?
+   {async createTable(){},async createEntity(row){audit.push(row)}}:store}
+ });
+ for(const student of [st,{rowKey:"113003",studentName:"蔡昀潔",grade:"5A"}]){
+  const old={...baseForStudent(student),received:true};
+  assert.equal(old.acquisition,"PENDING");
+  for(const school of ["sacred-heart","other-school"])rows.set(school+"|"+student.rowKey,{payload:JSON.stringify(old),etag:"v1"});
+  const corrected=await update("sacred-heart",student,null,"admin");
+  assert.deepEqual({...corrected},{...old,acquisition:"PUBLIC"});
+  await update("sacred-heart",student,null,"admin");
+  assert.equal(JSON.parse(rows.get("sacred-heart|"+student.rowKey).payload).acquisition,"PUBLIC");
+  assert.equal((await update("other-school",student,null,"admin")).acquisition,"PENDING");
+ }
+ assert.equal(audit.length,2);
+ for(const entry of audit){
+  const {before,after}=JSON.parse(entry.details);
+  assert.deepEqual(after,{...before,acquisition:"PUBLIC"});
+ }
+ assert.equal(baseForStudent({...st,studentName:"蘇聖翔"},"sacred-heart").acquisition,"PENDING");
+ const historical=baseForStudent(st,"sacred-heart");
+ assert.equal(overlayMaster(historical,applicant("PURCHASE"),st).acquisition,"PURCHASE");
+});
 test("new parent PUBLIC application overwrites the canonical historic choice and size",()=>{
  const next=overlayMaster(baseForStudent(st),applicant("PUBLIC"),st);
  assert.equal(next.studentId,st.rowKey);
