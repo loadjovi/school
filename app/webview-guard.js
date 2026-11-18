@@ -135,7 +135,7 @@
       "/teacher-navigation.js?v=20261002-teacher-types",
       "/training-attendance.js?v=20261102-activity-boundary",
       "/comprehensive-support.js?v=20261002-save-confirm",
-      "/private-lesson-confirmation.js?v=20260929-late10"
+      "/private-lesson-confirmation.js?v=20260929-late10-booking-correction"
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20261027-school-followup",
@@ -146,7 +146,7 @@
       "/parent-activity-notice.js?v=20261016-new-activity-alert",
       "/uniform-payment-state.js?v=20261026-payment-email",
       "/practice-timer.js?v=20261004-manual4h",
-      "/private-lesson-confirmation.js?v=20260929-late10",
+      "/private-lesson-confirmation.js?v=20260929-late10-booking-correction",
       "/parent-semester-attendance.js?v=20261003-practice20",
       "/parent-home-summary.js?v=20261103-tshirt-size-reminder",
       "/parent-uniform-payment-notice.js?v=20261026-payment-email",

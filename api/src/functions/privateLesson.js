@@ -57,7 +57,7 @@ function view(e,teacherNameOverride=""){
   return {
     lessonId:String(e.rowKey||""),studentId:activityStudentId(e),lessonDate:String(e.eventDate||""),
     startTime:String(e.startTime||""),endTime:String(e.endTime||""),minutes:Number(e.minutes||0),status,
-    workflowStatus:workflowStatus(e),actualAttendanceStatus:String(e.actualAttendanceStatus||(["present","late"].includes(status)?status:"present")),
+    workflowStatus:workflowStatus(e),actualAttendanceStatus:status==="cancelled"?"":String(e.actualAttendanceStatus||(["present","late"].includes(status)?status:"present")),
     lessonContent:String(e.lessonContent||""),weeklyPracticeGoals:readWeeklyGoals(e.weeklyPracticeGoalsJson),teacher:String(e.teacher||""),teacherName:String(teacherNameOverride||e.teacherName||e.teacher||""),
     parentConfirmation:String(e.parentConfirmation||(["present","late"].includes(status)?"pending":"not_required")),
     parentConfirmedAt:String(e.parentConfirmedAt||""),parentConfirmedBy:String(e.parentConfirmedBy||""),parentNote:String(e.parentNote||""),
@@ -93,6 +93,11 @@ async function findLesson(studentId,lessonId,schoolId){
     catch(e){if(e.statusCode!==404)throw e}
   }
   return null;
+}
+async function saveLessonVersion(entity){
+  const {etag,...data}=entity;
+  try{await table("tenantPrivateLesson").updateEntity(data,"Merge",{etag});return true}
+  catch(error){if(error.statusCode===412)return false;throw error}
 }
 async function parentEmailsForStudent(canonicalStudentId,schoolId){
   const mappings=await listUserStudentMappings("active",schoolId),emails=new Set();
@@ -235,21 +240,27 @@ app.http("privateLesson",{
         entity.eventDate=lessonDate;entity.startTime=startTime;entity.endTime=endTime;entity.minutes=minutesBetween(startTime,endTime);
         if(Object.hasOwn(body,"lessonContent"))entity.lessonContent=clean(body.lessonContent,500);
         entity.rescheduledAt=now;entity.rescheduledBy=a.email;entity.rescheduleReason=clean(body.reason,300);entity.rescheduleCount=Number(entity.rescheduleCount||0)+1;entity.updatedAt=now;
-        await table("tenantPrivateLesson").updateEntity(entity,"Merge");
+        if(!await saveLessonVersion(entity))return json({error:"個課紀錄已更新，請重新整理後再操作"},409);
         const target=isAdmin?"both":isParent?"teacher":"parents",result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"rescheduled",target,actorEmail:a.email,actorName:a.displayName||a.email,previous});
         const notificationAuditPersisted=await persistNotificationAudit(entity,"rescheduled",result,a.email);
         return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted});
       }
 
-      if(action==="cancel_lesson"){
-        if(!(isAdmin||isParent||isTeacher))return json({error:"只有此學生家長、個別課老師或管理員可以停課"},403);
+      if(action==="cancel_lesson"||action==="cancel_mistaken_booking"){
+        const mistake=action==="cancel_mistaken_booking";
+        if(mistake?!(isAdmin||isTeacher):!(isAdmin||isParent||isTeacher))return json({error:mistake?"只有個別課老師或管理員可以取消誤約":"只有此學生家長、個別課老師或管理員可以停課"},403);
         if(workflowStatus(entity)==="cancelled")return json({ok:true,item:view(entity,teacherName)});
         if(String(entity.parentConfirmation||"")==="confirmed")return json({error:"此筆個別課已完成家長確認，紀錄已鎖定"},409);
-        if(!isAdmin&&!canChangeSchedule(entity,clock))return json({error:"只有尚未到上課開始時間的預約可以停課"},409);
+        if(mistake){
+          if(workflowStatus(entity)!=="scheduled"||!lessonEnded(entity,clock))return json({error:"只有已到預約結束時間且尚未完課的個課可以取消誤約"},409);
+          entity.actualAttendanceStatus="";
+          entity.lessonContent="";
+          entity.weeklyPracticeGoalsJson="[]";
+        }else if(!isAdmin&&!canChangeSchedule(entity,clock))return json({error:"只有尚未到上課開始時間的預約可以停課"},409);
         const now=new Date().toISOString();
-        entity.status="cancelled";entity.parentConfirmation="not_required";entity.cancelledAt=now;entity.cancelledBy=a.email;entity.cancelReason=clean(body.reason||"個別課停課",300);entity.updatedAt=now;
-        await table("tenantPrivateLesson").updateEntity(entity,"Merge");
-        const target=isAdmin?"both":isParent?"teacher":"parents",result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"cancelled",target,actorEmail:a.email,actorName:a.displayName||a.email});
+        entity.status="cancelled";entity.parentConfirmation="not_required";entity.cancelledAt=now;entity.cancelledBy=a.email;entity.cancelReason=mistake?"老師誤設個別課預約，該堂課已取消，請忽略先前的預約通知。":clean(body.reason||"個別課停課",300);entity.updatedAt=now;
+        if(!await saveLessonVersion(entity))return json({error:"個課紀錄已更新，請重新整理後再操作"},409);
+        const target=mistake?"parents":isAdmin?"both":isParent?"teacher":"parents",result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"cancelled",target,actorEmail:a.email,actorName:a.displayName||a.email});
         const notificationAuditPersisted=await persistNotificationAudit(entity,"cancelled",result,a.email);
         return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted});
       }
@@ -261,7 +272,7 @@ app.http("privateLesson",{
         entity.lessonContent=clean(body.lessonContent,500);
         if(Object.hasOwn(body,"weeklyPracticeGoals")){const goals=normalizeWeeklyGoals(body.weeklyPracticeGoals);if(goals.error)return json({error:goals.error},400);entity.weeklyPracticeGoalsJson=JSON.stringify(goals.goals)}
         entity.updatedAt=new Date().toISOString();
-        await table("tenantPrivateLesson").updateEntity(entity,"Merge");
+        if(!await saveLessonVersion(entity))return json({error:"個課紀錄已更新，請重新整理後再操作"},409);
         return json({ok:true,item:view(entity,teacherName)});
       }
 
@@ -280,7 +291,7 @@ app.http("privateLesson",{
         if(Object.hasOwn(body,"lessonContent"))entity.lessonContent=clean(body.lessonContent,500);
         if(Object.hasOwn(body,"weeklyPracticeGoals")){const goals=normalizeWeeklyGoals(body.weeklyPracticeGoals);if(goals.error)return json({error:goals.error},400);entity.weeklyPracticeGoalsJson=JSON.stringify(goals.goals)}
         entity.completedAt=now;entity.completedBy=a.email;entity.updatedAt=now;
-        await table("tenantPrivateLesson").updateEntity(entity,"Merge");
+        if(!await saveLessonVersion(entity))return json({error:"個課紀錄已更新，請重新整理後再操作"},409);
         const result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"completed",target:"parents",actorEmail:a.email,actorName:a.displayName||teacherName});
         const notificationAuditPersisted=await persistNotificationAudit(entity,"completed",result,a.email);
         return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted});
