@@ -24,7 +24,7 @@ async function lookup(client,schoolId,id){
 }
 export async function upsertCurrentCompetitionMaster(schoolId,student,request,actor="system",confirmHistoricalReceipt=false){
  const id=String(student?.rowKey||student?.studentId||"");
- const base=baseForStudent(student);
+ const base=baseForStudent(student,schoolId);
  if(!id||!base)return null;
  const {masterClient,auditClient}=await getClients();
  for(let attempt=0;attempt<3;attempt++){

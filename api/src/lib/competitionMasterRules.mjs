@@ -18,14 +18,18 @@ export const originalCompetitionRoster=[
 const paperReceived=new Set(["李婇寧","張介輔","林心澄","黃禹閎","游宜橙","陳祉瑄","賴昺旭","陳奕亘","張安侖","李宥蓁","吳定廩","楊力萓"]);
 export const nameKey=name=>String(name||"").trim().normalize("NFC").replace(/\s+/g,"");
 const bases=new Map(originalCompetitionRoster.map(row=>[nameKey(row[1]),row]));
+const confirmedPublicAcquisitions=new Set(["李旭恩","蔡昀潔"]);
 
-export function baseForStudent(student){
+export function baseForStudent(student,schoolId){
  const name=String(student.studentName||student.name||"").trim();
- const row=bases.get(nameKey(name));
+ const key=nameKey(name);
+ const row=bases.get(key);
  if(!row)return null;
- return {studentId:String(student.rowKey||student.studentId||""),studentName:name,
+ const studentId=String(student.rowKey||student.studentId||"");
+ const confirmedPublic=schoolId==="sacred-heart"&&confirmedPublicAcquisitions.has(key);
+ return {studentId,studentName:name,
   originalClass:row[0],grade:String(student.grade||row[0]),
-  style:row[2],size:row[3],acquisition:row[4],instrument:row[5],
+  style:row[2],size:row[3],acquisition:confirmedPublic?"PUBLIC":row[4],instrument:row[5],
   requestId:"",requestStatus:"",paymentStatus:"",
   received:paperReceived.has(nameKey(name)),source:"paper",
   appliedRequestAt:""};
