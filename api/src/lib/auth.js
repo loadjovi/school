@@ -244,6 +244,29 @@ export async function getStudentIdAliases(studentId,schoolId=defaultTenantId()){
   return (await getStudentAliasInfo(studentId,schoolId)).aliases;
 }
 
+async function teacherAccessForIdentity(identity,directory,roleSchoolId,roleTenant){
+  if(directory?.status!=="active")return null;
+  const email=identity.email,roleTenantOnboarding=roleTenant?.status==="onboarding";
+  const profile=await getTeacherProfile(email,roleSchoolId);
+  const {privateOnly,sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds:rawPrivateStudentIds,role}=teacherCourseAccess(directory,normalizeProfile(profile));
+  const index=await buildStudentAliasIndex(roleSchoolId);
+  const privateStudentIds=[...new Set(rawPrivateStudentIds.map(id=>index.aliasToCanonical.get(String(id))||String(id)))];
+  const capabilities={section:sectionAssignments.length>0,ensemble:ensembleGroups.length>0,comprehensive:comprehensiveEnabled,private:privateStudentIds.length>0,privateOnly,teacherSettings:true,tenantOnboarding:roleTenantOnboarding};
+  const masters=await listStudentMaster("active",roleSchoolId);
+  const byId=new Map();
+  for(const m of masters){
+    const rawId=String(m.rowKey),canonicalId=index.aliasToCanonical.get(rawId)||rawId;
+    const canonicalMaster=index.byId.get(canonicalId)||m;
+    const v=viewMaster(canonicalMaster,[...(index.canonicalToAliases.get(canonicalId)||[])]);
+    const sectionMatch=sectionAssignments.some(a=>a.groupName===v.groupName&&a.section===v.section);
+    const ensembleMatch=ensembleGroups.includes(v.groupName);
+    const comprehensiveMatch=comprehensiveEnabled&&["A","B","儲備"].includes(v.groupName);
+    const privateMatch=privateStudentIds.includes(v.studentId);
+    if(sectionMatch||ensembleMatch||comprehensiveMatch||privateMatch)byId.set(v.studentId,v);
+  }
+  return {authenticated:true,...identity,displayName:directory.teacherName||identity.displayName,role,schoolId:roleSchoolId,schoolName:String(roleTenant?.schoolName||roleSchoolId),systemName:String(roleTenant?.systemName||roleTenant?.schoolName||roleSchoolId),capabilities,sectionAssignments,assignments:sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,students:[...byId.values()]};
+}
+
 async function lineParentAccess(request, includeContexts = false) {
   const session = await tenantLineSession(request);
   if (!session) return {authenticated: false};
@@ -252,24 +275,32 @@ async function lineParentAccess(request, includeContexts = false) {
   const requestedRole = request.headers.get("x-role-context");
   const denied = {authenticated:true,authProvider:"line",role:"contextDenied",schoolId,capabilities:{}};
   if ((requestedSchool && requestedSchool !== schoolId) ||
-      (requestedRole && !["parent","schoolAdmin"].includes(requestedRole))) return denied;
+      (requestedRole && !["parent","schoolAdmin","teacher"].includes(requestedRole))) return denied;
 
   const [tenant, channel] = await Promise.all([getTenantDirectory(schoolId), resolveTenantLineChannel(schoolId)]);
   if (!tenant || !channel.loginConfigured || channel.botUserId !== account.botUserId) return {authenticated:false};
 
-  let isAdmin = false;
+  let isAdmin = false,verifiedGoogle = false;
   if (account.googleSub && account.googleEmail && ["active","onboarding"].includes(tenant.status)) {
     const link = await getTenantGoogleLink(schoolId,account.googleSub);
     if (link?.googleSub === account.googleSub && link.googleEmail === account.googleEmail &&
         link.lineUserId === account.lineUserId && link.botUserId === channel.botUserId &&
         link.parentEmail === account.parentEmail) {
+      verifiedGoogle = true;
       const roles = await listTenantRolesByEmail(account.googleEmail,"active");
       isAdmin = roles.some(row=>row.status==="active"&&row.role==="schoolAdmin"&&row.schoolId===schoolId);
     }
   }
   const canUseAdmin = isAdmin && (!requestedRole || requestedRole === "schoolAdmin");
-  const mapped = !canUseAdmin || includeContexts ? await tenantLineParentStudents(schoolId,account.parentEmail) : [];
-  const students = canUseAdmin ? [] : await canonicalizeStudents(mapped,schoolId);
+  let teacher = null;
+  if(verifiedGoogle&&(requestedRole==="teacher"||!requestedRole&&!isAdmin||includeContexts)){
+    const directory=await getTeacherDirectory(account.googleEmail,schoolId);
+    teacher=await teacherAccessForIdentity({sub:account.googleSub,email:account.googleEmail,
+      displayName:account.displayName||"LINE 使用者",authProvider:"line",contactEmail:account.googleEmail},directory,schoolId,tenant);
+  }
+  const canUseTeacher=!!teacher&&(!requestedRole||requestedRole==="teacher")&&!canUseAdmin;
+  const mapped = requestedRole!=="teacher"&&!canUseAdmin&&!canUseTeacher || includeContexts ? await tenantLineParentStudents(schoolId,account.parentEmail) : [];
+  const students = canUseAdmin||canUseTeacher||!mapped.length ? [] : await canonicalizeStudents(mapped,schoolId);
   const schoolName = tenant.schoolName || schoolId;
   const common = {
     authenticated:true,authProvider:"line",schoolId,schoolName,systemName:tenant.systemName || schoolName,
@@ -280,14 +311,16 @@ async function lineParentAccess(request, includeContexts = false) {
   });
   const contexts = [
     ...(isAdmin ? [context("schoolAdmin","schoolAdmin","學校管理員","🏫")] : []),
+    ...(teacher ? [context("teacher","teacher","教學老師","🎓")] : []),
     ...(mapped.length ? [context("parent","parent","家長","👨‍👩‍👧")] : [])
   ];
-  if (requestedRole === "schoolAdmin" && !isAdmin) return {...denied,...common,contexts};
+  if ((requestedRole === "schoolAdmin" && !isAdmin)||(requestedRole === "teacher" && !teacher)) return {...denied,...common,contexts};
   if (canUseAdmin) {
     return {...common,role:"admin",email:account.googleEmail,contexts,activeContextKey:"schoolAdmin:"+schoolId,
       capabilities:{admin:true,tenantAdmin:true,tenantOnboarding:tenant.status==="onboarding",
         financeVerifier:await financeAssigned(schoolId,account.googleEmail)}};
   }
+  if(canUseTeacher)return {...common,...teacher,contexts,activeContextKey:"teacher:"+schoolId};
   return {...common,role:students.length ? "parent" : "unassigned",
     email:account.parentEmail,parentAlias:account.parentAlias || "",students,contexts,
     activeContextKey:students.length ? "parent:"+schoolId : "",
@@ -381,24 +414,7 @@ export async function getAccess(request,{includeContexts=false}={}){
     }
   }
   if(directory?.status==="active"&&(!requestedContext||requestedContext==="teacher")){
-    const profile=await getTeacherProfile(email,roleSchoolId);
-    const {privateOnly,sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds:rawPrivateStudentIds,role}=teacherCourseAccess(directory,normalizeProfile(profile));
-    const index=await buildStudentAliasIndex(roleSchoolId);
-    const privateStudentIds=[...new Set(rawPrivateStudentIds.map(id=>index.aliasToCanonical.get(String(id))||String(id)))];
-    const capabilities={section:sectionAssignments.length>0,ensemble:ensembleGroups.length>0,comprehensive:comprehensiveEnabled,private:privateStudentIds.length>0,privateOnly,teacherSettings:true,tenantOnboarding:roleTenantOnboarding};
-    const masters=await listStudentMaster("active",roleSchoolId);
-    const byId=new Map();
-    for(const m of masters){
-      const rawId=String(m.rowKey),canonicalId=index.aliasToCanonical.get(rawId)||rawId;
-      const canonicalMaster=index.byId.get(canonicalId)||m;
-      const v=viewMaster(canonicalMaster,[...(index.canonicalToAliases.get(canonicalId)||[])]);
-      const sectionMatch=sectionAssignments.some(a=>a.groupName===v.groupName&&a.section===v.section);
-      const ensembleMatch=ensembleGroups.includes(v.groupName);
-      const comprehensiveMatch=comprehensiveEnabled&&["A","B","儲備"].includes(v.groupName);
-      const privateMatch=privateStudentIds.includes(v.studentId);
-      if(sectionMatch||ensembleMatch||comprehensiveMatch||privateMatch)byId.set(v.studentId,v);
-    }
-    return {authenticated:true,...identity,displayName:directory.teacherName||identity.displayName,role,schoolId:roleSchoolId,schoolName:String(roleTenant?.schoolName||roleSchoolId),systemName:String(roleTenant?.systemName||roleTenant?.schoolName||roleSchoolId),capabilities,sectionAssignments,assignments:sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,students:[...byId.values()]};
+    return teacherAccessForIdentity(identity,directory,roleSchoolId,roleTenant);
   }
 
   let parentIdentity = identity;

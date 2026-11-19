@@ -18,7 +18,9 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
     }
     return json({authProvider:"line",email:a.contactEmail||"",displayName:a.displayName,role:a.role,
       schoolId:a.schoolId,schoolName:a.schoolName||"",systemName:a.systemName||"",
-      capabilities,contexts:a.contexts||[],activeContextKey:a.activeContextKey||""});
+      capabilities,contexts:a.contexts||[],activeContextKey:a.activeContextKey||"",
+      assignments:a.sectionAssignments||a.assignments||[],ensembleGroups:a.ensembleGroups||[],
+      comprehensiveEnabled:a.comprehensiveEnabled===true,privateStudentIds:a.privateStudentIds||[],temporaryAssignment:a.temporaryAssignment||null});
   }
   try{await saveUserIdentity({...a,email:a.contactEmail||a.email})}catch(e){console.warn("user identity registry update failed",e)}
 

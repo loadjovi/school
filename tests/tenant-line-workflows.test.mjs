@@ -266,6 +266,7 @@ test("verified LINE staff gets current school permissions and can still select p
   let studentReads=0,roleReads=0;
   const {lineParentAccess,googleToken}=load("api/src/lib/auth.js",{
     OAuth2Client:class{},
+    getTeacherDirectory:async()=>null,
     tenantLineSession:async()=>({schoolId:"school-a",account}),
     getTenantDirectory:async()=>({status:"active",schoolName:"甲校"}),
     resolveTenantLineChannel:async()=>({loginConfigured:true,botUserId:botId}),
