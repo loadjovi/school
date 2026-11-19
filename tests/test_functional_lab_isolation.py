@@ -95,6 +95,21 @@ class FunctionalUATIsolationTests(unittest.TestCase):
                               capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
 
+    def test_lab_names_follow_build_mode_and_remain_in_the_authenticated_header(self):
+        banner=(self.lab/"app/functional-lab-banner.js").read_text(encoding="utf-8")
+        self.assertIn('const labName="舊版 LAB",labPurpose="正式功能同步"',banner)
+        self.assertIn('functional-uat-header-label',banner)
+        self.assertIn('new MutationObserver(labelHeaders)',banner)
+        self.assertIn('【舊版 LAB】',(self.lab/"app/index.html").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory(prefix="sh-lab-label-") as work:
+            output=Path(work)/"release"
+            module.prepare(output,line_uat=True)
+            updated=(output/"app/functional-lab-banner.js").read_text(encoding="utf-8")
+            self.assertIn('const labName="新版 LAB",labPurpose="LINE 整合驗證"',updated)
+            self.assertIn('【新版 LAB】',(output/"app/index.html").read_text(encoding="utf-8"))
+            result=subprocess.run(["node","--check",str(output/"app/functional-lab-banner.js")],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+
     def test_guard_fails_closed_for_wrong_storage_or_missing_lab_env(self):
         lib=self.lab/"api/src/lib/labIsolation.mjs"
         script='import {assertLabIsolation} from '+repr(lib.as_uri())+';assertLabIsolation();'
