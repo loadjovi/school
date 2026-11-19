@@ -129,11 +129,11 @@
       "/attendance-support.js?v=20260930-section-merge",
       "/attendance-edit.js?v=20261002-save-confirm",
       "/practice-progress.js?v=20261104-practice-filter-anchor",
-      "/teacher-navigation.js?v=20261002-teacher-types",
+      "/teacher-navigation.js?v=20261002-teacher-types-home-priorities-20261119",
       "/training-attendance.js?v=20261102-activity-boundary",
       "/comprehensive-support.js?v=20261002-save-confirm",
       "/private-lesson-confirmation.js?v=20260929-late10",
-      "/teacher-line-account.js?v=20261119-teacher-binding"
+      "/teacher-line-account.js?v=20261119-teacher-binding-home-priorities"
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20261027-school-followup",
@@ -146,7 +146,7 @@
       "/practice-timer.js?v=20261004-manual4h",
       "/private-lesson-confirmation.js?v=20260929-late10",
       "/parent-semester-attendance.js?v=20261003-practice20",
-      "/parent-home-summary.js?v=20261103-tshirt-size-reminder-parent-tasks",
+      "/parent-home-summary.js?v=20261103-tshirt-size-reminder-parent-tasks-home-priorities-20261119",
       "/parent-uniform-payment-notice.js?v=20261026-payment-email-parent-tasks",
       "/parent-practice-history.js?v=20261003-practice-history-toggle"
     ];
@@ -196,7 +196,7 @@
   window.resumeLineStaffEntry=()=>{if(sessionStorage.getItem(staffEntryKey))loadRoleModules()};
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity-school-admin-teacher-binding-20261119",()=>{
+    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity-school-admin-teacher-binding-20261119-home-priorities",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);

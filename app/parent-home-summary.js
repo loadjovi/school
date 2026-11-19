@@ -380,13 +380,72 @@
     </details>`;
   }
   function todayCourseReminder(){
-    const s=state.summary||{},courses=Array.isArray(s.todayCourses)?s.todayCourses:[],date=String(s.today||localDate());
+    const s=state.summary||{},date=String(s.today||localDate());
+    const privateStatus={scheduled:"已預約",awaiting_parent:"待家長確認",issue:"待老師回覆",completed:"已完成上課",cancelled:"今日停課"};
+    const individual=(state.privateLessons||[]).filter(x=>String(x.studentId)===String(state.student?.studentId)&&x.lessonDate===date).map(x=>{
+      const status=x.workflowStatus||(x.status==="cancelled"?"cancelled":x.status==="scheduled"?"scheduled":x.status==="teacher_completed"?"awaiting_parent":x.status==="completion_issue"?"issue":"completed");
+      return {label:"個課｜"+(x.teacherName||"個課老師"),time:[x.startTime,x.endTime].filter(Boolean).join("～"),cancelled:status==="cancelled",displayStatus:privateStatus[status]||"查看個課狀態",displayClass:status==="cancelled"?"bad":status==="completed"?"ok":"warn"};
+    });
+    const courses=[...(Array.isArray(s.todayCourses)?s.todayCourses:[]),...individual].sort((a,b)=>String(a.time||"").localeCompare(String(b.time||"")));
     const statusText={present:"已出席",late:"遲到",leave:"請假",absent:"缺席",cancelled:"停課"};
     const statusClass={present:"ok",late:"warn",leave:"warn",absent:"bad",cancelled:"warn"};
-    if(!courses.length)return `<div class="card"><h2>📅 今日課程提醒</h2><div class="notice"><b>${esc(shortDate(date))} 今天沒有固定團體課程</b><br>個別課仍依老師實際安排為準；如有自主練習，可完成後直接打卡。</div></div>`;
-    const rows=courses.map(x=>{const status=x.cancelled?"今日停課":x.recorded?(statusText[x.status]||"已點名"):"待上課／待點名";const cls=x.cancelled?"bad":x.recorded?(statusClass[x.status]||"ok"):"warn";const location=x.location?`<small style="display:block;margin-top:3px">📍 ${esc(x.location)}</small>`:"";const note=x.cancelled&&x.reason?`<small style="display:block;margin-top:4px">原因：${esc(x.reason)}</small>`:"";return `<div class="item"><div><b>${esc(x.label||"課程")}</b><small>${esc(x.time||"")}</small>${location}${note}</div><span class="badge ${cls}">${esc(status)}</span></div>`}).join("");
-    return `<div class="card"><h2>📅 今日課程提醒</h2><div class="notice" style="margin-bottom:10px"><b>${esc(state.student?.name||"學生")}今天有 ${courses.length} 堂固定課程</b><br>以下依目前弦樂團課表顯示；個別課另依老師安排。</div>${rows}</div>`;
+    if(!courses.length)return `<div class="card"><h2>📅 今日課程提醒</h2><div class="notice"><b>${esc(shortDate(date))} 今天沒有安排的課程</b><br>完成自主練習後，可直接留下練習紀錄。</div></div>`;
+    const rows=courses.map(x=>{const status=x.displayStatus||(x.cancelled?"今日停課":x.recorded?(statusText[x.status]||"已點名"):"待上課／待點名");const cls=x.displayClass||(x.cancelled?"bad":x.recorded?(statusClass[x.status]||"ok"):"warn");const location=x.location?`<small style="display:block;margin-top:3px">📍 ${esc(x.location)}</small>`:"";const note=x.cancelled&&x.reason?`<small style="display:block;margin-top:4px">原因：${esc(x.reason)}</small>`:"";return `<div class="item"><div><b>${esc(x.label||"課程")}</b><small>${esc(x.time||"")}</small>${location}${note}</div><span class="badge ${cls}">${esc(status)}</span></div>`}).join("");
+    return `<div class="card"><h2>📅 今日課程提醒</h2><div class="notice" style="margin-bottom:10px"><b>${esc(state.student?.name||"學生")}今天有 ${courses.length} 堂課程</b><br>團體課與個課依今日時間排列，停課及待確認狀態會一併標示。</div>${rows}</div>`;
   }
+  const homeDate=()=>new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"});
+  const homeUpdateScope=()=>[parentTshirtSizeScope(),state.student?.studentId,homeDate()].join("|");
+  let homeUpdatesScope="",homeUpdates=null,homeUpdatesError="",homeUpdatesLoading=false,homeUpdatesVersion=0,homeUpdatesLoadedAt=0;
+  async function loadParentHomeUpdates(){
+    if(!isParent()||!state.student)return;
+    const scope=homeUpdateScope(),version=++homeUpdatesVersion;homeUpdatesLoading=true;homeUpdatesLoadedAt=Date.now();
+    try{
+      const data=await api("/api/parent-home-updates?studentId="+encodeURIComponent(state.student.studentId));
+      if(scope!==homeUpdateScope()||version!==homeUpdatesVersion)return;
+      homeUpdates=data;homeUpdatesError="";
+    }catch(error){
+      if(scope!==homeUpdateScope()||version!==homeUpdatesVersion)return;
+      homeUpdates=null;homeUpdatesError="活動與最新提醒暫時無法讀取。";
+    }finally{
+      if(scope===homeUpdateScope()&&version===homeUpdatesVersion){homeUpdatesLoading=false;if(state.page==="home")render()}
+    }
+  }
+  window.refreshParentHomeUpdates=()=>{if(!homeUpdatesLoading)return loadParentHomeUpdates()};
+  function parentUpcomingItems(){
+    const groupName=v=>{const g=String(v||"").trim().replace(/團$/u,"").toUpperCase();return ["儲備","預備"].includes(g)?"C":g};
+    const group=groupName(state.student?.groupName),date=homeDate(),now=Date.now();
+    const registrations=window.getParentActivityRegistrations?.();
+    const configs=(state.parentActivityConfigs||[]).filter(x=>x.enabled&&["fieldTrip","yearEndDinner","calendarActivity"].includes(x.module)&&
+      (x.module!=="yearEndDinner"||x.feeStatus==="PUBLISHED")&&
+      String(x.targetGroups||"ALL").split(",").some(g=>groupName(g)==="ALL"||groupName(g)===group));
+    const rows=new Map();
+    for(const x of homeUpdates?.events||[]){
+      const key=x.sourceModule&&x.sourceActivityId?x.sourceModule+":"+x.sourceActivityId:"calendar:"+x.eventId;
+      rows.set(key,{...x,key,date:x.eventDate,href:["fieldTrip","yearEndDinner","calendarActivity"].includes(x.sourceModule)&&x.sourceActivityId?"/parent-uniform-events.html?view="+(x.sourceModule==="yearEndDinner"?"events":"performance")+"&activity="+encodeURIComponent(key):"",description:[x.startTime,x.endTime].filter(Boolean).join("～")||x.timeLabel||"時間另行通知"});
+    }
+    for(const config of configs){
+      const key=config.module+":"+config.id,old=rows.get(key)||{},start=config.module==="calendarActivity"?config.eventDate:window.parentActivityNotice?.activityDate(config)?.split("～")[0];
+      const registered=registrations?.some(x=>x.kind===config.module&&x.activityId===config.id&&x.registrationStatus!=="CANCELLED");
+      const closed=config.closeAt&&Date.parse(config.closeAt)<=now;
+      const end=config.module==="calendarActivity"?config.endDate||start:window.parentActivityNotice?.activityDate(config)?.split("～").at(-1)||start;
+      if(!start||end<date||closed&&!registered){rows.delete(key);continue}
+      const opening=config.openAt&&Date.parse(config.openAt)>now;
+      rows.set(key,{...old,key,date:start,endDate:end,title:config.title||old.title,location:config.location||old.location||"",
+        description:registered?"已送出報名，查看報名與繳費進度":config.module==="calendarActivity"?old.description||"查看活動詳情":opening?"報名尚未開始":"報名開放中，查看費用與參加方式",
+        href:"/parent-uniform-events.html?view="+(config.module==="yearEndDinner"?"events":"performance")+"&activity="+encodeURIComponent(key)});
+    }
+    return [...rows.values()].filter(x=>(x.endDate||x.date)>=date).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.startTime||"").localeCompare(String(b.startTime||""))).slice(0,4);
+  }
+  function parentUpcomingPanel(){
+    const rows=parentUpcomingItems();
+    return `<section class="card" id="parentUpcomingActivities"><h2>🗓️ 未來活動</h2>${homeUpdatesError?`<div class="notice" role="alert">${esc(homeUpdatesError)}<button type="button" class="secondary" onclick="refreshParentHomeUpdates()">重新讀取</button></div>`:!homeUpdates?'<div class="notice">正在讀取孩子的活動安排…</div>':""}${rows.length?rows.map(x=>`<div class="item"><div style="min-width:0"><b>${esc(x.title||"活動")}</b><small>${esc(x.date)}｜${esc(x.description||"")}${x.location?"｜"+esc(x.location):""}</small>${x.href?`<a href="${esc(x.href)}">查看活動／報名 ›</a>`:""}</div></div>`).join(""):homeUpdates?'<div class="notice">目前沒有需要查看的未來活動。</div>':""}</section>`;
+  }
+  function parentNewsPanel(){
+    const changes=(state.summary?.todayCourses||[]).filter(x=>x.cancelled).map(x=>({title:(x.label||"今日課程")+"｜停課",note:x.reason||"今日停課，請留意上課安排。",eventDate:state.summary?.today||localDate()}));
+    const rows=[...changes,...(homeUpdates?.announcements||[])].slice(0,4);
+    return `<section class="card" id="parentLatestNews"><h2>📢 弦樂團最新消息</h2>${rows.length?rows.map(x=>`<div class="item"><div style="min-width:0;overflow-wrap:anywhere"><b>${esc(x.title||"重要提醒")}</b><small>${esc(x.eventDate||"")}</small>${x.note?`<p style="white-space:pre-wrap;margin:6px 0">${esc(x.note)}</p>`:""}</div></div>`).join(""):homeUpdatesError?'<div class="notice">最新消息暫時無法確認，請重新讀取活動與提醒。</div>':homeUpdates?'<div class="notice">目前沒有新的重要提醒或課程異動。</div>':'<div class="notice">正在確認最新重要提醒…</div>'}</section>`;
+  }
+
   function studentSwitcher(){
     const students=Array.isArray(state.students)?state.students:[];
     const selection=students.length>1?`<label>目前學生</label><select id="parentStudentSwitcher" onchange="switchParentStudent(this.value)">${students.map(s=>`<option value="${esc(s.studentId)}" ${String(s.studentId)===String(state.student?.studentId)?"selected":""}>${esc(s.name)}｜${esc(s.groupName)}團｜${esc(s.instrument)}</option>`).join("")}</select>`:`<div class="notice">目前查看：${esc(state.student?.name||"學生")}</div>`;
@@ -401,6 +460,9 @@
 
   home=function(){
     if(!isParent()||!state.student||!baseHome)return baseHome?baseHome():"";
+    const updateScope=homeUpdateScope();
+    if(updateScope!==homeUpdatesScope){homeUpdatesScope=updateScope;homeUpdates=null;homeUpdatesError="";homeUpdatesLoading=false;homeUpdatesVersion++;homeUpdatesLoadedAt=0}
+    if(!homeUpdatesLoading&&Date.now()-homeUpdatesLoadedAt>60000){homeUpdatesLoadedAt=Date.now();setTimeout(loadParentHomeUpdates,0)}
     const scope=syncParentTshirtSizeScope();
     if(scope!==activityScope){
       activityScope=scope;state.parentActivityConfigs=[];state.parentActivityLoadedAt=0;state.parentActivityLoading=false;
@@ -413,8 +475,9 @@
     const feedbackStudentId=String(state.student.studentId||"");if(state.parentPracticeFeedbackStudentId!==feedbackStudentId&&!state.parentPracticeFeedbackLoading){state.parentPracticeFeedbackStudentId=feedbackStudentId;setTimeout(()=>loadParentPracticeFeedback(feedbackStudentId),0)}
     const action=todayDone?`<div class="notice"><b>✅ 今天已完成自主練習</b><br><span style="display:block;margin-top:6px">${todayMinutes} 分鐘｜今天已有 ${todayRows.length} 筆紀錄</span></div><button class="primary" onclick="go('record')">查看今日／近期紀錄</button><button class="secondary" style="width:100%;margin-top:10px" onclick="go('practice')">＋ 補登另一筆練習</button>`:`<div class="notice"><b>🎻 今天尚未有自主練習紀錄</b><br><span style="display:block;margin-top:6px">完成練習後，記得幫${esc(state.student.name)}留下紀錄。</span></div><button class="primary" onclick="go('practice')">立即自主練習打卡</button>`;
     const privateLessonPanel=typeof window.privateLessonParentPanels==="function"?window.privateLessonParentPanels("home"):"";
-    return `${tshirtSizeShortcut()}${todayCourseReminder()}<div class="card" id="parentUniformEventsEntry"><h2>🎻 活動與團服</h2>${parentTaskLauncher()}<div class="notice">團 T 尺寸補登、比賽服、期末聚餐、校際交流與快閃演出，集中查詢與辦理。</div><button type="button" class="secondary" style="width:100%;margin-top:10px" onclick="go('uniformEvents')">查看我的活動與團服 ›</button></div>${privateLessonPanel}<div class="card hero"><div class="student"><div class="studentleft"><div class="avatar">${esc(state.student.name?.[0]||"學")}</div><div><div class="name">${esc(state.student.name)}</div><div class="muted">${esc(state.student.groupName)}團${sectionName?`｜${esc(sectionName)}`:""}｜${esc(state.student.instrument)}｜${esc(state.student.grade)}</div></div></div><div class="pill">${new Date().getMonth()+1}月</div></div><div style="margin-top:14px;font-weight:900">本月自主練習</div><div class="grid" style="margin-top:8px"><div class="kpi"><b>${s.practiceQualifiedDays||0} 天</b><span>練習達標天數</span></div><div class="kpi"><b>${s.practiceMinutes||0} 分鐘</b><span>累計練習時間</span></div></div><div class="notice" style="margin-top:10px"><b>最近一次自主練習</b><br>${esc(latestText)}</div>${parentMonthlyScoreOverview()}${parentFeedbackCard()}<div class="parent-detail-heading"><b>本月上課出勤明細</b><small>分部／合奏／綜合課與個別課的實際點名紀錄；上課開始後超過 10 分鐘才到課記為遲到，10 分鐘內記為出席。</small></div><div class="grid" style="margin-top:8px">${attendanceKpi("分部課",s.sectionPresent,s.sectionTotal,s.sectionLeave,s.sectionAbsent,sectionName||"目前分部")}${attendanceKpi("合奏課",s.ensemblePresent,s.ensembleTotal,s.ensembleLeave,s.ensembleAbsent,"A／B 團合奏")}${attendanceKpi("綜合課（團體課）",s.comprehensivePresent,s.comprehensiveTotal,s.comprehensiveLeave,s.comprehensiveAbsent,"A／B／儲備團")}${attendanceKpi("個別課",s.privatePresent,s.privateTotal,s.privateLeave,s.privateAbsent,"不納入課程點名 5%")}</div><button class="secondary" style="width:100%;margin-top:12px" onclick="go('record')">查看整學期上課紀錄 ›</button></div>${parentPracticeLeaderboardCard()}<div class="card"><h2>今天要做什麼？</h2>${action}</div><div class="card"><h2>📌 自主練習登記提醒</h2><div class="notice">自主練習紀錄將作為後續練習統計與成績計算依據。為保障學生權益，請家長於每次練習完成後確認紀錄已成功送出，並可至「紀錄」頁再次核對。<br><br><b>達標規則：單日累計自主練習達 20 分鐘以上，計為 1 個達標日；同一天多筆紀錄的分鐘數會累計，但達標日仍以 1 天計算。</b><br><br>若主要登記之家長因出差、工作或其他因素無法操作，可由另一位已綁定之監護人登入完成登記。<b>系統以「學生」為統計單位</b>，不同監護人登記的紀錄皆累計於同一位學生名下。</div></div>${studentSwitcher()}`;
+    return `${tshirtSizeShortcut()}${todayCourseReminder()}${parentUpcomingPanel()}${parentNewsPanel()}<section class="card" id="parentPracticeAction"><h2>🎻 今日自主練習</h2>${action}</section><div class="card" id="parentUniformEventsEntry"><h2>🎻 活動與團服</h2>${parentTaskLauncher()}<div class="notice">團 T 尺寸補登、比賽服、期末聚餐、校際交流與快閃演出，集中查詢與辦理。</div><button type="button" class="secondary" style="width:100%;margin-top:10px" onclick="go('uniformEvents')">查看我的活動與團服 ›</button></div>${privateLessonPanel}<div class="card hero"><div class="student"><div class="studentleft"><div class="avatar">${esc(state.student.name?.[0]||"學")}</div><div><div class="name">${esc(state.student.name)}</div><div class="muted">${esc(state.student.groupName)}團${sectionName?`｜${esc(sectionName)}`:""}｜${esc(state.student.instrument)}｜${esc(state.student.grade)}</div></div></div><div class="pill">${new Date().getMonth()+1}月</div></div><div style="margin-top:14px;font-weight:900">本月自主練習</div><div class="grid" style="margin-top:8px"><div class="kpi"><b>${s.practiceQualifiedDays||0} 天</b><span>練習達標天數</span></div><div class="kpi"><b>${s.practiceMinutes||0} 分鐘</b><span>累計練習時間</span></div></div><div class="notice" style="margin-top:10px"><b>最近一次自主練習</b><br>${esc(latestText)}</div><details style="margin-top:12px"><summary><b>查看本月學習進度與上課出勤</b></summary>${parentMonthlyScoreOverview()}${parentFeedbackCard()}<div class="parent-detail-heading"><b>本月上課出勤明細</b><small>分部／合奏／綜合課與個別課的實際點名紀錄；上課開始後超過 10 分鐘才到課記為遲到，10 分鐘內記為出席。</small></div><div class="grid" style="margin-top:8px">${attendanceKpi("分部課",s.sectionPresent,s.sectionTotal,s.sectionLeave,s.sectionAbsent,sectionName||"目前分部")}${attendanceKpi("合奏課",s.ensemblePresent,s.ensembleTotal,s.ensembleLeave,s.ensembleAbsent,"A／B 團合奏")}${attendanceKpi("綜合課（團體課）",s.comprehensivePresent,s.comprehensiveTotal,s.comprehensiveLeave,s.comprehensiveAbsent,"A／B／儲備團")}${attendanceKpi("個別課",s.privatePresent,s.privateTotal,s.privateLeave,s.privateAbsent,"不納入課程點名 5%")}</div><button class="secondary" style="width:100%;margin-top:12px" onclick="go('record')">查看整學期上課紀錄 ›</button></details></div>${parentPracticeLeaderboardCard()}<details class="card"><summary><b>📌 自主練習登記說明</b></summary><div class="notice">自主練習紀錄將作為後續練習統計與成績計算依據。為保障學生權益，請家長於每次練習完成後確認紀錄已成功送出，並可至「紀錄」頁再次核對。<br><br><b>達標規則：單日累計自主練習達 20 分鐘以上，計為 1 個達標日；同一天多筆紀錄的分鐘數會累計，但達標日仍以 1 天計算。</b><br><br>若主要登記之家長因出差、工作或其他因素無法操作，可由另一位已綁定之監護人登入完成登記。<b>系統以「學生」為統計單位</b>，不同監護人登記的紀錄皆累計於同一位學生名下。</div></details>${studentSwitcher()}`;
   };
   if(baseNav){nav=function(){if(state.page==="contextSelect")return baseNav();if(isParent())return `<nav class="nav">${navBtn("home","🏠","首頁")}${navBtn("practice","⏱️","自主打卡")}${navBtn("record","📊","紀錄")}${navBtn("uniformEvents","🎻","活動團服")}</nav>`;return baseNav()}}
+  window.parentHomeFocusReady=true;
   window.parentHomeSummaryReady=true;
 })();

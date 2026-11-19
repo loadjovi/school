@@ -29,9 +29,11 @@ test("unbound authorized teachers see a Gmail-specific binding entry and start v
  assert.equal(h.assigned.length,1);
 });
 
-test("bound teacher status is visible on teaching and settings, with escaped LINE name",async()=>{
+test("bound teacher status is kept in settings and removed from the teaching home",async()=>{
  const h=screen({reply:{configured:true,bound:true,googleLinked:true,authProvider:"google",lineDisplayName:'老師<script>alert(1)</script>'}});
  await settle();
+ assert.equal(h.html(),"");
+ h.state.page="teacherSettings";h.context.render();
  assert.match(h.html(),/✅ LINE 已綁定/);
  assert.match(h.html(),/&lt;script&gt;/);
  assert.doesNotMatch(h.html(),/<script>|綁定我的 LINE 帳號/);
@@ -61,9 +63,9 @@ test("pending identity confirmation is not treated as completed binding",async()
 test("failed reads can retry, and an unconfigured school cannot initiate binding",async()=>{
  let fails=true;
  const h=screen({reply:()=>{if(fails)throw new Error("暫時無法讀取");return {configured:true,bound:true,googleLinked:true}}});
- await settle();assert.match(h.html(),/暫時無法讀取/);assert.doesNotMatch(h.html(),/尚未完成 Gmail/);
+ await settle();h.state.page="teacherSettings";h.context.render();assert.match(h.html(),/暫時無法讀取/);assert.doesNotMatch(h.html(),/尚未完成 Gmail/);
  fails=false;await h.window.teacherLineAccount.refresh();assert.match(h.html(),/✅ LINE 已綁定/);
- const disabled=screen({configured:false});await settle();assert.match(disabled.html(),/尚未開啟/);assert.equal(disabled.calls.length,0);
+ const disabled=screen({configured:false});await settle();assert.equal(disabled.html(),"");disabled.state.page="teacherSettings";disabled.context.render();assert.match(disabled.html(),/尚未開啟/);assert.equal(disabled.calls.length,0);
  await disabled.window.teacherLineAccount.bind();assert.equal(disabled.calls.length,0);
 });
 
@@ -82,7 +84,7 @@ test("returning from account management refreshes status without reloading teach
  let bound=false;
  const h=screen({reply:()=>({configured:true,bound,googleLinked:bound,authProvider:"google"})});
  await settle();bound=true;h.events.visibilitychange();await settle();
- assert.match(h.html(),/✅ LINE 已綁定/);assert.equal(h.calls.length,2);
+ assert.equal(h.html(),"");h.state.page="teacherSettings";h.context.render();assert.match(h.html(),/✅ LINE 已綁定/);assert.equal(h.calls.length,2);
 });
 
 function endpoints({role="privateTeacher",schoolId="school-a",link=null,lineSession=null,google={sub:"teacher-sub",email:"teacher@example.invalid"}}={}){

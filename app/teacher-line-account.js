@@ -15,6 +15,7 @@
       currentKey=key;account=null;error="";loading=false;busy=false;version++;
       if(state.me.capabilities?.lineAccount){void load();return}
     }
+    if(state.page==="teacherHome"&&(loading||!account||account.configured===false||account.bound&&account.googleLinked&&!account.pendingLink))return;
     let content="";
     if(!state.me.capabilities?.lineAccount||account?.configured===false){
       content='<div class="notice">此校尚未開啟 LINE 綁定，請聯絡學校管理員設定。</div>';
@@ -29,7 +30,7 @@
     }else{
       content=`<div class="notice"><b>尚未完成 Gmail 與 LINE 綁定</b><br>Gmail：${esc(state.me.email||"")}</div><p class="muted">請使用自己的 LINE 帳號授權，再核對 Gmail 與 LINE 名稱完成綁定。完成後可接收家長的個課狀態通知，並回平台處理。</p>${account.authProvider==="google"?`<button type="button" class="primary" onclick="teacherLineAccount.bind()" ${busy?"disabled":""}>${busy?"正在開啟 LINE 授權…":"綁定我的 LINE 帳號"}</button>`:`<a class="button primary" href="${manage}">連結我的 Gmail 與 LINE</a>`}`;
     }
-    main.insertAdjacentHTML("afterbegin",`<section id="teacherLineAccount" class="card" aria-labelledby="teacherLineAccountTitle" style="overflow-wrap:anywhere"><h2 id="teacherLineAccountTitle">🔔 老師 LINE 通知</h2>${content}${account&&!error&&!loading?'<button type="button" class="secondary" style="margin-top:8px" onclick="teacherLineAccount.refresh()">更新綁定狀態</button>':""}</section>`);
+    main.insertAdjacentHTML(state.page==="teacherHome"?"beforeend":"afterbegin",`<section id="teacherLineAccount" class="card" aria-labelledby="teacherLineAccountTitle" style="overflow-wrap:anywhere"><h2 id="teacherLineAccountTitle">🔔 老師 LINE 通知</h2>${content}${account&&!error&&!loading?'<button type="button" class="secondary" style="margin-top:8px" onclick="teacherLineAccount.refresh()">更新綁定狀態</button>':""}</section>`);
   }
 
   async function load(){

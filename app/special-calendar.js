@@ -70,7 +70,7 @@
   const baseHome=typeof home==="function"?home:null;
   if(baseHome)home=function(){
     const html=baseHome();
-    if(state.me?.role!=="parent")return html;
+    if(state.me?.role!=="parent"||window.parentHomeFocusReady)return html;
     const boundary="<!-- parent-payment-notices-end -->",card=parentCalendarCard();
     return html.includes(boundary)?html.replace(boundary,boundary+card):card+html;
   };

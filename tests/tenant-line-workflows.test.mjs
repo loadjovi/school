@@ -370,7 +370,7 @@ test("student LINE coverage preserves binding and uses the latest friendship for
   assert.equal((await lookup("school-a", "U" + "c".repeat(32))).size, 0);
 });
 
-test("parent home keeps the service card and syncs with the active school account", async () => {
+test("parent account tools are collapsed and can still sync with the active school account", async () => {
   const state = {me: {role: "parent", capabilities: {lineAccount: true, feeCollections: true}}, page: "home"};
   const calls = [];
   const file = source("app/app-v3.js");
@@ -380,7 +380,8 @@ test("parent home keeps the service card and syncs with the active school accoun
       state, api: async (url, options) => {calls.push({url, options});return {audience: "parent"};}
     }
   );
-  assert.match(tenantServicesEntry(), /LINE 通知與家長服務/);
+  assert.match(tenantServicesEntry(), /<details class="card" id="parentAccountSettings">/);
+  assert.doesNotMatch(tenantServicesEntry(), /<details[^>]* open/);
   assert.match(tenantServicesEntry(), /開啟 LINE 通知／費用資訊/);
   assert.match(tenantServicesEntry(), /重新同步我的 LINE 選單/);
   const output = {};
