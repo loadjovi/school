@@ -74,10 +74,10 @@ test("today's parent course card includes that child's private lessons and exclu
 test("upcoming signup links follow dynamic groups and deadlines and keep an enrolled family's future event",async()=>{
  const {ctx,registrations}=parentHome();await ctx.refreshParentHomeUpdates();
  const config=(id,extra={})=>({id,module:"fieldTrip",title:id,enabled:true,targetGroups:"A",startAt:"2026-12-09T09:00:00+08:00",...extra});
- ctx.state.parentActivityConfigs=[config("open"),config("closed",{closeAt:"2026-11-18T09:00:00+08:00"}),config("enrolled",{closeAt:"2026-11-18T09:00:00+08:00"}),config("other-team",{targetGroups:"新團"}),config("old",{startAt:"2026-11-10T09:00:00+08:00"})];
+ ctx.state.parentActivityConfigs=[config("open"),config("closed",{closeAt:"2026-11-18T09:00:00+08:00"}),config("enrolled",{closeAt:"2026-11-18T09:00:00+08:00"}),config("other-team",{targetGroups:"新團"}),config("old",{startAt:"2026-11-10T09:00:00+08:00"}),config("ended-today",{startAt:"2026-11-19T07:00:00+08:00",endAt:"2026-11-19T08:00:00+08:00"}),config("calendar-ended",{module:"calendarActivity",eventDate:"2026-11-19",endTime:"08:00"})];
  registrations.push({kind:"fieldTrip",activityId:"enrolled",registrationStatus:"REGISTERED"});
  const html=ctx.home().split('id="parentUpcomingActivities"')[1].split('id="parentLatestNews"')[0];
- assert.match(html,/open/);assert.match(html,/enrolled/);assert.doesNotMatch(html,/closed|other-team|>old</);
+ assert.match(html,/open/);assert.match(html,/enrolled/);assert.doesNotMatch(html,/closed|other-team|>old<|ended-today|calendar-ended/);
  assert.match(html,/activity=fieldTrip%3Aopen/);assert.match(html,/已送出報名/);
 });
 

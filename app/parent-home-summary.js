@@ -428,7 +428,8 @@
       const registered=registrations?.some(x=>x.kind===config.module&&x.activityId===config.id&&x.registrationStatus!=="CANCELLED");
       const closed=config.closeAt&&Date.parse(config.closeAt)<=now;
       const end=config.module==="calendarActivity"?config.endDate||start:window.parentActivityNotice?.activityDate(config)?.split("～").at(-1)||start;
-      if(!start||end<date||closed&&!registered){rows.delete(key);continue}
+      const ended=config.endAt?Date.parse(config.endAt)<=now:config.module==="calendarActivity"&&config.endTime?Date.parse(end+"T"+config.endTime+":00+08:00")<=now:false;
+      if(!start||end<date||ended||closed&&!registered){rows.delete(key);continue}
       const opening=config.openAt&&Date.parse(config.openAt)>now;
       rows.set(key,{...old,key,date:start,endDate:end,title:config.title||old.title,location:config.location||old.location||"",
         description:registered?"已送出報名，查看報名與繳費進度":config.module==="calendarActivity"?old.description||"查看活動詳情":opening?"報名尚未開始":"報名開放中，查看費用與參加方式",
