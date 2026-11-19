@@ -50,6 +50,9 @@ BANNER = r'''
 (()=>{
 "use strict";
 if(document.getElementById("functional-uat-banner"))return;
+const labName="__LAB_NAME__",labPurpose="__LAB_PURPOSE__",labColor="__LAB_COLOR__";
+document.title=document.title.replace(/^(?:【UAT LAB】|【新版 LAB】|【舊版 LAB】)/,"");
+document.title="【"+labName+"】"+document.title;
 const attach=()=>{
  if(document.getElementById("functional-uat-banner"))return;
  // Desktop: reserve the right-hand header area for the account/role selector.
@@ -71,20 +74,38 @@ const attach=()=>{
   margin:8px 12px;
   max-width:calc(100% - 24px);
  }
+}
+.functional-uat-header-label{
+ display:block;width:max-content;max-width:100%;box-sizing:border-box;
+ padding:2px 7px;margin-top:4px;border-radius:5px;
+ background:${labColor};color:#fff;opacity:1;
+ font:700 12px/1.5 system-ui,sans-serif;white-space:normal;
+ overflow-wrap:anywhere;
 }`;
  document.head.append(style);
  const badge=document.createElement("div");badge.id="functional-uat-banner";
  badge.setAttribute("role","status");
  badge.style.cssText="font:700 13px/1.35 system-ui,sans-serif;color:#fff;background:#9d4112;"+
  "padding:7px 12px;border-radius:9px;box-shadow:0 3px 11px #0004;pointer-events:none";
- badge.textContent="UAT 功能驗證 LAB｜非正式資料";
+ badge.textContent=labName+"｜"+labPurpose+"｜隔離狀態確認中";
  document.body.insertBefore(badge,document.body.firstChild);
+ const labelHeaders=()=>{
+  for(const header of document.querySelectorAll("header")){
+   if(header.querySelector(".functional-uat-header-label"))continue;
+   const label=document.createElement("span");
+   label.className="functional-uat-header-label";
+   label.textContent=labName+"｜"+labPurpose;
+   (header.querySelector(".sub")||header).append(label);
+  }
+ };
+ labelHeaders();
+ new MutationObserver(labelHeaders).observe(document.body,{childList:true,subtree:true});
  fetch("/api/lab-readiness",{cache:"no-store",credentials:"same-origin"})
   .then(res=>res.ok?res.json():Promise.reject(Error("readiness HTTP "+res.status)))
   .then(info=>{
     if(!info.ready)throw Error("隔離設定未就緒");
-    badge.style.background="#204f89";
-    badge.textContent="UAT 功能驗證 LAB｜獨立資料";
+    badge.style.background=labColor;
+    badge.textContent=labName+"｜"+labPurpose+"｜獨立資料";
     // Same-tab navigation preserves the main app's sessionStorage Google
     // credential plus the chosen schoolAdmin/tenant context. No token in URLs.
     if(!location.pathname.startsWith("/sop-lab/")){
@@ -94,7 +115,7 @@ const attach=()=>{
       badge.append(link);badge.style.pointerEvents="auto";
     }
   })
-  .catch(()=>{badge.style.background="#a12222";badge.textContent="LAB 隔離狀態未驗證｜請勿操作";});
+  .catch(()=>{badge.style.background="#a12222";badge.textContent=labName+"｜LAB 隔離狀態未驗證｜請勿操作";});
 };
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",attach,{once:true});
 else attach();
@@ -137,14 +158,18 @@ def prepare(output: Path, *, line_uat: bool = False) -> None:
     email.write_text(text.replace(expected,'const buildSuppressesExternalEmail = true; // LAB: external email permanently disabled'),
                      encoding="utf-8")
     app=output/"app"
-    app.joinpath("functional-lab-banner.js").write_text(BANNER.lstrip(),encoding="utf-8")
+    lab_name="新版 LAB" if line_uat else "舊版 LAB"
+    lab_purpose="LINE 整合驗證" if line_uat else "正式功能同步"
+    lab_color="#176352" if line_uat else "#284e8c"
+    banner=BANNER.replace("__LAB_NAME__",lab_name).replace("__LAB_PURPOSE__",lab_purpose).replace("__LAB_COLOR__",lab_color)
+    app.joinpath("functional-lab-banner.js").write_text(banner.lstrip(),encoding="utf-8")
     count=0
     for page in app.rglob("*.html"):
         text=page.read_text(encoding="utf-8")
         if "</body>" not in text:continue
-        text=text.replace("</body>",'<script defer src="/functional-lab-banner.js"></script></body>')
+        text=text.replace("</body>",'<script defer src="/functional-lab-banner.js?v=20261119-lab-labels"></script></body>')
         text=text.replace("<head>","<head><meta name=\"robots\" content=\"noindex,nofollow\">",1)
-        text=text.replace("<title>","<title>【UAT LAB】",1)
+        text=text.replace("<title>",f"<title>【{lab_name}】",1)
         page.write_text(text,encoding="utf-8");count+=1
     if count<3:raise RuntimeError("Unexpected UI layout: missing HTML entrypoints")
     # SOP-only navigator: links to copied Production pages, never duplicates them.
@@ -156,7 +181,7 @@ def prepare(output: Path, *, line_uat: bool = False) -> None:
     if "</body>" not in healthcheck or "<meta name=\"robots\" content=\"noindex,nofollow\">" not in healthcheck:
         raise RuntimeError("LAB performance diagnostic must be noindex and have an HTML body")
     healthcheck_output.write_text(healthcheck.replace("</body>",
-        '<script defer src="/functional-lab-banner.js"></script></body>'),encoding="utf-8")
+        '<script defer src="/functional-lab-banner.js?v=20261119-lab-labels"></script></body>'),encoding="utf-8")
     install_sop_fixtures(api)
     install_sop_parent_binding(api)
     install_sop_data_tools(api,app)
