@@ -6,7 +6,6 @@ import {
 } from "../lib/storage.js";
 import { formatPrivateLessonNotice,sendPrivateLessonWorkflowEmail } from "../lib/email.js";
 import { getSystemSettings } from "../lib/settings.js";
-import {notifyAdminTodo} from "../lib/lineAdminTodoNotification.mjs";
 import {notifyPrivateLessonLine} from "../lib/linePrivateLesson.js";
 import {validateParentLessonReview} from "../lib/privateLessonReview.mjs";
 import {normalizeWeeklyGoals,readWeeklyGoals,isPublishedLesson} from "../lib/musicLearningGoals.mjs";
@@ -147,7 +146,7 @@ async function notifyWorkflow({request,schoolId,schoolName,entity,studentName,te
     const recipients=[];
     if(target==="parents"||target==="both")recipients.push(...await parentEmailsForStudent(activityStudentId(entity),schoolId));
     if(target==="teacher"||target==="both")recipients.push(String(entity.teacher||"").trim().toLowerCase());
-    const unique=[...new Set(recipients.filter(x=>x&&x!==String(actorEmail||"").trim().toLowerCase()))],appUrl=publicAppUrl(request);
+    const unique=[...new Set(recipients.filter(x=>x&&(eventType==="scheduled"||x!==String(actorEmail||"").trim().toLowerCase())))],appUrl=publicAppUrl(request);
     if(!appUrl)console.warn("Unable to resolve public app URL for private lesson email; set APP_PUBLIC_URL in Azure environment variables.");
     const notice={schoolId,
       recipients:unique,eventType,schoolName,studentName,teacherName,lessonDate:String(entity.eventDate||""),startTime:String(entity.startTime||""),endTime:String(entity.endTime||""),minutes:Number(entity.minutes||0),
@@ -367,11 +366,8 @@ app.http("privateLesson",{
     };
     await table("tenantPrivateLesson").createEntity(entity);
     const studentName=clean(master?.studentName||body.studentName||"學生",80);
-    const [result,staffLineStatus]=await Promise.all([
-      notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"scheduled",target:"parents",actorEmail:a.email,actorName:a.displayName||teacherName}),
-      notifyAdminTodo(schoolId,{id:"private-lesson:"+lessonId,text:"新增個別課預約，請至個課紀錄查看。"})
-    ]);
+    const result=await notifyWorkflow({request,schoolId,schoolName,entity,studentName,teacherName,eventType:"scheduled",target:"parents",actorEmail:a.email,actorName:a.displayName||teacherName});
     const notificationAuditPersisted=await persistNotificationAudit(entity,"scheduled",result,a.email);
-    return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted,staffLineStatus},201);
+    return json({ok:true,item:view(entity,teacherName),emailNotification:emailResponse(result,entity),notificationAuditPersisted,lineNotification:{status:result.lineStatus||"failed"}},201);
   }
 });
