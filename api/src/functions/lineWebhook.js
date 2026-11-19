@@ -4,6 +4,7 @@ import {getTenantContext,json} from "../lib/auth.js";
 import {defaultTenantId,tenantIdValue} from "../lib/storage.js";
 import {getTenantLineAccount,recordTenantLineFriendship} from "../lib/tenantLineAccounts.js";
 import {refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
+import {parseActivityLineBinding,consumeActivityLineBinding,leaveActivityLineGroup} from "../lib/lineActivityGroups.js";
 import {receivePrivateLessonReview} from "../lib/linePrivateLesson.js";
 import {tenantLineParentReply,tenantLineReplyKind,tenantLineStaffReply,tenantLineStaffReplyKind} from "../lib/tenantLineReplies.mjs";
 import {resolveTenantLineChannel,lineTargetMatchesChannel,tenantWebhookLinks} from "../lib/lineTenantConfig.js";
@@ -50,7 +51,20 @@ async function handleLineWebhook(request,schoolId,legacyRoute){
           await Promise.all(tasks);
           continue;
         }
+        if(event.type==="leave"&&event.source?.type==="group"){
+          await leaveActivityLineGroup(channel,event.source.groupId);continue;
+        }
         if(event?.type!=="message"||event?.message?.type!=="text")continue;
+        const activityCode=parseActivityLineBinding(event.message.text);
+        if(activityCode){
+          if(event.source?.type!=="group"){
+            await replyLineMessage(event.replyToken,"請先將此校官方帳號加入活動志工群組，再於該群組貼上綁定指令。",options);continue;
+          }
+          const group=await getLineGroupSummary(event.source.groupId,options);
+          const saved=await consumeActivityLineBinding(channel,activityCode,event.source.groupId,group?.groupName);
+          await replyLineMessage(event.replyToken,saved?`✅ 已綁定活動志工群組\n活動：${saved.title}\n群組：${saved.groupName}\n學校管理員可至「LINE 通知中心」預覽並發送訊息。`:"活動綁定碼已失效、已使用或活動已關閉，請回到 LINE 通知中心重新產生。",options);
+          continue;
+        }
         if(channel.loginConfigured&&/^#個課評鑑(?:\s|$)/u.test(event.message.text)){
           const result=await receivePrivateLessonReview(channel,userId,event.message.text);
           await replyLineMessage(event.replyToken,result,options);

@@ -4,7 +4,7 @@
   const teacher=()=>roles.has(state.me?.role);
   const identity=()=>teacher()?JSON.stringify([state.me.schoolId,state.me.identityId,state.me.email,state.me.authProvider,state.me.role]):"";
   let currentKey="",account=null,error="",loading=false,busy=false,version=0;
-  const manage="/fee-collections.html#lineBinding";
+  const manage="/line-account.html";
 
   function mount(){
     document.getElementById("teacherLineAccount")?.remove();

@@ -111,7 +111,7 @@
       "/attendance-support.js?v=20260928-2148",
       "/attendance-edit.js?v=20261002-save-confirm",
       "/practice-progress.js?v=20261104-practice-filter-anchor",
-      "/admin-operations.js?v=20261107-line-absence-group-webhook-path-announcement",
+      "/admin-operations.js?v=20261107-line-absence-group-webhook-path-announcement-notification-center",
       "/admin-followup-summary-fix.js?v=20260917-1320",
       "/system-backup.js?v=20261003-practice20",
       "/school-access.js?v=20261027-school-followup",
@@ -133,7 +133,7 @@
       "/training-attendance.js?v=20261102-activity-boundary",
       "/comprehensive-support.js?v=20261002-save-confirm",
       "/private-lesson-confirmation.js?v=20260929-late10",
-      "/teacher-line-account.js?v=20261119-teacher-binding-home-priorities"
+      "/teacher-line-account.js?v=20261119-teacher-binding-home-priorities-notification-center"
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20261027-school-followup",
@@ -196,7 +196,7 @@
   window.resumeLineStaffEntry=()=>{if(sessionStorage.getItem(staffEntryKey))loadRoleModules()};
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity-school-admin-teacher-binding-20261119-home-priorities",()=>{
+    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity-school-admin-teacher-binding-20261119-home-priorities-notification-center",()=>{
       const start=()=>loadRoleModules();
       if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
       else setTimeout(start,60);

@@ -25,7 +25,7 @@ function webhookFixture(overrides = {}) {
   load("api/src/functions/lineWebhook.js", {
     app: {http: (name, route) => { handlers[name] = route.handler; }},
     json, Buffer, console, URL, defaultTenantId, tenantIdValue, randomInt,
-    lineBindingCodeHash, lineNotificationModeLabel, normalizeLineNotificationMode, parseLineBindingCommand, verifyLineSignature,
+    lineBindingCodeHash, lineNotificationModeLabel, normalizeLineNotificationMode, parseLineBindingCommand, verifyLineSignature,parseActivityLineBinding:()=>"",
     resolveTenantLineChannel: async school => school === channelA.schoolId ? channelA : school === channelB.schoolId ? channelB : {configured: false, legacy: false},
     findLineBindingRequest: async (school, hash, bot) => {
       lookups.push([school, hash, bot]);

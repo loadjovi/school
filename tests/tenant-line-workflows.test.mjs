@@ -382,7 +382,8 @@ test("parent account tools are collapsed and can still sync with the active scho
   );
   assert.match(tenantServicesEntry(), /<details class="card" id="parentAccountSettings">/);
   assert.doesNotMatch(tenantServicesEntry(), /<details[^>]* open/);
-  assert.match(tenantServicesEntry(), /開啟 LINE 通知／費用資訊/);
+  assert.match(tenantServicesEntry(), /管理我的 LINE 通知設定/);
+  assert.match(tenantServicesEntry(), /line-account.html/);
   assert.match(tenantServicesEntry(), /重新同步我的 LINE 選單/);
   const output = {};
   const button = {disabled: false, closest: () => ({querySelector: () => output})};
@@ -398,9 +399,9 @@ test("parent account tools are collapsed and can still sync with the active scho
   state.page = "admin";
   state.me.capabilities.lineRoleMenus = {parent: true, staff: false};
   assert.match(tenantServicesEntry(), /收費專案與匯款核帳/);
-  assert.match(tenantServicesEntry(), /LINE 角色選單/);
-  assert.match(tenantServicesEntry(), /家長選單已設定・幹部選單待設定/);
-  assert.match(tenantServicesEntry(), /重新同步我的 LINE 選單/);
+  assert.match(tenantServicesEntry(), /LINE 通知中心/);
+  assert.match(tenantServicesEntry(), /line-announcement.html/);
+  assert.match(tenantServicesEntry(), /活動志工 LINE 群組/);
   state.me.capabilities.feeCollections = false;
   assert.doesNotMatch(tenantServicesEntry(), /收費專案與匯款核帳/);
   state.teacherAdminOpen = true;

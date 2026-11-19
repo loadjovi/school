@@ -2,43 +2,43 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>LINE 公告</title>
-  <link rel="stylesheet" href="/styles.css">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#234f3f">
+  <title>LINE 通知中心</title>
   <style>
-    main { max-width: 720px; margin: 0 auto; padding: 20px }
-    fieldset { margin: 18px 0; padding: 12px; border: 1px solid #a9bbb0; border-radius: 8px }
-    fieldset label { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px 8px 0 }
-    fieldset input { width: auto; margin: 0 }
-    textarea { width: 100%; min-height: 130px }
-    #result { min-height: 1.5rem }
+    *{box-sizing:border-box}body{margin:0;background:#f4f7f5;color:#17372b;font:16px/1.6 system-ui,-apple-system,"Noto Sans TC",sans-serif}header{background:#234f3f;color:white;padding:20px max(18px,calc((100% - 920px)/2));font-weight:800;font-size:20px}main{max-width:920px;margin:auto;padding:20px 16px 70px}a{color:#245c48}h1{font-size:27px;margin:0 0 8px}h2{font-size:21px;margin:0 0 10px}.card{background:white;padding:20px;border:1px solid #d5e2da;border-radius:16px;margin:16px 0}.muted{color:#586e64}.notice{background:#edf6f1;padding:12px;border-radius:10px;margin:10px 0;overflow-wrap:anywhere}fieldset{border:1px solid #b8ccc1;border-radius:12px;margin:18px 0;padding:14px;min-width:0}legend{font-weight:800}label.choice{display:inline-flex;align-items:center;gap:7px;padding:9px 14px 9px 0}input[type=checkbox],input[type=radio]{width:20px;height:20px;margin:0}button,textarea,select{font:inherit}button,.button{border:0;border-radius:9px;background:#245c48;color:white;padding:11px 15px;min-height:44px;font-weight:750;cursor:pointer}.secondary{background:white;color:#245c48;border:1px solid #245c48}button:disabled{opacity:.5;cursor:not-allowed}.actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}textarea,select{width:100%;border:1px solid #9fb5a9;border-radius:9px;padding:12px;background:white;color:#17372b}textarea{min-height:150px;resize:vertical}#bindingCommand{min-height:70px;font-family:monospace}.preview-box{border:2px solid #42846b}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:12px 0}.history-item{padding:14px 0;border-top:1px solid #d5e2da}.history-item p{white-space:pre-wrap;overflow-wrap:anywhere}.history-item small{display:block}.account-link{font-size:15px;display:inline-block;margin-top:10px}[hidden]{display:none!important}@media(max-width:600px){.card{padding:16px}h1{font-size:24px}.actions button{flex:1 1 150px}}
   </style>
 </head>
 <body>
+  <header id="siteName">學校平台</header>
   <main>
-    <p><a href="/">返回學校後台</a></p>
-    <h1>LINE 公告</h1>
+    <a href="/">← 返回學校後台</a>
+    <section class="card"><h1>📣 LINE 通知中心</h1><p>發送全團、指定團別公告，或通知活動志工 LINE 群組。</p><a class="account-link" href="/line-account.html">管理我自己的 LINE 綁定</a></section>
     <form class="card" id="announcement">
-      <fieldset>
-        <legend>收件角色</legend>
-        <label><input type="checkbox" name="role" value="parent">家長</label>
-        <label><input type="checkbox" name="role" value="teacher">老師</label>
-        <label><input type="checkbox" name="role" value="staff">幹部</label>
-        <label><input type="checkbox" name="role" value="finance">財務幹部</label>
+      <fieldset><legend>1．選擇通知方式</legend>
+        <label class="choice"><input type="radio" name="audience" value="members" checked>全團／指定團別</label>
+        <label class="choice"><input type="radio" name="audience" value="activityGroup">活動志工 LINE 群組</label>
       </fieldset>
-      <fieldset>
-        <legend>家長與老師的團別範圍</legend>
-        <label><input type="checkbox" name="allSchool">全校</label>
-        <div id="teams"></div>
-        <p>幹部與財務幹部依學校權限選取。</p>
+      <fieldset id="memberPanel"><legend>2．選擇成員</legend>
+        <p class="muted">訊息分別送至成員個人的 LINE 聊天室，同一個 LINE 不會重複收到。</p>
+        <div><label class="choice"><input type="checkbox" name="role" value="parent" checked>家長</label><label class="choice"><input type="checkbox" name="role" value="teacher">老師</label><label class="choice"><input type="checkbox" name="role" value="staff">幹部</label><label class="choice"><input type="checkbox" name="role" value="finance">財務幹部</label></div>
+        <p><b>家長與老師的團別範圍</b></p>
+        <label class="choice"><input type="checkbox" name="allSchool" checked>全團</label><div id="teams"></div>
+        <small class="muted">團別依學校學生主檔自動更新；幹部與財務幹部依本校有效權限選取。</small>
       </fieldset>
-      <label for="message">公告內容</label>
-      <textarea id="message" name="message" maxlength="1000" required></textarea>
-      <p id="result" aria-live="polite"></p>
-      <button type="submit" class="primary" id="preview" disabled>預覽收件人</button>
-      <button type="button" class="secondary" id="send" hidden>發送至 LINE</button>
+      <fieldset id="activityPanel" hidden disabled><legend>2．選擇活動志工群組</legend>
+        <label for="activityKey">活動</label><select id="activityKey" name="activityKey"><option value="">請先選擇活動</option></select>
+        <div id="activityGroupStatus" class="notice" role="status">請選擇活動，確認本次通知的志工群組。</div>
+        <div class="actions"><button type="button" id="createGroupCode" class="secondary" disabled>產生群組綁定碼</button><button type="button" id="refreshGroups" class="secondary">重新讀取群組</button><button type="button" id="unbindGroup" class="secondary" hidden>解除此活動的群組綁定</button></div>
+        <div id="bindingInstructions" class="notice" hidden><b>綁定此活動的志工群組</b><p>先將此校 LINE 官方帳號加入指定的志工群組，再於該群組貼上下方指令。完成後按「重新讀取群組」核對名稱。</p><textarea id="bindingCommand" readonly aria-label="志工群組綁定指令"></textarea><small id="bindingExpiry"></small><details><summary>無法將官方帳號加入群組？</summary><p>請於 LINE Developers 的 Messaging API 設定開啟「Allow bot to join group chats」。每個群組同時只能加入一個官方帳號。</p><a href="https://developers.line.biz/en/docs/messaging-api/group-chats/" target="_blank" rel="noopener noreferrer">查看 LINE 官方設定說明</a></details></div>
+      </fieldset>
+      <label for="message"><b>3．輸入訊息</b></label><textarea id="message" name="message" maxlength="1000" required placeholder="例如：請本次比賽志工於 08:00 至校門口集合。"></textarea>
+      <p id="result" role="status" aria-live="polite"></p>
+      <button type="submit" class="primary" id="preview" disabled>預覽收件對象與訊息</button>
+      <section id="recipientPreview" class="card preview-box" hidden><h2>確認本次通知</h2><p id="previewRecipient"></p><p id="previewCounts"></p><pre id="previewMessage"></pre><button type="button" class="primary" id="send">確認發送至 LINE</button></section>
     </form>
+    <details class="card"><summary><b>最近發送紀錄</b></summary><div id="history">正在讀取…</div></details>
   </main>
-  <script type="module" src="/line-announcement.js"></script>
+  <script type="module" src="/line-announcement.js?v=20261119-notification-center"></script>
 </body>
 </html>

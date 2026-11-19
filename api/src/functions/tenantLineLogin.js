@@ -115,7 +115,7 @@ app.http("tenantLineLoginCallback", {
     try {
       const txn = await useTenantLineOAuth(request, schoolId, state, channel);
       if (!txn || !code) throw new Error("Expired or invalid authorization");
-      if(txn.googleSub)resultUrl.pathname="/fee-collections.html";
+      if(txn.googleSub)resultUrl.pathname="/line-account.html";
       const tokens = await lineOAuthRequest("token", {
         grant_type: "authorization_code", code, redirect_uri: callbackUrl(channel), client_id: channel.loginId,
         client_secret: channel.loginSecret, code_verifier: txn.verifier

@@ -191,7 +191,7 @@ async function renderLineLogin(){
 }
 
 async function syncOwnLineMenu(button){
-  const output=button.closest("section")?.querySelector("[data-line-menu-result]");
+  const output=button.closest("section, details")?.querySelector("[data-line-menu-result]");
   if(!output||button.disabled)return;
   button.disabled=true;
   output.textContent="正在同步 LINE 選單…";
@@ -219,24 +219,19 @@ function tenantServicesEntry(){
     if(state.page!=="admin"||state.teacherAdminOpen)return "";
     const fees=billing?`<section class="card" data-admin-group="home" aria-labelledby="schoolFeeServicesTitle"><h2 id="schoolFeeServicesTitle">💰 收費專案與匯款核帳</h2><div class="notice">管理團 T 與期末聚餐收費；已獲指派的財務人員可核對匯款。</div><button type="button" class="primary" style="width:100%" onclick="location.href='/fee-collections.html'">前往收費專案／財務核帳 →</button></section>`:"";
     if(!options.lineRoleMenus&&!options.lineAccount)return fees;
-    const menus=options.lineRoleMenus||{};
-    const status=options.lineAccount?`家長選單${menus.parent?"已設定":"待設定"}・幹部選單${menus.staff?"已設定":"待設定"}`:"此校的 LINE 帳號服務尚未啟用。";
-    const actions=options.lineAccount?`<button type="button" class="primary" style="width:100%" onclick="location.href='/fee-collections.html#lineBinding'">管理我的 LINE 帳號 →</button><button type="button" class="secondary" style="width:100%;margin-top:8px" onclick="syncOwnLineMenu(this)">重新同步我的 LINE 選單</button><div class="muted" role="status" data-line-menu-result></div>`:"";
-    return `${fees}<section class="card" data-admin-group="home" aria-labelledby="schoolLineServicesTitle"><h2 id="schoolLineServicesTitle">LINE 角色選單</h2><div class="notice">${status}</div>${actions}</section>`;
+    return `${fees}<section class="card" data-admin-group="home" aria-labelledby="schoolLineServicesTitle"><h2 id="schoolLineServicesTitle">📣 LINE 通知中心</h2><div class="notice">發送全團、指定團別公告，或通知已綁定的活動志工 LINE 群組。</div><button type="button" class="primary" style="width:100%" onclick="location.href='/line-announcement.html'">開啟 LINE 通知中心 →</button><a href="/line-account.html" style="display:block;margin-top:12px">管理我自己的 LINE 綁定</a></section>`;
   }
   if(options.lineAccount&&["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(me.role)){
     return ""; // Teacher home and settings show the verified binding status in teacher-line-account.js.
   }
   if(!options.lineAccount&&!billing)return "";
   if(options.lineAccount&&["parent","unassigned"].includes(me.role)){
-    const description=billing
-      ?"綁定個人 LINE 後可接收課程與活動提醒，也可在這裡查看繳費與核帳進度。"
-      :"綁定個人 LINE 後可接收課程與活動提醒。";
-    const button=billing?"開啟 LINE 通知／費用資訊 →":"開啟 LINE 通知設定 →";
+    const description="綁定自己的 LINE，接收課程、個課與活動通知。";
+    const button="管理我的 LINE 通知設定 →";
     const sync=me.role==="parent"
       ?'<button type="button" class="secondary" style="width:100%;margin-top:8px" onclick="syncOwnLineMenu(this)">重新同步我的 LINE 選單</button><div class="muted" role="status" data-line-menu-result></div>'
       :"";
-    return `<details class="card" id="parentAccountSettings"><summary><b>⚙️ 帳號與通知設定</b></summary><h2 id="parentLineServicesTitle">LINE 綁定與費用資訊</h2><div class="notice">${description}</div><button type="button" class="secondary" style="width:100%" onclick="location.href='/fee-collections.html#lineBinding'">${button}</button>${sync}</details>`;
+    return `<details class="card" id="parentAccountSettings"><summary><b>⚙️ 帳號與通知設定</b></summary><h2 id="parentLineServicesTitle">LINE 通知設定</h2><div class="notice">${description}</div><button type="button" class="secondary" style="width:100%" onclick="location.href='/line-account.html'">${button}</button>${sync}${billing?'<a href="/fee-collections.html" style="display:block;margin-top:12px">查看我的繳費紀錄</a>':""}</details>`;
   }
   return billing?'<div class="card"><a href="/fee-collections.html">查看費用資訊</a></div>':"";
 }

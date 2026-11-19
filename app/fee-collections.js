@@ -1,3 +1,6 @@
+const accountOnly=document.documentElement.hasAttribute("data-line-account");
+const legacyLineEntry=!accountOnly&&(location.hash==="#lineBinding"||new URLSearchParams(location.search).has("line_link")||new URLSearchParams(location.search).has("line_error"));
+if(legacyLineEntry)location.replace("/line-account.html"+location.search+"#lineBinding");
 const $=id=>document.getElementById(id);
 const esc=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[char]);
 const money=value=>Number.isSafeInteger(Number(value))?`NT$ ${Number(value).toLocaleString("zh-TW")}`:"待確認";
@@ -13,7 +16,7 @@ async function api(path,options={}){
   const response=await fetch(`/api/${path}`,{...options,credentials:"same-origin",cache:"no-store",headers:{...headers(),...(options.headers||{})}}),data=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(data.error||`HTTP ${response.status}`);return data;
 }
-function showStatus(message,type=""){$("status").textContent=message;$('status').className=`notice ${type}`.trim()}
+function showStatus(message,type=""){$("status").textContent=message;$("status").hidden=!message;$('status').className=`notice ${type}`.trim()}
 function statusClass(status){return status==="REPORTED_UNVERIFIED"?"reported":status==="VERIFIED"?"":"closed"}
 
 function renderLineBinding(){
@@ -157,25 +160,28 @@ async function load(){
     state.me=await api("me");
     if(!["admin","parent","unassigned","teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me.role))throw new Error("請切換至此校已授權的身分。");
     $("siteName").textContent=state.me.systemName||state.me.schoolName||"學校平台";
-    const billing=state.me.capabilities?.feeCollections===true&&state.me.role!=="unassigned";
-    $("roleTitle").textContent=billing?"LINE 帳號與收費":"LINE 帳號";
+    const billing=!accountOnly&&state.me.capabilities?.feeCollections===true&&state.me.role!=="unassigned";
+    $("roleTitle").textContent=accountOnly?"LINE 通知設定":state.me.role==="admin"?"收費專案與匯款核帳":"繳費與核帳紀錄";
     $("roleIntro").textContent=state.me.schoolName||"";
     const [line,templates,projects]=await Promise.all([
-      state.me.capabilities?.lineAccount===true?api("line/school-account"):null,
+      accountOnly&&state.me.capabilities?.lineAccount===true?api("line/school-account"):null,
       billing&&state.me.role==="admin"?api("uniform-events/payment-account-templates"):null,
       billing?api("fee-collections/projects"):null
     ]);
     state.line=line;state.templates=templates?.items||[];state.projects=projects?.items||[];
     state.activities=projects?.dinnerActivities||[];
-    renderLineBinding();
+    if(accountOnly){
+      renderLineBinding();
+      if(!state.line?.configured)$("lineBinding").textContent="此校尚未開啟 LINE 通知綁定，請聯絡學校管理員。";
+    }
     if(billing){renderAdminCreate();renderProjects()}
-    else $("projects").textContent="";
+    else if($("projects"))$("projects").textContent="";
     const params=new URLSearchParams(location.search);
     const lineError=params.get("line_error");
     const message=lineError==="conflict"?"這個 Gmail 或 LINE 已有其他綁定，請聯絡學校管理員核對。":lineError?"LINE 授權未完成，請從本頁重新授權。":"";
     showStatus(message||(params.get("line_link")==="confirm"?(state.line?.pendingLink?"請核對 Gmail 與 LINE 名稱，再確認綁定。":"綁定確認已逾時，請重新開始。"):billing?`已載入 ${state.projects.length} 個收費專案。`:""),message?"error":"");
     if(params.has("line_link")||lineError)history.replaceState({},"",location.pathname);
-  }catch(error){showStatus(error.message,"error");$("projects").innerHTML=""}
+  }catch(error){showStatus(error.message,"error");if($("projects"))$("projects").innerHTML=""}
 }
 
 document.addEventListener("click",async event=>{
@@ -231,4 +237,4 @@ document.addEventListener("click",async event=>{
 
 });
 
-load();
+if(!legacyLineEntry)load();
