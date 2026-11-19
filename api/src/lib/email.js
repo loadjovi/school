@@ -109,7 +109,7 @@ const privateLessonMailCopy={
 
 export function formatPrivateLessonNotice({
   eventType="completed",schoolName="",studentName="",teacherName="",lessonDate="",startTime="",endTime="",minutes=0,
-  lessonContent="",previousDate="",previousStartTime="",previousEndTime="",reason="",note="",actorName="",appUrl="",confirmUrl=""
+  lessonContent="",weeklyPracticeGoals=[],previousDate="",previousStartTime="",previousEndTime="",reason="",note="",actorName="",appUrl="",confirmUrl=""
 }={}){
   const type=Object.hasOwn(privateLessonMailCopy,eventType)?eventType:"completed",copy=privateLessonMailCopy[type];
   const school=clean(schoolName,120)||"弦樂團管理系統";
@@ -118,6 +118,7 @@ export function formatPrivateLessonNotice({
   const date=clean(lessonDate,20),timeText=[clean(startTime,10),clean(endTime,10)].filter(Boolean).join("～");
   const oldDate=clean(previousDate,20),oldTimeText=[clean(previousStartTime,10),clean(previousEndTime,10)].filter(Boolean).join("～");
   const content=clean(lessonContent,500);
+  const goals=type==="completed"&&Array.isArray(weeklyPracticeGoals)?weeklyPracticeGoals.map(goal=>clean(goal,120)).filter(Boolean).slice(0,3):[];
   const why=clean(reason,300),parentNote=clean(note,500),actor=clean(actorName,100);
   const link=clean(appUrl||confirmUrl,1000);
   const plainText=[
@@ -133,12 +134,13 @@ export function formatPrivateLessonNotice({
     `時間：${timeText}`,
     `課程分鐘：${Number(minutes||0)} 分鐘`,
     content?`課程內容：${content}`:"",
+    goals.length?"本週自主練習建議\n"+goals.map((goal,index)=>(index+1)+". "+goal).join("\n"):"",
     why?`原因：${why}`:"",
     parentNote?`備註：${parentNote}`:"",
     "",
     link?`${copy.action}：${link}`:""
   ].filter(Boolean).join("\n");
-  const html=`<div style="font-family:Arial,'Noto Sans TC',sans-serif;line-height:1.7;color:#173d31;max-width:640px"><h2 style="color:#1f5a46">🎻 ${esc(school)}｜${esc(copy.title)}</h2><p>${esc(copy.lead)}</p><table style="border-collapse:collapse">${actor?`<tr><td style="padding:4px 12px 4px 0"><b>異動人員</b></td><td>${esc(actor)}</td></tr>`:""}${oldDate?`<tr><td style="padding:4px 12px 4px 0"><b>原日期</b></td><td>${esc(oldDate)}</td></tr>`:""}${oldTimeText?`<tr><td style="padding:4px 12px 4px 0"><b>原時間</b></td><td>${esc(oldTimeText)}</td></tr>`:""}<tr><td style="padding:4px 12px 4px 0"><b>學生</b></td><td>${esc(studentName)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>老師</b></td><td>${esc(teacher)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>日期</b></td><td>${esc(date)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>時間</b></td><td>${esc(timeText)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>分鐘</b></td><td>${Number(minutes||0)} 分鐘</td></tr>${content?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>課程內容</b></td><td>${esc(content)}</td></tr>`:""}${why?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>原因</b></td><td>${esc(why)}</td></tr>`:""}${parentNote?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>備註</b></td><td>${esc(parentNote)}</td></tr>`:""}</table>${link?`<p style="margin-top:20px"><a href="${esc(link)}" style="display:inline-block;background:#1f5a46;color:white;text-decoration:none;padding:10px 18px;border-radius:8px">${esc(copy.action)}</a></p>`:""}<p style="font-size:12px;color:#6c7f77">此信由 ${esc(school)} 系統自動寄出，請勿直接回覆。</p></div>`;
+  const html=`<div style="font-family:Arial,'Noto Sans TC',sans-serif;line-height:1.7;color:#173d31;max-width:640px"><h2 style="color:#1f5a46">🎻 ${esc(school)}｜${esc(copy.title)}</h2><p>${esc(copy.lead)}</p><table style="border-collapse:collapse">${actor?`<tr><td style="padding:4px 12px 4px 0"><b>異動人員</b></td><td>${esc(actor)}</td></tr>`:""}${oldDate?`<tr><td style="padding:4px 12px 4px 0"><b>原日期</b></td><td>${esc(oldDate)}</td></tr>`:""}${oldTimeText?`<tr><td style="padding:4px 12px 4px 0"><b>原時間</b></td><td>${esc(oldTimeText)}</td></tr>`:""}<tr><td style="padding:4px 12px 4px 0"><b>學生</b></td><td>${esc(studentName)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>老師</b></td><td>${esc(teacher)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>日期</b></td><td>${esc(date)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>時間</b></td><td>${esc(timeText)}</td></tr><tr><td style="padding:4px 12px 4px 0"><b>分鐘</b></td><td>${Number(minutes||0)} 分鐘</td></tr>${content?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>課程內容</b></td><td>${esc(content)}</td></tr>`:""}${goals.length?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>本週自主練習建議</b></td><td><ol style="margin:0;padding-left:20px">${goals.map(goal=>"<li>"+esc(goal)+"</li>").join("")}</ol></td></tr>`:""}${why?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>原因</b></td><td>${esc(why)}</td></tr>`:""}${parentNote?`<tr><td style="padding:4px 12px 4px 0;vertical-align:top"><b>備註</b></td><td>${esc(parentNote)}</td></tr>`:""}</table>${link?`<p style="margin-top:20px"><a href="${esc(link)}" style="display:inline-block;background:#1f5a46;color:white;text-decoration:none;padding:10px 18px;border-radius:8px">${esc(copy.action)}</a></p>`:""}<p style="font-size:12px;color:#6c7f77">此信由 ${esc(school)} 系統自動寄出，請勿直接回覆。</p></div>`;
 
   return {subject,plainText,html};
 }

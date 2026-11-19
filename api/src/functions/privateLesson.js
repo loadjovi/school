@@ -146,11 +146,11 @@ async function notifyWorkflow({request,schoolId,schoolName,entity,studentName,te
     const recipients=[];
     if(target==="parents"||target==="both")recipients.push(...await parentEmailsForStudent(activityStudentId(entity),schoolId));
     if(target==="teacher"||target==="both")recipients.push(String(entity.teacher||"").trim().toLowerCase());
-    const unique=[...new Set(recipients.filter(x=>x&&(eventType==="scheduled"||x!==String(actorEmail||"").trim().toLowerCase())))],appUrl=publicAppUrl(request);
+    const unique=[...new Set(recipients.filter(x=>x&&(target==="parents"||x!==String(actorEmail||"").trim().toLowerCase())))],appUrl=publicAppUrl(request);
     if(!appUrl)console.warn("Unable to resolve public app URL for private lesson email; set APP_PUBLIC_URL in Azure environment variables.");
     const notice={schoolId,
       recipients:unique,eventType,schoolName,studentName,teacherName,lessonDate:String(entity.eventDate||""),startTime:String(entity.startTime||""),endTime:String(entity.endTime||""),minutes:Number(entity.minutes||0),
-      lessonContent:String(entity.lessonContent||""),previousDate:String(previous.lessonDate||""),previousStartTime:String(previous.startTime||""),previousEndTime:String(previous.endTime||""),
+      lessonContent:String(entity.lessonContent||""),weeklyPracticeGoals:eventType==="completed"?readWeeklyGoals(entity.weeklyPracticeGoalsJson):[],previousDate:String(previous.lessonDate||""),previousStartTime:String(previous.startTime||""),previousEndTime:String(previous.endTime||""),
       reason:String(eventType==="rescheduled"?entity.rescheduleReason||"":entity.cancelReason||""),note:String(entity.parentNote||""),actorName,appUrl
     };
     const [mail,lineStatus]=await Promise.all([
@@ -325,8 +325,9 @@ app.http("privateLesson",{
         const validation=validateParentLessonReview(body.teacherRating,body.teacherReview);
         if(validation.error)return json({error:validation.error},400);
         const {rating,review}=validation;
+        if(entity.teacherRatedAt&&(rating||review)&&(Number(entity.teacherRating)!==rating||String(entity.teacherReview||"")!==review))return json({error:"這堂個課已收到評鑑，請重新整理以查看已儲存的回饋"},409);
         entity.status=["present","late"].includes(String(entity.actualAttendanceStatus||""))?String(entity.actualAttendanceStatus):"present";
-        if(rating||review){
+        if(!entity.teacherRatedAt&&(rating||review)){
           entity.teacherRating=rating;entity.teacherReview=review;entity.teacherRatedAt=now;entity.teacherRatedBy=a.email;
         }
         entity.finalizedAt=now;
