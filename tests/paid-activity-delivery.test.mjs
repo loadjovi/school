@@ -96,7 +96,7 @@ test("resend API requires a school admin and never takes audience or fee setting
 
 test("admin display distinguishes old batch notices and hides resend before opening or after the deadline",()=>{
  const text=read("app/uniform-event-admin.js"),code=text.slice(text.indexOf("function activityLineNoticeHtml("),text.indexOf("function renderConfigSummary("));
- const render=runInNewContext(code+";activityLineNoticeHtml",{esc:x=>String(x).replaceAll("<","&lt;"),time:x=>x});
+ const render=runInNewContext(code+";activityLineNoticeHtml",{esc:x=>String(x).replaceAll("<","&lt;")});
  assert.match(render(activity),/重新發送活動 LINE 通知/);
  assert.match(render({...activity,activityLineNotifications:[{kind:"registration",status:"accepted"}]}),/舊版批次通知/);
  for(const patch of [{enabled:false},{openAt:new Date(now+60000).toISOString()},{closeAt:new Date(now-1).toISOString()}])assert.doesNotMatch(render({...activity,...patch}),/data-line-resend-id/);

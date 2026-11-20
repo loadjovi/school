@@ -257,24 +257,40 @@ document.querySelectorAll("[data-admin-tab]").forEach(button=>button.addEventLis
  activeAdminTab=button.dataset.adminTab;
  syncUniformModuleVisibility();
 }));
+function activitySavedMessage(activity,{bankVerified=false,bankSelected=false}={}){
+ const title=activity.title||activity.module;
+ if(activity.module==="yearEndDinner"&&!activity.enabled)return "活動已儲存："+title+"（暫不公開）。"+(bankVerified||bankSelected?"收款帳戶已綁定，可將家長端改為「顯示」並儲存。":"請先選擇收款帳戶，再將家長端改為「顯示」並儲存。");
+ const visibility=activity.enabled?"已公開給家長。":"目前暫不公開，家長端不顯示。";
+ if(activity.module==="calendarActivity")return "活動已儲存："+title+"。"+visibility+(activity.enabled?"已同步至家長行事曆。":"")+"此公告免報名、免收費。";
+ if(activity.module==="yearEndDinner")return "活動已儲存："+title+"。"+visibility+"收款帳戶已綁定，報名依設定期間開放。";
+ return "活動已儲存："+title+"。"+visibility+"報名依設定期間開放；"+(bankVerified?"收款帳戶已綁定，可另行開放收款。":"收款須另行設定。");
+}
 function activityLineNoticeHtml(activity){
  if(!["fieldTrip","yearEndDinner"].includes(activity.module))return "";
+ const formatTime=value=>{const date=new Date(value);return Number.isFinite(date.getTime())?new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",dateStyle:"short",timeStyle:"short",hourCycle:"h23"}).format(date):"時間待確認"};
  const states={queued:"已排程",sending:"發送中",accepted:"LINE 已受理",partial:"部分失敗",failed:"發送失敗",no_recipients:"沒有可通知的家長",disabled:"未啟用",expired:"已停止"};
  const notices=Array.isArray(activity.activityLineNotifications)?activity.activityLineNotifications:[];
  const rows=notices.map(notice=>{
   const counts=[Number.isInteger(notice.accepted)?"受理 "+notice.accepted+" 位":"",Number.isInteger(notice.failed)?"失敗 "+notice.failed+" 位":"",Number.isInteger(notice.unbound)?"未綁定 "+notice.unbound+" 個帳號":""].filter(Boolean).join("｜");
   const at=notice.lastAttemptAt||notice.scheduledAt;
-  return "<p><b>"+(notice.kind==="payment"?"繳款通知":"報名通知")+"：</b>"+esc(states[notice.status]||notice.status)+(counts?"<br>"+esc(counts):"")+(at?"<br>"+esc(time(at))+"（台灣時間）":"")+(notice.status==="accepted"&&notice.deliveryMode!=="push"?"<br>舊版批次通知，未記錄個別推播結果。":"")+"</p>";
+  return "<p><b>"+(notice.kind==="payment"?"繳款通知":"報名通知")+"：</b>"+esc(states[notice.status]||notice.status)+(counts?"<br>"+esc(counts):"")+(at?"<br>"+esc(formatTime(at))+"（台灣時間）":"")+(notice.status==="accepted"&&notice.deliveryMode!=="push"?"<br>舊版批次通知，未記錄個別推播結果。":"")+"</p>";
  }).join("");
  const paid=[activity.studentFee,activity.firstAdultFee,activity.extraAdultFee,activity.extraChildFee].some(fee=>fee>0)&&(activity.module!=="yearEndDinner"||activity.paymentOpen===true&&activity.feeStatus==="PUBLISHED");
  const now=Date.now(),within=paid&&activity.enabled&&(!activity.openAt||Date.parse(activity.openAt)<=now)&&(!activity.closeAt||Date.parse(activity.closeAt)>now);
  const button=within?"<button type='button' data-line-resend-module='"+esc(activity.module)+"' data-line-resend-id='"+esc(activity.id)+"'>重新發送活動 LINE 通知</button>":"";
  return "<div class='activity-line-notices'><strong>LINE 活動通知</strong>"+(rows||"<p>尚無發送紀錄。</p>")+"<p class='hint'>LINE 受理不代表實際收件。請確認家長已加入本校官方帳號好友，且未封鎖。</p>"+button+"</div>";
 }
+function syncSelectedActivityNotice(){
+ const target=el("selectedActivityNotice");if(!target)return;
+ const item=savedConfigs.find(x=>x.module===el("configModule").value&&x.id===el("existingActivity").value);
+ target.hidden=!item;
+ if(!item){target.innerHTML="";return}
+ target.innerHTML="<strong>已儲存的活動："+esc(item.title||item.id)+"</strong><p>公開狀態："+(item.enabled?"已公開給家長":"暫不公開")+"</p>"+(item.module==="calendarActivity"?"<p>此為免報名的行事曆公告。</p><a href='/line-announcement.html' target='_top'>前往 LINE 通知中心</a>":activityLineNoticeHtml(item));
+}
 function renderConfigSummary(items){
  const target=el("settings");
  items=items.filter(x=>configActivityTypes.has(x.module));
- if(!items.length){target.textContent="目前尚無已儲存的活動。請在上方選擇活動類型並建立。";return}
+ if(!items.length){target.innerHTML="<h3>已建立活動（0 筆）</h3><p>目前尚無已儲存的活動，請在上方選擇活動類型並建立。</p>";return}
  const fmtDate=v=>{if(!v)return "未設定";const d=new Date(v);return Number.isNaN(d.getTime())?"日期格式有誤":new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(d)};
  const money=v=>"NT$ "+Number(v||0).toLocaleString("zh-TW");
  const names={yearEndDinner:"期末聚餐",fieldTrip:"快閃／校際交流／聯演（需報名）",calendarActivity:"演出／賽事／交流公告",regularUniform:"團T（T-shirt）",competitionUniform:"A團比賽服"};
@@ -371,7 +387,8 @@ el("familyRows").addEventListener("click",event=>{
   csv(name+"_報名明細.csv",rows.map(r=>({activityName:activity.title||activity.id,studentNames:registrationStudentNames(r),parentEmail:r.parentEmail||"",studentIds:(r.studentIds||[]).join(";"),students:(r.studentIds||[]).length,adults:Number(r.adults||0),extraChildren:Number(r.extraChildren||0),total:(r.studentIds||[]).length+Number(r.adults||0)+Number(r.extraChildren||0),paymentStatus:paymentStatusLabel(r.paymentStatus,activity),transferAmount:r.transferReport?.amount??"",transferLastFive:r.transferReport?.lastFive||"",transferDate:r.transferReport?.transferDate||""})),["activityName","studentNames","parentEmail","studentIds","students","adults","extraChildren","total","paymentStatus","transferAmount","transferLastFive","transferDate"]);
  }
 });
-el("settings").addEventListener("click",async e=>{
+el("viewSavedActivities").addEventListener("click",()=>{const target=el("settings");target.scrollIntoView({block:"start",behavior:"smooth"});target.focus({preventScroll:true})});
+el("protectedAdminArea").addEventListener("click",async e=>{
  const resend=e.target.closest("button[data-line-resend-id]");
  if(resend){
   const activity=savedConfigs.find(x=>x.module===resend.dataset.lineResendModule&&x.id===resend.dataset.lineResendId);if(!activity)return;
@@ -507,6 +524,7 @@ function syncConfig(){
  el("configEnabledWrap").dataset.savedEnabled=String(savedConfigs.find(x=>x.module===module&&x.id===select.value)?.enabled===true);
  updateActivityAudiencePreview();
  if(typeof window.syncDinnerBankVisibility==="function")window.syncDinnerBankVisibility();
+ syncSelectedActivityNotice();
  queueMicrotask(()=>{window.dispatchEvent(new Event("activityDatesLoaded"));syncFieldTripCollection()});
 }
 function localDateTimeValue(value){const d=new Date(value);if(!Number.isFinite(d.getTime()))return "";const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;}
@@ -551,7 +569,7 @@ async function load(){
  }catch(error){console.warn("團服申請學生姓名查詢失敗",error)}
  const sections=[
   {path:"uniform-events/family-registration",status:"familyStatus",render:data=>{cachedFamilyRegistrations=data.items||[];refreshFamilyStatistics()}},
-  {path:"uniform-events/config",status:"status",render:data=>{savedConfigs=data.items||[];syncConfig();refreshFamilyStatistics()}},
+  {path:"uniform-events/config",status:"status",render:data=>{savedConfigs=data.items||[];renderConfigSummary(savedConfigs);syncConfig();refreshFamilyStatistics()}},
   {path:"uniform-events/requests",status:"requestsStatus",render:data=>{
     cachedRequests=data.items||[];
     window.dispatchEvent(new CustomEvent("uniformRequestsLoaded"));
@@ -804,9 +822,7 @@ el("config").onsubmit=async e=>{
   if(activity){el("existingActivity").value=id;syncConfig();el("existingActivity").dispatchEvent(new Event("change"))}
   const persisted=savedConfigs.find(x=>x.module===module&&x.id===id);
   if(!persisted)throw Error("API 已回覆，但重新查詢未找到活動，請勿視為儲存成功");
-  feedback.textContent=module==="yearEndDinner"&&!persisted.enabled
-   ?"活動已建立並確認成功："+(persisted.title||module)+"（暫不顯示）。"+(bankVerifiedOnSave||window.dinnerBankSelection?.()?"收款帳戶已綁定，可將家長端改為「顯示」並儲存。":"請選擇下方收款帳戶並儲存，再將家長端改為「顯示」。")
-   :"設定已儲存並確認成功："+(persisted.title||module)+(["fieldTrip","calendarActivity"].includes(module)?"；已依對象團別同步至家長行事曆（"+(persisted.enabled?"顯示中":"已取消")+"）。":"。")+(module==="calendarActivity"?"此公告免報名、免收費。":module==="yearEndDinner"?"收款帳戶已綁定；是否可報名依報名期間判定。":bankVerifiedOnSave?"收款帳戶已綁定；開放家長報名後，可再設定第二階段收款。":"是否可報名依活動顯示狀態與報名期間判定；收款需另行開放。");
+  feedback.textContent=activitySavedMessage(persisted,{bankVerified:bankVerifiedOnSave,bankSelected:module==="yearEndDinner"&&!!window.dinnerBankSelection?.()});
   if(configResult.paymentNotification?.total)feedback.textContent+=" 匯款通知："+(window.paymentEmailSummaryText?.(configResult.paymentNotification)||configResult.paymentNotification.status);
   const invitation=configResult.activityLineNotification;
   if(invitation){
