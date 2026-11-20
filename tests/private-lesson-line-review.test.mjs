@@ -99,7 +99,7 @@ test("completing a lesson sends both parents the course content, all three goals
   assert.ok(text.includes(content));
   for(const [index,goal] of goals.entries())assert.ok(text.includes((index+1)+". "+goal));
   assert.match(text,/#個課評鑑 [A-F0-9]{14} 5 請填寫您的想法/);
-  assert.match(text,/家長自己的 LINE/);assert.match(text,/電腦／未看到按鈕/);assert.match(text,/評鑑與完成上課確認已同步平台/);assert.match(text,/本堂評鑑截止/);
+  assert.match(text,/家長自己的 LINE/);assert.match(text,/未見按鈕/);assert.match(text,/傳送，即確認完成上課/);assert.match(text,/截止：/);
   assert.equal(options.quickReply.items.length,5);
   const code=text.match(/#個課評鑑 ([A-F0-9]{14}) 5/)[1];
   for(const [index,item] of options.quickReply.items.entries()){

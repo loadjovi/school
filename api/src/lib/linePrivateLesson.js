@@ -14,8 +14,8 @@ function reviewQuickReply(code){
     data:`lesson-review:${code}:${rating}`,inputOption:"openKeyboard",fillInText:`#個課評鑑 ${code} ${rating} `}}))};
 }
 function reviewInstructions(code,expiresAt){
-  const deadline=new Date(expiresAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
-  return `\n\n──────────\n⭐ 老師教學評鑑：星級＋文字評語\n請用家長自己的 LINE，在本官方帳號的一對一聊天室回覆。\n\n📱 手機回覆\n① 點下方「1 星～5 星」按鈕。\n② 在自動帶入的文字後面，加上您的實際評語，再按傳送。\n點選星數只會產生草稿；送出有效星級與評語，即同時確認本堂已完成上課。\n\n💻 電腦／未看到按鈕\n複製下方整行，保留指令與代碼，將「5」改為您的星數，並把「請填寫您的想法」換成實際評語：\n#個課評鑑 ${code} 5 請填寫您的想法\n\n回覆範例（評語請依實際感受修改）：\n#個課評鑑 ${code} 4 老師說明清楚，希望能多示範運弓。\n\n星數請填數字 1～5，5 星為最高；不要修改代碼。\n收到「已記錄…星與文字回饋」的回覆，才表示評鑑與完成上課確認已同步平台，不需再回網頁確認。\n本堂評鑑截止：${deadline}（台灣時間）。`;
+  const deadline=new Date(expiresAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
+  return `\n\n──────────\n⭐ 評鑑並確認完課\n點 1～5 星 → 加上評語 → 傳送，即確認完成上課。\n\n未見按鈕？複製下行，修改星數與評語，保留代碼：\n#個課評鑑 ${code} 5 請填寫您的想法\n\n請用家長自己的 LINE 回覆。\n截止：${deadline}（台灣時間）`;
 }
 function reviewFormatHint(text){
   const code=String(text||"").match(/^#個課評鑑\s+([a-f\d]{14})(?:\s|$)/iu)?.[1]?.toUpperCase();
