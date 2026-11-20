@@ -257,6 +257,20 @@ document.querySelectorAll("[data-admin-tab]").forEach(button=>button.addEventLis
  activeAdminTab=button.dataset.adminTab;
  syncUniformModuleVisibility();
 }));
+function activityLineNoticeHtml(activity){
+ if(!["fieldTrip","yearEndDinner"].includes(activity.module))return "";
+ const states={queued:"已排程",sending:"發送中",accepted:"LINE 已受理",partial:"部分失敗",failed:"發送失敗",no_recipients:"沒有可通知的家長",disabled:"未啟用",expired:"已停止"};
+ const notices=Array.isArray(activity.activityLineNotifications)?activity.activityLineNotifications:[];
+ const rows=notices.map(notice=>{
+  const counts=[Number.isInteger(notice.accepted)?"受理 "+notice.accepted+" 位":"",Number.isInteger(notice.failed)?"失敗 "+notice.failed+" 位":"",Number.isInteger(notice.unbound)?"未綁定 "+notice.unbound+" 個帳號":""].filter(Boolean).join("｜");
+  const at=notice.lastAttemptAt||notice.scheduledAt;
+  return "<p><b>"+(notice.kind==="payment"?"繳款通知":"報名通知")+"：</b>"+esc(states[notice.status]||notice.status)+(counts?"<br>"+esc(counts):"")+(at?"<br>"+esc(time(at))+"（台灣時間）":"")+(notice.status==="accepted"&&notice.deliveryMode!=="push"?"<br>舊版批次通知，未記錄個別推播結果。":"")+"</p>";
+ }).join("");
+ const paid=[activity.studentFee,activity.firstAdultFee,activity.extraAdultFee,activity.extraChildFee].some(fee=>fee>0)&&(activity.module!=="yearEndDinner"||activity.paymentOpen===true&&activity.feeStatus==="PUBLISHED");
+ const now=Date.now(),within=paid&&activity.enabled&&(!activity.openAt||Date.parse(activity.openAt)<=now)&&(!activity.closeAt||Date.parse(activity.closeAt)>now);
+ const button=within?"<button type='button' data-line-resend-module='"+esc(activity.module)+"' data-line-resend-id='"+esc(activity.id)+"'>重新發送活動 LINE 通知</button>":"";
+ return "<div class='activity-line-notices'><strong>LINE 活動通知</strong>"+(rows||"<p>尚無發送紀錄。</p>")+"<p class='hint'>LINE 受理不代表實際收件。請確認家長已加入本校官方帳號好友，且未封鎖。</p>"+button+"</div>";
+}
 function renderConfigSummary(items){
  const target=el("settings");
  items=items.filter(x=>configActivityTypes.has(x.module));
@@ -276,7 +290,7 @@ function renderConfigSummary(items){
    "<p>報名期間："+esc(fmtDate(x.openAt))+" ～ "+esc(fmtDate(x.closeAt))+"</p>"+
    (x.closeAt&&Date.parse(x.closeAt)<Date.now()&&((x.module==="yearEndDinner"&&x.paymentOpen)||(x.module==="fieldTrip"&&x.collectionOpen))?"<p class='warn'>報名已截止，收款仍開放：僅已報名家庭可回報匯款。若要接受新報名，請延長上方「報名結束」時間並儲存。</p>":"")+
    "<p>學生："+money(x.studentFee)+"｜首位陪同者："+money(x.firstAdultFee)+"｜其他陪同者："+money(x.extraAdultFee)+"｜6 歲以下兒童（非團員）："+money(x.extraChildFee)+"</p>"):"<p>團服模組設定，非活動報名。</p>")+
-   (activityTypes.has(x.module)?renderActivityRegistrationStats(x):"")+(calendarOnly?"<p style='color:#98620b'>啟用後將依團別顯示在家長行事曆；仍請在群組公告重要異動。</p>":"<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>")+
+   (activityTypes.has(x.module)?renderActivityRegistrationStats(x):"")+activityLineNoticeHtml(x)+(calendarOnly?"<p style='color:#98620b'>啟用後將依團別顯示在家長行事曆；仍請在群組公告重要異動。</p>":"<p style='color:#98620b'>儲存設定不代表已向家長公告收款資訊。</p>")+
    "<button type='button' data-edit-module='"+esc(x.module)+"' data-edit-id='"+esc(x.id)+"'>"+(activity?"編輯此活動":"檢視團服設定")+"</button>"+
    (!x.enabled&&["fieldTrip","yearEndDinner"].includes(x.module)?" <button type='button' data-delete-module='"+esc(x.module)+"' data-delete-id='"+esc(x.id)+"'>刪除未使用活動</button>":"")+"</article>";
  };
@@ -358,6 +372,18 @@ el("familyRows").addEventListener("click",event=>{
  }
 });
 el("settings").addEventListener("click",async e=>{
+ const resend=e.target.closest("button[data-line-resend-id]");
+ if(resend){
+  const activity=savedConfigs.find(x=>x.module===resend.dataset.lineResendModule&&x.id===resend.dataset.lineResendId);if(!activity)return;
+  if(!confirm("重新發送「"+activity.title+"」報名通知給本活動對象的已綁定家長？已收到的家長也會再收到一則。"))return;
+  resend.disabled=true;
+  try{
+   const result=await api("uniform-events/config",{method:"POST",body:JSON.stringify({action:"RESEND_LINE",module:activity.module,id:activity.id})});
+   await load();const notice=result.activityLineNotification||{};
+   el("status").textContent="活動 LINE 通知："+(notice.status==="accepted"||notice.status==="partial"?"LINE 受理 "+Number(notice.accepted||0)+" 位，失敗 "+Number(notice.failed||0)+" 位；另有 "+Number(notice.unbound||0)+" 個家長帳號未綁定。請在家長的 LINE 確認收件。":notice.status==="no_recipients"?"目前沒有符合活動團別且已綁定 LINE 的家長。":"尚未完成發送，請查看活動的通知紀錄。");
+  }catch(error){el("status").textContent="活動 LINE 通知未完成："+error.message;resend.disabled=false}
+  return;
+ }
  const remove=e.target.closest("button[data-delete-id]");
  if(remove){
   const item=savedConfigs.find(x=>x.module===remove.dataset.deleteModule&&x.id===remove.dataset.deleteId);if(!item)return;

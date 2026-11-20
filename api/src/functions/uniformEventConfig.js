@@ -3,7 +3,7 @@ import { TableClient } from "@azure/data-tables";
 import { randomUUID } from "node:crypto";
 import { getTenantContext, json } from "../lib/auth.js";
 import { syncActivityCalendar, deleteActivityCalendar } from "./calendarEvents.js";
-import {paidActivitySchedule,dispatchPaidActivityNotices} from "../lib/paidActivitySchedule.js";
+import {paidActivitySchedule,dispatchPaidActivityNotices,paidActivityNoticeSummary,queuePaidActivityResend} from "../lib/paidActivitySchedule.js";
 import {safePaymentNotifications} from "../lib/paymentNotifications.js";
 
 // Phase 2: tenant-scoped administrative configuration. No automatic activation.
@@ -41,9 +41,10 @@ function validate(data){
   if(data.closeAt&&!Number.isFinite(Date.parse(data.closeAt)))throw new Error("Invalid closeAt");
   if(data.openAt&&data.closeAt&&Date.parse(data.openAt)>Date.parse(data.closeAt))throw new Error("Invalid date window");
 }
-function publicValue(row){
+function publicValue(row,admin=false){
   const payload=JSON.parse(row.payload||"{}");
-  return {...payload,enabled:fixedUniformModules.has(payload.module)?true:payload.enabled,id:row.rowKey.split(":").slice(1).join(":"),updatedAt:row.updatedAt};
+  return {...payload,enabled:fixedUniformModules.has(payload.module)?true:payload.enabled,id:row.rowKey.split(":").slice(1).join(":"),updatedAt:row.updatedAt,
+    ...(admin?{activityLineNotifications:paidActivityNoticeSummary(row)}:{})};
 }
 app.http("uniformEventConfig",{
   methods:["GET","POST","DELETE"],authLevel:"anonymous",route:"uniform-events/config",
@@ -56,7 +57,7 @@ app.http("uniformEventConfig",{
       if(request.method==="GET"){
         const results=[];
         for await(const row of client.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replace(/'/g,"''")}'`}})){
-          const item=publicValue(row);
+          const item=publicValue(row,access.role==="admin");
           if(access.role==="admin"||item.enabled===true)results.push(item);
         }
         for(const module of fixedUniformModules)if(!results.some(item=>item.module===module&&item.id==="default"))results.push({module,id:"default",enabled:true});
@@ -65,6 +66,19 @@ app.http("uniformEventConfig",{
       if(access.role!=="admin")return json({error:"Admin only"},403);
       const data=await request.json();
       if(!safeId(data.id))return json({error:"Invalid id"},400);
+      if(request.method==="POST"&&data.action==="RESEND_LINE"){
+        if(!["fieldTrip","yearEndDinner"].includes(data.module))return json({error:"僅可重發付費活動報名通知。"},400);
+        let current;
+        try{current=await client.getEntity(schoolId,rowKey(data.module,data.id))}catch(error){if(error.statusCode===404)return json({error:"活動不存在。"},404);throw error}
+        const queued=queuePaidActivityResend(current,Date.now(),randomUUID());
+        if(queued.error)return json({error:queued.error},queued.status);
+        try{await client.updateEntity(queued.row,"Replace",{etag:current.etag})}catch(error){if(error.statusCode===412)return json({error:"活動通知狀態已更新，請重新讀取。"},409);throw error}
+        const audit=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantUniformEventAudit");
+        await audit.createTable().catch(error=>{if(error.statusCode!==409)throw error});
+        await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"activity.line.resend",subjectId:current.rowKey,actor:String(access.email||"admin").slice(0,200),at:new Date().toISOString()});
+        const results=await dispatchPaidActivityNotices(client,await client.getEntity(schoolId,current.rowKey));
+        return json({activityLineNotification:results.find(result=>result.kind==="registration")||{status:"pending"}});
+      }
       if(request.method==="DELETE"){
         if(!["fieldTrip","yearEndDinner"].includes(data.module))return json({error:"只可刪除未使用的報名活動。"},400);
         const key=rowKey(data.module,data.id);

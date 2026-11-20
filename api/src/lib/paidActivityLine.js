@@ -1,4 +1,3 @@
-import {createHash} from "node:crypto";
 import {TableClient} from "@azure/data-tables";
 import {getTenantLineRecipient} from "./tenantLineAccounts.js";
 import {lineAudienceStudents,resolveLineAudience} from "./lineAudience.js";
@@ -7,7 +6,7 @@ import {resolveTenantLineChannel} from "./lineTenantConfig.js";
 import {lineApi} from "./lineMessaging.mjs";
 
 const groupCode = value => {
-  const group = String(value || "").trim().replace(/團$/, "").toUpperCase();
+  const group = String(value || "").trim().replace(/團$/, "").trim().toUpperCase();
   return group === "儲備" || group === "預備" ? "C" : group;
 };
 const targetGroups = activity => String(activity.targetGroups || "ALL").split(",").map(groupCode);
@@ -65,7 +64,7 @@ export async function notifyPaidActivityOpened(schoolId, activity, openedAt, kin
     const audience = payment
       ? await registeredPaymentAudience(schoolId,channel.botUserId,activity.id)
       : await activityParentAudience(schoolId,channel.botUserId,activity);
-    const counts = {accepted:0,failed:0,unbound:audience.unbound};
+    const counts = {accepted:0,failed:0,unbound:audience.unbound,deliveryMode:"push"};
     if (!audience.targets.length) return {...counts,status:"no_recipients"};
     const url = new URL("/", channel.appOrigin);
     url.searchParams.set("schoolId", schoolId);
@@ -81,24 +80,27 @@ export async function notifyPaidActivityOpened(schoolId, activity, openedAt, kin
         : "請到平台查看活動與費用，決定是否報名，再依平台的收款進度繳款。",
       url.toString()
     ].filter(Boolean).join("\n");
-    for (let index = 0; index < audience.targets.length; index += 500) {
-      const recipients = audience.targets.slice(index,index + 500);
-      const fingerprint = createHash("sha256").update(JSON.stringify(recipients)).digest("hex");
-      const options = {
-        accessToken:channel.accessToken,
-        retryKey:workflowLineRetryKey(schoolId, [activity.module,activity.id,kind,openedAt].join(":"), fingerprint),
-        body:{to:recipients,messages:[{type:"text",text}]}
-      };
-      try {
-        await lineApi("/v2/bot/message/multicast",options).catch(error => {
-          if (error.status && error.status < 500) throw error;
-          return lineApi("/v2/bot/message/multicast",options);
-        });
-        counts.accepted += recipients.length;
-      } catch (error) {
-        counts.failed += recipients.length;
-        console.warn("Paid activity LINE batch failed", {schoolId,status:error?.status});
-      }
+    // Match individual lesson/payment notifications. Multicast silently omits
+    // non-friends even when they recently chatted with this school's account.
+    const targets = [...new Set(audience.targets)];
+    for (let index = 0; index < targets.length; index += 10) {
+      await Promise.all(targets.slice(index,index + 10).map(async userId=>{
+        const options = {
+          accessToken:channel.accessToken,
+          retryKey:workflowLineRetryKey(schoolId, [activity.module,activity.id,kind,openedAt].join(":"), userId),
+          body:{to:userId,messages:[{type:"text",text}]}
+        };
+        try {
+          await lineApi("/v2/bot/message/push",options).catch(error => {
+            if (error.status && error.status < 500) throw error;
+            return lineApi("/v2/bot/message/push",options);
+          });
+          counts.accepted++;
+        } catch (error) {
+          counts.failed++;
+          console.warn("Paid activity LINE recipient failed", {schoolId,status:error?.status});
+        }
+      }));
     }
     const status = counts.failed ? (counts.accepted ? "partial" : "failed") : "accepted";
     return {...counts,status};

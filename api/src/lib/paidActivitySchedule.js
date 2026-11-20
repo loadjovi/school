@@ -8,6 +8,28 @@ const kinds = ["registration","payment"];
 const leaseMs = 2 * 60 * 1000;
 const nextAttempt = notice => notice.state==="queued" ? notice.at : notice.state==="sending" ? notice.leaseUntil : "";
 
+export function paidActivityNoticeSummary(row) {
+  return Object.entries(states(row)).filter(([kind])=>kinds.includes(kind)).map(([kind,notice])=>{
+    const result={kind,status:notice.state,scheduledAt:notice.at};
+    for(const field of ["accepted","failed","unbound"])if(Number.isSafeInteger(notice.result?.[field])&&notice.result[field]>=0)result[field]=notice.result[field];
+    if(notice.result?.deliveryMode==="push")result.deliveryMode="push";
+    if(notice.lastAttemptAt)result.lastAttemptAt=notice.lastAttemptAt;
+    return result;
+  });
+}
+
+export function queuePaidActivityResend(row,now=Date.now(),deliveryId) {
+  const activity=JSON.parse(row.payload||"{}"),notices=states(row);
+  if(!isPaidActivityOpen(activity,now)||openingTime(activity)>now)return {error:"活動尚未開放報名或已截止，無法重發報名通知。",status:409};
+  const notice=notices.registration;
+  const last=Date.parse(notice?.lastAttemptAt||notice?.firstAttemptAt||"");
+  if(notice?.state==="queued"||notice?.state==="sending"||Number.isFinite(last)&&now-last<60000)
+    return {error:"活動通知正在處理或剛剛已送出，請稍後再試。",status:409};
+  const at=new Date(now).toISOString();
+  notices.registration={key:deliveryId,at,state:"queued"};
+  return {row:storedNotices(row,notices)};
+}
+
 function storedNotices(row, notices) {
   const {etag,timestamp,...data} = row;
   const due = Object.values(notices).map(nextAttempt).filter(Boolean).sort()[0];
@@ -67,8 +89,13 @@ export async function dispatchPaidActivityNotices(table, row, now=Date.now()) {
     const result = actual?.key===notice.key && actual.state==="sending" && actual.leaseUntil===notice.leaseUntil &&
         eligible(latest,kind,checkedAt) && !(openingTime(latest)>checkedAt)
       ? await notifyPaidActivityOpened(row.partitionKey,latest,notice.key,kind) : {status:"expired"};
-    results.push(result);
-    if (actual?.key===notice.key && actual.state==="sending" && actual.leaseUntil===notice.leaseUntil) latestNotices[kind]={...actual,state:result.status};
+    results.push({...result,kind});
+    if (actual?.key===notice.key && actual.state==="sending" && actual.leaseUntil===notice.leaseUntil) {
+      const summary={status:result.status};
+      for(const field of ["accepted","failed","unbound"])if(Number.isSafeInteger(result[field])&&result[field]>=0)summary[field]=result[field];
+      if(result.deliveryMode==="push")summary.deliveryMode="push";
+      latestNotices[kind]={...actual,state:result.status,lastAttemptAt:new Date(checkedAt).toISOString(),result:summary};
+    }
   }
   try {
     await table.updateEntity(storedNotices(current,latestNotices),"Replace",{etag:current.etag});

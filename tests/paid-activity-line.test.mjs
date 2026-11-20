@@ -95,6 +95,9 @@ test("due notice dispatch claims an activity once and only inside the opened win
   await Promise.all([dispatch(table,{...row},now),dispatch(table,{...row},now)]);
   assert.equal(calls.filter(([path])=>path.startsWith("/v2/")).length,1);
   assert.equal(row.paidLineDueAt,"");
+  const saved=JSON.parse(row.paidLineNotices).registration;
+  assert.equal(saved.result.accepted,1);assert.equal(saved.result.failed,0);assert.equal(saved.result.unbound,1);
+  assert.equal(saved.result.deliveryMode,"push");assert.ok(Number.isFinite(Date.parse(saved.lastAttemptAt)));
 });
 
 test("activity announcement targets only the configured group and provides the school's sign-in link",async()=>{
@@ -102,8 +105,8 @@ test("activity announcement targets only the configured group and provides the s
   assert.equal((await notify("school-a",dinner,stamp,"registration")).accepted,1);
   assert.deepEqual(calls[0],["students",["3"]]);
   const [path,{body}]=calls[1];
-  assert.equal(path,"/v2/bot/message/multicast");
-  assert.deepEqual(Array.from(body.to),[user]);
+  assert.equal(path,"/v2/bot/message/push");
+  assert.equal(body.to,user);
   const message=body.messages[0].text;
   assert.match(message,/期末聚餐[\s\S]+繳|期末聚餐[\s\S]+匯款/);
   const link=new URL(message.split("\n").at(-1));
