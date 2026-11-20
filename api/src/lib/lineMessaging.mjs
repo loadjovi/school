@@ -61,10 +61,10 @@ export async function replyLineMessage(replyToken,text,{accessToken}={}){
   return lineApi("/v2/bot/message/reply",{accessToken,body:{replyToken:token,messages:[{type:"text",text:String(text||"").slice(0,5000)}]}});
 }
 
-export async function pushLineMessage(to,text,{accessToken,retryKey}={}){
+export async function pushLineMessage(to,text,{accessToken,retryKey,quickReply}={}){
   const target=String(to||"").trim();
   if(!target)throw new Error("LINE 通知群組尚未綁定");
-  return lineApi("/v2/bot/message/push",{accessToken,retryKey,body:{to:target,messages:[{type:"text",text:String(text||"").slice(0,5000)}]}});
+  return lineApi("/v2/bot/message/push",{accessToken,retryKey,body:{to:target,messages:[{type:"text",text:String(text||"").slice(0,5000),...(quickReply?{quickReply}:{})}]}});
 }
 
 export async function getLineGroupSummary(groupId,{accessToken}={}){

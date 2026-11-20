@@ -9,6 +9,18 @@ import {pushLineMessage} from "./lineMessaging.mjs";
 import {validateParentLessonReview} from "./privateLessonReview.mjs";
 
 const reviewLifetime=7*24*60*60*1000;
+function reviewQuickReply(code){
+  return {items:[1,2,3,4,5].map(rating=>({type:"action",action:{type:"postback",label:`${rating} 星 ${"★".repeat(rating)}`,
+    data:`lesson-review:${code}:${rating}`,inputOption:"openKeyboard",fillInText:`#個課評鑑 ${code} ${rating} `}}))};
+}
+function reviewInstructions(code,expiresAt){
+  const deadline=new Date(expiresAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
+  return `\n\n──────────\n⭐ 老師教學評鑑：星級＋文字評語\n請用家長自己的 LINE，在本官方帳號的一對一聊天室回覆。\n\n📱 手機回覆\n① 點下方「1 星～5 星」按鈕。\n② 在自動帶入的文字後面，加上您的實際評語，再按傳送。\n點選星數只會產生草稿；送出評語後才會記錄。\n\n💻 電腦／未看到按鈕\n複製下方整行，保留指令與代碼，將「5」改為您的星數，並把「請填寫您的想法」換成實際評語：\n#個課評鑑 ${code} 5 請填寫您的想法\n\n回覆範例（評語請依實際感受修改）：\n#個課評鑑 ${code} 4 老師說明清楚，希望能多示範運弓。\n\n星數請填數字 1～5，5 星為最高；不要修改代碼。\n收到「已記錄…星與文字回饋」的回覆，才表示評鑑完成並寫入平台。\n本堂評鑑截止：${deadline}（台灣時間）。`;
+}
+function reviewFormatHint(text){
+  const code=String(text||"").match(/^#個課評鑑\s+([a-f\d]{14})(?:\s|$)/iu)?.[1]?.toUpperCase();
+  return `請用家長自己的 LINE，在本官方帳號的一對一聊天室回覆「指令＋代碼＋星數＋實際評語」。\n星數需填數字 1～5，並在同一則訊息中寫下評語。\n\n${code?`#個課評鑑 ${code} 5 請填寫您的想法`:"請複製完課通知中，以「#個課評鑑」開頭的那一整行。"}\n\n保留指令與代碼，把「請填寫您的想法」換成您的實際評語後，再按傳送。`;
+}
 const lessonKey=entity=>[entity.partitionKey,entity.rowKey];
 const scope=(schoolId,botUserId)=>`${schoolId}|${botUserId}`;
 let store;
@@ -49,8 +61,8 @@ export async function notifyPrivateLessonLine(schoolId,{recipients,entity,eventT
       return [(async()=>{
         const canReview=eventType==="completed"&&entity.completedAt&&Date.now()<Date.parse(entity.completedAt)+reviewLifetime;
         const code=canReview?await reserveReview(channel,entity,recipients[index],userId):"";
-        const review=code?`\n\n可直接在聊天室回覆評鑑，請將星數改為 1～5，並填寫給老師的想法。\n#個課評鑑 ${code} 5 請填寫您的想法`:"";
-        await pushLineMessage(userId,text+review,{accessToken:channel.accessToken,retryKey:workflowLineRetryKey(schoolId,eventId,userId)});
+        const review=code?reviewInstructions(code,Date.parse(entity.completedAt)+reviewLifetime):"";
+        await pushLineMessage(userId,text+review,{accessToken:channel.accessToken,retryKey:workflowLineRetryKey(schoolId,eventId,userId),...(code?{quickReply:reviewQuickReply(code)}:{})});
       })()];
     });
     if(!tasks.length)return "not_bound";
@@ -65,12 +77,12 @@ export async function notifyPrivateLessonLine(schoolId,{recipients,entity,eventT
 export async function receivePrivateLessonReview(channel,userId,text){
   if(!/^#個課評鑑(?:\s|$)/u.test(text))return null;
   const match=text.match(/^#個課評鑑\s+([a-f\d]{14})\s+([1-5])\s+([\s\S]+)$/iu);
-  if(!match)return "請依課後通知中的格式，填寫評鑑代碼、1～5 星與給老師的想法。";
+  if(!match)return reviewFormatHint(text);
   if(!userId)return "請在學校官方帳號的一對一聊天室填寫評鑑。";
   if(!workflowLineEnabled())return "此環境尚未開啟 LINE 評鑑。";
   const {schoolId,botUserId}=channel;
   const validation=validateParentLessonReview(match[2],match[3]);
-  if(validation.error||validation.review==="請填寫您的想法")return "請填寫您要給老師的文字回饋。";
+  if(validation.error||validation.review==="請填寫您的想法")return reviewFormatHint(text);
   const expired="評鑑代碼已失效，請由平台的個課紀錄查看。";
   try{
     const db=await reviewTable(),record=await db.getEntity(scope(schoolId,botUserId),match[1].toUpperCase());
@@ -89,7 +101,7 @@ export async function receivePrivateLessonReview(channel,userId,text){
     const timestamp=new Date().toISOString();
     await lessons.updateEntity({partitionKey,rowKey:record.lessonId,teacherRating:validation.rating,
       teacherReview:validation.review,teacherRatedAt:timestamp,teacherRatedBy:record.email},"Merge",{etag:lesson.etag});
-    return `已記錄 ${lesson.eventDate} 個課的 ${validation.rating} 星與文字回饋。您可以在平台查看評鑑結果。`;
+    return `✅ 已記錄 ${lesson.eventDate} 個課的 ${validation.rating} 星與文字回饋。\n教學星級：${"★".repeat(validation.rating)}（${validation.rating}/5）\n您的評語：${validation.review}\n\n評價已同步平台，供後續追蹤老師教學使用。若尚未確認本堂上課，請回平台完成確認。`;
   }catch(error){
     if(error.statusCode===404)return expired;
     if(error.statusCode===412)return "個課資料剛更新。請重新送出評鑑，系統會核對最新狀態。";

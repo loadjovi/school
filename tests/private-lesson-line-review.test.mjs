@@ -50,7 +50,7 @@ function fixture(){
   workflowLineEnabled:()=>true,workflowLineRetryKey:()=>"retry",
   resolveTenantLineChannel:async school=>{assert.equal(school,schoolId);return {schoolId,botUserId,channelSecret:"secret",loginConfigured:true,appOrigin:"https://school-a.example.invalid",accessToken:"test"}},
   TableClient:{fromConnectionString:()=>reviewStore},
-  pushLineMessage:async(userId,text)=>outbound.push({userId,text})};
+  pushLineMessage:async(userId,text,options)=>outbound.push({userId,text,options})};
  const line=runInNewContext(stripped("api/src/lib/linePrivateLesson.js")+";({notifyPrivateLessonLine,receivePrivateLessonReview})",common);
  let handler;
  runInNewContext(stripped("api/src/functions/privateLesson.js"),{
@@ -89,11 +89,19 @@ test("completing a lesson sends both parents the course content, all three goals
  assert.deepEqual(JSON.parse(h.lesson.weeklyPracticeGoalsJson),goals);
  assert.equal(h.outbound.length,2);
  assert.equal(h.emails.length,1);
- for(const {text} of h.outbound){
+ for(const {text,options} of h.outbound){
   assert.match(text,/個別課完成確認/);
   assert.ok(text.includes(content));
   for(const [index,goal] of goals.entries())assert.ok(text.includes((index+1)+". "+goal));
   assert.match(text,/#個課評鑑 [A-F0-9]{14} 5 請填寫您的想法/);
+  assert.match(text,/家長自己的 LINE/);assert.match(text,/電腦／未看到按鈕/);assert.match(text,/才表示評鑑完成並寫入平台/);assert.match(text,/本堂評鑑截止/);
+  assert.equal(options.quickReply.items.length,5);
+  const code=text.match(/#個課評鑑 ([A-F0-9]{14}) 5/)[1];
+  for(const [index,item] of options.quickReply.items.entries()){
+   assert.equal(item.action.type,"postback");assert.equal(item.action.inputOption,"openKeyboard");
+   assert.equal(item.action.fillInText,`#個課評鑑 ${code} ${index+1} `);
+   assert.match(item.action.label,new RegExp(String(index+1)+" 星"));
+  }
  }
  for(const goal of goals){
   assert.ok(h.emails[0].plainText.includes(goal));
@@ -151,4 +159,40 @@ test("HTML notification escapes course suggestions while the LINE text retains w
  assert.ok(h.outbound[0].text.includes(goal));
  assert.ok(h.emails[0].html.includes("&lt;b&gt;音階&lt;/b&gt;"));
  assert.ok(!h.emails[0].html.includes("<b>音階</b>"));
+});
+
+
+test("every quick-reply star value remains a draft until real text is sent and is stored under the correct parent",async()=>{
+ for(const rating of [1,2,3,4,5]){
+  const h=fixture();await h.patch({action:"complete_lesson",attendanceStatus:"present",lessonContent:content});
+  const notification=h.outbound.find(x=>x.userId===userIds.get(mother)),action=notification.options.quickReply.items[rating-1].action;
+  assert.equal(h.lesson.teacherRating,undefined);
+  const reply=await h.line.receivePrivateLessonReview({schoolId,botUserId},notification.userId,action.fillInText+"老師教學內容很清楚，希望多示範弓法");
+  assert.equal(h.lesson.teacherRating,rating);assert.equal(h.lesson.teacherRatedBy,mother);
+  assert.equal(h.lesson.parentConfirmation,"pending");assert.match(reply,/已記錄/);assert.ok(reply.includes(`${rating}/5`));assert.match(reply,/您的評語：老師教學/);
+ }
+});
+
+test("invalid or unchanged placeholder reviews return copyable guidance without writing an evaluation",async()=>{
+ const h=fixture();await h.patch({action:"complete_lesson",attendanceStatus:"present",lessonContent:content});
+ const code=h.reviewCode(userIds.get(mother));
+ for(const suffix of ["5","6 評語","5 請填寫您的想法"]){
+  const reply=await h.line.receivePrivateLessonReview({schoolId,botUserId},userIds.get(mother),`#個課評鑑 ${code} ${suffix}`);
+  assert.ok(reply.includes(`#個課評鑑 ${code} 5 請填寫您的想法`));assert.match(reply,/實際評語/);assert.equal(h.lesson.teacherRating,undefined);
+ }
+});
+
+test("a star-button postback alone cannot submit a rating or confirm lesson completion",async()=>{
+ let handler,calls=0;
+ runInNewContext(stripped("api/src/functions/lineWebhook.js"),{
+  app:{http:(name,entry)=>{if(name==="tenantLineWebhook")handler=entry.handler}},json:(data,status=200)=>({data,status}),Buffer,console,
+  tenantIdValue:x=>x,defaultTenantId:()=>schoolId,
+  resolveTenantLineChannel:async()=>({schoolId,botUserId,configured:true,loginConfigured:true,channelSecret:"secret",accessToken:"test"}),
+  verifyLineSignature:()=>true,receivePrivateLessonReview:async()=>{calls++},
+  table:()=>{throw Error("must not write a rating")}
+ });
+ const payload={destination:botUserId,events:[{type:"postback",source:{type:"user",userId:userIds.get(mother)},postback:{data:"lesson-review:0123456789ABCD:5"}}]};
+ const result=await handler({params:{schoolId},headers:new Headers(),arrayBuffer:async()=>Buffer.from(JSON.stringify(payload))});
+ assert.equal(result.status,200);
+ assert.equal(calls,0);
 });

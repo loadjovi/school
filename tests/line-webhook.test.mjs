@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {createHmac} from "node:crypto";
 import {readFileSync} from "node:fs";
+import {runInNewContext} from "node:vm";
 import {
   lineBindingCodeHash,lineNotificationModeLabel,normalizeLineNotificationMode,
   parseLineBindingCommand,verifyLineSignature
@@ -55,4 +56,17 @@ test("admin UI exposes mode, secure binding and test controls without rendering 
   assert.doesNotMatch(source,/lineChannelSecret|lineAccessToken/);
   assert.match(workspace,/operationTitle\.includes\('LINE 後台待辦通知'\)/);
   assert.match(workspace,/setGroup\(child,isSettings\?'settings':'attendance'\)/);
+});
+
+
+test("push messages attach a quick reply only when supplied and preserve the delivery retry key",async()=>{
+ const calls=[];
+ const source=readFileSync(new URL("../api/src/lib/lineMessaging.mjs",import.meta.url),"utf8").replace(/^import[^\n]*;\r?\n/gm,"").replace(/^export /gm,"");
+ const push=runInNewContext(source+";pushLineMessage",{AbortSignal,fetch:async(url,options)=>{calls.push({url,options});return {status:200,ok:true,text:async()=>"{}"}}});
+ const quickReply={items:[{type:"action",action:{type:"postback",label:"5 星",data:"lesson-review:0123456789ABCD:5",inputOption:"openKeyboard",fillInText:"#個課評鑑 0123456789ABCD 5 "}}]};
+ await push("user","課後評鑑",{accessToken:"test",retryKey:"same-review-event",quickReply});
+ assert.deepEqual(JSON.parse(calls[0].options.body).messages[0].quickReply,quickReply);
+ assert.equal(calls[0].options.headers["X-Line-Retry-Key"],"same-review-event");
+ await push("user","一般通知",{accessToken:"test"});
+ assert.deepEqual(JSON.parse(calls[1].options.body).messages,[{type:"text",text:"一般通知"}]);
 });
