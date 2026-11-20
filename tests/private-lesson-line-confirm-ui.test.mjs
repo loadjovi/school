@@ -9,12 +9,23 @@ function part(start,end){const from=source.indexOf(start),to=source.indexOf(end,
 
 test("parent home replaces the pending form with saved LINE completion and escaped review",()=>{
  const row={lessonId:"lesson1",studentId:"student1",workflowStatus:"completed",parentConfirmedVia:"line",parentConfirmedAt:new Date().toISOString(),teacherReview:"<script>review</script>"};
- const context={state:{me:{role:"parent"},student:{studentId:"student1"}},window:{},sortedLessons:()=>[row],workflow:x=>x.workflowStatus,parentActivePanel:()=>"",lessonSummary:x=>esc(x.teacherReview)};
+ const context={state:{me:{role:"parent"},student:{studentId:"student1"}},window:{},sortedLessons:()=>[row],workflow:x=>x.workflowStatus,parentActivePanel:()=>"",parentLessonSummary:x=>esc(x.teacherReview)};
  runInNewContext(part('  window.privateLessonParentPanels=', '  function currentWeeklyLearningGoals()'),context);
  const html=context.window.privateLessonParentPanels("home");
- assert.match(html,/已透過 LINE 確認完成上課/);assert.match(html,/已結案，不需重複確認/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);
+ assert.match(html,/個課已確認/);assert.match(html,/已透過 LINE 完成確認，不需再次操作/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);
  context.state.me.role="teacher";assert.equal(context.window.privateLessonParentPanels("home"),"");context.state.me.role="parent";
  row.parentConfirmedAt="2000-01-01T00:00:00Z";assert.equal(context.window.privateLessonParentPanels("home"),"");
+});
+
+test("parent lesson summary keeps content and review safe, with notification metadata collapsed",()=>{
+ const summary=runInNewContext(part('  function parentLessonSummary(', '  function parentReviewControls(')+';parentLessonSummary',{
+  esc,teacherLabel:()=>"測試老師",ratingStars:()=>"★★★★☆",workflow:()=>"awaiting_parent",
+  emailStatusLine:()=>"Email 已受理發送",lineStatusLine:()=>"LINE 準備發送"
+ });
+ const html=summary({lessonDate:"2026-11-20",startTime:"18:00",endTime:"19:00",minutes:60,lessonContent:"<script>課程</script>",weeklyPracticeGoals:["<img>練習一","練習二","練習三"],teacherRating:4,teacherReview:"<script>評語</script>"});
+ assert.match(html,/上課內容/);assert.match(html,/4\/5/);assert.match(html,/&lt;script&gt;課程/);assert.match(html,/&lt;img&gt;練習一/);assert.doesNotMatch(html,/<script>|<img>/);
+ assert.match(html,/<details class="parent-lesson-details"><summary>查看通知紀錄<\/summary>/);
+ assert.doesNotMatch(html,/<details[^>]* open/);assert.doesNotMatch(html,/已完成確認|已結案/);
 });
 
 test("only the waiting parent card exposes the teacher's LINE resend action",()=>{

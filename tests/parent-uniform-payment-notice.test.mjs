@@ -32,9 +32,9 @@ test("only actionable self-paid approved orders appear; pending, cancelled, deli
 test("login home puts each child's payment amount and direct action before the existing home content",async()=>{
   const h=harness();h.setResponse(async()=>({items:[order(),order({id:id2,studentId:"2",size:"M",quantity:2,amount:800})]}));
   await h.ctx.refreshParentUniformPayments();const html=h.ctx.home();
-  assert.ok(html.indexOf("團 T 已核准")<html.indexOf('id="existing-home"'));
-  assert.match(html,/2 筆待匯款/);assert.match(html,/甲同學/);assert.match(html,/乙同學/);assert.match(html,/NT\$ 400/);assert.match(html,/NT\$ 800/);
-  assert.match(html,/查看匯款帳戶／回報末五碼/);assert.match(html,/轉出帳號末五碼/);
+  assert.ok(html.indexOf("待繳費（2）")<html.indexOf('id="existing-home"'));
+  assert.match(html,/待繳費（2）/);assert.match(html,/甲同學/);assert.match(html,/乙同學/);assert.match(html,/NT\$ 400/);assert.match(html,/NT\$ 800/);
+  assert.match(html,/查看帳戶並回報匯款/);assert.match(html,/轉出帳號末五碼/);
   await h.ctx.openParentUniformPayment(id2);assert.equal(h.ctx.state.parentUniformFocus,"payment:"+id2);assert.equal(h.ctx.state.page,"uniformEvents");
   assert.ok(h.calls.every(([url,options])=>["/api/uniform-events/requests","/api/uniform-events/family-registration"].includes(url)&&options===undefined));
 });
@@ -48,7 +48,7 @@ test("later calendar decoration keeps the payment notice first",async()=>{
 test("reported transfers replace the payment demand and verified transfers remove the notice",async()=>{
   const h=harness();h.setResponse(async()=>({items:[order({paymentStatus:"REPORTED_UNVERIFIED"})]}));
   await h.ctx.refreshParentUniformPayments();const pending=h.ctx.home();
-  assert.match(pending,/待財務核帳/);assert.match(pending,/無須重複匯款/);assert.doesNotMatch(pending,/筆待匯款|請完成匯款/);
+  assert.match(pending,/待財務核帳/);assert.match(pending,/無須重複匯款/);assert.doesNotMatch(pending,/待繳費|請完成匯款/);
   h.setResponse(async()=>({items:[order({paymentStatus:"VERIFIED"})]}));await h.ctx.refreshParentUniformPayments();assert.equal(h.ctx.home(),'<div id="existing-home">今日課程提醒</div>');
 });
 test("home safely escapes stored labels and never interpolates a malformed order ID into executable code",async()=>{

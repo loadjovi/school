@@ -52,10 +52,10 @@ function parentHome(){
 test("parent home prioritizes courses, upcoming activities, important news and a practice action before statistics",async()=>{
  const {ctx}=parentHome();await ctx.refreshParentHomeUpdates();
  const html=ctx.home();
- const order=["今日課程提醒",'id="parentUpcomingActivities"','id="parentLatestNews"','id="parentPracticeAction"','id="parentUniformEventsEntry"',"本月自主練習"];
+ const order=["今日課程",'id="parentUpcomingActivities"','id="parentLatestNews"','id="parentPracticeAction"','id="parentUniformEventsEntry"',"本月自主練習"];
  assert.ok(order.every((x,i)=>html.includes(x)&&(!i||html.indexOf(x)>html.indexOf(order[i-1]))));
  assert.match(html,/交流活動/);assert.match(html,/攜帶物品提醒/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);
- assert.match(html,/立即自主練習打卡/);assert.match(html,/<details[^>]*><summary><b>查看本月學習進度與上課出勤/);
+ assert.match(html,/記錄練習/);assert.match(html,/<details[^>]*><summary><b>查看學習進度與出勤/);
  const app=read("app/app-v3.js"),start=app.indexOf("function tenantServicesEntry()"),end=app.indexOf("async function renderLogin",start);
  runInNewContext(app.slice(start,end)+";window.service=tenantServicesEntry",ctx);
  ctx.state.me.capabilities={lineAccount:true,feeCollections:true};
@@ -79,6 +79,19 @@ test("upcoming signup links follow dynamic groups and deadlines and keep an enro
  const html=ctx.home().split('id="parentUpcomingActivities"')[1].split('id="parentLatestNews"')[0];
  assert.match(html,/open/);assert.match(html,/enrolled/);assert.doesNotMatch(html,/closed|other-team|>old<|ended-today|calendar-ended/);
  assert.match(html,/activity=fieldTrip%3Aopen/);assert.match(html,/已送出報名/);
+});
+
+test("activity actions distinguish an open signup, a future opening, and a dinner not open for payment",async()=>{
+ const {ctx,registrations}=parentHome();await ctx.refreshParentHomeUpdates();
+ const config=(id,extra={})=>({id,module:"fieldTrip",title:id,enabled:true,targetGroups:"A",startAt:"2026-12-09T09:00:00+08:00",...extra});
+ ctx.state.parentActivityConfigs=[config("open"),config("future",{openAt:"2026-11-20T09:00:00+08:00"}),config("dinner",{module:"yearEndDinner",feeStatus:"PUBLISHED",paymentOpen:false})];
+ const article=(html,title)=>html.split('<article class="parent-home-activity">').find(x=>x.startsWith('<div class="parent-home-activity-head"><b>'+title+'</b>')).split('</article>')[0];
+ let html=ctx.home();
+ assert.match(article(html,"open"),/>立即報名 ›/);
+ for(const title of ["future","dinner"]){assert.match(article(html,title),/尚未開放/);assert.match(article(html,title),/>查看活動 ›/);assert.doesNotMatch(article(html,title),/>立即報名/)}
+ registrations.push({kind:"fieldTrip",activityId:"open",registrationStatus:"REGISTERED",paymentStatus:"REPORTED_UNVERIFIED"});
+ html=ctx.home();assert.match(article(html,"open"),/待財務核帳/);assert.match(article(html,"open"),/>查看報名 ›/);assert.doesNotMatch(article(html,"open"),/報名完成/);
+ registrations[0].paymentStatus="VERIFIED";assert.match(article(ctx.home(),"open"),/報名完成/);
 });
 
 test("a slow activity response cannot become the next child's or school's homepage content",async()=>{

@@ -40,17 +40,16 @@
     const label=family?item.activityTitle||"活動繳費":item.kind==="regularUniform"?"團 T":"A 團比賽服";
     const valid=family?/^family:(fieldTrip|yearEndDinner):[A-Za-z0-9_-]{1,80}:[a-f0-9]{32}$/.test(String(item.id)):/^[a-f0-9-]{36}$/i.test(String(item.id)),id=valid?String(item.id):"";
     const detail=family?`學生 ${ids.length} 位｜陪同者 ${Number(item.adults||0)} 位`:`尺寸：${esc(item.size||"待確認")}｜${Number(item.quantity||1)} 件`;
-    return `<div class="parent-payment-row"><strong>${esc(name)}｜${esc(label)}</strong><span>${detail}｜${pending?"本筆金額":"應繳金額"}：<b>NT$ ${item.amount.toLocaleString("zh-TW")}</b></span><button type="button" class="${pending?"secondary":"primary"}" ${id?"":"disabled"} onclick="openParentUniformPayment('${id}')">${pending?"查看核帳進度":"查看匯款帳戶／回報末五碼"} ›</button></div>`;
+    return `<div class="parent-payment-row"><strong>${esc(name)}｜${esc(label)}</strong><span class="muted">${detail}</span><span class="parent-payment-amount">${pending?"本筆金額":"應繳金額"}：<b>NT$ ${item.amount.toLocaleString("zh-TW")}</b></span><button type="button" class="${pending?"secondary":"primary"}" ${id?"":"disabled"} onclick="openParentUniformPayment('${id}')">${pending?"查看核帳進度":"查看帳戶並回報匯款"} ›</button></div>`;
   }
   function panel(){
     if(error)return `<section class="card parent-payment-notice" role="status"><h2>付款提醒暫時無法讀取</h2><p>${error}</p><button type="button" class="secondary" onclick="refreshParentUniformPayments()">重新讀取付款狀態</button></section>`;
     if(items===null)return `<div class="notice parent-payment-loading" role="status">正在確認付款進度…</div>`;
     const alerts=model.alerts(items),content=[];
     if(alerts.due.length){
-      const onlyTshirts=alerts.due.every(item=>item.kind==="regularUniform"),hasFamily=alerts.due.some(model.family);
-      content.push(`<section class="card parent-payment-notice is-due" role="status" aria-labelledby="parent-payment-title"><div class="parent-payment-heading"><h2 id="parent-payment-title">🔔 ${hasFamily?"有待繳款項":(onlyTshirts?"團 T ":"團服")+"已核准"}，請完成匯款</h2><button type="button" class="secondary" onclick="refreshParentUniformPayments()" ${loading?"disabled":""}>更新</button></div><p>有 <b>${alerts.due.length} 筆待匯款</b>。請先匯款，再填寫匯款日期與<strong>轉出帳號末五碼</strong>送出。</p>${alerts.due.map(item=>row(item,false)).join("")}</section>`);
+      content.push(`<section class="card parent-payment-notice is-due" role="status" aria-labelledby="parent-payment-title"><div class="parent-payment-heading"><h2 id="parent-payment-title">💳 待繳費（${alerts.due.length}）</h2><button type="button" class="secondary" onclick="refreshParentUniformPayments()" ${loading?"disabled":""}>更新</button></div><p>請完成匯款，再回報日期與<strong>轉出帳號末五碼</strong>。</p>${alerts.due.map(item=>row(item,false)).join("")}</section>`);
     }
-    if(alerts.reported.length)content.push(`<section class="card parent-payment-notice is-reported" role="status"><div class="parent-payment-heading"><h2>🕒 匯款已回報，待財務核帳</h2><button type="button" class="secondary" onclick="refreshParentUniformPayments()" ${loading?"disabled":""}>更新</button></div><p>${alerts.reported.length} 筆匯款資料已送出。請等待學校確認入帳，<strong>無須重複匯款</strong>。</p>${alerts.reported.map(item=>row(item,true)).join("")}</section>`);
+    if(alerts.reported.length)content.push(`<section class="card parent-payment-notice is-reported" role="status"><div class="parent-payment-heading"><h2>🕒 匯款核對中（${alerts.reported.length}）</h2><button type="button" class="secondary" onclick="refreshParentUniformPayments()" ${loading?"disabled":""}>更新</button></div><p>已回報，待財務核帳。<strong>無須重複匯款</strong>。</p>${alerts.reported.map(item=>row(item,true)).join("")}</section>`);
     return content.join("");
   }
   home=function(){

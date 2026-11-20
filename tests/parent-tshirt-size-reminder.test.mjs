@@ -18,9 +18,9 @@ test("missing team T size stays visible until every linked child has a size",()=
  const ctx=harness();
  ctx.state.parentTshirtSizes=[{studentId:"1",studentName:"甲同學",size:null}];
  const pending=ctx.parentTshirtSizeReminderHtml();
- assert.match(pending,/團 T 尺寸尚未完成/);
+ assert.match(pending,/請填寫團 T 尺寸/);
  assert.match(pending,/甲同學尚未登錄尺寸/);
- assert.match(pending,/完成所有孩子的尺寸登記前，此提醒會在每次登入時持續顯示/);
+ assert.match(pending,/填完後此提醒會自動消失/);
  assert.doesNotMatch(pending,/關閉|稍後提醒|已讀/);
  ctx.state.parentTshirtSizes=[{studentId:"1",studentName:"甲同學",size:"M"}];
  assert.equal(ctx.parentTshirtSizeReminderHtml(),"");
@@ -30,7 +30,7 @@ test("size reminder is independent from one-time activity seen state and handles
  const start=source.indexOf("function tshirtSizeShortcut"),end=source.indexOf("async function loadParentActivityAlerts",start),block=source.slice(start,end);
  assert.doesNotMatch(block,/parentActivityNotice|localStorage|mark\(/);
  const ctx=harness();ctx.state.parentTshirtSizesError="團 T 尺寸狀態暫時無法確認";
- assert.match(ctx.parentTshirtSizeReminderHtml(),/系統不會將讀取失敗視為已完成/);
+ assert.match(ctx.parentTshirtSizeReminderHtml(),/請重新讀取，確認是否需要填寫/);
  assert.match(ctx.parentTshirtSizeReminderHtml(),/重新讀取尺寸狀態/);
  assert.match(source,/parent-tshirt-size-saved[\s\S]*loadParentTshirtSizes\(\)/);
 });

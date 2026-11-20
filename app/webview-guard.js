@@ -137,7 +137,7 @@
       "/teacher-navigation.js?v=20261002-teacher-types-home-priorities-20261119",
       "/training-attendance.js?v=20261102-activity-boundary",
       "/comprehensive-support.js?v=20261002-save-confirm",
-      "/private-lesson-confirmation.js?v=20261120-line-review-confirm-resend",
+      "/private-lesson-confirmation.js?v=20261120-line-review-confirm-resend-parent-clear-20261121",
       "/teacher-line-account.js?v=20261119-teacher-binding-home-priorities-notification-center"
     ];
     if(["unassigned","contextDenied"].includes(role))return [
@@ -149,10 +149,10 @@
       "/parent-activity-notice.js?v=20261016-new-activity-alert-parent-tasks",
       "/uniform-payment-state.js?v=20261026-payment-email",
       "/practice-timer.js?v=20261004-manual4h",
-      "/private-lesson-confirmation.js?v=20261120-line-review-confirm-resend",
+      "/private-lesson-confirmation.js?v=20261120-line-review-confirm-resend-parent-clear-20261121",
       "/parent-semester-attendance.js?v=20261003-practice20",
-      "/parent-home-summary.js?v=20261103-tshirt-size-reminder-parent-tasks-home-priorities-20261119-final",
-      "/parent-uniform-payment-notice.js?v=20261026-payment-email-parent-tasks",
+      "/parent-home-summary.js?v=20261103-tshirt-size-reminder-parent-tasks-home-priorities-20261119-final-parent-clear-20261121",
+      "/parent-uniform-payment-notice.js?v=20261026-payment-email-parent-tasks-parent-clear-20261121",
       "/parent-practice-history.js?v=20261003-practice-history-toggle",
       "/special-calendar.js?v=20261102-training-form-home-priorities-20261119"
     ];
