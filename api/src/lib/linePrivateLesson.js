@@ -15,7 +15,7 @@ function reviewQuickReply(code){
 }
 function reviewInstructions(code,expiresAt){
   const deadline=new Date(expiresAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
-  return `\n\n──────────\n⭐ 老師教學評鑑：星級＋文字評語\n請用家長自己的 LINE，在本官方帳號的一對一聊天室回覆。\n\n📱 手機回覆\n① 點下方「1 星～5 星」按鈕。\n② 在自動帶入的文字後面，加上您的實際評語，再按傳送。\n點選星數只會產生草稿；送出評語後才會記錄。\n\n💻 電腦／未看到按鈕\n複製下方整行，保留指令與代碼，將「5」改為您的星數，並把「請填寫您的想法」換成實際評語：\n#個課評鑑 ${code} 5 請填寫您的想法\n\n回覆範例（評語請依實際感受修改）：\n#個課評鑑 ${code} 4 老師說明清楚，希望能多示範運弓。\n\n星數請填數字 1～5，5 星為最高；不要修改代碼。\n收到「已記錄…星與文字回饋」的回覆，才表示評鑑完成並寫入平台。\n本堂評鑑截止：${deadline}（台灣時間）。`;
+  return `\n\n──────────\n⭐ 老師教學評鑑：星級＋文字評語\n請用家長自己的 LINE，在本官方帳號的一對一聊天室回覆。\n\n📱 手機回覆\n① 點下方「1 星～5 星」按鈕。\n② 在自動帶入的文字後面，加上您的實際評語，再按傳送。\n點選星數只會產生草稿；送出有效星級與評語，即同時確認本堂已完成上課。\n\n💻 電腦／未看到按鈕\n複製下方整行，保留指令與代碼，將「5」改為您的星數，並把「請填寫您的想法」換成實際評語：\n#個課評鑑 ${code} 5 請填寫您的想法\n\n回覆範例（評語請依實際感受修改）：\n#個課評鑑 ${code} 4 老師說明清楚，希望能多示範運弓。\n\n星數請填數字 1～5，5 星為最高；不要修改代碼。\n收到「已記錄…星與文字回饋」的回覆，才表示評鑑與完成上課確認已同步平台，不需再回網頁確認。\n本堂評鑑截止：${deadline}（台灣時間）。`;
 }
 function reviewFormatHint(text){
   const code=String(text||"").match(/^#個課評鑑\s+([a-f\d]{14})(?:\s|$)/iu)?.[1]?.toUpperCase();
@@ -45,13 +45,13 @@ async function reserveReview(channel,entity,email,userId){
   return key;
 }
 
-export async function notifyPrivateLessonLine(schoolId,{recipients,entity,eventType,format}){
+export async function notifyPrivateLessonLine(schoolId,{recipients,entity,eventType,format,deliveryId=""}){
   if(!workflowLineEnabled()||!recipients.length)return "disabled";
   try{
     const channel=await resolveTenantLineChannel(schoolId);
     if(!channel.loginConfigured||!channel.botUserId)return "not_configured";
     const text=(process.env.LAB_ENVIRONMENT==="functional-uat"?"【LAB】\n":"")+format(channel.appOrigin);
-    const eventId=["private",entity.rowKey,eventType,entity.updatedAt].join(":");
+    const eventId=["private",entity.rowKey,eventType,entity.updatedAt,...(deliveryId?[deliveryId]:[])].join(":");
     const seen=new Set();
     const accounts=await Promise.all(recipients.map(email=>getTenantLineRecipient(schoolId,email,channel.botUserId)));
     const tasks=accounts.flatMap((account,index)=>{
@@ -96,12 +96,19 @@ export async function receivePrivateLessonReview(channel,userId,text){
     const lessons=table("tenantPrivateLesson");
     const partitionKey=tenantStudentPartition(schoolId,record.studentId);
     const lesson=await lessons.getEntity(partitionKey,record.lessonId);
-    if(lesson.completedAt!==record.completedAt||!["teacher_completed","present","late"].includes(lesson.status))return expired;
-    if(lesson.teacherRatedAt)return "這堂個課已收到評鑑，可在平台查看。";
+    if(lesson.completedAt!==record.completedAt||lesson.parentConfirmation==="issue"||!["teacher_completed","present","late"].includes(lesson.status))return expired;
+    if(lesson.teacherRatedAt&&!(lesson.parentConfirmation==="pending"&&lesson.teacherRatedBy===record.email&&Number(lesson.teacherRating)===validation.rating&&lesson.teacherReview===validation.review))return "這堂個課已收到評鑑，可在平台查看。";
     const timestamp=new Date().toISOString();
-    await lessons.updateEntity({partitionKey,rowKey:record.lessonId,teacherRating:validation.rating,
-      teacherReview:validation.review,teacherRatedAt:timestamp,teacherRatedBy:record.email},"Merge",{etag:lesson.etag});
-    return `✅ 已記錄 ${lesson.eventDate} 個課的 ${validation.rating} 星與文字回饋。\n教學星級：${"★".repeat(validation.rating)}（${validation.rating}/5）\n您的評語：${validation.review}\n\n評價已同步平台，供後續追蹤老師教學使用。若尚未確認本堂上課，請回平台完成確認。`;
+    const attendance=["present","late"].includes(lesson.actualAttendanceStatus)?lesson.actualAttendanceStatus:["present","late"].includes(lesson.status)?lesson.status:"present";
+    const patch={partitionKey,rowKey:record.lessonId};
+    if(!lesson.teacherRatedAt)Object.assign(patch,{teacherRating:validation.rating,
+      teacherReview:validation.review,teacherRatedAt:timestamp,teacherRatedBy:record.email});
+    if(lesson.parentConfirmation!=="confirmed")Object.assign(patch,{status:attendance,actualAttendanceStatus:attendance,
+      parentConfirmation:"confirmed",parentConfirmedAt:timestamp,parentConfirmedBy:record.email,parentConfirmedVia:"line",
+      parentNote:"",finalizedAt:timestamp});
+    patch.updatedAt=timestamp;
+    await lessons.updateEntity(patch,"Merge",{etag:lesson.etag});
+    return `✅ 已確認 ${lesson.eventDate} 個課完成上課，並已記錄 ${validation.rating} 星與文字回饋。\n教學星級：${"★".repeat(validation.rating)}（${validation.rating}/5）\n您的評語：${validation.review}\n\n本堂個課已結案，星級與評語已同步平台，不需再到網頁確認。家長網頁約 30 秒更新，也可點「重新整理」。`;
   }catch(error){
     if(error.statusCode===404)return expired;
     if(error.statusCode===412)return "個課資料剛更新。請重新送出評鑑，系統會核對最新狀態。";

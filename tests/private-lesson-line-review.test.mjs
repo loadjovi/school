@@ -20,11 +20,13 @@ function fixture(){
   teacherName:"測試老師",eventDate:"2020-11-17",startTime:"18:00",endTime:"18:50",minutes:50,status:"scheduled",
   parentConfirmation:"not_required",etag:"v1"};
  const records=new Map([[lesson.rowKey,lesson]]),reviews=new Map(),outbound=[],emails=[];
+ let failPush=false,failUpdate=false;
  let access={role:"privateTeacher",email:mother,capabilities:{private:true}};
  const tenantStudentPartition=(school,id)=>school+"|student|"+id;
  const client={
   async getEntity(partition,id){const row=records.get(id);if(!row||partition!==row.partitionKey)throw missing();return {...row}},
   async updateEntity(patch,_mode,options={}){
+   if(failUpdate){failUpdate=false;throw Object.assign(Error("concurrent update"),{statusCode:412})}
    const row=records.get(patch.rowKey);
    if(!row)throw missing();
    if(options.etag&&options.etag!==row.etag)throw Object.assign(Error("conflict"),{statusCode:412});
@@ -47,10 +49,10 @@ function fixture(){
   getStudentAliasInfo:async id=>({canonicalStudentId:id,aliases:[id]}),ensureTenantTables:async()=>{},table:()=>client,
   getTenantLineRecipient:async(school,email,bot)=>school===schoolId&&bot===botUserId&&userIds.has(email)?{lineUserId:userIds.get(email)}:null,
   getMappedStudentsByEmail:async(email,school)=>school===schoolId&&userIds.has(email)?[{studentId:"student1"}]:[],
-  workflowLineEnabled:()=>true,workflowLineRetryKey:()=>"retry",
+  workflowLineEnabled:()=>true,workflowLineRetryKey:(_school,event,user)=>event+":"+user,
   resolveTenantLineChannel:async school=>{assert.equal(school,schoolId);return {schoolId,botUserId,channelSecret:"secret",loginConfigured:true,appOrigin:"https://school-a.example.invalid",accessToken:"test"}},
   TableClient:{fromConnectionString:()=>reviewStore},
-  pushLineMessage:async(userId,text,options)=>outbound.push({userId,text,options})};
+  pushLineMessage:async(userId,text,options)=>{if(failPush)throw Error("provider unavailable");outbound.push({userId,text,options})}};
  const line=runInNewContext(stripped("api/src/lib/linePrivateLesson.js")+";({notifyPrivateLessonLine,receivePrivateLessonReview})",common);
  let handler;
  runInNewContext(stripped("api/src/functions/privateLesson.js"),{
@@ -58,6 +60,7 @@ function fixture(){
   app:{http:(_,entry)=>{handler=entry.handler}},json:(data,status=200)=>({data,status}),
   getTenantContext:async()=>({schoolId,access}),getTenantDirectory:async()=>({timezone:"Asia/Taipei",systemName:"測試學校"}),
   ensurePrivateAccess:()=>true,ensureStudentAccess:()=>true,activityStudentId:row=>row.studentId,
+  listByStudent:async(_kind,id)=>[...records.values()].filter(x=>x.studentId===id),
   getTeacherDirectory:async()=>({teacherName:"測試老師"}),getStudentMaster:async()=>({studentName:"測試學生"}),
   getSystemSettings:async()=>({emailNotificationsEnabled:true}),
   listUserStudentMappings:async()=>[mother,father].map(parentEmail=>({parentEmail,studentId:"student1"})),
@@ -77,7 +80,9 @@ function fixture(){
   });
   return directoryHandler({method:"GET",query:new URLSearchParams()});
  }
- return {patch,line,lesson,outbound,emails,reviewCode,readTeacherReviews,
+ return {patch,line,lesson,outbound,emails,reviews,reviewCode,readTeacherReviews,
+  get:()=>handler({method:"GET",query:new URLSearchParams(),headers:{get:()=>null}}),
+  setAccess:value=>{access=value},failPush:value=>{failPush=value},failNextUpdate:()=>{failUpdate=true},
   setParent:email=>{access={role:"parent",email,students:[{studentId:"student1"}]}}};
 }
 
@@ -94,7 +99,7 @@ test("completing a lesson sends both parents the course content, all three goals
   assert.ok(text.includes(content));
   for(const [index,goal] of goals.entries())assert.ok(text.includes((index+1)+". "+goal));
   assert.match(text,/#個課評鑑 [A-F0-9]{14} 5 請填寫您的想法/);
-  assert.match(text,/家長自己的 LINE/);assert.match(text,/電腦／未看到按鈕/);assert.match(text,/才表示評鑑完成並寫入平台/);assert.match(text,/本堂評鑑截止/);
+  assert.match(text,/家長自己的 LINE/);assert.match(text,/電腦／未看到按鈕/);assert.match(text,/評鑑與完成上課確認已同步平台/);assert.match(text,/本堂評鑑截止/);
   assert.equal(options.quickReply.items.length,5);
   const code=text.match(/#個課評鑑 ([A-F0-9]{14}) 5/)[1];
   for(const [index,item] of options.quickReply.items.entries()){
@@ -113,7 +118,7 @@ test("completing a lesson sends both parents the course content, all three goals
  assert.equal(h.outbound.length,2);
 });
 
-test("a LINE rating reaches the teacher review summary and web confirmation preserves the original reviewer",async()=>{
+test("a LINE review confirms completion and reaches parent records and the teacher review summary",async()=>{
  const h=fixture();
  await h.patch({action:"complete_lesson",attendanceStatus:"present",lessonContent:content,weeklyPracticeGoals:goals});
  const code=h.reviewCode(userIds.get(mother)),channel={schoolId,botUserId};
@@ -136,7 +141,10 @@ test("a LINE rating reaches the teacher review summary and web confirmation pres
  assert.match(await h.line.receivePrivateLessonReview(channel,userIds.get(father),"#個課評鑑 "+fatherCode+" 4 另一筆回饋"),/已收到評鑑/);
  h.setParent(father);
  assert.equal((await h.patch({action:"confirmed",teacherRating:4,teacherReview:"另一筆回饋"})).status,409);
- assert.equal((await h.patch({action:"confirmed",teacherRating:0,teacherReview:""})).status,200);
+ assert.equal((await h.patch({action:"confirmed",teacherRating:0,teacherReview:""})).status,409);
+ const parent=await h.get();
+ assert.equal(parent.data.pendingCount,0);assert.equal(parent.data.items[0].workflowStatus,"completed");
+ assert.equal(parent.data.items[0].parentConfirmedVia,"line");assert.equal(parent.data.items[0].teacherReview,review);
  assert.equal(h.lesson.status,"present");
  assert.deepEqual({rating:h.lesson.teacherRating,review:h.lesson.teacherReview,by:h.lesson.teacherRatedBy,at:h.lesson.teacherRatedAt},original);
 });
@@ -169,7 +177,9 @@ test("every quick-reply star value remains a draft until real text is sent and i
   assert.equal(h.lesson.teacherRating,undefined);
   const reply=await h.line.receivePrivateLessonReview({schoolId,botUserId},notification.userId,action.fillInText+"老師教學內容很清楚，希望多示範弓法");
   assert.equal(h.lesson.teacherRating,rating);assert.equal(h.lesson.teacherRatedBy,mother);
-  assert.equal(h.lesson.parentConfirmation,"pending");assert.match(reply,/已記錄/);assert.ok(reply.includes(`${rating}/5`));assert.match(reply,/您的評語：老師教學/);
+  assert.equal(h.lesson.parentConfirmation,"confirmed");assert.equal(h.lesson.parentConfirmedBy,mother);
+  assert.equal(h.lesson.status,"present");assert.ok(h.lesson.finalizedAt);assert.ok(h.lesson.updatedAt);
+  assert.match(reply,/已確認.*完成上課/);assert.match(reply,/不需再到網頁確認/);assert.match(reply,/已記錄/);assert.ok(reply.includes(`${rating}/5`));assert.match(reply,/您的評語：老師教學/);
  }
 });
 
@@ -195,4 +205,96 @@ test("a star-button postback alone cannot submit a rating or confirm lesson comp
  const result=await handler({params:{schoolId},headers:new Headers(),arrayBuffer:async()=>Buffer.from(JSON.stringify(payload))});
  assert.equal(result.status,200);
  assert.equal(calls,0);
+});
+
+test("a parent text webhook confirms a late lesson once and preserves the other parent's identity",async()=>{
+ const h=fixture();await h.patch({action:"complete_lesson",attendanceStatus:"late",lessonContent:content});
+ const code=h.reviewCode(userIds.get(father)),text=`#個課評鑑 ${code} 4 老師解說清楚`;
+ let handler;const replies=[];
+ runInNewContext(stripped("api/src/functions/lineWebhook.js"),{
+  app:{http:(name,entry)=>{if(name==="tenantLineWebhook")handler=entry.handler}},json:(data,status=200)=>({data,status}),Buffer,console,
+  tenantIdValue:x=>x,defaultTenantId:()=>schoolId,
+  resolveTenantLineChannel:async()=>({schoolId,botUserId,configured:true,loginConfigured:true,channelSecret:"secret",accessToken:"test"}),
+  verifyLineSignature:()=>true,parseActivityLineBinding:()=>null,
+  receivePrivateLessonReview:h.line.receivePrivateLessonReview,replyLineMessage:async(_token,message)=>replies.push(message)
+ });
+ const payload={destination:botUserId,events:[{type:"message",source:{type:"user",userId:userIds.get(father)},message:{type:"text",text},replyToken:"reply"}]};
+ const request={params:{schoolId},headers:new Headers(),arrayBuffer:async()=>Buffer.from(JSON.stringify(payload))};
+ assert.equal((await handler(request)).status,200);
+ assert.match(replies[0],/已確認.*完成上課/);
+ assert.equal(h.lesson.status,"late");assert.equal(h.lesson.parentConfirmation,"confirmed");
+ assert.equal(h.lesson.parentConfirmedBy,father);assert.equal(h.lesson.teacherRatedBy,father);
+ const etag=h.lesson.etag,confirmed=h.lesson.parentConfirmedAt;
+ await handler(request);
+ assert.match(replies[1],/已收到評鑑/);assert.equal(h.lesson.etag,etag);assert.equal(h.lesson.parentConfirmedAt,confirmed);
+});
+
+test("stale writes cannot partially record an evaluation or finalize a lesson",async()=>{
+ const h=fixture();await h.patch({action:"complete_lesson",attendanceStatus:"present",lessonContent:content});
+ const text=`#個課評鑑 ${h.reviewCode(userIds.get(mother))} 5 謝謝老師`;
+ h.failNextUpdate();
+ assert.match(await h.line.receivePrivateLessonReview({schoolId,botUserId},userIds.get(mother),text),/重新送出/);
+ assert.equal(h.lesson.teacherRating,undefined);assert.equal(h.lesson.parentConfirmation,"pending");assert.equal(h.lesson.finalizedAt,undefined);
+ assert.match(await h.line.receivePrivateLessonReview({schoolId,botUserId},userIds.get(mother),text),/已確認/);
+ assert.equal(h.lesson.parentConfirmation,"confirmed");assert.equal(h.lesson.teacherRating,5);
+});
+
+test("a previously recorded review can finalize its pending lesson only for the original parent and same feedback",async()=>{
+ const h=fixture();await h.patch({action:"complete_lesson",attendanceStatus:"present",lessonContent:content});
+ Object.assign(h.lesson,{teacherRating:5,teacherReview:"謝謝老師",teacherRatedAt:"2026-11-19T00:00:00.000Z",teacherRatedBy:mother});
+ const original=h.lesson.teacherRatedAt;
+ const fatherText=`#個課評鑑 ${h.reviewCode(userIds.get(father))} 5 謝謝老師`;
+ assert.match(await h.line.receivePrivateLessonReview({schoolId,botUserId},userIds.get(father),fatherText),/已收到評鑑/);
+ assert.equal(h.lesson.parentConfirmation,"pending");
+ const motherText=`#個課評鑑 ${h.reviewCode(userIds.get(mother))} 5 謝謝老師`;
+ assert.match(await h.line.receivePrivateLessonReview({schoolId,botUserId},userIds.get(mother),motherText),/已確認/);
+ assert.equal(h.lesson.parentConfirmation,"confirmed");assert.equal(h.lesson.teacherRatedAt,original);
+});
+
+test("expired, cancelled, superseded and group-chat reviews never finalize the course",async()=>{
+ for(const change of [h=>{for(const row of h.reviews.values())row.expiresAt=Date.now()-1},h=>{h.lesson.status="cancelled"},h=>{h.lesson.completedAt="2000-01-01T00:00:00Z"}]){
+  const h=fixture();await h.patch({action:"complete_lesson",attendanceStatus:"present",lessonContent:content});
+  const text=`#個課評鑑 ${h.reviewCode(userIds.get(mother))} 5 謝謝老師`;
+  change(h);assert.match(await h.line.receivePrivateLessonReview({schoolId,botUserId},userIds.get(mother),text),/失效/);
+  assert.equal(h.lesson.parentConfirmation,"pending");assert.equal(h.lesson.teacherRating,undefined);
+ }
+ const h=fixture();await h.patch({action:"complete_lesson",attendanceStatus:"present",lessonContent:content});
+ assert.match(await h.line.receivePrivateLessonReview({schoolId,botUserId},"",`#個課評鑑 ${h.reviewCode(userIds.get(mother))} 5 謝謝老師`),/一對一/);
+ assert.equal(h.lesson.parentConfirmation,"pending");
+});
+
+test("LINE resend sends current content and star buttons to both parents without resending Email or changing completion",async()=>{
+ const h=fixture();await h.patch({action:"complete_lesson",attendanceStatus:"late",lessonContent:content,weeklyPracticeGoals:goals});
+ const completed=h.lesson.completedAt,firstKey=h.outbound[0].options.retryKey;
+ await h.patch({action:"update_weekly_practice_goals",weeklyPracticeGoals:["新的運弓練習"]});
+ const result=await h.patch({action:"resend_line"});
+ assert.equal(result.status,200);assert.equal(result.data.lineNotification.status,"accepted");
+ assert.equal(result.data.item.lineNotificationResendCount,1);assert.ok(result.data.item.lineNotificationLastResentAt);
+ assert.equal(h.outbound.length,4);assert.equal(h.emails.length,1);
+ assert.equal(h.lesson.completedAt,completed);assert.equal(h.lesson.status,"teacher_completed");assert.equal(h.lesson.parentConfirmation,"pending");
+ for(const message of h.outbound.slice(2)){
+  assert.match(message.text,/新的運弓練習/);assert.equal(message.options.quickReply.items.length,5);
+  assert.notEqual(message.options.retryKey,firstKey);
+ }
+ assert.equal((await h.patch({action:"resend_line"})).status,429);assert.equal(h.outbound.length,4);
+});
+
+test("LINE resend rejects parent and unrelated teacher access and unavailable review states",async()=>{
+ const h=fixture();assert.equal((await h.patch({action:"resend_line"})).status,409);
+ await h.patch({action:"complete_lesson",attendanceStatus:"present",lessonContent:content});
+ h.setParent(mother);assert.equal((await h.patch({action:"resend_line"})).status,403);
+ h.setAccess({role:"privateTeacher",email:"unrelated@example.invalid",capabilities:{private:true}});
+ assert.equal((await h.patch({action:"resend_line"})).status,403);
+ h.setAccess({role:"admin",email:"admin@example.invalid"});
+ h.lesson.completedAt="2000-01-01T00:00:00Z";assert.equal((await h.patch({action:"resend_line"})).status,409);
+ h.lesson.parentConfirmation="confirmed";h.lesson.status="present";assert.equal((await h.patch({action:"resend_line"})).status,409);
+ assert.equal(h.outbound.length,2);
+});
+
+test("provider and concurrency failures are reported without claiming delivery or overwriting lesson state",async()=>{
+ const h=fixture();await h.patch({action:"complete_lesson",attendanceStatus:"present",lessonContent:content});
+ h.failNextUpdate();assert.equal((await h.patch({action:"resend_line"})).status,409);assert.equal(h.outbound.length,2);
+ h.failPush(true);const result=await h.patch({action:"resend_line"});
+ assert.equal(result.data.lineNotification.status,"failed");assert.equal(h.lesson.lineNotificationStatus,"failed");
+ assert.equal(h.lesson.parentConfirmation,"pending");assert.equal(h.lesson.teacherRating,undefined);assert.equal(h.emails.length,1);
 });
