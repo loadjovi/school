@@ -77,25 +77,30 @@
     const s=document.createElement("script");s.src=src;s.defer=true;
     if(onload)s.onload=onload;if(onerror)s.onerror=onerror;document.body.appendChild(s);return s
   }
+  const scriptLoads=new Map();
   function loadScript(src){
-    return new Promise((resolve,reject)=>appendScript(src,resolve,()=>reject(new Error("載入失敗："+src))));
+    if(scriptLoads.has(src))return scriptLoads.get(src);
+    const request=new Promise((resolve,reject)=>{
+      let script,done=false;
+      const finish=error=>{if(done)return;done=true;clearTimeout(timer);if(error){script?.remove();reject(error)}else resolve()};
+      const timer=setTimeout(()=>finish(new Error("功能載入逾時")),15000);
+      script=appendScript(src,()=>finish(),()=>finish(new Error("功能載入失敗")));
+    }).catch(error=>{scriptLoads.delete(src);throw error});
+    scriptLoads.set(src,request);
+    return request;
   }
   async function loadSeries(list){
     for(const src of list){
-      try{await loadScript(src)}catch(e){console.warn(e)}
+      await loadScript(src);
+      if(state.me?.role!=="parent")continue;
+      const initialized=src.startsWith("/parent-home-summary.js")?window.parentHomeSummaryReady===true:
+        src.startsWith("/private-lesson-confirmation.js")?typeof window.privateLessonParentPanels==="function":true;
+      if(!initialized){
+        scriptLoads.delete(src);
+        [...document.scripts].find(script=>script.getAttribute("src")===src)?.remove();
+        throw new Error("家長功能初始化未完成");
+      }
     }
-  }
-  function waitForProfileReady(){
-    return new Promise(resolve=>{
-      let tries=0;
-      const timer=setInterval(()=>{
-        tries++;
-        try{
-          if(typeof state!=="undefined"&&state.me&&document.querySelector(".shell")){clearInterval(timer);resolve()}
-          else if(tries>400){clearInterval(timer);resolve()}
-        }catch(e){if(tries>400){clearInterval(timer);resolve()}}
-      },25);
-    });
   }
   function roleModules(){
     const role=String(state?.me?.role||""),cap=state?.me?.capabilities||{};
@@ -148,7 +153,8 @@
       "/parent-semester-attendance.js?v=20261003-practice20",
       "/parent-home-summary.js?v=20261103-tshirt-size-reminder-parent-tasks-home-priorities-20261119-final",
       "/parent-uniform-payment-notice.js?v=20261026-payment-email-parent-tasks",
-      "/parent-practice-history.js?v=20261003-practice-history-toggle"
+      "/parent-practice-history.js?v=20261003-practice-history-toggle",
+      "/special-calendar.js?v=20261102-training-form-home-priorities-20261119"
     ];
     if(role==="globalAdmin")return [
       "/school-access.js?v=20261027-school-followup",
@@ -177,30 +183,46 @@
     }).catch(()=>{});
     return Promise.allSettled([setup,status]);
   }
-  async function loadRoleModules(){
-    await waitForProfileReady();
-    if(typeof state==="undefined"||!state.me||window.__roleModuleBootstrap||window.__roleModulesReady)return;
+  let roleModuleTask=null;
+  function loadRoleModules(){
+    if(roleModuleTask)return roleModuleTask;
+    if(typeof state==="undefined"||!state.me||window.__roleModulesReady||window.__roleModuleError)return Promise.resolve();
     const list=[...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261116-line-staff-entry","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");
-    const warmup=teacherWarmup();
-    await Promise.all([loadSeries(list),warmup]);
-    window.__roleModuleBootstrap=false;
-    window.__roleModulesReady=true;
-    window.__roleLoaderActive=false;
-    document.documentElement.classList.remove("role-modules-loading");
-    try{render()}catch(e){}
-    await openStaffMenuEntry();
+    roleModuleTask=(async()=>{
+      try{
+        await Promise.all([loadSeries(list),teacherWarmup()]);
+        if(state.me?.role==="parent"&&(window.parentHomeSummaryReady!==true||typeof window.privateLessonParentPanels!=="function"))throw new Error("家長功能初始化未完成");
+        window.__roleModulesReady=true;
+        window.__roleLoaderActive=false;
+      }catch(error){
+        window.__roleModuleError=error.message||"功能載入失敗";
+        console.warn("Role modules could not be prepared",error);
+      }finally{
+        window.__roleModuleBootstrap=false;
+        document.documentElement.classList.remove("role-modules-loading");
+        roleModuleTask=null;
+      }
+      try{render()}catch(error){console.warn("Role page could not be rendered",error)}
+      if(window.__roleModulesReady)await openStaffMenuEntry();
+    })();
+    return roleModuleTask;
   }
+  // Login may finish long after the login page opens. Each authenticated render
+  // resumes the same module task, rather than relying on a short startup timer.
+  window.ensureRoleModules=loadRoleModules;
+  window.retryRoleModules=()=>{
+    window.__roleModuleError="";
+    const task=loadRoleModules();
+    try{render()}catch{}
+    return task;
+  };
   window.resumeLineStaffEntry=()=>{if(sessionStorage.getItem(staffEntryKey))loadRoleModules()};
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity-school-admin-teacher-binding-20261119-home-priorities-notification-center",()=>{
-      const start=()=>loadRoleModules();
-      if("requestIdleCallback" in window)requestIdleCallback(start,{timeout:500});
-      else setTimeout(start,60);
-    });
+    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity-school-admin-teacher-binding-20261119-home-priorities-notification-center-parent-login-ready");
   }
   function installIOSRedirectMode(){let tries=0;const timer=setInterval(()=>{tries++;if(window.google?.accounts?.id?.initialize){clearInterval(timer);const nativeInitialize=window.google.accounts.id.initialize.bind(window.google.accounts.id);window.google.accounts.id.initialize=(config={})=>{const {callback,...rest}=config;return nativeInitialize({...rest,ux_mode:"redirect",login_uri:`${location.origin}/api/google-login`})};loadApp()}else if(tries>120){clearInterval(timer);loadApp()}},50)}
   document.addEventListener("click",async e=>{const btn=e.target.closest?.(".logout");if(!btn)return;e.preventDefault();e.stopImmediatePropagation();await Promise.allSettled([fetch("/api/google-logout",{method:"POST"}),fetch("/api/line/session/logout",{method:"POST"})]);sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");location.href="/"},true);
