@@ -5,8 +5,37 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const grades=["一年級","二年級","三年級","四年級","五年級","六年級"],groups=["A","B","C","儲備"],instruments=["小提琴","中提琴","大提琴","低音提琴","其他"];
 function opts(list,val){return list.map(x=>`<option value="${esc(x)}" ${x===val?"selected":""}>${esc(x)}</option>`).join("")}
 function toast(msg){const t=$("toast");if(!t)return;t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1800)}
-async function api(url,options={}){const h={"Content-Type":"application/json"};if(state.token)h["X-Google-ID-Token"]=state.token;const schoolContext=sessionStorage.getItem("school_context_id")||"",roleContext=sessionStorage.getItem("role_context")||"";if(schoolContext)h["X-School-Id"]=schoolContext;if(roleContext)h["X-Role-Context"]=roleContext;Object.assign(h,options.headers||{});const method=String(options.method||"GET").toUpperCase(),fetchOptions={...options,headers:h};if(method==="GET"&&String(url).startsWith("/api/")&&!fetchOptions.cache)fetchOptions.cache="no-store";const r=await fetch(url,fetchOptions);const d=await r.json().catch(()=>({}));if(r.status===401){logout(false);throw new Error("登入已失效，請重新登入")};if(!r.ok)throw new Error(d.error||d.message||`HTTP ${r.status}`);return d}
-function logout(reload=true){state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}
+const pendingApiGets=new Map();
+let apiRequestEpoch=0;
+function apiReadScope(){return JSON.stringify([apiRequestEpoch,state.token,state.me?.identityId||state.me?.email||"",state.me?.role||"",sessionStorage.getItem("school_context_id")||state.me?.schoolId||"",sessionStorage.getItem("role_context")||""])}
+async function api(url,options={}){
+  const h={"Content-Type":"application/json"};
+  if(state.token)h["X-Google-ID-Token"]=state.token;
+  const schoolContext=sessionStorage.getItem("school_context_id")||"",roleContext=sessionStorage.getItem("role_context")||"";
+  if(schoolContext)h["X-School-Id"]=schoolContext;
+  if(roleContext)h["X-Role-Context"]=roleContext;
+  Object.assign(h,options.headers||{});
+  const method=String(options.method||"GET").toUpperCase(),fetchOptions={...options,headers:h};
+  if(method==="GET"&&String(url).startsWith("/api/")&&!fetchOptions.cache)fetchOptions.cache="no-store";
+  // Only identical reads still in flight share a request. No private response
+  // cache survives completion, a write, logout, or an account/school change.
+  if(method!=="GET"){apiRequestEpoch++;pendingApiGets.clear()}
+  const requestScope=apiReadScope();
+  const key=state.me?.role==="parent"&&method==="GET"&&String(url).startsWith("/api/")&&!options.signal&&!options.body?
+    JSON.stringify([requestScope,url,Object.entries(h).sort(([a],[b])=>a.localeCompare(b)),fetchOptions.cache,fetchOptions.credentials,fetchOptions.mode,fetchOptions.redirect]):"";
+  const perform=async()=>{
+    const r=await fetch(url,fetchOptions),d=await r.json().catch(()=>({}));
+    if(r.status===401){if(apiReadScope()===requestScope)logout(false);throw new Error("登入已失效，請重新登入")}
+    if(!r.ok)throw new Error(d.error||d.message||`HTTP ${r.status}`);
+    return d;
+  };
+  if(!key)return perform();
+  let pending=pendingApiGets.get(key);
+  if(!pending){pending=perform();pendingApiGets.set(key,pending)}
+  try{return JSON.parse(JSON.stringify(await pending))}
+  finally{if(pendingApiGets.get(key)===pending)pendingApiGets.delete(key)}
+}
+function logout(reload=true){apiRequestEpoch++;pendingApiGets.clear();state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}
 async function restoreLineStaffSession(){
   const entry=window.getLineStaffEntry?.();
   if(!entry)return;
@@ -103,7 +132,7 @@ window.retrySchoolView=()=>{state.schoolViewerLoadError="";render();return loadS
 async function loadProfile(profile){
   const entry=window.getLineStaffEntry?.()?null:paidActivityEntry();
   if(entry&&!sessionStorage.getItem("role_context"))choosePaidActivityContext(entry);
-  state.me=profile??await api("/api/me");
+  state.me=profile??await api("/api/me?includeStudentProfiles=1");
   if(openPaidActivity(entry,state.me))return;
   window.resumeLineStaffEntry?.();
   const contexts=Array.isArray(state.me.contexts)?state.me.contexts:[];
@@ -148,7 +177,9 @@ async function loadProfile(profile){
     state.students=Array.isArray(state.master)?state.master:[];
     state.student=state.students[0]||null;
   }else{
-    state.students=await api("/api/students");state.student=state.students[0]||null;
+    if(state.me.role==="parent")window.preloadRoleModules?.();
+    state.students=state.me.role==="parent"&&Array.isArray(state.me.studentProfiles)?state.me.studentProfiles:await api("/api/students");
+    state.student=state.students[0]||null;
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me.role)||state.me?.capabilities?.teacherSettings)state.page="teacherHome";
     else state.page="home";
     if(state.me.role==="parent"&&state.student){
@@ -161,7 +192,7 @@ async function loadProfile(profile){
   render()
 }
 async function loadAdmin(){const [r,m]=await Promise.all([api("/api/student-registration?status=pending"),api("/api/student-master")]);state.registrations=r.items||[];state.master=m.items||[]}
-async function refreshStudent(){if(!state.student)return;const studentId=String(state.student.studentId),month=new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"}).slice(0,7);const[sum,logs]=await Promise.all([api(`/api/summary?studentId=${encodeURIComponent(studentId)}&month=${month}`),api(`/api/practice?studentId=${encodeURIComponent(studentId)}&month=${month}`)]);if(String(state.student?.studentId)!==studentId)return;state.summary=sum;state.practice=logs.items||[]}
+async function refreshStudent(){if(!state.student)return;const scope=apiReadScope(),studentId=String(state.student.studentId),month=new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"}).slice(0,7);const[sum,logs]=await Promise.all([api(`/api/summary?studentId=${encodeURIComponent(studentId)}&month=${month}`),api(`/api/practice?studentId=${encodeURIComponent(studentId)}&month=${month}`)]);if(apiReadScope()!==scope||String(state.student?.studentId)!==studentId)return;state.summary=sum;state.practice=logs.items||[]}
 async function renderLineLogin(){
   const mount=$("tenantLineSignIn");
   if(!mount)return;

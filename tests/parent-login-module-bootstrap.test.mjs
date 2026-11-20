@@ -12,7 +12,8 @@ const completeHome='<section id="parentTodayCourses">今日課程</section><sect
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 
 function harness(){
- let clock=0,timerId=0;const timers=new Map(),scripts=[],pending=[],loaded=[],classes=new Set(),session=new Map(),warnings=[];
+ let clock=0,timerId=0;const timers=new Map(),scripts=[],pending=[],loaded=[],preloads=[],classes=new Set(),session=new Map(),warnings=[];
+ let studentRequests=0;
  const app={innerHTML:""},state={me:null,students:[],student:null,summary:null,page:"home"};
  const schedule=(fn,delay,interval=0)=>{const id=++timerId;timers.set(id,{fn,at:clock+Number(delay||0),interval});return id};
  function advance(ms){const end=clock+ms;for(let i=0;i<3000;i++){
@@ -20,16 +21,16 @@ function harness(){
   const [id,t]=pair;clock=t.at;if(t.interval)t.at+=t.interval;else timers.delete(id);t.fn();
  }clock=end}
  const document={scripts,documentElement:{classList:{add:x=>classes.add(x),remove:x=>classes.delete(x)}},
-  getElementById:id=>id==="app"?app:null,querySelector:()=>null,addEventListener(){},
+  getElementById:id=>id==="app"?app:null,querySelector:selector=>preloads.find(link=>selector===`link[data-role-preload="${link.href}"]`)||null,addEventListener(){},
   createElement:tag=>({tag,dataset:{},getAttribute(name){return this[name]},remove(){const i=scripts.indexOf(this);if(i>=0)scripts.splice(i,1)}}),
-  head:{appendChild(){}},body:{appendChild(element){if(element.tag==="script"){scripts.push(element);pending.push(element)}}}};
+  head:{appendChild:link=>preloads.push(link)},body:{appendChild(element){if(element.tag==="script"){scripts.push(element);pending.push(element)}}}};
  const context={state,document,URL,URLSearchParams,location:new URL("https://school-a.example.invalid/"),navigator:{userAgent:"Chrome"},history:{replaceState(){}},
   sessionStorage:{getItem:key=>session.get(key)||null,setItem:(key,value)=>session.set(key,value),removeItem:key=>session.delete(key)},
   CSS:{escape:x=>x},console:{warn:(...args)=>warnings.push(args)},
   setTimeout:(fn,delay)=>schedule(fn,delay),clearTimeout:id=>timers.delete(id),setInterval:(fn,delay)=>schedule(fn,delay,delay),clearInterval:id=>timers.delete(id),
   esc:value=>String(value??""),shell:html=>'<main class="shell">'+html+'</main>',home:()=>"legacy-parent-home",toast(){},
   paidActivityEntry:()=>null,openPaidActivity:()=>false,
-  api:async path=>{assert.equal(path,"/api/students");return [{studentId:"student1",name:"測試學生"}]},
+  api:async path=>{assert.equal(path,"/api/students");studentRequests++;return [{studentId:"student1",name:"測試學生"}]},
   refreshStudent:async()=>{state.summary={practiceMinutes:0}},loadAdmin:async()=>{},renderLogin(){}};
  context.window=context;vm.createContext(context);
  vm.runInContext(profileSource+"\n"+renderSource,context);
@@ -49,9 +50,9 @@ function harness(){
   }
   throw Error("module task did not settle");
  }
- return {context,state,app,loaded,pending,warnings,advance,finishScript,finishModules,
+ return {context,state,app,loaded,pending,preloads,warnings,advance,finishScript,finishModules,get studentRequests(){return studentRequests},
   async start(){await finishScript();advance(60);await settle()},
-  async login(){await context.loadProfile({...profile});await settle()}};
+  async login(extra={}){await context.loadProfile({...profile,...extra});await settle()}};
 }
 
 test("a fresh Gmail or LINE login after a long wait loads the full parent home without a page refresh",async()=>{
@@ -96,4 +97,35 @@ test("a downloaded script that did not initialize the parent home cannot silentl
  assert.doesNotMatch(h.app.innerHTML,/legacy-parent-home/);
  const task=h.context.retryRoleModules();await h.finishModules();await task;
  assert.equal(h.context.__roleModulesReady,true);assert.match(h.app.innerHTML,/parentUpcomingActivities/);
+});
+
+test("an authorized login payload skips the duplicate student request and keeps all child profile fields",async()=>{
+ const h=harness();await h.start();
+ const student={studentId:"student1",name:"測試學生",grade:"四年級",instrument:"中提琴",section:"中提",schoolYear:"115",semester:"1"};
+ await h.login({studentProfiles:[student]});
+ assert.equal(h.studentRequests,0);assert.deepEqual(h.state.student,student);
+ await h.finishModules();assert.equal(h.context.__roleModulesReady,true);assert.match(h.app.innerHTML,/未來活動/);
+ const empty=harness();await empty.start();empty.context.registrationForm=()=>"請綁定學生";
+ await empty.login({studentProfiles:[]});assert.equal(empty.studentRequests,0);assert.equal(empty.state.student,null);
+});
+
+test("parent assets preload during the legacy student request but execute only after the child context is available",async()=>{
+ const h=harness();await h.start();let release;
+ h.context.api=async path=>{assert.equal(path,"/api/students");return new Promise(resolve=>{release=resolve})};
+ const login=h.context.loadProfile({...profile});
+ assert.ok(h.preloads.some(link=>link.href.includes("parent-home-summary.js")));
+ assert.equal(h.state.student,null);assert.equal(h.pending.length,0);
+ release([{studentId:"student1",name:"測試學生"}]);await login;await h.finishModules();
+ assert.equal(h.context.__roleModulesReady,true);
+ assert.equal(h.preloads.filter(link=>link.href.includes("parent-home-summary.js")).length,1);
+});
+
+test("fresh Google and LINE profiles request the optimized login payload and reach the full home without a students round trip",async()=>{
+ for(const authProvider of ["google","line"]){
+  const h=harness(),requests=[];await h.start();
+  h.context.api=async path=>{requests.push(path);assert.equal(path,"/api/me?includeStudentProfiles=1");return {...profile,authProvider,studentProfiles:[{studentId:"student1",name:"測試學生",grade:"四年級",instrument:"中提琴"}]}};
+  await h.context.loadProfile();await h.finishModules();
+  assert.deepEqual(requests,["/api/me?includeStudentProfiles=1"]);assert.equal(h.context.__roleModulesReady,true);
+  assert.match(h.app.innerHTML,/parentUpcomingActivities/);assert.equal(h.state.student.instrument,"中提琴");
+ }
 });

@@ -68,6 +68,7 @@ jobs:
           node --test tests/admin-private-followup.test.mjs api/test/privateLessonFollowup.test.mjs
           node --test tests/music-learning-journey.test.mjs
           node --test tests/parent-login-module-bootstrap.test.mjs tests/role-home-priorities.test.mjs tests/parent-home-activity-tasks.test.mjs
+          node --test tests/parent-login-request-efficiency.test.mjs tests/parent-login-profile-reuse.test.mjs
           node --test tests/tshirt-procurement-plan.test.mjs tests/tshirt-cadre-application.test.mjs tests/tshirt-procurement-admin.test.mjs api/test/tshirtStaffDemand.test.mjs api/test/tshirtPurchaseOrderRules.test.mjs
           node --test tests/volunteer-loan-size-correction.test.mjs tests/volunteer-loan-return-stock.test.mjs
           node --test tests/tshirt-receiving-workflow.test.mjs
