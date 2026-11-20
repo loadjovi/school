@@ -9,10 +9,11 @@ function part(start,end){const from=source.indexOf(start),to=source.indexOf(end,
 
 test("parent home replaces the pending form with saved LINE completion and escaped review",()=>{
  const row={lessonId:"lesson1",studentId:"student1",workflowStatus:"completed",parentConfirmedVia:"line",parentConfirmedAt:new Date().toISOString(),teacherReview:"<script>review</script>"};
- const context={window:{},sortedLessons:()=>[row],workflow:x=>x.workflowStatus,parentActivePanel:()=>"",lessonSummary:x=>esc(x.teacherReview)};
+ const context={state:{me:{role:"parent"},student:{studentId:"student1"}},window:{},sortedLessons:()=>[row],workflow:x=>x.workflowStatus,parentActivePanel:()=>"",lessonSummary:x=>esc(x.teacherReview)};
  runInNewContext(part('  window.privateLessonParentPanels=', '  function currentWeeklyLearningGoals()'),context);
  const html=context.window.privateLessonParentPanels("home");
  assert.match(html,/已透過 LINE 確認完成上課/);assert.match(html,/已結案，不需重複確認/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);
+ context.state.me.role="teacher";assert.equal(context.window.privateLessonParentPanels("home"),"");context.state.me.role="parent";
  row.parentConfirmedAt="2000-01-01T00:00:00Z";assert.equal(context.window.privateLessonParentPanels("home"),"");
 });
 

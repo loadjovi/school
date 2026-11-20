@@ -356,6 +356,7 @@
     </div>`;
   }
   window.privateLessonParentPanels=function(location="home"){
+    if(state.me?.role!=="parent"||!state.student)return "";
     if(location!=="record"){
       const recent=sortedLessons().filter(x=>workflow(x)==="completed"&&x.parentConfirmedVia==="line").sort((a,b)=>String(b.parentConfirmedAt||"").localeCompare(String(a.parentConfirmedAt||"")))[0];
       const show=recent&&Number.isFinite(Date.parse(recent.parentConfirmedAt))&&Date.now()-Date.parse(recent.parentConfirmedAt)<7*24*60*60*1000;

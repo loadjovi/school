@@ -305,6 +305,10 @@ test("a LINE review is restricted to the original recipient, active family link 
   assert.match(await receive(channel,owner,message),/已記錄.*5 星/);
   assert.equal(saved.teacherRating,5);
   assert.equal(saved.teacherReview,"感謝老師耐心指導");
-  assert.equal(saved.parentConfirmation,undefined);
+  assert.equal(saved.parentConfirmation,"confirmed");
+  assert.equal(saved.parentConfirmedBy,row.email);
+  assert.equal(saved.parentConfirmedVia,"line");
+  assert.equal(saved.status,"present");
+  assert.ok(saved.finalizedAt);
   assert.match(await receive(channel,owner,message),/已收到評鑑/);
 });
