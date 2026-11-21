@@ -42,11 +42,18 @@ app.http("lineAnnouncements",{
       }else{
         const students=await lineAudienceStudents(schoolId),options=lineAudienceGroups(students);
         roles=list(body?.roles);groups=list(body?.groups);
-        if(!roles?.length||!roles.every(role=>lineAudienceRoles.includes(role))||!groups||!groups.every(group=>options.includes(group))||
-          (!groups.length&&roles.some(role=>["parent","teacher"].includes(role))&&body.allSchool!==true))return fail("請選擇收件角色，以及全團或指定團別");
+        if(!roles?.length||!roles.every(role=>lineAudienceRoles.includes(role))||!groups)return fail("請選擇收件角色");
+        const memberRoles=roles.filter(role=>["parent","teacher"].includes(role));
+        if(memberRoles.length){
+          if(!groups.every(group=>options.includes(group))||!groups.length&&body.allSchool!==true)return fail("請選擇所有團別或指定團別");
+        }else groups=[];
         const audience=await resolveLineAudience(schoolId,channel.botUserId,{roles,groups,students});
         targets=audience.targets;matched=audience.matched;unbound=audience.unbound;
-        targetLabel=(groups.length?groups.join("、"):"全團")+"｜"+roles.map(role=>rolesText[role]).join("、");
+        const labels=[];
+        if(memberRoles.length)labels.push((groups.length?groups.map(group=>({A:"A 團",B:"B 團",儲備:"儲備團"})[group]||group).join("、"):"所有團別")+"的"+memberRoles.map(role=>rolesText[role]).join("與"));
+        if(roles.includes("staff"))labels.push("本校全體幹部（含財務幹部）");
+        else if(roles.includes("finance"))labels.push("本校財務幹部");
+        targetLabel=labels.join("；另通知");
       }
       const preview=createHash("sha256").update(JSON.stringify([schoolId,access.email,channel.botUserId,body.requestId,mode,mode==="activityGroup"?selectedKey:"",roles,groups,text,targetLabel,targets])).digest("hex");
       const counts={matched,deliverable:targets.length,unbound,targetLabel,audience:mode};

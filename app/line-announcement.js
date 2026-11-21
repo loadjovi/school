@@ -2,6 +2,32 @@ const $=id=>document.getElementById(id),form=$("announcement"),status=$("result"
 let confirmed=null,revision=0,activities=[],optionsLoaded=false,loadingVersion=0,busy=false;
 const mode=()=>form.querySelector('[name="audience"]:checked')?.value||"members";
 const selectedActivity=()=>activities.find(x=>x.key===$("activityKey").value);
+const teamName=group=>({A:"A 團",B:"B 團",儲備:"儲備團"})[group]||group;
+const includesStaff=()=>mode()==="staff"||mode()==="members"&&form.elements.includeStaff.checked;
+const staffRole=()=>form.querySelector('[name="staffScope"]:checked')?.value==="finance"?"finance":"staff";
+function selection(){
+  const audience=mode(),members=audience==="members",group=audience==="activityGroup";
+  const roles=members?[...form.querySelectorAll('[name="role"]:checked')].map(input=>input.value):[];
+  if(includesStaff())roles.push(staffRole());
+  const allSchool=!members||form.querySelector('[name="groupScope"]:checked')?.value==="all";
+  return {audience:group?"activityGroup":"members",roles,groups:members&&!allSchool?[...form.querySelectorAll('[name="group"]:checked')].map(input=>input.value):[],allSchool,activityKey:group?$("activityKey").value:""};
+}
+function updateSummary(){
+  if(mode()==="activityGroup"){
+    const activity=selectedActivity();
+    $("audienceSummary").textContent=activity?.bound?`本次通知：${activity.title}的「${activity.groupName}」群組`:"本次通知：請先選擇已綁定的活動志工群組。";
+    return;
+  }
+  const selected=selection(),parts=[];
+  if(mode()==="members"){
+    const roles=selected.roles.filter(role=>["parent","teacher"].includes(role)).map(role=>({parent:"家長",teacher:"老師"})[role]);
+    if(!roles.length)parts.push("請勾選家長或老師");
+    else if(!selected.allSchool&&!selected.groups.length)parts.push("請勾選團別");
+    else parts.push((selected.allSchool?"所有團別":selected.groups.map(teamName).join("、"))+"的"+roles.join("與"));
+  }
+  if(includesStaff())parts.push(staffRole()==="finance"?"本校財務幹部":"本校全體幹部（含財務幹部）");
+  $("audienceSummary").textContent="本次通知："+parts.join("；另通知");
+}
 async function request(body){
   const token=sessionStorage.getItem("google_id_token"),school=sessionStorage.getItem("school_context_id"),role=sessionStorage.getItem("role_context");
   const response=await fetch("/api/line/announcements",{credentials:"same-origin",method:body?"POST":"GET",cache:"no-store",
@@ -17,10 +43,16 @@ function updateGroup(){
   $("unbindGroup").hidden=!activity?.bound;$("unbindGroup").disabled=busy;
 }
 function updateMode(){
-  const group=mode()==="activityGroup";
-  $("memberPanel").hidden=group;$("memberPanel").disabled=group||busy;
+  const audience=mode(),group=audience==="activityGroup",members=audience==="members";
+  $("memberPanel").hidden=!members;$("memberPanel").disabled=!members||busy;
+  $("includeStaffOption").hidden=!members;form.elements.includeStaff.disabled=!members||busy;
+  $("staffPanel").hidden=!includesStaff();$("staffPanel").disabled=!includesStaff()||busy;
+  const selected=members&&form.querySelector('[name="groupScope"]:checked')?.value==="selected";
+  $("teams").hidden=!selected;form.querySelectorAll('[name="group"]').forEach(input=>{input.disabled=!selected||busy});
   $("activityPanel").hidden=!group;$("activityPanel").disabled=!group||busy;
-  $("activityKey").required=group;updateGroup();
+  $("activityKey").required=group;$("messageLabel").textContent=(audience==="staff"?"2":"3")+"．輸入訊息";
+  $("deliveryHint").textContent=group?"發送至此活動的志工 LINE 群組，群內所有成員皆可看到。":"發送至個人 LINE 聊天室；同一個 LINE 只會收到一則。";
+  updateGroup();updateSummary();
 }
 function setBusy(value){
   busy=value;form.querySelectorAll("input,select,textarea,button").forEach(element=>{element.disabled=value});
@@ -43,7 +75,7 @@ async function loadOptions(){
   const teams=$("teams");teams.replaceChildren();
   for(const group of data.groups||[]){
     const label=document.createElement("label"),input=document.createElement("input");label.className="choice";input.type="checkbox";input.name="group";input.value=group;input.checked=selectedGroups.includes(group);
-    label.append(input,({A:"A 團",B:"B 團",儲備:"儲備團"})[group]||group);teams.append(label);
+    label.append(input,teamName(group));teams.append(label);
   }
   activities=data.activities||[];const select=$("activityKey");select.replaceChildren(new Option("請先選擇活動",""));
   for(const activity of activities)select.append(new Option(activity.title+(activity.date?"｜"+activity.date.slice(0,10):"")+(activity.bound?"｜已綁定":""),activity.key));
@@ -52,14 +84,15 @@ async function loadOptions(){
 }
 form.addEventListener("input",event=>{
   revision++;clearPreview();
-  if(event.target.name==="allSchool"&&event.target.checked)form.querySelectorAll('[name="group"]').forEach(input=>{input.checked=false});
-  if(event.target.name==="group"&&event.target.checked)form.elements.allSchool.checked=false;
-  if(["activityKey","audience"].includes(event.target.name)){$("bindingInstructions").hidden=true;updateMode()}
+  if(["activityKey","audience"].includes(event.target.name))$("bindingInstructions").hidden=true;
+  updateMode();
 });
 form.addEventListener("submit",async event=>{
   event.preventDefault();if(busy)return;clearPreview();
-  const data=new FormData(form),draftRevision=revision,audience=mode();
-  const body={action:"preview",audience,roles:audience==="members"?data.getAll("role"):[],groups:audience==="members"?data.getAll("group"):[],allSchool:data.has("allSchool"),activityKey:data.get("activityKey")||"",text:data.get("message"),requestId:crypto.randomUUID()};
+  const selected=selection(),draftRevision=revision,audience=selected.audience;
+  if(mode()==="members"&&!selected.roles.some(role=>["parent","teacher"].includes(role))){status.textContent="請勾選要通知的家長或老師。";return}
+  if(mode()==="members"&&!selected.allSchool&&!selected.groups.length){status.textContent="請至少勾選一個團別。";return}
+  const body={action:"preview",...selected,text:$("message").value,requestId:crypto.randomUUID()};
   setBusy(true);
   try{
     const result=await request(body);if(revision!==draftRevision)return;

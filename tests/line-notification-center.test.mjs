@@ -113,6 +113,21 @@ test("general team notices retain dynamic groups and require a matching preview,
  assert.equal((await c.request({...body,groups:[],allSchool:true})).status,200);
 });
 
+test("staff notices have no team scope and mixed notices identify each recipient scope separately",async()=>{
+ const h=fixture(),c=controller(h),body={...draft,audience:"members",activityKey:"",roles:["finance"],groups:["stale-team"],allSchool:false};
+ const p=await c.request(body);assert.equal(p.status,200);assert.equal(p.data.targetLabel,"本校財務幹部");
+ assert.deepEqual(Array.from(c.audiences[0].input.groups),[]);
+ assert.deepEqual(Array.from(c.audiences[0].input.roles),["finance"]);
+ const sent=await c.request({...body,action:"send",preview:p.data.preview});assert.equal(sent.data.accepted,1);
+ assert.equal((await h.api.lineAnnouncementHistory("school-a"))[0].label,"本校財務幹部");
+ const allStaff=await c.request({...body,roles:["staff"]});assert.equal(allStaff.data.targetLabel,"本校全體幹部（含財務幹部）");
+ const mixed=await c.request({...body,roles:["parent","teacher","finance"],groups:["A"]});
+ assert.equal(mixed.status,200);assert.equal(mixed.data.targetLabel,"A 團的家長與老師；另通知本校財務幹部");
+ const allMembers=await c.request({...body,roles:["parent"],groups:[],allSchool:true});assert.equal(allMembers.data.targetLabel,"所有團別的家長");
+ assert.equal((await c.request({...body,roles:["parent","finance"]})).status,400);
+ assert.equal((await c.request({...body,roles:["unknown"]})).status,400);
+});
+
 test("binding management requires the current school's admin and origin, and failed group sends are recorded without a fallback",async()=>{
  const h=fixture(),c=controller(h),command={action:"activity-binding-code",activityKey:draft.activityKey};
  assert.equal((await c.request(command,"https://other.example.invalid")).status,403);

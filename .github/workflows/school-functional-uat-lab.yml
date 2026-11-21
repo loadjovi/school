@@ -71,6 +71,7 @@ jobs:
           node --test tests/parent-login-request-efficiency.test.mjs tests/parent-login-profile-reuse.test.mjs
           node --test tests/parent-tshirt-size-reminder.test.mjs tests/parent-leaderboard-finalized-default.test.mjs
           node --test tests/paid-activity-line.test.mjs tests/paid-activity-delivery.test.mjs tests/activity-settings-ui.test.mjs
+          node --test tests/line-notification-center.test.mjs tests/line-notification-selector.test.mjs
           node --test tests/tshirt-procurement-plan.test.mjs tests/tshirt-cadre-application.test.mjs tests/tshirt-procurement-admin.test.mjs api/test/tshirtStaffDemand.test.mjs api/test/tshirtPurchaseOrderRules.test.mjs
           node --test tests/volunteer-loan-size-correction.test.mjs tests/volunteer-loan-return-stock.test.mjs
           node --test tests/tshirt-receiving-workflow.test.mjs
