@@ -38,9 +38,10 @@ function harness(){
  return {...api,put,current,apply,notices,pushes,stores,setConflict:x=>{conflict=x},setAuditFails:x=>{auditFails=x},setEnabled:x=>{enabled=x},setBound:x=>{line=x}};
 }
 test("a discrepancy uses confirmed bank receipts, freezes the expected amount and keeps the original report",async()=>{
- const h=harness();await h.put("uniform",uniform);await h.apply("REQUEST_ADJUSTMENT",evidence);const item=await h.current();
+ const h=harness();await h.put("uniform",uniform);const {note,...messageOnly}=evidence;await h.apply("REQUEST_ADJUSTMENT",messageOnly);const item=await h.current();
  assert.equal(item.paymentStatus,"ADJUSTMENT_REQUIRED");assert.equal(item.paymentResolution.balance,100);assert.equal(item.transferReport.amount,400);assert.equal(item.paymentResolution.receivedAmount,300);assert.equal(item.status,"APPROVED");assert.equal(uniformNeedsPayment(item),false);
  assert.match(h.pushes[0].text,/學生 990101[\s\S]*待補差額：NT\$ 100/);assert.equal(h.pushes[0].options.quickReply.items[0].action.label,"申請退費並取消");assert.deepEqual([...h.notices[0].recipients],[owner]);
+ assert.equal(item.paymentResolution.note,messageOnly.reason);assert.equal(item.paymentResolutionEvents[0].note,messageOnly.reason);assert.ok(h.pushes[0].text.includes(messageOnly.reason));
 });
 test("reporting a supplement never verifies payment; only finance confirming the cumulative total restores the workflow",async()=>{
  const h=harness();await h.put("uniform",uniform);await h.apply("REQUEST_ADJUSTMENT",evidence);
@@ -65,7 +66,7 @@ test("only assigned finance can request adjustments, and only the original payer
 });
 test("invalid amounts, dates, notes and incorrect supplement values never mutate the source",async()=>{
  const h=harness();await h.put("uniform",uniform);
- for(const values of [{receivedAmount:-1},{receivedAmount:1.1},{receivedAmount:400},{bankPostedAt:"2026-02-31"},{note:""},{reason:""}])await assert.rejects(()=>h.apply("REQUEST_ADJUSTMENT",{...evidence,...values}));
+ for(const values of [{receivedAmount:-1},{receivedAmount:1.1},{receivedAmount:400},{bankPostedAt:"2026-02-31"},{reason:""}])await assert.rejects(()=>h.apply("REQUEST_ADJUSTMENT",{...evidence,...values}));
  assert.equal((await h.current()).paymentStatus,"REPORTED_UNVERIFIED");assert.equal(h.notices.length,0);
  await h.apply("REQUEST_ADJUSTMENT",evidence);await assert.rejects(()=>h.apply("REPORT_SUPPLEMENT",{amount:400,lastFive:"55555",transferDate:"2026-11-21"},parent),/待補差額/);
 });
@@ -143,8 +144,10 @@ function fill(form,values){for(const [name,value] of Object.entries(values)){con
 test("the real finance control sends a discrepancy action once and shows Email fallback without auto-verifying",async()=>{
  const h=uiHarness(),host=new Element("section"),calls=[];let release,refreshed=0;
  h.ui.financeControls(host,{...uniform,id:uid,etag:"version"},"uniform",async(path,options)=>{calls.push({path,body:JSON.parse(options.body)});return new Promise(resolve=>{release=resolve})},async()=>{refreshed++});
- const form=descendants(host).find(el=>el.tagName==="form");fill(form,evidence);const event={preventDefault(){}};
+ const form=descendants(host).find(el=>el.tagName==="form"),{note,...messageOnly}=evidence;fill(form,messageOnly);const event={preventDefault(){}};
+ assert.equal(descendants(form).filter(el=>el.tagName==="textarea").length,1);assert.equal(descendants(form).some(el=>el.name==="note"),false);
  const first=form.handlers.submit(event);await form.handlers.submit(event);assert.equal(calls.length,1);assert.equal(calls[0].body.action,"REQUEST_ADJUSTMENT");assert.equal(calls[0].body.receivedAmount,300);assert.equal(calls[0].body.etag,"version");
+ assert.equal(calls[0].body.reason,messageOnly.reason);assert.equal(calls[0].body.note,undefined);
  release({notification:{status:"email_sent"}});await first;assert.equal(refreshed,1);assert.match(allText(form),/備援 Email 已受理/);assert.match(h.confirmations[0],/原申請會暫停/);
 });
 test("the real parent panel shows only the difference and submits refund details only after confirmation",async()=>{

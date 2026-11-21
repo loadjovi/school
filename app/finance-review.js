@@ -1,4 +1,4 @@
-import "./payment-resolution.js?v=20261121-payment-resolution";
+import "./payment-resolution.js?v=20261122-single-parent-message";
 const $=id=>document.getElementById(id);
 function headers(){const token=sessionStorage.getItem("google_id_token")||"",school=sessionStorage.getItem("school_context_id")||"",role=sessionStorage.getItem("role_context")||"";return {"Content-Type":"application/json",...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(school?{"X-School-Id":school}:{}),...(role?{"X-Role-Context":role}:{})}}
 async function api(path,options={}){const r=await fetch("/api/"+path,{...options,credentials:"same-origin",cache:"no-store",headers:headers()});const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||"HTTP "+r.status);return data}

@@ -1,4 +1,4 @@
-import "./payment-resolution.js?v=20261121-payment-resolution";
+import "./payment-resolution.js?v=20261122-single-parent-message";
 const accountOnly=document.documentElement.hasAttribute("data-line-account");
 const legacyLineEntry=!accountOnly&&(location.hash==="#lineBinding"||new URLSearchParams(location.search).has("line_link")||new URLSearchParams(location.search).has("line_error"));
 if(legacyLineEntry)location.replace("/line-account.html"+location.search+"#lineBinding");

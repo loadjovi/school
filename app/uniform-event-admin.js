@@ -1,4 +1,4 @@
-import "./payment-resolution.js?v=20261121-payment-resolution";
+import "./payment-resolution.js?v=20261122-single-parent-message";
 const el=id=>document.getElementById(id);
 const uniformRequestFlowHint=el("uniformRequestsHeading")?.nextElementSibling;
 if(uniformRequestFlowHint)uniformRequestFlowHint.textContent="依序完成核准、財務核帳、採購與驗收入庫；選擇「新貨到校」或「使用現有庫存」確認後，系統會自動開放領取並通知家長。實際交付時再按「確認實際發放」。";

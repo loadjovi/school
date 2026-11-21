@@ -79,7 +79,7 @@
   const adjust=details(section,"金額不符：通知補款／差額");
   actionForm(adjust,item,"REQUEST_ADJUSTMENT","通知家長並暫停流程",api,refresh,"確認依銀行實收金額通知家長處理差額？原申請會暫停，不會核帳或採購。",form=>{
    form.append(node("p","填累計實收，不是本次匯款。例：應繳 400、銀行已收 300，系統通知補繳 100。"));
-   field(form,"銀行確認累計實收總額","receivedAmount",{type:"number",value:r?.receivedAmount??item.transferReport?.amount??0});field(form,"銀行實際入帳日期","bankPostedAt",{type:"date"});field(form,"給家長的差額說明","reason",{type:"textarea"});field(form,"銀行查核備註","note",{type:"textarea"});
+   field(form,"銀行確認累計實收總額","receivedAmount",{type:"number",value:r?.receivedAmount??item.transferReport?.amount??0});field(form,"銀行實際入帳日期","bankPostedAt",{type:"date"});field(form,"給家長的說明","reason",{type:"textarea",value:r?.reason||""});
   });
   if(["ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED"].includes(item.paymentStatus))actionForm(details(section,"已收足款項：重新核帳"),item,"VERIFY_ADJUSTMENT","確認足額入帳，恢復流程",api,refresh,"確認銀行累計實收等於應繳總額？核帳後將恢復採購／完成報名。",form=>{
    field(form,"銀行確認累計實收總額","receivedAmount",{type:"number",value:r.expectedAmount});field(form,"最後入帳日期","bankPostedAt",{type:"date"});field(form,"核帳備註","note",{type:"textarea"});

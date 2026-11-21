@@ -36,7 +36,8 @@ export function changePaymentResolution(item,input,{sourceType,expectedAmount,fi
   needFinance();
   if(!["REPORTED_UNVERIFIED","ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED"].includes(item.paymentStatus)&&!(sourceType==="staff"&&item.paymentStatus==="AWAITING_TRANSFER"))fail("僅待核帳或補款中的申請可處理差額",409);
   if(!money(input.receivedAmount)||!money(expectedAmount,1)||input.receivedAmount===expectedAmount||!text(input.reason))fail("請填寫銀行確認累計實收金額與差額原因；金額相同請使用核帳");
-  const evidence=bankEvidence();
+  if(!date(input.bankPostedAt))fail("請填寫銀行實際入帳日期");
+  const evidence={bankPostedAt:input.bankPostedAt,note:text(input.reason)};
   Object.assign(resolution,{expectedAmount,receivedAmount:input.receivedAmount,balance:expectedAmount-input.receivedAmount,reason:text(input.reason),requestedAt:at,requestedBy:actor,...evidence});
   next.paymentStatus="ADJUSTMENT_REQUIRED";
  }else if(action==="REPORT_SUPPLEMENT"){

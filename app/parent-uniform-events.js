@@ -1,4 +1,4 @@
-import "./payment-resolution.js?v=20261121-payment-resolution-owner";
+import "./payment-resolution.js?v=20261122-single-parent-message";
 import {confirmedReceived} from "./competition-paper-receipts.js";
 import "./parent-activity-notice.js?v=20261016-new-activity-alert-parent-tasks";
 import "./uniform-payment-state.js?v=20261121-payment-resolution-owner";
