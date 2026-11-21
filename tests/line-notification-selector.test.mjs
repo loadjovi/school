@@ -8,13 +8,13 @@ const html=read("app/line-announcement.html"),source=read("app/line-announcement
 
 // Run the complete page controller; only browser elements and HTTP are replaced.
 class Element{
- constructor(tag="div"){this.tagName=tag.toUpperCase();this.value="";this.name="";this.checked=false;this.disabled=false;this.hidden=false;this.children=[];this.handlers={};this.textContent="";this.elements={}}
+ constructor(tag="div"){this.tagName=tag.toUpperCase();this.value="";this.name="";this.checked=false;this.disabled=false;this.hidden=false;this.children=[];this.handlers={};this.textContent="";this.elements={};this.style={}}
  append(...children){this.children.push(...children)}
  replaceChildren(...children){this.children=[...children]}
  addEventListener(type,handler){this.handlers[type]=handler}
 }
 const attrs=tag=>Object.fromEntries([...tag.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(([,key,value])=>[key,value??true]));
-async function page(){
+async function page({recipients=[],recipientResults=[],accepted=1,failed=0,history=[]}={}){
  const elements={},inputs=[],calls=[];
  for(const tag of html.matchAll(/<([a-z]+)\b([^>]*\bid="[^"]+"[^>]*)>/g)){
   const a=attrs(tag[2]),element=new Element(tag[1]);Object.assign(element,{id:a.id,hidden:!!a.hidden,disabled:!!a.disabled,value:a.value||"",name:a.name||""});elements[a.id]=element;
@@ -31,10 +31,10 @@ async function page(){
  };
  form.querySelector=selector=>form.querySelectorAll(selector)[0]||null;
  form.elements.includeStaff=inputs.find(input=>input.name==="includeStaff");
- const options={groups:["A","B","新測試團"],schoolName:"測試學校",history:[],activities:[{key:"fieldTrip:one",title:"交流活動",bound:true,groupName:"交流志工"}]};
+ const options={groups:["A","B","新測試團"],schoolName:"測試學校",history,activities:[{key:"fieldTrip:one",title:"交流活動",bound:true,groupName:"交流志工"}]};
  const context={document:{getElementById:id=>elements[id],createElement:tag=>new Element(tag)},sessionStorage:{getItem:()=>""},console,crypto:{randomUUID:()=>"12345678-1234-1234-1234-123456789abc"},
   Option:class extends Element{constructor(text,value){super("option");this.textContent=text;this.value=value}},confirm:()=>true,
-  fetch:async(url,init)=>{const body=init.body&&JSON.parse(init.body);if(body)calls.push(body);return {ok:true,json:async()=>body?{preview:"preview-hash",targetLabel:"確認的收件範圍",matched:2,deliverable:1,unbound:1}:options}}
+  fetch:async(url,init)=>{const body=init.body&&JSON.parse(init.body);if(body)calls.push(body);return {ok:true,json:async()=>!body?options:body.action==="send"?{accepted,failed,recipientResults}:{preview:"preview-hash",targetLabel:"確認的收件範圍",matched:2,deliverable:recipients.length||1,unbound:1,recipients}}}
  };
  await runInNewContext("(async()=>{"+source+"})()",context);
  const input=(name,value)=>candidates().find(input=>input.name===name&&(value===undefined||input.value===value));
@@ -93,4 +93,29 @@ test("all-team selection excludes retained team checks and incomplete member sel
  assert.match(p.elements.result.textContent,/勾選一個團別/);p.choose("group","A");p.choose("groupScope","all");await p.submit();
  assert.deepEqual(p.calls[0].groups,[]);assert.equal(p.calls[0].allSchool,true);assert.equal(p.input("group","A").disabled,true);
  p.choose("role","parent",false);p.choose("includeStaff");await p.submit();assert.equal(p.calls.length,1);assert.match(p.elements.result.textContent,/家長或老師/);
+});
+
+const recipientNames=[{reference:"a123456789ab",name:"Roy"},{reference:"b123456789ab",name:"Eileen"}];
+const content=element=>element.textContent+element.children.map(child=>typeof child==="string"?child:content(child)).join("");
+test("preview lists individual bound accounts without claiming they can receive or have received a message",async()=>{
+ const p=await page({recipients:recipientNames});p.elements.message.value="公告";await p.submit();
+ assert.match(p.elements.previewCounts.textContent,/已綁定 2 個 LINE/);assert.doesNotMatch(p.elements.previewCounts.textContent,/可通知|已送達/);
+ assert.match(content(p.elements.previewRecipients),/Roy.*尚未發送.*Eileen.*尚未發送/);assert.equal(p.elements.deliveryReport.hidden,true);
+});
+
+test("individual send results identify partial failure, retain the same retry request, and never claim receipt",async()=>{
+ const recipientResults=recipientNames.map((entry,index)=>({...entry,status:index?"failed":"accepted",...(index?{httpStatus:400}:{})}));
+ const p=await page({recipients:recipientNames,recipientResults,accepted:1,failed:1});p.elements.message.value="公告";await p.submit();await p.send();
+ assert.match(p.elements.result.textContent,/API 已受理 1 人，失敗 1 人；實際收件待確認/);assert.equal(p.elements.deliveryReport.hidden,false);
+ assert.match(content(p.elements.deliveryRecipients),/Roy.*API 已受理.*Eileen.*API 發送失敗/);assert.doesNotMatch(content(p.elements.deliveryRecipients),/已送達|已讀/);
+ await p.send();const sends=p.calls.filter(call=>call.action==="send");assert.equal(sends.length,2);assert.deepEqual(sends[0],sends[1]);
+ p.choose("role","teacher");assert.equal(p.elements.deliveryReport.hidden,true);
+});
+
+test("history distinguishes old multicast counts from new per-person acceptance records",async()=>{
+ const results=recipientNames.map(entry=>({...entry,status:"accepted"}));
+ const p=await page({history:[{label:"舊公告",audience:"members",accepted:2,failed:0,updatedAt:"2026-11-21",text:"文字"},{label:"新公告",audience:"members",accepted:2,failed:0,updatedAt:"2026-11-21",text:"文字",deliveryMode:"push",recipientResults:results}]});
+ const history=content(p.elements.history);assert.match(history,/舊版批次紀錄，沒有逐人受理結果/);assert.match(history,/查看逐人結果/);
+ assert.match(history,/Roy.*收件待確認.*Eileen.*收件待確認/);assert.doesNotMatch(history,/已送達|已讀/);
+ assert.match(html,/LINE API 受理不代表實際收件/);
 });

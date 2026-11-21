@@ -274,6 +274,7 @@ test("announcement previews support a new group and deduplicate households and r
   const result=await audience.resolveLineAudience("sacred-heart","bot-one",{students,groups:["新團"],roles:["parent","staff"]});
   assert.equal(result.matched,1);
   assert.deepEqual([...result.targets],[target]);
+  assert.equal(result.recipients.length,1);assert.equal(result.recipients[0].userId,target);assert.equal(result.recipients[0].name,"same@example.test");
 });
 
 test("a LINE review is restricted to the original recipient, active family link and completed lesson",async()=>{

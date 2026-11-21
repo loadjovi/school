@@ -50,10 +50,16 @@ export async function resolveLineAudience(schoolId, botUserId, {roles,groups,stu
     if(roles.includes("staff"))include(admins.filter(row=>row.role==="schoolAdmin"&&row.status==="active").map(row=>row.partitionKey||row.email));
     if(roles.includes("finance"))include(financeRecipients(admins,await financeAssignments(schoolId)));
   }
-  const accounts=await Promise.all([...emails].map(email=>getTenantLineRecipient(schoolId,email,botUserId)));
+  const identities=[...emails],accounts=await Promise.all(identities.map(email=>getTenantLineRecipient(schoolId,email,botUserId)));
+  const recipients=new Map();
+  accounts.forEach((account,index)=>{
+    const userId=account?.lineUserId;if(!/^U[0-9a-f]{32}$/i.test(userId||"")||recipients.has(userId))return;
+    const contact=account.googleEmail||identities[index];
+    recipients.set(userId,{userId,name:String(account.displayName||(!String(contact).endsWith("@line.invalid")&&contact)||"LINE 登入帳號").slice(0,80)});
+  });
   return {
-    targets:[...new Set(accounts.map(account=>account?.lineUserId).filter(id=>/^U[0-9a-f]{32}$/i.test(id||"")))].sort(),
-    unbound:accounts.filter(account=>!account?.lineUserId).length,
+    targets:[...recipients.keys()].sort(),recipients:[...recipients.values()].sort((a,b)=>a.userId.localeCompare(b.userId)),
+    unbound:accounts.filter(account=>!/^U[0-9a-f]{32}$/i.test(account?.lineUserId||"")).length,
     matched:emails.size
   };
 }

@@ -44,11 +44,13 @@
       <p class="muted" id="deliveryHint">發送至個人 LINE 聊天室；同一個 LINE 只會收到一則。</p>
       <label for="message"><b id="messageLabel">3．輸入訊息</b></label><textarea id="message" name="message" maxlength="1000" required placeholder="例如：請本次比賽志工於 08:00 至校門口集合。"></textarea>
       <p id="result" role="status" aria-live="polite"></p>
+      <section id="deliveryReport" class="notice" hidden><b>本次逐人發送結果</b><div id="deliveryRecipients"></div></section>
+      <p class="muted">LINE API 受理不代表實際收件；收件者請先加入本校官方帳號好友，並確認未封鎖。</p>
       <button type="submit" class="primary" id="preview" disabled>預覽收件對象與訊息</button>
-      <section id="recipientPreview" class="card preview-box" hidden><h2>確認本次通知</h2><p id="previewRecipient"></p><p id="previewCounts"></p><pre id="previewMessage"></pre><button type="button" class="primary" id="send">確認發送至 LINE</button></section>
+      <section id="recipientPreview" class="card preview-box" hidden><h2>確認本次通知</h2><p id="previewRecipient"></p><p id="previewCounts"></p><div id="previewRecipients"></div><pre id="previewMessage"></pre><button type="button" class="primary" id="send">確認發送至 LINE</button></section>
     </form>
     <details class="card"><summary><b>最近發送紀錄</b></summary><div id="history">正在讀取…</div></details>
   </main>
-  <script type="module" src="/line-announcement.js?v=20261121-recipient-scopes"></script>
+  <script type="module" src="/line-announcement.js?v=20261121-individual-push-results"></script>
 </body>
 </html>

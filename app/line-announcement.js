@@ -35,7 +35,16 @@ async function request(body){
     ...(body?{body:JSON.stringify(body)}:{})});
   const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"LINE 通知中心暫時不可用");return data;
 }
-function clearPreview(){confirmed=null;$("recipientPreview").hidden=true;status.textContent=""}
+function clearPreview(){confirmed=null;$("recipientPreview").hidden=true;$("deliveryReport").hidden=true;status.textContent=""}
+function drawRecipients(host,items){
+  host.replaceChildren();
+  for(const item of items||[]){
+    const row=document.createElement("p"),name=String(item.name||"LINE 帳號"),reference=String(item.reference||"").slice(0,6);
+    const reason=item.httpStatus===429?"（額度或發送頻率限制）":[401,403].includes(item.httpStatus)?"（請檢查官方帳號設定）":item.httpStatus===400?"（對象或訊息遭拒絕）":item.status==="failed"?"（可重試）":"";
+    row.textContent=name+(reference?" · "+reference:"")+"｜"+(item.status==="accepted"?"API 已受理，收件待確認":item.status==="failed"?"API 發送失敗"+reason:"已綁定，尚未發送");
+    row.style.overflowWrap="anywhere";host.append(row);
+  }
+}
 function updateGroup(){
   const activity=selectedActivity();
   $("activityGroupStatus").textContent=!activity?"請選擇活動，確認本次通知的志工群組。":activity.bound?`已綁定：${activity.groupName}`:"此活動尚未綁定志工 LINE 群組。";
@@ -65,8 +74,13 @@ function drawHistory(items){
     const row=document.createElement("div");row.className="history-item";
     const title=document.createElement("b");title.textContent=item.label;
     const meta=document.createElement("small"),unit=item.audience==="activityGroup"?"個群組":"人";
-    meta.textContent=`${new Date(item.updatedAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"})}｜LINE 已受理 ${item.accepted} ${unit}｜失敗 ${item.failed} ${unit}`;
-    const text=document.createElement("p");text.textContent=item.text;row.append(title,meta,text);host.append(row);
+    meta.textContent=`${new Date(item.updatedAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"})}｜API 受理 ${item.accepted} ${unit}｜失敗 ${item.failed} ${unit}｜實際收件未確認`;
+    const text=document.createElement("p");text.textContent=item.text;row.append(title,meta,text);
+    if(item.recipientResults?.length){
+      const details=document.createElement("details"),summary=document.createElement("summary"),list=document.createElement("div");summary.textContent="查看逐人結果";drawRecipients(list,item.recipientResults);details.append(summary,list);
+      if(item.omittedRecipients){const omitted=document.createElement("p");omitted.textContent="另有 "+item.omittedRecipients+" 位未列於本次明細。";details.append(omitted)}row.append(details);
+    }else if(item.audience!=="activityGroup"){const legacy=document.createElement("small");legacy.textContent=item.deliveryMode==="push"?"此筆紀錄沒有逐人受理結果。":"舊版批次紀錄，沒有逐人受理結果。";row.append(legacy)}
+    host.append(row);
   }
 }
 async function loadOptions(){
@@ -98,7 +112,8 @@ form.addEventListener("submit",async event=>{
     const result=await request(body);if(revision!==draftRevision)return;
     confirmed={...body,action:"send",preview:result.preview};
     $("previewRecipient").textContent="收件對象："+result.targetLabel;
-    $("previewCounts").textContent=audience==="activityGroup"?"訊息會發到上述 1 個 LINE 群組，由群內所有成員看到。":`符合 ${result.matched} 個帳號，可通知 ${result.deliverable} 個 LINE，未綁定 ${result.unbound} 個帳號。`;
+    $("previewCounts").textContent=audience==="activityGroup"?"訊息將送往上述 1 個 LINE 群組。":`符合 ${result.matched} 個帳號，已綁定 ${result.deliverable} 個 LINE，未綁定 ${result.unbound} 個帳號。`;
+    drawRecipients($("previewRecipients"),result.recipients);
     $("previewMessage").textContent=body.text;$("recipientPreview").hidden=false;send.hidden=result.deliverable===0;
   }catch(error){status.textContent=error.message}
   finally{setBusy(false)}
@@ -108,7 +123,8 @@ send.addEventListener("click",async()=>{
   try{
     const result=await request(snapshot);if(revision!==draftRevision)return;
     const unit=snapshot.audience==="activityGroup"?"個群組":"人";
-    status.textContent=`LINE 已受理 ${result.accepted} ${unit}，失敗 ${result.failed} ${unit}。`+(result.failed?"可重試本次相同發送。":"")+(result.historySaved===false?"發送紀錄暫時無法儲存，請勿重複發送。":"");
+    status.textContent=`LINE API 已受理 ${result.accepted} ${unit}，失敗 ${result.failed} ${unit}；實際收件待確認。`+(result.failed?"可重試本次相同發送。":"")+(result.historySaved===false?"發送紀錄暫時無法儲存，請勿重複發送。":"");
+    drawRecipients($("deliveryRecipients"),result.recipientResults);$("deliveryReport").hidden=!result.recipientResults?.length;
     if(!result.failed){confirmed=null;$("recipientPreview").hidden=true}
     try{await loadOptions()}catch{$("history").textContent="發送紀錄暫時無法讀取。"}
   }catch(error){status.textContent=error.message}

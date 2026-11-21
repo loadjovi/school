@@ -72,20 +72,28 @@ test("regeneration, unbinding, disabled activities, bot changes and a group leav
 });
 
 function controller(h){
- const handlers={},sends=[],audiences=[];let role="admin",school="school-a",groupName="交流志工群",fails=false;
+ const handlers={},sends=[],audiences=[];let role="admin",school="school-a",groupName="交流志工群",fails=false,targets=["U"+"1".repeat(32)],pushFailure=()=>null;
  runInNewContext(strip(read("api/src/functions/lineAnnouncements.js")),{
   app:{http:(name,entry)=>{handlers[name]=entry.handler}},createHash,console,process:{env:{LAB_ENVIRONMENT:"functional-uat"}},
   getTenantContext:async()=>({schoolId:school,access:{role,email:"admin@example.invalid"},tenant:{schoolName:"甲校"}}),json:(data,status=200)=>({data,status}),
   resolveTenantLineChannel:async()=>({...channel,schoolId:school}),workflowLineEnabled:()=>true,workflowLineRetryKey:(...args)=>args.join("|"),
   ...h.api,lineAudienceStudents:async()=>[{groupName:"A"},{groupName:"新團"}],lineAudienceGroups:students=>students.map(x=>x.groupName),lineAudienceRoles:["parent","teacher","staff","finance"],
-  resolveLineAudience:async(s,b,input)=>{audiences.push({s,b,input});return {targets:["U"+"1".repeat(32)],matched:2,unbound:1}},
-  getLineGroupSummary:async()=>({groupName}),pushLineMessage:async(to,text,options)=>{sends.push({to,text,options});if(fails)throw Error("provider unavailable")},
+  resolveLineAudience:async(s,b,input)=>{audiences.push({s,b,input});return {targets,recipients:targets.map((userId,index)=>({userId,name:index?"Eileen":"Roy"})),matched:2,unbound:1}},
+  getLineGroupSummary:async()=>({groupName}),pushLineMessage:async(to,text,options)=>{sends.push({to,text,options});if(fails)throw Error("provider unavailable");const error=pushFailure(to,options);if(error)throw error},
   lineApi:async(path,options)=>sends.push({path,options})
  });
  const request=(body,origin=channel.appOrigin)=>handlers.lineAnnouncements({method:body?"POST":"GET",headers:new Headers({origin}),json:async()=>body});
- return {request,sends,audiences,setRole:v=>{role=v},setSchool:v=>{school=v},setName:v=>{groupName=v},setFails:v=>{fails=v}};
+ return {request,sends,audiences,setRole:v=>{role=v},setSchool:v=>{school=v},setName:v=>{groupName=v},setFails:v=>{fails=v},setTargets:v=>{targets=v},setPushFailure:v=>{pushFailure=v}};
 }
 const draft={action:"preview",audience:"activityGroup",activityKey:"fieldTrip:exchange",text:"請志工 08:00 集合",requestId:"12345678-1234-1234-1234-123456789abc"};
+
+test("two bound personal accounts receive independent push requests rather than a single multicast acceptance",async()=>{
+ const h=fixture(),c=controller(h),targets=["U"+"1".repeat(32),"U"+"2".repeat(32)];c.setTargets(targets);
+ const body={...draft,audience:"members",roles:["parent"],groups:[],allSchool:true},preview=await c.request(body);
+ const sent=await c.request({...body,action:"send",preview:preview.data.preview});
+ assert.deepEqual(c.sends.map(call=>call.to).sort(),targets);assert.equal(sent.data.accepted,2);assert.equal(sent.data.failed,0);
+ assert.notEqual(c.sends[0].options.retryKey,c.sends[1].options.retryKey);
+});
 
 test("only the selected activity group can receive a preview-confirmed send, and target changes reject stale previews",async()=>{
  const h=fixture(),c=controller(h),binding=await h.api.createActivityLineBinding(channel,draft.activityKey,"admin");await h.api.consumeActivityLineBinding(channel,binding.code,groupA,"交流志工群");
@@ -107,7 +115,7 @@ test("general team notices retain dynamic groups and require a matching preview,
  const p=await c.request(body);assert.equal(p.status,200);assert.equal(p.data.matched,2);assert.match(p.data.targetLabel,/新團/);
  assert.equal((await c.request({...body,action:"send",text:"changed",preview:p.data.preview})).status,409);
  const sent=await c.request({...body,action:"send",preview:p.data.preview});assert.equal(sent.data.accepted,1);
- assert.equal(c.sends[0].path,"/v2/bot/message/multicast");assert.equal(c.audiences[0].s,"school-a");assert.equal(c.audiences[0].b,bot);
+ assert.equal(c.sends[0].to,"U"+"1".repeat(32));assert.equal(sent.data.deliveryMode,"push");assert.equal(c.audiences[0].s,"school-a");assert.equal(c.audiences[0].b,bot);
  assert.equal((await c.request({...body,groups:["unknown"]})).status,400);
  assert.equal((await c.request({...body,groups:[],allSchool:false})).status,400);
  assert.equal((await c.request({...body,groups:[],allSchool:true})).status,200);
@@ -177,4 +185,40 @@ test("legacy LINE binding bookmarks redirect to the account-only page before req
  const redirects=[],calls=[];
  runInNewContext(read("app/fee-collections.js"),{document:{documentElement:{hasAttribute:()=>false},getElementById:()=>null,addEventListener(){}},location:{hash:"#lineBinding",search:"?line_link=confirm",replace:url=>redirects.push(url)},URLSearchParams,sessionStorage:{getItem:()=>""},fetch:(...args)=>calls.push(args)});
  assert.deepEqual(redirects,["/line-account.html?line_link=confirm#lineBinding"]);assert.equal(calls.length,0);
+});
+
+test("individual failures, transient retries and recipient history remain separate and never claim delivery",async()=>{
+ const h=fixture(),c=controller(h),first="U"+"1".repeat(32),second="U"+"2".repeat(32),attempts=new Map(),keys=new Map();c.setTargets([first,second]);
+ c.setPushFailure((to,options)=>{
+  const n=(attempts.get(to)||0)+1;attempts.set(to,n);
+  if(keys.has(to))assert.equal(options.retryKey,keys.get(to));else keys.set(to,options.retryKey);
+  if(to===first&&n===1)return Object.assign(Error("temporary secret-token"),{status:503});
+  if(to===second)return Object.assign(Error("private-provider-body"),{status:400});
+  return null;
+ });
+ const body={...draft,audience:"members",roles:["parent"],groups:[],allSchool:true},p=await c.request(body);
+ assert.deepEqual(Array.from(p.data.recipients,entry=>entry.name),["Roy","Eileen"]);assert.equal(p.data.deliveryConfirmed,false);
+ const result=await c.request({...body,action:"send",preview:p.data.preview});
+ assert.equal(result.data.accepted,1);assert.equal(result.data.failed,1);assert.equal(result.data.deliveryConfirmed,false);
+ assert.equal(attempts.get(first),2);assert.equal(attempts.get(second),1);
+ assert.deepEqual(Array.from(result.data.recipientResults,entry=>entry.status),["accepted","failed"]);
+ assert.equal(result.data.recipientResults[1].httpStatus,400);
+ const history=(await h.api.lineAnnouncementHistory("school-a"))[0];assert.equal(history.deliveryMode,"push");
+ assert.deepEqual(Array.from(history.recipientResults,entry=>entry.name),["Roy","Eileen"]);assert.equal(history.deliveryConfirmed,false);
+ const output=JSON.stringify([p.data,result.data,history]);assert.doesNotMatch(output,/secret-token|private-provider-body|accessToken/);assert.ok(!output.includes(first)&&!output.includes(second));
+ const initialKey=keys.get(first);await c.request({...body,action:"send",preview:p.data.preview});assert.equal(keys.get(first),initialKey);
+});
+
+test("recipient detail storage is tenant-scoped, size-bounded, and strips identifiers and credentials",async()=>{
+ const h=fixture(),all=Array.from({length:130},(_,index)=>({reference:index.toString(16).padStart(12,"0"),name:"家長".repeat(100),status:index%2?"failed":"accepted",httpStatus:400,userId:"private-user",accessToken:"secret"}));
+ await h.api.recordLineAnnouncement("school-a",{...draft,requestId:"history-size",label:"家長",text:"公告",accepted:65,failed:65,deliveryMode:"push",recipientResults:all});
+ const stored=[...h.rows("TenantLineNotificationCenter").values()].find(row=>row.rowKey==="sent:history-size");assert.ok(stored.recipientResults.length<30000);
+ const history=(await h.api.lineAnnouncementHistory("school-a"))[0];assert.equal(history.recipientResults.length,100);assert.equal(history.omittedRecipients,30);
+ assert.equal(history.recipientResults[0].name.length,80);assert.doesNotMatch(JSON.stringify(history),/private-user|secret|accessToken/);
+ assert.equal((await h.api.lineAnnouncementHistory("school-b")).length,0);
+ await h.api.recordLineAnnouncement("school-a",{requestId:"old",audience:"members",label:"舊公告",text:"舊版",accepted:2,failed:0});
+ const legacy=(await h.api.lineAnnouncementHistory("school-a")).find(row=>row.label==="舊公告");assert.equal(legacy.deliveryMode,"multicast");assert.equal(legacy.recipientResults.length,0);
+ await h.api.recordLineAnnouncement("school-a",{requestId:"escaped",audience:"members",label:"控制字元",text:"文字",accepted:130,failed:0,deliveryMode:"push",recipientResults:all.map(row=>({...row,name:"\u0000".repeat(80)}))});
+ const escaped=[...h.rows("TenantLineNotificationCenter").values()].find(row=>row.rowKey==="sent:escaped");assert.ok(escaped.recipientResults.length<=30000);
+ const detail=(await h.api.lineAnnouncementHistory("school-a")).find(row=>row.label==="控制字元");assert.equal(detail.omittedRecipients,130-detail.recipientResults.length);
 });
