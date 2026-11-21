@@ -3,19 +3,19 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 import * as model from "../app/tshirt-procurement-plan.mjs";
-function harness(failure=""){
+function harness(failure="",{holdRequests=false}={}){
  const nodes=new Map(),node=id=>{
   if(!nodes.has(id))nodes.set(id,{id,value:"",hidden:false,disabled:false,options:[],handlers:{},dataset:{},addEventListener(k,fn){this.handlers[k]=fn},replaceChildren(...children){this.options=children;this.innerHTML=""},add(option){this.options.push(option)},append(){}});
   return nodes.get(id);
  };
- let csv="",getCount=0;
+ let csv="",getCount=0,releaseRequests,heldSignal;const held=new Promise(resolve=>{heldSignal=resolve});
  const bodies={"student-master":{items:[{studentId:"111001",studentName:"學生甲",groupName:"C",status:"active"}]},"uniform-events/tshirt-historical-size":{items:[{studentId:"111001",historicalIssued:false,size:"10"}]},"uniform-events/requests":{items:[]},"uniform-events/inventory":{items:model.TSHIRT_PLAN_SIZES.map(size=>({key:"regular:"+size,onHand:0,reserved:0,unavailable:0}))},"uniform-events/parent-loans?view=procurement":{items:[],canVerifyFinance:false},"uniform-events/parent-loans":{items:[]},"uniform-events/tshirt-purchase-orders":{items:[]},"student-parent-links":{items:[]}};
  const window={uniformEventAuthHeaders:()=>({"X-School-Id":"school-a"}),addEventListener(){},dispatchEvent(){}};
- const scope={...model,window,CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail}},document:{getElementById:node,querySelectorAll:()=>[],querySelector:()=>null,createElement:tag=>({tagName:tag.toUpperCase(),textContent:"",className:"",type:"",disabled:false,children:[],handlers:{},append(...children){this.children.push(...children)},addEventListener(k,fn){this.handlers[k]=fn},click(){},download:"",href:""})},Option:class{constructor(text,value){this.text=text;this.value=value}},Intl,Date,AbortController,setTimeout,clearTimeout,crypto:{randomUUID:()=>"123e4567-e89b-42d3-a456-426614174000"},Blob:class{constructor(parts){this.value=parts.join("")}},URL:{createObjectURL:blob=>{csv=blob.value;return "test-blob"},revokeObjectURL(){}},fetch:async(path,options)=>{getCount++;assert.equal(options.cache,"no-store");assert.equal(options.headers["X-School-Id"],"school-a");const key=path.replace("/api/","");return {ok:key!==failure,status:key===failure?500:200,json:async()=>key===failure?{error:"讀取失敗"}:bodies[key]}},console};
+ const scope={...model,window,CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail}},document:{getElementById:node,querySelectorAll:()=>[],querySelector:()=>null,createElement:tag=>({tagName:tag.toUpperCase(),textContent:"",className:"",type:"",disabled:false,children:[],handlers:{},append(...children){this.children.push(...children)},addEventListener(k,fn){this.handlers[k]=fn},click(){},download:"",href:""})},Option:class{constructor(text,value){this.text=text;this.value=value}},Intl,Date,AbortController,setTimeout,clearTimeout,crypto:{randomUUID:()=>"123e4567-e89b-42d3-a456-426614174000"},Blob:class{constructor(parts){this.value=parts.join("")}},URL:{createObjectURL:blob=>{csv=blob.value;return "test-blob"},revokeObjectURL(){}},fetch:async(path,options)=>{getCount++;assert.equal(options.cache,"no-store");assert.equal(options.headers["X-School-Id"],"school-a");const key=path.replace("/api/","");return {ok:key!==failure,status:key===failure?500:200,json:async()=>{if(key==="uniform-events/requests"&&holdRequests){holdRequests=false;const snapshot=structuredClone(bodies[key]);heldSignal();await new Promise(resolve=>{releaseRequests=resolve});return snapshot}return key===failure?{error:"讀取失敗"}:bodies[key]}}},console};
  const source=readFileSync(new URL("../app/tshirt-procurement-admin.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"");
  runInNewContext(source+"\nthis.ui={load,draw};",scope);
  node("tshirtPlanYear").value=115;node("tshirtPlanSemester").value=1;
- return {node,bodies,load:scope.ui.load,csv:()=>csv,getCount:()=>getCount};
+ return {node,bodies,load:scope.ui.load,csv:()=>csv,getCount:()=>getCount,held,releaseRequests:()=>releaseRequests()};
 }
 test("procurement view loads all authoritative sources and exports exactly the visible plan",async()=>{
  const h=harness();await h.load();assert.equal(h.getCount(),8);assert.equal(h.node("exportTshirtPlan").disabled,false);assert.match(h.node("tshirtPlanMetrics").innerHTML,/學生首次公費/);assert.match(h.node("tshirtPlanOrderTotal").textContent,/規劃採購 1 件/);
@@ -58,4 +58,13 @@ test("finance header includes staff demand and does not claim zero before the st
  scope.setStaff([{category:"VOLUNTEER_EXTRA",status:"APPROVED",paymentStatus:"AWAITING_TRANSFER"},{category:"CADRE_FIRST",status:"APPROVED",paymentStatus:"NOT_REQUIRED"},{category:"CADRE_EXTRA",status:"CANCELLED",paymentStatus:"AWAITING_TRANSFER"},{category:"CADRE_EXTRA",status:"APPROVED",paymentStatus:"VERIFIED"}]);
  scope.draw([],[]);assert.match(summary.textContent,/待財務核帳 1 筆/);assert.match(summary.textContent,/幹部／志工 1/);assert.equal(review.dataset.pending,"true");
  scope.setStaff([]);scope.draw([],[]);assert.match(summary.textContent,/目前無待核帳款項/);
+});
+
+test("a verification update during an older procurement read queues one fresh read instead of dropping the update",async()=>{
+ const h=harness("",{holdRequests:true});h.bodies["uniform-events/tshirt-historical-size"].items[0].historicalIssued=true;
+ const order={id:"paid-after-supplement",kind:"regularUniform",studentId:"111001",size:"S",quantity:1,status:"APPROVED",paymentStatus:"SUPPLEMENT_REPORTED",createdAt:"2026-11-21T10:00:00Z"};
+ h.bodies["uniform-events/requests"].items=[order];const first=h.load();await h.held;
+ order.paymentStatus="VERIFIED";await h.load();await h.load();h.releaseRequests();await first;
+ assert.equal(h.getCount(),16);assert.match(h.node("tshirtPlanOrderTotal").textContent,/規劃採購 1 件/);assert.match(h.node("tshirtPlanDetailRows").innerHTML,/已入帳，已列入採購需求/);
+ assert.doesNotMatch(h.node("tshirtPlanWarnings").innerHTML,/尚未列入採購/);
 });

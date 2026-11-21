@@ -2,7 +2,7 @@ import "./payment-resolution.js?v=20261122-single-parent-message";
 import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv,tshirtPurchaseOrderCsv} from "./tshirt-procurement-plan.mjs?v=20261117-auto-procurement";
 const $=id=>document.getElementById(id);
 const term=currentTshirtTerm();
-let data=null,plan=null,loading=false,canVerifyFinance=false,links=[],extraBySize={},revision=0,canCreateOrder=false,purchaseOrderRequestKey="";
+let data=null,plan=null,loading=false,reloadRequested=false,canVerifyFinance=false,links=[],extraBySize={},revision=0,canCreateOrder=false,purchaseOrderRequestKey="";
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function call(path,options={}){
  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),20000);
@@ -59,7 +59,7 @@ function draw(){
  exportEnabled(true);create.disabled=!canCreateOrder;drawStaff();drawOrders();
 }
 async function load(){
- if(loading)return;loading=true;const token=++revision;exportEnabled(false);data=null;plan=null;
+ if(loading){reloadRequested=true;return}loading=true;const token=++revision;exportEnabled(false);data=null;plan=null;
  $("tshirtPlanStatus").textContent="正在整合學生、首次領用、加購、幹部／志工需求與正式庫存…";
  $("tshirtPlanMetrics").replaceChildren();$("tshirtPlanSizeRows").replaceChildren();$("tshirtPlanWarnings").replaceChildren();$("tshirtPlanDetailRows").replaceChildren();$("tshirtPurchaseOrders").replaceChildren();$("tshirtPlanOrderTotal").textContent="";canCreateOrder=false;
  const paths=["student-master","uniform-events/tshirt-historical-size","uniform-events/requests","uniform-events/inventory","uniform-events/parent-loans?view=procurement","uniform-events/parent-loans","uniform-events/tshirt-purchase-orders","student-parent-links"];
@@ -73,7 +73,7 @@ async function load(){
   window.dispatchEvent(new CustomEvent("tshirtStaffDemandsLoaded",{detail:{items:data.staffDemands}}));
   canVerifyFinance=values[4].canVerifyFinance===true;links=items(values[7]);drawParents();draw();
  }catch(e){$("tshirtPlanStatus").textContent="採購總表讀取失敗："+e.message+"。請重新整理；資料未齊前不提供採購數字與匯出。";$("tshirtStaffRecords").replaceChildren();exportEnabled(false)}
- finally{loading=false}
+ finally{loading=false;if(reloadRequested){reloadRequested=false;await load()}}
 }
 function drawParents(){
  const select=$("tshirtDemandParent"),before=select.value,students=new Map(data.students.filter(x=>String(x.status||"active").toLowerCase()==="active").map(x=>[String(x.studentId||x.id),x]));

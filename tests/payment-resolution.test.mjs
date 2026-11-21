@@ -7,6 +7,7 @@ import * as rules from "../api/src/lib/paymentResolutionRules.mjs";
 import {familyPaymentInfo,uniformNeedsPayment} from "../api/src/lib/paymentNoticeRules.mjs";
 import {financeRecipients} from "../api/src/lib/financeNoticeRules.mjs";
 import {updateStaffDemand} from "../api/src/lib/tshirtStaffDemandRules.mjs";
+import {buildTshirtProcurementPlan,TSHIRT_PLAN_SIZES} from "../app/tshirt-procurement-plan.mjs";
 const read=p=>readFileSync(new URL("../"+p,import.meta.url),"utf8");
 const strip=s=>s.replace(/^import .*;\n/gm,"").replace(/^export /gm,"");
 const uid="11111111-1111-4111-a111-111111111111",owner="parent@example.test",school="school-a";
@@ -157,4 +158,19 @@ test("the real parent panel shows only the difference and submits refund details
  const forms=descendants(host).filter(el=>el.tagName==="form"),refund=forms[1];fill(refund,{reason:"不再購買",bankCode:"807",accountNumber:"123456789012",accountHolder:"測試家長"});
  h.setConfirmed(false);await refund.handlers.submit({preventDefault(){}});assert.equal(calls.length,0);
  h.setConfirmed(true);await refund.handlers.submit({preventDefault(){}});assert.equal(calls.length,1);assert.equal(calls[0].action,"REQUEST_REFUND");assert.equal(calls[0].revision,"case-version");assert.equal(calls[0].accountNumber,"123456789012");assert.match(h.confirmations.at(-1),/財務完成退款後/);
+});
+test("reloading finance after second verification updates the main request, totals and procurement without another approval",async()=>{
+ const h=harness();await h.put("uniform",{...uniform,createdAt:"2026-11-21T10:00:00Z"});await h.apply("REQUEST_ADJUSTMENT",evidence);await h.apply("REPORT_SUPPLEMENT",{amount:100,lastFive:"55555",transferDate:"2026-11-22"},parent);
+ const stale=await h.current();await h.apply("VERIFY_ADJUSTMENT",{receivedAmount:400,bankPostedAt:"2026-11-22",note:"補款已到帳"});
+ const verified=await h.current(),source=read("app/uniform-event-admin.js"),events=[],elements=new Map();let renderedPlan,renderedStage,historyStatus;
+ const el=id=>{if(!elements.has(id))elements.set(id,new Element("div"));return elements.get(id)};
+ const snippet=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));
+ const scope={cachedRequests:[stale],cachedFamilyRegistrations:[],cachedStaffFinanceItems:[],activeAdminTab:"regularUniform",hasFinanceAccess:true,adminAuthenticated:true,
+  document:{createElement:tag=>new Element(tag)},el,window:{paymentResolutionUI:{enabled:()=>true},dispatchEvent:event=>events.push(event.type)},CustomEvent:class{constructor(type){this.type=type}},
+  api:async path=>({items:path==="uniform-events/requests"?[verified]:[]}),staffFinancePending:()=>[],financeCard:()=>new Element("div"),showFinancePending(){},refreshFamilyStatistics(){},renderUniformRequestAlerts(){},
+  renderResolutionFinanceHistory(uniform){historyStatus=uniform.items[0].paymentStatus},renderModuleRequests(){renderedStage=scope.approvedStage(scope.cachedRequests[0]);renderedPlan=buildTshirtProcurementPlan({schoolYear:115,semester:1,students:[{studentId:"990101",studentName:"測試學生",groupName:"A",status:"active"}],history:[{studentId:"990101",historicalIssued:true}],requests:scope.cachedRequests,stock:TSHIRT_PLAN_SIZES.map(size=>({key:"regular:"+size,onHand:0,reserved:0,unavailable:0}))})}
+ };
+ runInNewContext(snippet("function syncFinanceViews(","function staffFinancePending(")+snippet("const approvedStage=","\n")+"\n"+snippet("async function loadInlineFinance()","\nel(\"inlineFinanceReview\").addEventListener")+";this.reload=loadInlineFinance;this.approvedStage=approvedStage",scope);
+ await scope.reload();assert.equal(scope.cachedRequests[0].paymentStatus,"VERIFIED");assert.equal(renderedStage,"ready");assert.equal(renderedPlan.waitingUnits,0);assert.equal(renderedPlan.needUnits,1);assert.equal(renderedPlan.rows[0].ready,true);assert.equal(historyStatus,"VERIFIED");assert.deepEqual(events,["uniformRequestsLoaded"]);
+ await scope.reload();assert.equal(events.length,1,"unchanged finance reads must not reload procurement again");
 });

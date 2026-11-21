@@ -39,6 +39,14 @@ async function api(path,options={}){
 }
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[],receivedRequestIds=new Set();
 let cachedStaffFinanceItems=null;
+function syncFinanceViews(uniform,family,staff){
+ if(!Array.isArray(uniform?.items)||!Array.isArray(family?.items)||!Array.isArray(staff?.items))throw Error("核帳資料不完整，請重新讀取");
+ const uniformChanged=JSON.stringify(cachedRequests)!==JSON.stringify(uniform.items),familyChanged=JSON.stringify(cachedFamilyRegistrations)!==JSON.stringify(family.items),staffChanged=JSON.stringify(cachedStaffFinanceItems)!==JSON.stringify(staff.items);
+ cachedRequests=uniform.items;cachedFamilyRegistrations=family.items;cachedStaffFinanceItems=staff.items;
+ if(uniformChanged){renderUniformRequestAlerts();if(["regularUniform","competitionUniform"].includes(activeAdminTab))renderModuleRequests()}
+ if(familyChanged)refreshFamilyStatistics();
+ if(uniformChanged||staffChanged)window.dispatchEvent(new CustomEvent("uniformRequestsLoaded"));
+}
 function staffFinancePending(items=cachedStaffFinanceItems){return (items||[]).filter(x=>x.status==="APPROVED"&&x.category!=="CADRE_FIRST"&&x.paymentStatus!=="VERIFIED")}
 function showFinancePending(uniformItems=cachedRequests,familyItems=cachedFamilyRegistrations){
  if(!hasFinanceAccess)return;
@@ -57,7 +65,7 @@ async function refreshFinancePending(){
  if(!hasFinanceAccess||!adminAuthenticated||document.visibilityState!=="visible")return;
  try{
   const [uniform,family,staff]=await Promise.all([api("uniform-events/requests"),api("uniform-events/family-registration"),api("uniform-events/parent-loans?view=procurement")]);
-  cachedStaffFinanceItems=staff.items||[];
+  syncFinanceViews(uniform,family,staff);
   showFinancePending(uniform.items||[],family.items||[]);
   if(window.paymentResolutionUI?.enabled())renderResolutionFinanceHistory(uniform,family,staff);
  }catch(error){el("inlineFinanceReview").querySelector("summary").textContent="💰 財務核帳｜待辦讀取失敗，點此重新查詢"}
@@ -725,7 +733,7 @@ async function loadInlineFinance(){
  el("inlineFinanceStatus").textContent="正在讀取待核帳資料…";
  try{
   const [uniform,family,staff]=await Promise.all([api("uniform-events/requests"),api("uniform-events/family-registration"),api("uniform-events/parent-loans?view=procurement")]);
-  cachedStaffFinanceItems=staff.items||[];
+  syncFinanceViews(uniform,family,staff);
   const u=(uniform.items||[]).filter(x=>["REPORTED_UNVERIFIED","ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED"].includes(x.paymentStatus)),f=(family.items||[]).filter(x=>["REPORTED_UNVERIFIED","ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED"].includes(x.paymentStatus));
   const empty=text=>{const p=document.createElement("p");p.textContent=text;return p};
   el("inlineFinanceUniform").replaceChildren(...(u.length?u.map(x=>financeCard(x,"uniform")):[empty("目前沒有待核對的團服匯款。")]));
