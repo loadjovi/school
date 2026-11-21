@@ -126,9 +126,10 @@ async function buildCharge(schoolId,project,association,access,config){
 }
 
 function projectSummary(charges){
-  const summary={total:charges.length,awaiting:0,reported:0,verified:0,amount:0,verifiedAmount:0,missingSource:0};
+  const summary={total:charges.length,awaiting:0,reported:0,verified:0,refunded:0,amount:0,verifiedAmount:0,missingSource:0};
   for(const charge of charges){
     if(charge.sourceMissing){summary.missingSource++;continue}
+    if(charge.paymentStatus==="REFUNDED"){summary.refunded++;continue}
     if(Number.isSafeInteger(charge.amount))summary.amount+=charge.amount;
     if(charge.paymentStatus===PAYMENT_STATUSES.AWAITING_TRANSFER)summary.awaiting++;
     if(charge.paymentStatus===PAYMENT_STATUSES.REPORTED_UNVERIFIED)summary.reported++;

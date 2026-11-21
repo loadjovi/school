@@ -106,7 +106,7 @@ app.http("uniformEventRequests",{
           const item=decode(e);
           if(access.role==="admin"||ensureStudentAccess(access,item.studentId)){
             if(access.role==="admin"&&access.capabilities?.financeVerifier!==true){const {transferReport,verificationNote,bankPostedAt,paymentResolution,paymentResolutionEvents,...safe}=item;out.push(safe)}
-            else if(item.paymentResolution&&access.role==="parent"&&!ownsResolution(access,item,ensureStudentAccess)){const {paymentResolution,paymentResolutionEvents,...safe}=item;out.push({...safe,paymentResolution:{expectedAmount:paymentResolution.expectedAmount,balance:paymentResolution.balance,reason:paymentResolution.reason}})}
+            else if(item.paymentResolution&&access.role==="parent"&&!ownsResolution(access,item,ensureStudentAccess)){const {paymentResolution,paymentResolutionEvents,...safe}=item;out.push({...safe,canResolvePayment:false,paymentResolution:{expectedAmount:paymentResolution.expectedAmount,balance:paymentResolution.balance,reason:paymentResolution.reason}})}
             else out.push(item);
           }
         }

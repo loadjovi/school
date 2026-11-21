@@ -12,8 +12,9 @@ import {familyPaymentInfo} from "./paymentNoticeRules.mjs";
 import {changePaymentResolution,ownsResolution,resolutionPayer,resolutionExpected,paymentResolutionEnabled,PaymentResolutionError} from "./paymentResolutionRules.mjs";
 
 const tables={uniform:"TenantUniformEventRequest",family:"TenantFamilyEventRegistration",staff:"TenantTshirtStaffDemand"};
+const clients=new Map();
 const fail=(message,status=400)=>{throw new PaymentResolutionError(message,status)};
-async function table(name){const db=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,name);await db.createTable().catch(e=>{if(e.statusCode!==409)throw e});return db}
+async function table(name){if(!clients.has(name))clients.set(name,(async()=>{const db=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,name);await db.createTable().catch(e=>{if(e.statusCode!==409)throw e});return db})().catch(error=>{clients.delete(name);throw error}));return clients.get(name)}
 async function get(db,school,id){try{return await db.getEntity(school,id)}catch(e){if(e.statusCode===404)return null;throw e}}
 const decode=row=>({...JSON.parse(row.payload||"{}"),id:row.rowKey,etag:row.etag});
 function validateSource(sourceType,id){if(!Object.hasOwn(tables,sourceType)||typeof id!=="string"||id.length>250||!/^[a-zA-Z0-9_:-]+$/.test(id))fail("申請編號不正確")}
@@ -43,16 +44,18 @@ export async function listPaymentResolutions(school,access){
 }
 const replyCode=(school,type,id,caseId)=>createHash("sha256").update(JSON.stringify([school,type,id,caseId])).digest("hex").slice(0,14).toUpperCase();
 async function notifyResolution(school,sourceType,item,event){
+ const stillDue=async()=>{const row=await get(await table(tables[sourceType]),school,item.id);if(!row)return false;const current=JSON.parse(row.payload||"{}");return current.paymentResolution?.revision===event.id&&current.paymentStatus===item.paymentStatus};
  const r=item.paymentResolution,payer=resolutionPayer(item),parentAction=["REPORT_SUPPLEMENT","REQUEST_REFUND","UPDATE_REFUND_ACCOUNT"].includes(event.action);
  const title=sourceType==="family"?(await activityConfig(school,item))?.title:sourceType==="staff"?labels.staff:item.kind==="regularUniform"?"團 T":"A 團比賽服";
  const url=labNoticeUrl(school),amount=n=>"NT$ "+Number(n||0).toLocaleString("zh-TW");
  const heading={REQUEST_ADJUSTMENT:r.balance>0?"請補繳差額":"金額有溢繳，請確認後續處理",REPORT_SUPPLEMENT:"家長已回報補款，請核帳",REQUEST_REFUND:"家長申請退費，請財務處理",UPDATE_REFUND_ACCOUNT:"家長已提供退款帳戶",VERIFY_ADJUSTMENT:"財務已確認足額入帳",COMPLETE_REFUND:"已退款並作廢申請",REFUND_EXCESS:"已退還溢繳差額，核帳完成"}[event.action];
  const text=["【LAB｜"+heading+"】",title||labels[sourceType],(await studentNames(school,item)).join("、")+(item.size?"｜尺寸 "+item.size:""),"應繳："+amount(r.expectedAmount)+"｜銀行確認累計實收："+amount(r.receivedAmount),r.balance>0&&item.paymentStatus!=="REFUNDED"?"待補差額："+amount(r.balance):"",event.action==="REQUEST_ADJUSTMENT"?"原因："+r.reason:"",event.action==="COMPLETE_REFUND"?"已退款："+amount(r.refund.amount)+"，原申請已作廢，不再採購／保留報名。":"",["ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED"].includes(item.paymentStatus)?"此筆流程暫停，未完成核帳前不會進入採購／報名完成。":"",parentAction?"請到後台「待財務核帳」處理。":"請至平台「活動團服 → 補款與退費」查看；不同意補款可申請退費。",url].filter(Boolean).join("\n");
  const eventId=`payment-resolution:${sourceType}:${item.id}:${event.id}`;
- if(parentAction){const [admins,assignments]=await Promise.all([listTenantAdmins(school,"active"),financeAssignments(school)]);return labNoticeLineResult(await deliverLabNotice({schoolId:school,eventId,recipients:financeRecipients(admins,assignments),subject:heading,text}))}
- return labNoticeLineResult(await deliverLabNotice({schoolId:school,eventId,recipients:[payer],subject:heading,text,lineSender:async recipient=>{
+ if(parentAction){const [admins,assignments]=await Promise.all([listTenantAdmins(school,"active"),financeAssignments(school)]);return labNoticeLineResult(await deliverLabNotice({schoolId:school,eventId,recipients:financeRecipients(admins,assignments),subject:heading,text,stillDue}))}
+ return labNoticeLineResult(await deliverLabNotice({schoolId:school,eventId,recipients:[payer],subject:heading,text,stillDue,lineSender:async recipient=>{
   const channel=await resolveTenantLineChannel(school),account=channel.botUserId&&await getTenantLineRecipient(school,recipient,channel.botUserId);
   if(!channel.loginConfigured||!account?.lineUserId)return "not_bound";
+  if(!await stillDue())return "ineligible";
   let quickReply,body=text;
   if(event.action==="REQUEST_ADJUSTMENT"){
    const code=replyCode(school,sourceType,item.id,r.caseId);

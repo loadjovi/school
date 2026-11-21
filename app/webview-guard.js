@@ -147,12 +147,12 @@
     if(role==="school")return ["/school-access.js?v=20261027-school-followup"];
     if(role==="parent")return [
       "/parent-activity-notice.js?v=20261016-new-activity-alert-parent-tasks",
-      "/uniform-payment-state.js?v=20261121-payment-resolution",
+      "/uniform-payment-state.js?v=20261121-payment-resolution-owner",
       "/practice-timer.js?v=20261004-manual4h",
       "/private-lesson-confirmation.js?v=20261121-line-first-notice-labels",
       "/parent-semester-attendance.js?v=20261003-practice20",
-      "/parent-home-summary.js?v=20261103-tshirt-size-reminder-parent-tasks-home-priorities-20261119-final-parent-clear-20261121",
-      "/parent-uniform-payment-notice.js?v=20261121-payment-resolution",
+      "/parent-home-summary.js?v=20261103-tshirt-size-reminder-payment-resolution-owner-20261121",
+      "/parent-uniform-payment-notice.js?v=20261121-payment-resolution-owner",
       "/parent-practice-history.js?v=20261003-practice-history-toggle",
       "/special-calendar.js?v=20261102-training-form-home-priorities-20261119"
     ];
@@ -170,7 +170,7 @@
     }
   }
   function roleScriptList(){
-    return [...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261121-payment-resolution","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
+    return [...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261121-payment-resolution-owner","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
   }
   window.preloadRoleModules=()=>{
     if(typeof state!=="undefined"&&state.me?.role==="parent")preloadScripts(roleScriptList());

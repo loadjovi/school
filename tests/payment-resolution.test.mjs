@@ -45,6 +45,7 @@ test("a discrepancy uses confirmed bank receipts, freezes the expected amount an
 test("reporting a supplement never verifies payment; only finance confirming the cumulative total restores the workflow",async()=>{
  const h=harness();await h.put("uniform",uniform);await h.apply("REQUEST_ADJUSTMENT",evidence);
  await h.apply("REPORT_SUPPLEMENT",{amount:100,lastFive:"55555",transferDate:"2026-11-21"},parent);let item=await h.current();
+ assert.equal(await h.notices[0].stillDue(),false);assert.equal(await h.notices.at(-1).stillDue(),true);
  assert.equal(item.paymentStatus,"SUPPLEMENT_REPORTED");assert.equal(item.paymentResolution.receivedAmount,300);assert.deepEqual([...h.notices.at(-1).recipients],[finance.email]);
  await assert.rejects(()=>h.apply("VERIFY_ADJUSTMENT",{receivedAmount:100,bankPostedAt:"2026-11-21",note:"只填單筆"}),/累計實收/);
  await h.apply("VERIFY_ADJUSTMENT",{receivedAmount:400,bankPostedAt:"2026-11-21",note:"兩筆銀行明細已核對"});item=await h.current();assert.equal(item.paymentStatus,"VERIFIED");assert.equal(item.paymentResolution.balance,0);assert.equal(item.paymentResolutionEvents.length,3);assert.equal(item.transferReport.lastFive,"12345");
@@ -120,6 +121,12 @@ test("original verification, amount changes and staff procurement cannot bypass 
  for(const path of ["api/src/functions/uniformTransferReport.js","api/src/functions/familyEventRegistration.js","api/src/functions/uniformEventRequests.js"])assert.match(read(path),/paymentOnHold\((?:old|before)\)/);
  const staff={category:"CADRE_EXTRA",status:"APPROVED",amount:400,paymentStatus:"REFUND_REQUESTED",paymentResolution:{expectedAmount:400}};assert.throws(()=>updateStaffDemand(staff,{action:"UPDATE_DEMAND_STATUS",status:"ORDERED",note:"採購"},{finance:true,actor:"admin",at:"now"}),/尚未結案/);
  const model=runInNewContext(read("app/uniform-payment-state.js")+";window.uniformPaymentState",{window:{}});const held={...uniform,paymentStatus:"ADJUSTMENT_REQUIRED",paymentResolution:{balance:100}};assert.equal(model.due(held),false);assert.equal(model.alerts([held]).held.length,1);assert.match(model.stage(held).title,/流程暫停/);
+ assert.equal(model.held({...held,canResolvePayment:false}),false);assert.equal(model.alerts([{...held,canResolvePayment:false}]).due.length,0);
+});
+test("refunded applications remain in history but no longer inflate the receivable total",()=>{
+ const source=read("api/src/functions/feeCollections.js"),part=source.slice(source.indexOf("function projectSummary("),source.indexOf("async function projectView("));
+ const summarize=runInNewContext(part+";projectSummary",{PAYMENT_STATUSES:{AWAITING_TRANSFER:"AWAITING_TRANSFER",REPORTED_UNVERIFIED:"REPORTED_UNVERIFIED",VERIFIED:"VERIFIED"}});
+ const totals=summarize([{amount:400,paymentStatus:"REFUNDED"},{amount:600,paymentStatus:"VERIFIED"}]);assert.equal(totals.total,2);assert.equal(totals.refunded,1);assert.equal(totals.amount,600);assert.equal(totals.verifiedAmount,600);
 });
 
 class Element{

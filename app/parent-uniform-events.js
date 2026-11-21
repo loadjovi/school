@@ -1,7 +1,7 @@
-import "./payment-resolution.js?v=20261121-payment-resolution";
+import "./payment-resolution.js?v=20261121-payment-resolution-owner";
 import {confirmedReceived} from "./competition-paper-receipts.js";
 import "./parent-activity-notice.js?v=20261016-new-activity-alert-parent-tasks";
-import "./uniform-payment-state.js?v=20261121-payment-resolution";
+import "./uniform-payment-state.js?v=20261121-payment-resolution-owner";
 import {buildUniformGrowth} from "./uniform-growth.js?v=20261017-first-public";
 import {roster as competitionRoster} from "./competition-roster-data.js";
 const competitionByName=new Map(competitionRoster.map(row=>[row[1],{style:row[2],size:row[3]}]));
@@ -333,7 +333,7 @@ async function loadUniformRequestProgress(){
    if(item.status==="FULFILLED")card.append(element("p",`實際領取：${formatDate(item.issuedAt)||"日期待確認"}｜領取人：${item.receivedBy||"待核對"}｜件數：${item.issuedQuantity||item.quantity||1}`,"hint"));
    if(["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(item.status)&&item.acquisition!=="PUBLIC"){
     const payment=element("div",undefined,"payment-account");payment.id="uniform-payment-"+item.id;card.append(payment);
-    if(item.paymentResolution&&item.paymentStatus!=="VERIFIED"){payment.append(element("p",window.paymentResolutionUI.labels[item.paymentStatus]||"款項處理中"),element("p","請至上方「補款與退費」處理；勿重新匯全額。"))}
+    if(item.paymentResolution&&item.paymentStatus!=="VERIFIED"){payment.append(element("p",window.paymentResolutionUI.labels[item.paymentStatus]||"款項處理中"),element("p",item.canResolvePayment===false?"請由原繳費家長處理補款或退費；勿重複匯款。":"請至上方「補款與退費」處理；勿重新匯全額。"))}
     else if(Number.isSafeInteger(item.amount)&&item.amount>0){
      if(["REPORTED_UNVERIFIED","VERIFIED"].includes(item.paymentStatus)){
       payment.append(element("strong",item.paymentStatus==="VERIFIED"?"✅ 學校已確認入帳":"🕒 已回報匯款，等待學校核帳"));

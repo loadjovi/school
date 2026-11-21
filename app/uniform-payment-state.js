@@ -4,7 +4,7 @@
   const kinds=new Set(["regularUniform","competitionUniform"]);
   const openStatuses=new Set(["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"]);
   function family(item){return ["fieldTrip","yearEndDinner"].includes(item?.kind)}
-  function held(item){return Boolean(item?.paymentResolution)&&["ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED"].includes(item.paymentStatus)}
+  function held(item){return item?.canResolvePayment!==false&&Boolean(item?.paymentResolution)&&["ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED"].includes(item.paymentStatus)}
   function eligible(item){return (family(item)?item.registrationStatus==="REGISTERED"&&item.paymentOpen===true:kinds.has(item?.kind)&&openStatuses.has(item.status)&&item.acquisition!=="PUBLIC")&&Number.isSafeInteger(item.amount)&&item.amount>0}
   function due(item){return eligible(item)&&!held(item)&&(family(item)?["","NOT_OPEN","AWAITING_TRANSFER"].includes(String(item.paymentStatus||"")):["","AWAITING_TRANSFER"].includes(String(item.paymentStatus||"")))}
   function reported(item){return eligible(item)&&item.paymentStatus==="REPORTED_UNVERIFIED"}

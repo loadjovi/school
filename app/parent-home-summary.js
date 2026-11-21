@@ -423,7 +423,7 @@
     }
     for(const config of configs){
       const key=config.module+":"+config.id,old=rows.get(key)||{},start=config.module==="calendarActivity"?config.eventDate:window.parentActivityNotice?.activityDate(config)?.split("～")[0];
-      const registered=registrations?.find(x=>x.kind===config.module&&x.activityId===config.id&&x.registrationStatus!=="CANCELLED");
+      const registration=registrations?.find(x=>x.kind===config.module&&x.activityId===config.id),cancelled=registration?.registrationStatus==="CANCELLED",registered=cancelled?null:registration;
       const closed=config.closeAt&&Date.parse(config.closeAt)<=now;
       const end=config.module==="calendarActivity"?config.endDate||start:window.parentActivityNotice?.activityDate(config)?.split("～").at(-1)||start;
       const ended=config.endAt?Date.parse(config.endAt)<=now:config.module==="calendarActivity"&&config.endTime?Date.parse(end+"T"+config.endTime+":00+08:00")<=now:false;
@@ -431,10 +431,10 @@
       const opening=config.openAt&&Date.parse(config.openAt)>now,bookable=config.module!=="yearEndDinner"||config.paymentOpen===true;
       rows.set(key,{...old,key,date:start,endDate:end,title:config.title||old.title,location:config.location||old.location||"",
         description:config.module==="calendarActivity"?old.description||"":"",
-        status:registered?(registered.paymentStatus==="VERIFIED"?"報名完成":registered.paymentStatus==="REPORTED_UNVERIFIED"?"待財務核帳":"已送出報名"):config.module==="calendarActivity"?"免報名":opening||!bookable?"尚未開放":"報名中",
-        action:registered?"查看報名":config.module==="calendarActivity"||opening||!bookable?"查看活動":"立即報名",
+        status:cancelled?(registration.paymentStatus==="REFUNDED"?"已退款，報名已作廢":"報名已取消"):registered?({VERIFIED:"報名完成",REPORTED_UNVERIFIED:"待財務核帳",ADJUSTMENT_REQUIRED:"待處理差額",SUPPLEMENT_REPORTED:"補款待核帳",REFUND_REQUESTED:"退費處理中"}[registered.paymentStatus]||"已送出報名"):config.module==="calendarActivity"?"免報名":opening||!bookable?"尚未開放":"報名中",
+        action:cancelled?"查看退費／取消紀錄":registered?"查看報名":config.module==="calendarActivity"||opening||!bookable?"查看活動":"立即報名",
         deadline:!registered&&Number.isFinite(Date.parse(config.closeAt))?new Intl.DateTimeFormat("zh-TW",{timeZone:"Asia/Taipei",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(config.closeAt)):"",
-        href:"/parent-uniform-events.html?view="+(config.module==="yearEndDinner"?"events":"performance")+"&activity="+encodeURIComponent(key)});
+        href:cancelled?"/parent-uniform-events.html?view=history":"/parent-uniform-events.html?view="+(config.module==="yearEndDinner"?"events":"performance")+"&activity="+encodeURIComponent(key)});
     }
     return [...rows.values()].filter(x=>(x.endDate||x.date)>=date).sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.startTime||"").localeCompare(String(b.startTime||""))).slice(0,4);
   }
