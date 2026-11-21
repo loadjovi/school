@@ -14,7 +14,7 @@ class Element{
  addEventListener(type,handler){this.handlers[type]=handler}
 }
 const attrs=tag=>Object.fromEntries([...tag.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(([,key,value])=>[key,value??true]));
-async function page({recipients=[],recipientResults=[],accepted=1,failed=0,history=[]}={}){
+async function page({recipients=[],recipientResults=[],accepted=1,failed=0,history=[],search=""}={}){
  const elements={},inputs=[],calls=[];
  for(const tag of html.matchAll(/<([a-z]+)\b([^>]*\bid="[^"]+"[^>]*)>/g)){
   const a=attrs(tag[2]),element=new Element(tag[1]);Object.assign(element,{id:a.id,hidden:!!a.hidden,disabled:!!a.disabled,value:a.value||"",name:a.name||""});elements[a.id]=element;
@@ -32,7 +32,7 @@ async function page({recipients=[],recipientResults=[],accepted=1,failed=0,histo
  form.querySelector=selector=>form.querySelectorAll(selector)[0]||null;
  form.elements.includeStaff=inputs.find(input=>input.name==="includeStaff");
  const options={groups:["A","B","新測試團"],schoolName:"測試學校",history,activities:[{key:"fieldTrip:one",title:"交流活動",bound:true,groupName:"交流志工"}]};
- const context={document:{getElementById:id=>elements[id],createElement:tag=>new Element(tag)},sessionStorage:{getItem:()=>""},console,crypto:{randomUUID:()=>"12345678-1234-1234-1234-123456789abc"},
+ const context={document:{getElementById:id=>elements[id],createElement:tag=>new Element(tag)},sessionStorage:{getItem:()=>""},URLSearchParams,location:{search},console,crypto:{randomUUID:()=>"12345678-1234-1234-1234-123456789abc"},
   Option:class extends Element{constructor(text,value){super("option");this.textContent=text;this.value=value}},confirm:()=>true,
   fetch:async(url,init)=>{const body=init.body&&JSON.parse(init.body);if(body)calls.push(body);return {ok:true,json:async()=>!body?options:body.action==="send"?{accepted,failed,recipientResults}:{preview:"preview-hash",targetLabel:"確認的收件範圍",matched:2,deliverable:recipients.length||1,unbound:1,recipients}}}
  };
@@ -118,4 +118,13 @@ test("history distinguishes old multicast counts from new per-person acceptance 
  const history=content(p.elements.history);assert.match(history,/舊版批次紀錄，沒有逐人受理結果/);assert.match(history,/查看逐人結果/);
  assert.match(history,/Roy.*收件待確認.*Eileen.*收件待確認/);assert.doesNotMatch(history,/已送達|已讀/);
  assert.match(html,/LINE API 受理不代表實際收件/);
+});
+
+test("activity return links survive preview, send and notification-history refresh",async()=>{
+ const p=await page({search:"?fromActivity=calendarActivity%3Acompetition&returnMode=workspace&activitySchool=school-a"});
+ const before=p.elements.backLink.href;assert.match(before,/adminActivity=calendarActivity%3Acompetition/);
+ assert.equal(p.elements.returnActivityAfterSend.href,before);assert.equal(p.elements.returnActivityAfterSend.hidden,false);
+ p.elements.message.value="通知測試";await p.submit();await p.send();
+ assert.equal(p.elements.backLink.href,before);assert.equal(p.elements.returnActivityAfterSend.href,before);
+ assert.equal(p.calls.filter(call=>call.action==="send").length,1);
 });

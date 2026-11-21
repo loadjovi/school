@@ -202,11 +202,19 @@
    table.before(wrap);wrap.append(table);
   }
  }
+ let activityEntryHandled=false;
+ function activityWorkspaceEntry(){
+  if(activityEntryHandled||state.me?.role!=='admin'||state.page!=='admin')return null;
+  const query=new URLSearchParams(location.search),key=query.get('adminActivity'),school=query.get('activitySchool');
+  if(!/^(calendarActivity|fieldTrip|yearEndDinner):[A-Za-z0-9_-]{1,80}$/.test(key||'')||school&&school!==state.me.schoolId)return null;
+  return key;
+ }
  function organize(){
   adaptTables();
   if(state.me?.role==='admin'){const host=document.querySelector('.main');if(host)mountGuide(host)}
   if(!inScope())return;
   const main=document.querySelector('.main');if(!main)return;
+  const activityEntry=activityWorkspaceEntry();if(activityEntry)state.adminWorkspaceSection='uniformAdmin';
   const group=groups[state.adminWorkspaceSection]?state.adminWorkspaceSection:'home';
   main.classList.add('school-admin-workspace');
   let root=document.getElementById('schoolAdminWorkspace');
@@ -243,7 +251,11 @@
   const todos=todoHtml(),body=root.querySelector('[data-todo-body]');if(body.innerHTML!==todos)body.innerHTML=todos;
   if(['home','tasks'].includes(group)&&!summary.loading&&(summary.key!==taskScopeKey()||!summary.loadedAt))setTimeout(()=>loadTasks(),0);
   for(const card of main.querySelectorAll('.desktop-content > .card'))if(card.querySelector('h2')?.textContent.includes('待審核')||card.textContent.includes('目前沒有待審核'))root.querySelector('.aw-account-pending').append(card);
-  const uniformFrame=root.querySelector('#awUniformFrame');if(group==='uniformAdmin'&&uniformFrame&&uniformFrame.getAttribute('src')==='about:blank')uniformFrame.src='/uniform-event-admin.html?embedded=school&v=20261102-activity-boundary';
+  const uniformFrame=root.querySelector('#awUniformFrame');
+  if(activityEntry&&uniformFrame){
+   const query=new URLSearchParams({embedded:'school',task:'activity',activity:activityEntry,activitySchool:state.me.schoolId});
+   uniformFrame.src='/uniform-event-admin.html?'+query;activityEntryHandled=true;
+  }else if(group==='uniformAdmin'&&uniformFrame&&uniformFrame.getAttribute('src')==='about:blank')uniformFrame.src='/uniform-event-admin.html?embedded=school&v=20261102-activity-boundary';
   const learningTask=['overview','practice'].includes(state.adminLearningWorkspaceTask)?state.adminLearningWorkspaceTask:'overview';
   const learningOverview=root.querySelector('.aw-learning-overview'),learningPractice=root.querySelector('.aw-learning-practice');
   learningOverview.hidden=group!=='grades'||learningTask!=='overview';learningPractice.hidden=group!=='grades'||learningTask!=='practice';

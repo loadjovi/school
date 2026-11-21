@@ -12,7 +12,8 @@
 <body>
   <header id="siteName">學校平台</header>
   <main>
-    <a href="/">← 返回學校後台</a>
+    <a id="backLink" href="/">← 返回學校後台</a>
+    <p id="activityReturnHint" class="muted" hidden>從活動設定進入；發送後可返回原活動繼續編輯。</p>
     <section class="card"><h1>📣 LINE 通知中心</h1><p>通知家長、老師、學校幹部，或活動志工群組。</p><a class="account-link" href="/line-account.html">管理我自己的 LINE 綁定</a></section>
     <form class="card" id="announcement">
       <fieldset><legend>1．選擇通知對象</legend>
@@ -48,9 +49,10 @@
       <p class="muted">LINE API 受理不代表實際收件；收件者請先加入本校官方帳號好友，並確認未封鎖。</p>
       <button type="submit" class="primary" id="preview" disabled>預覽收件對象與訊息</button>
       <section id="recipientPreview" class="card preview-box" hidden><h2>確認本次通知</h2><p id="previewRecipient"></p><p id="previewCounts"></p><div id="previewRecipients"></div><pre id="previewMessage"></pre><button type="button" class="primary" id="send">確認發送至 LINE</button></section>
+      <p><a id="returnActivityAfterSend" class="button secondary" hidden>← 返回原活動</a></p>
     </form>
     <details class="card"><summary><b>最近發送紀錄</b></summary><div id="history">正在讀取…</div></details>
   </main>
-  <script type="module" src="/line-announcement.js?v=20261121-individual-push-results"></script>
+  <script type="module" src="/line-announcement.js?v=20261121-activity-return"></script>
 </body>
 </html>

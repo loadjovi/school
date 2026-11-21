@@ -31,7 +31,7 @@ test("invalid notification dates cannot interrupt the rest of the saved activity
 test("the selected saved activity exposes its own resend action beside the save form",()=>{
  const target={hidden:true,innerHTML:""},module={value:"yearEndDinner"},selected={value:"dinner"};
  const elements={selectedActivityNotice:target,configModule:module,existingActivity:selected};
- const sync=runInNewContext(renderSource+";syncSelectedActivityNotice",{el:id=>elements[id],esc,savedConfigs:[dinner,calendar]});
+ const sync=runInNewContext(renderSource+";syncSelectedActivityNotice",{el:id=>elements[id],esc,savedConfigs:[dinner,calendar],URLSearchParams,location:{search:"?embedded=school"},sessionStorage:{getItem:()=>"school-a"}});
  sync();assert.equal(target.hidden,false);assert.match(target.innerHTML,/DEMO 期末餐會/);assert.match(target.innerHTML,/data-line-resend-id='dinner'/);
  selected.value="competition";sync();assert.equal(target.hidden,true);assert.equal(target.innerHTML,"");
  module.value="calendarActivity";sync();assert.equal(target.hidden,false);assert.match(target.innerHTML,/暫不公開/);assert.doesNotMatch(target.innerHTML,/data-line-resend-id/);

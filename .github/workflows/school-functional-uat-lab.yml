@@ -70,7 +70,7 @@ jobs:
           node --test tests/parent-login-module-bootstrap.test.mjs tests/role-home-priorities.test.mjs tests/parent-home-activity-tasks.test.mjs
           node --test tests/parent-login-request-efficiency.test.mjs tests/parent-login-profile-reuse.test.mjs tests/parent-calendar-activity-link.test.mjs
           node --test tests/parent-tshirt-size-reminder.test.mjs tests/parent-leaderboard-finalized-default.test.mjs
-          node --test tests/paid-activity-line.test.mjs tests/paid-activity-delivery.test.mjs tests/activity-settings-ui.test.mjs tests/activity-date-fields.test.mjs
+          node --test tests/paid-activity-line.test.mjs tests/paid-activity-delivery.test.mjs tests/activity-settings-ui.test.mjs tests/activity-date-fields.test.mjs tests/activity-notification-return.test.mjs
           node --test tests/line-notification-center.test.mjs tests/line-notification-selector.test.mjs
           node --test tests/tshirt-procurement-plan.test.mjs tests/tshirt-cadre-application.test.mjs tests/tshirt-procurement-admin.test.mjs api/test/tshirtStaffDemand.test.mjs api/test/tshirtPurchaseOrderRules.test.mjs
           node --test tests/volunteer-loan-size-correction.test.mjs tests/volunteer-loan-return-stock.test.mjs

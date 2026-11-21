@@ -280,12 +280,17 @@ function activityLineNoticeHtml(activity){
  const button=within?"<button type='button' data-line-resend-module='"+esc(activity.module)+"' data-line-resend-id='"+esc(activity.id)+"'>重新發送活動 LINE 通知</button>":"";
  return "<div class='activity-line-notices'><strong>LINE 活動通知</strong>"+(rows||"<p>尚無發送紀錄。</p>")+"<p class='hint'>LINE 受理不代表實際收件。請確認家長已加入本校官方帳號好友，且未封鎖。</p>"+button+"</div>";
 }
+function activityNotificationLink(activity){
+ const query=new URLSearchParams({fromActivity:activity.module+":"+activity.id,returnMode:new URLSearchParams(location.search).get("embedded")==="school"?"workspace":"standalone"});
+ const school=sessionStorage.getItem("school_context_id");if(school)query.set("activitySchool",school);
+ return "/line-announcement.html?"+query;
+}
 function syncSelectedActivityNotice(){
  const target=el("selectedActivityNotice");if(!target)return;
  const item=savedConfigs.find(x=>x.module===el("configModule").value&&x.id===el("existingActivity").value);
  target.hidden=!item;
  if(!item){target.innerHTML="";return}
- target.innerHTML="<strong>已儲存的活動："+esc(item.title||item.id)+"</strong><p>公開狀態："+(item.enabled?"已公開給家長":"暫不公開")+"</p>"+(item.module==="calendarActivity"?"<p>此為免報名的行事曆公告。</p><a href='/line-announcement.html' target='_top'>前往 LINE 通知中心</a>":activityLineNoticeHtml(item));
+ target.innerHTML="<strong>已儲存的活動："+esc(item.title||item.id)+"</strong><p>公開狀態："+(item.enabled?"已公開給家長":"暫不公開")+"</p>"+(item.module==="calendarActivity"?"<p>此為免報名的行事曆公告。</p><a href='"+esc(activityNotificationLink(item))+"' target='_top'>前往 LINE 通知中心</a>":activityLineNoticeHtml(item));
 }
 function renderConfigSummary(items){
  const target=el("settings");
@@ -606,6 +611,17 @@ async function load(){
   else el("inlineFinanceReview").querySelector("summary").textContent="💰 財務核帳｜待辦讀取失敗，請重新整理";
  }
 }
+function restoreActivitySelection(schoolId){
+ const query=new URLSearchParams(location.search),match=String(query.get("activity")||"").match(/^(calendarActivity|fieldTrip|yearEndDinner):([A-Za-z0-9_-]{1,80})$/);
+ if(!match||query.get("activitySchool")&&query.get("activitySchool")!==schoolId)return false;
+ document.querySelector('[data-admin-tab="settings"]').click();
+ const activity=savedConfigs.find(item=>item.module===match[1]&&item.id===match[2]);
+ if(!activity){el("configSaveFeedback").textContent="找不到原活動，請從已建立活動重新選擇。";return false}
+ el("configModule").value=activity.module;el("existingActivity").value="";syncConfig();
+ el("existingActivity").value=activity.id;el("existingActivity").dispatchEvent(new Event("change"));
+ el("config").scrollIntoView({block:"start"});
+ return true;
+}
 async function start(){
  try{
   setAuthGate("正在驗證管理員身分…");const me=await api("me");if(me.role!=="admin"){setAuthGate("登入帳號不是此校管理員，已停用管理操作。");throw Error("僅限管理員")}setAuthGate("");
@@ -626,6 +642,7 @@ async function start(){
    const guide=document.createElement("aside");guide.className="notice";guide.style.cssText="padding:14px;margin:12px 0;background:#fff8e7;border:1px solid #e9c972;border-radius:10px";
    guide.textContent=task==="activity"?"建立演出／活動：① 選擇免報名公告或需報名活動 → ② 填日期、團別與內容 → ③ 核對家長顯示設定，再儲存。訓練課程請回到「課表與行事曆」。":"團服申請：① 選團 T 或比賽服 → ② 選家長申請 → ③ 核對取得方式、付款與領取進度。";document.querySelector('nav.admin-tabs').after(guide);
   }
+  restoreActivitySelection(me.schoolId);
   if(finance&&el("inlineFinanceReview").open)await loadInlineFinance();
  }catch(e){setAuthGate("管理員驗證未完成："+(e.message||String(e))+"。請重新檢查登入。")}
 }

@@ -2,6 +2,16 @@ const $=id=>document.getElementById(id),form=$("announcement"),status=$("result"
 let confirmed=null,revision=0,activities=[],optionsLoaded=false,loadingVersion=0,busy=false;
 const mode=()=>form.querySelector('[name="audience"]:checked')?.value||"members";
 const selectedActivity=()=>activities.find(x=>x.key===$("activityKey").value);
+function setupActivityReturn(){
+  const query=new URLSearchParams(location.search),key=query.get("fromActivity"),school=query.get("activitySchool");
+  if(!/^(calendarActivity|fieldTrip|yearEndDinner):[A-Za-z0-9_-]{1,80}$/.test(key||"")||school&&!/^[a-z0-9-]{2,60}$/.test(school))return;
+  const target=new URLSearchParams(query.get("returnMode")==="workspace"?{adminActivity:key}:{task:"activity",activity:key});
+  if(school)target.set("activitySchool",school);
+  const href=(query.get("returnMode")==="workspace"?"/":"/uniform-event-admin.html")+"?"+target;
+  $("backLink").href=href;$("backLink").textContent="← 返回原活動";
+  $("returnActivityAfterSend").href=href;$("returnActivityAfterSend").hidden=false;$("activityReturnHint").hidden=false;
+}
+setupActivityReturn();
 const teamName=group=>({A:"A 團",B:"B 團",儲備:"儲備團"})[group]||group;
 const includesStaff=()=>mode()==="staff"||mode()==="members"&&form.elements.includeStaff.checked;
 const staffRole=()=>form.querySelector('[name="staffScope"]:checked')?.value==="finance"?"finance":"staff";
