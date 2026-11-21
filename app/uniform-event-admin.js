@@ -1,4 +1,5 @@
 import "./payment-resolution.js?v=20261122-single-parent-message";
+import {createTshirtStockCounter} from "./tshirt-stock-count.js?v=20261122-batch-stock";
 const el=id=>document.getElementById(id);
 const uniformRequestFlowHint=el("uniformRequestsHeading")?.nextElementSibling;
 if(uniformRequestFlowHint)uniformRequestFlowHint.textContent="依序完成核准、財務核帳、採購與驗收入庫；選擇「新貨到校」或「使用現有庫存」確認後，系統會自動開放領取並通知家長。實際交付時再按「確認實際發放」。";
@@ -20,7 +21,7 @@ function adminAuthHeaders(){
 window.uniformEventAuthHeaders=adminAuthHeaders;
 async function api(path,options={}){
  const controller=new AbortController();
- const timeoutMs=path==="uniform-events/receiving"&&options.method==="POST"?60000:["uniform-events/requests","uniform-events/config","uniform-events/payment-resolution"].includes(path)&&["PATCH","POST"].includes(options.method)?45000:12000;
+ const timeoutMs=path==="uniform-events/receiving"&&options.method==="POST"?60000:["uniform-events/requests","uniform-events/config","uniform-events/payment-resolution","uniform-events/inventory"].includes(path)&&["PATCH","POST"].includes(options.method)?45000:12000;
  const timeout=setTimeout(()=>controller.abort(),timeoutMs);
  let r;
  try{r=await fetch("/api/"+path,{...options,signal:controller.signal,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...adminAuthHeaders(),...(options.headers||{})}})}
@@ -38,6 +39,13 @@ async function api(path,options={}){
  return data;
 }
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[],receivedRequestIds=new Set();
+const tshirtStockCounter=createTshirtStockCounter({host:el("stock"),api,onReload:reloadUniformStock});
+async function reloadUniformStock(){
+ const data=await api("uniform-events/inventory");
+ if(!Array.isArray(data.items))throw Error("庫存資料不完整，請重新讀取");
+ cachedStock=data.items;window.uniformInventoryItems=cachedStock;renderModuleStock();
+ window.dispatchEvent(new CustomEvent("uniformInventoryLoaded",{detail:{items:cachedStock}}));
+}
 let cachedStaffFinanceItems=null;
 function syncFinanceViews(uniform,family,staff){
  if(!Array.isArray(uniform?.items)||!Array.isArray(family?.items)||!Array.isArray(staff?.items))throw Error("核帳資料不完整，請重新讀取");
@@ -207,12 +215,7 @@ function renderModuleStock(){
  const visibleStock=cachedStock.filter(x=>String(x.key).startsWith(activeAdminTab==="competitionUniform"?"competition:":"regular:"));
  el("stockStatus").textContent="目前顯示 "+visibleStock.length+" 筆"+(activeAdminTab==="competitionUniform"?" A 團比賽服":"團 T")+"庫存紀錄";
  if(activeAdminTab==="regularUniform"){
-  const byKey=new Map(cachedStock.map(x=>[x.key,x]));
-  const rows=["8","10","12","XS","S","M","L","XL","2L","3L","5L"].map(size=>{
-   const item=byKey.get("regular:"+size);
-   return {size,quantity:item?item.onHand+" 件":"—",state:item?"已建檔":"待盤點／未建檔"};
-  });
-  table("stock",rows,[["size","尺寸"],["quantity","現有數量"],["state","盤點狀態"]]);
+  tshirtStockCounter.render(cachedStock);
  }else if(activeAdminTab==="competitionUniform"){
   const rows=cachedStock.filter(x=>String(x.key).startsWith("competition:")).map(x=>({size:String(x.key).slice("competition:".length).replace(":","／"),quantity:x.onHand+" 件",reserved:x.reserved,unavailable:x.unavailable}));
   table("stock",rows,[["size","款式／尺寸"],["quantity","現有"],["reserved","保留"],["unavailable","不可用"]]);
@@ -489,6 +492,8 @@ function csv(name,rows,keys){
 const sizeOptions={regularUniform:["8","10","12","XS","S","M","L","XL","2L","3L","5L"],"男":["S","M","L","2L"],"女":["XS","S","M","L"]};
 function syncSizes(){
  const type=el("inventoryType").value,style=el("inventoryStyle"),size=el("inventorySize");
+ el("stockAdjustments").open=type==="competitionUniform";
+ el("stockAdjustmentsLabel").textContent=type==="regularUniform"?"進階：單一尺寸增減與保留":"單筆庫存盤點與調整";
  style.disabled=type==="regularUniform";
  if(type==="regularUniform")style.value="";
  else if(!["男","女"].includes(style.value))style.value="男";

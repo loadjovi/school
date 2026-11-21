@@ -19,6 +19,33 @@ function key(type,style,size){
   if(type==="competitionUniform"&&["男","女"].includes(style)&&((style==="男"&&["S","M","L","2L"].includes(size))||(style==="女"&&["XS","S","M","L"].includes(size))))return "competition:"+style+":"+size;
   return null;
 }
+async function setTshirtCounts(ctx,data,client,a){
+  if(data.type!=="regularUniform"||!Array.isArray(data.items)||!data.items.length||data.items.length>sizes.size)return json({error:"請填寫要盤點的團 T 尺寸與數量"},400);
+  const seen=new Set();
+  for(const item of data.items){
+    if(!item||!sizes.has(item.size)||seen.has(item.size)||!Number.isSafeInteger(item.onHand)||item.onHand<0||item.onHand>10000||!(item.etag===null||typeof item.etag==="string"&&item.etag.length>0&&item.etag.length<=200))return json({error:"尺寸不可重複，數量須為 0～10000 的整數；請重新讀取庫存後再試"},400);
+    seen.add(item.size);
+  }
+  const previous=await Promise.all(data.items.map(async item=>{try{return await client.getEntity(ctx.schoolId,"regular:"+item.size)}catch(error){if(error.statusCode===404)return null;throw error}}));
+  const changes=[],details=[];
+  for(const [index,item] of data.items.entries()){
+    const old=previous[index],id="regular:"+item.size;
+    if(item.etag!==(old?.etag??null))return json({error:item.size+" 尺寸的庫存已變動，請重新讀取後核對；本次尚未儲存任何尺寸"},409);
+    const before={onHand:old?.onHand??0,reserved:old?.reserved??0,unavailable:old?.unavailable??0},after={...before,onHand:item.onHand};
+    if(!Object.values(after).every(validNum)||after.onHand<after.reserved+after.unavailable)return json({error:item.size+" 尺寸的盤點總數不可少於保留與不可用數量；本次尚未儲存任何尺寸"},409);
+    const next={partitionKey:ctx.schoolId,rowKey:id,...after};
+    changes.push(old?["update",next,"Replace",{etag:old.etag}]:["create",next]);
+    details.push({key:id,before:old?before:null,after});
+  }
+  const auditId=randomUUID(),entry={partitionKey:ctx.schoolId,rowKey:"stock-count:"+auditId,action:"inventory.BATCH_SET_COUNT",subjectId:"regularUniform",actor:String(ctx.access.email||"admin"),at:new Date().toISOString(),details:JSON.stringify(details)};
+  try{
+    // All sizes and their audit record share one school partition and commit together.
+    await client.submitTransaction([...changes,["create",entry]]);
+  }catch(error){if([409,412].includes(error.statusCode))return json({error:"庫存已被其他人更新，請重新讀取後核對；本次尚未儲存任何尺寸"},409);throw error}
+  // The transaction above remains the authoritative audit if the central index is unavailable.
+  await a.createEntity({...entry,rowKey:auditId}).catch(error=>console.warn("uniformInventory batch audit index",error.statusCode||error.message));
+  return json({updated:details.length});
+}
 app.http("uniformInventory",{
   methods:["GET","POST"],authLevel:"anonymous",route:"uniform-events/inventory",
   handler:async request=>{
@@ -34,7 +61,9 @@ app.http("uniformInventory",{
         }
         return json({items});
       }
-      const data=await request.json(),id=key(data.type,data.style,data.size);
+      const data=await request.json();
+      if(data?.action==="BATCH_SET_COUNT")return await setTshirtCounts(ctx,data,client,a);
+      const id=key(data.type,data.style,data.size);
       if(!id||!["SET_COUNT","ADJUST","RESERVE","RELEASE"].includes(data.action))return json({error:"Invalid stock operation"},400);
       const amount=data.amount;
       if(!Number.isSafeInteger(amount)||Math.abs(amount)>10000||(data.action==="SET_COUNT"?amount<0:amount===0))return json({error:"Invalid quantity"},400);
