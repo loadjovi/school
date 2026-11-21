@@ -6,6 +6,7 @@ import {workflowLineEnabled,workflowLineRetryKey} from "../lib/lineAdminTodoNoti
 import {resolveTenantLineChannel} from "../lib/lineTenantConfig.js";
 import {pushLineMessage,getLineGroupSummary} from "../lib/lineMessaging.mjs";
 import {listActivityLineGroups,requireLineActivity,getActivityLineGroup,createActivityLineBinding,clearActivityLineGroup,recordLineAnnouncement,lineAnnouncementHistory} from "../lib/lineActivityGroups.js";
+import {lineFirstLabEnabled,deliverLabNotice,labNoticeUrl} from "../lib/labNoticeDelivery.mjs";
 
 const list=values=>Array.isArray(values)&&values.every(value=>typeof value==="string")?[...new Set(values)].sort():null;
 const fail=(error,status=400)=>json({error},status);
@@ -18,12 +19,13 @@ app.http("lineAnnouncements",{
     if(access.role!=="admin")return fail("僅學校管理員可使用 LINE 通知中心",403);
     try{
       const channel=await resolveTenantLineChannel(schoolId);
-      if(!channel.configured||!channel.loginConfigured||!channel.botUserId||!workflowLineEnabled())return fail("此環境尚未啟用 LINE 通知中心",409);
+      const lineFirst=typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled();
+      if((!channel.configured||!channel.loginConfigured||!channel.botUserId)&&!lineFirst||!workflowLineEnabled())return fail("此環境尚未啟用 LINE 通知中心",409);
       if(request.method==="GET"){
         const [students,activities,history]=await Promise.all([lineAudienceStudents(schoolId),listActivityLineGroups(schoolId,channel.botUserId),lineAnnouncementHistory(schoolId)]);
-        return json({groups:lineAudienceGroups(students),activities,history,schoolName:ctx.tenant?.systemName||ctx.tenant?.schoolName||"學校平台"});
+        return json({groups:lineAudienceGroups(students),activities,history,lineFirst,schoolName:ctx.tenant?.systemName||ctx.tenant?.schoolName||"學校平台"});
       }
-      if(request.headers.get("origin")!==channel.appOrigin)return fail("來源不符",403);
+      if(request.headers.get("origin")!==(channel.appOrigin||(lineFirst?new URL(labNoticeUrl(schoolId)).origin:"")))return fail("來源不符",403);
       const body=await request.json().catch(()=>null);
       const selectedKey=typeof body?.activityKey==="string"?body.activityKey:"";
       if(body?.action==="activity-binding-code")return json(await createActivityLineBinding(channel,selectedKey,access.email));
@@ -32,7 +34,7 @@ app.http("lineAnnouncements",{
       }
       const text=typeof body?.text==="string"?body.text.trim():"",mode=body?.audience||"members";
       if(!["preview","send"].includes(body?.action)||!["members","activityGroup"].includes(mode)||!text||text.length>1000||!/^[0-9a-f-]{36}$/i.test(body.requestId||""))return fail("請確認通知對象及訊息內容");
-      let roles=[],groups=[],targets=[],recipients=[],matched=0,unbound=0,targetLabel="";
+      let roles=[],groups=[],targets=[],recipients=[],contacts=[],matched=0,unbound=0,targetLabel="";
       if(mode==="activityGroup"){
         const selected=await requireLineActivity(schoolId,selectedKey),group=await getActivityLineGroup(schoolId,channel.botUserId,selectedKey);
         if(!group)return fail("請先為此活動綁定志工 LINE 群組",409);
@@ -48,6 +50,7 @@ app.http("lineAnnouncements",{
           if(!groups.every(group=>options.includes(group))||!groups.length&&body.allSchool!==true)return fail("請選擇所有團別或指定團別");
         }else groups=[];
         const audience=await resolveLineAudience(schoolId,channel.botUserId,{roles,groups,students});
+        contacts=audience.contacts||[];
         targets=[...new Set(audience.targets)].sort();matched=audience.matched;unbound=audience.unbound;
         const names=new Map((audience.recipients||[]).map(recipient=>[recipient.userId,recipient.name]));
         recipients=targets.map((userId,index)=>({reference:createHash("sha256").update(JSON.stringify([schoolId,channel.botUserId,userId])).digest("hex").slice(0,12),name:String(names.get(userId)||"LINE 帳號 "+(index+1)).slice(0,80)}));
@@ -57,19 +60,31 @@ app.http("lineAnnouncements",{
         else if(roles.includes("finance"))labels.push("本校財務幹部");
         targetLabel=labels.join("；另通知");
       }
-      const preview=createHash("sha256").update(JSON.stringify([schoolId,access.email,channel.botUserId,body.requestId,mode,mode==="activityGroup"?selectedKey:"",roles,groups,text,targetLabel,targets])).digest("hex");
+      const preview=createHash("sha256").update(JSON.stringify([schoolId,access.email,channel.botUserId,body.requestId,mode,mode==="activityGroup"?selectedKey:"",roles,groups,text,targetLabel,targets,...(lineFirst?[contacts]:[])])).digest("hex");
       const deliveryMode=mode==="activityGroup"?"group":"push";
-      const counts={matched,deliverable:targets.length,unbound,targetLabel,audience:mode,recipients,deliveryMode,deliveryConfirmed:false};
+      const counts={matched,deliverable:targets.length,unbound,targetLabel,audience:mode,recipients,deliveryMode,deliveryConfirmed:false,...(lineFirst?{emailFallbackCandidates:contacts.filter(contact=>!contact.userId).length,lineFirst:true}:{})};
       if(body.action==="preview")return json({...counts,preview});
       if(body.preview!==preview)return fail("收件名單、群組或內容已變更，請重新預覽",409);
-      if(!targets.length)return fail("沒有可發送的 LINE 收件者",409);
-      let accepted=0,failed=0,recipientResults=[];
+      if(!targets.length&&!(lineFirst&&contacts.length))return fail("沒有可發送的 LINE 或 Email 收件者",409);
+      let accepted=0,emailAccepted=0,failed=0,recipientResults=[];
       const label=mode==="activityGroup"?"活動志工通知":"學校公告";
       const prefix=process.env.LAB_ENVIRONMENT==="functional-uat"?`【LAB｜${label}】`:`【${label}】`;
       if(mode==="activityGroup"){
         try{
           await pushLineMessage(targets[0],prefix+"\n"+targetLabel+"\n\n"+text,{accessToken:channel.accessToken,retryKey:workflowLineRetryKey(schoolId,preview,"activity-group")});accepted=1;
         }catch(error){failed=1;console.warn("Activity group LINE send failed",{schoolId,status:error?.status||error?.statusCode})}
+      }else if(lineFirst){
+        const seenUsers=new Set(),selectedContacts=contacts.filter(contact=>{if(!contact.userId)return true;if(seenUsers.has(contact.userId))return false;seenUsers.add(contact.userId);return true});
+        const delivery=await deliverLabNotice({schoolId,eventId:"announcement:"+preview,recipients:selectedContacts.map(contact=>contact.email),subject:"學校公告",text:prefix+"\n"+text});
+        for(const result of delivery.results||[]){
+          const contact=selectedContacts.find(contact=>contact.email.toLowerCase()===result.recipient);if(!contact)continue;
+          if(result?.channel==="line"&&result.status==="accepted"){
+            accepted++;
+          }else if(result?.channel==="email"&&result.status==="accepted")emailAccepted++;
+          else failed++;
+          const identity=contact.userId||contact.email,reference=createHash("sha256").update(JSON.stringify([schoolId,channel.botUserId,identity])).digest("hex").slice(0,12);
+          recipientResults.push({reference,name:recipients.find(r=>r.reference===reference)?.name||"Email 備援帳號",status:result?.status==="accepted"?(result.channel==="email"?"email_accepted":"accepted"):"failed"});
+        }
       }else for(let index=0;index<targets.length;index+=10){
         const results=await Promise.all(targets.slice(index,index+10).map(async(userId,offset)=>{
           const recipient=recipients[index+offset],options={accessToken:channel.accessToken,retryKey:workflowLineRetryKey(schoolId,"announcement-push:"+preview,userId)};
@@ -88,9 +103,9 @@ app.http("lineAnnouncements",{
         recipientResults.push(...results);accepted+=results.filter(result=>result.status==="accepted").length;failed+=results.filter(result=>result.status==="failed").length;
       }
       let historySaved=true;
-      try{await recordLineAnnouncement(schoolId,{requestId:body.requestId,audience:mode,label:targetLabel,text,accepted,failed,deliveryMode,recipientResults,actor:access.email})}
+      try{await recordLineAnnouncement(schoolId,{requestId:body.requestId,audience:mode,label:targetLabel,text,accepted,emailAccepted,failed,deliveryMode,recipientResults,actor:access.email})}
       catch{historySaved=false;console.warn("LINE notification history could not be saved",{schoolId})}
-      return json({...counts,accepted,failed,recipientResults,historySaved});
+      return json({...counts,accepted,emailAccepted,failed,recipientResults,historySaved,...(mode==="activityGroup"&&failed?{fallbackStatus:"no_group_email_roster"}:{})});
     }catch(error){
       if(error.status===409)return fail(error.message,409);
       console.warn("LINE notification request failed",{schoolId,status:error?.status||error?.statusCode});

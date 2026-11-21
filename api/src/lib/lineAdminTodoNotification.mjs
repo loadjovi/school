@@ -6,6 +6,7 @@ import {getTenantLineRecipient} from "./tenantLineAccounts.js";
 import {getLineNotificationTarget} from "./settings.js";
 import {pushLineMessage} from "./lineMessaging.mjs";
 import {resolveTenantLineChannel,lineTargetMatchesChannel} from "./lineTenantConfig.js";
+import {lineFirstLabEnabled,deliverLabNotice,labNoticeLineResult,labNoticeUrl} from "./labNoticeDelivery.mjs";
 
 const buildEnablesLabAdminTodos = false;
 export const workflowLineEnabled = () => !labEnvironment() || buildEnablesLabAdminTodos;
@@ -44,6 +45,25 @@ export async function notifyUniformReview(schoolId, request) {
 export async function notifyAdminTodo(schoolId, {id, text, groupRetryKey}) {
   const lab = labEnvironment();
   if (lab && !buildEnablesLabAdminTodos) return "lab_suppressed";
+
+  if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()){
+    try{
+      const [target,channel,admins]=await Promise.all([getLineNotificationTarget(schoolId),resolveTenantLineChannel(schoolId),listTenantAdmins(schoolId,"active")]);
+      const recipients=admins.filter(admin=>admin.role==="schoolAdmin"&&admin.status==="active").map(admin=>admin.partitionKey||admin.email).filter(Boolean);
+      const message="【LAB】後台待辦通知\n"+text+"\n請至學校後台 → 待辦事項查看。";
+      let groupAccepted=false;
+      if(immediateModes.has(target.mode)&&target.targetType==="group"&&channel.loginConfigured&&lineTargetMatchesChannel(target,channel)&&target.botUserId){
+        try{await pushLineMessage(target.targetId,message,{accessToken:channel.accessToken,retryKey:groupRetryKey||workflowLineRetryKey(schoolId,id,target.targetId)});groupAccepted=true}catch{}
+      }
+      const result=await deliverLabNotice({schoolId,eventId:"admin-todo:"+id,recipients,subject:"後台待辦通知",text:message,lineSender:async email=>{
+        if(groupAccepted)return "accepted";
+        if(!channel.loginConfigured||!immediateModes.has(target.mode))return "disabled";
+        const account=await getTenantLineRecipient(schoolId,email,channel.botUserId);if(!account)return "not_bound";
+        await pushLineMessage(account.lineUserId,message,{accessToken:channel.accessToken,retryKey:workflowLineRetryKey(schoolId,id,account.lineUserId)});return "accepted";
+      }});
+      const routed=labNoticeLineResult(result);return routed.status==="accepted"?"sent":routed.status;
+    }catch{return "failed"}
+  }
 
   try {
     const target = await getLineNotificationTarget(schoolId);
@@ -87,15 +107,22 @@ export async function retryFinanceTransfer(schoolId, kind, id, report) {
   return notifyFinanceTransfer(schoolId,{kind,id,reportedAt});
 }
 
-export async function notifyFinanceTransfer(schoolId, {kind,id,reportedAt}) {
+export async function notifyFinanceTransfer(schoolId, {kind,id,reportedAt,recipientEmails}) {
   if (!id || !reportedAt || !["uniform","family"].includes(kind)) return "ineligible";
   const lab = labEnvironment();
   if (lab && !buildEnablesLabAdminTodos) return "lab_suppressed";
+  if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()&&!recipientEmails){
+    try{
+      const [admins,assignments]=await Promise.all([listTenantAdmins(schoolId,"active"),financeAssignments(schoolId)]);
+      const routed=await deliverLabNotice({schoolId,eventId:`finance-transfer:${kind}:${id}:${reportedAt}`,recipients:financeRecipients(admins,assignments),subject:"財務待辦｜家長已回報匯款",text:"家長已回報匯款，請登入學校後台核對。\n"+labNoticeUrl(schoolId),lineSender:email=>notifyFinanceTransfer(schoolId,{kind,id,reportedAt,recipientEmails:[email]})});
+      const result=labNoticeLineResult(routed);return result.status==="accepted"?"sent":result.status;
+    }catch{return "failed"}
+  }
   try {
     const channel = await resolveTenantLineChannel(schoolId);
     if (!channel.loginConfigured || !channel.botUserId || !channel.financeTransferLineEnabled) return "not_configured";
     const [admins,assignments] = await Promise.all([listTenantAdmins(schoolId,"active"),financeAssignments(schoolId)]);
-    const emails = financeRecipients(admins,assignments);
+    const emails = financeRecipients(admins,assignments).filter(email=>!recipientEmails||recipientEmails.includes(email));
     if (!emails.length) return "not_assigned";
     const recipients = await boundRecipients(schoolId,emails,channel.botUserId);
     return await sendToTargets(schoolId,channel,new Map([...recipients].map(userId => [userId,undefined])),

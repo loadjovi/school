@@ -4,6 +4,8 @@ import {lineAudienceStudents,resolveLineAudience} from "./lineAudience.js";
 import {workflowLineEnabled,workflowLineRetryKey} from "./lineAdminTodoNotification.mjs";
 import {resolveTenantLineChannel} from "./lineTenantConfig.js";
 import {lineApi} from "./lineMessaging.mjs";
+import {lineFirstLabEnabled,deliverLabNotice} from "./labNoticeDelivery.mjs";
+import {familyPaymentInfo,paymentNoticeKey} from "./paymentNoticeRules.mjs";
 
 const groupCode = value => {
   const group = String(value || "").trim().replace(/團$/, "").trim().toUpperCase();
@@ -31,12 +33,12 @@ export const collectingTrip = activity => activity?.module === "fieldTrip" && ac
 
 async function registeredPaymentAudience(schoolId, botUserId, activityId) {
   const client = TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantFamilyEventRegistration");
-  const emails = new Set();
+  const emails = new Set(),registrations=new Map();
   try {
     for await (const row of client.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})) {
       const item = JSON.parse(row.payload || "{}");
       if (item.kind === "fieldTrip" && item.activityId === activityId && item.registrationStatus === "REGISTERED" &&
-          ["NOT_OPEN","AWAITING_TRANSFER"].includes(item.paymentStatus) && item.parentEmail) emails.add(item.parentEmail);
+          ["NOT_OPEN","AWAITING_TRANSFER"].includes(item.paymentStatus) && item.parentEmail){emails.add(item.parentEmail);registrations.set(item.parentEmail,{...item,id:row.rowKey})}
     }
   } catch (error) {
     if (error.statusCode !== 404) throw error;
@@ -44,7 +46,8 @@ async function registeredPaymentAudience(schoolId, botUserId, activityId) {
   const accounts = await Promise.all([...emails].map(email=>getTenantLineRecipient(schoolId,email,botUserId)));
   return {
     targets:[...new Set(accounts.map(account=>account?.lineUserId).filter(id=>/^U[0-9a-f]{32}$/i.test(id||"")))].sort(),
-    unbound:accounts.filter(account=>!account?.lineUserId).length
+    unbound:accounts.filter(account=>!account?.lineUserId).length,
+    contacts:[...emails].map((email,index)=>({email,userId:accounts[index]?.lineUserId||"",registration:registrations.get(email)}))
   };
 }
 
@@ -59,14 +62,15 @@ export async function notifyPaidActivityOpened(schoolId, activity, openedAt, kin
   if (!workflowLineEnabled()) return {status:"disabled"};
   try {
     const channel = await resolveTenantLineChannel(schoolId);
-    if (!channel.loginConfigured || !channel.botUserId) return {status:"disabled"};
+    const lineFirst=typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled();
+    if ((!channel.loginConfigured || !channel.botUserId)&&!lineFirst) return {status:"disabled"};
     const payment = kind === "payment";
     const audience = payment
       ? await registeredPaymentAudience(schoolId,channel.botUserId,activity.id)
       : await activityParentAudience(schoolId,channel.botUserId,activity);
     const counts = {accepted:0,failed:0,unbound:audience.unbound,deliveryMode:"push"};
-    if (!audience.targets.length) return {...counts,status:"no_recipients"};
-    const url = new URL("/", channel.appOrigin);
+    if (!audience.targets.length&&!lineFirst) return {...counts,status:"no_recipients"};
+    const url = new URL("/", channel.appOrigin||"https://icy-ocean-0a2602100-lineuat.eastasia.6.azurestaticapps.net");
     url.searchParams.set("schoolId", schoolId);
     url.searchParams.set("paidActivity", activity.module + ":" + activity.id);
     const format = new Intl.DateTimeFormat("zh-TW", {timeZone:"Asia/Taipei",dateStyle:"short",timeStyle:"short",hour12:false});
@@ -80,6 +84,21 @@ export async function notifyPaidActivityOpened(schoolId, activity, openedAt, kin
         : "請到平台查看活動與費用，決定是否報名，再依平台的收款進度繳款。",
       url.toString()
     ].filter(Boolean).join("\n");
+    if(lineFirst){
+      if(!payment){
+        const result=await deliverLabNotice({schoolId,eventId:["activity",activity.module,activity.id,kind,openedAt].join(":"),recipients:(audience.contacts||[]).map(contact=>contact.email),subject:activity.title,text});
+        return {...counts,accepted:result.lineAcceptedCount,emailAccepted:result.mailAcceptedCount,failed:result.failedCount+(result.status==="unconfirmed"?1:0),status:result.status==="sent"?"accepted":result.status};
+      }
+      let emailAccepted=0,accepted=0,failed=0;
+      for(const contact of audience.contacts||[]){
+        const amount=payment?familyPaymentInfo(activity,contact.registration).amount:null;
+        if(payment&&!(amount>0))continue;
+        const eventId=payment?"payment:"+paymentNoticeKey({category:"family",sourceId:contact.registration.id,recipient:contact.email.toLowerCase(),version:String(amount)}):["activity",activity.module,activity.id,kind,openedAt].join(":");
+        const result=await deliverLabNotice({schoolId,eventId,recipients:[contact.email],subject:activity.title,text});
+        accepted+=result.lineAcceptedCount;emailAccepted+=result.mailAcceptedCount;failed+=result.failedCount+(result.status==="unconfirmed"?1:0);
+      }
+      return {...counts,accepted,emailAccepted,failed,status:failed?(accepted+emailAccepted?"partial":"failed"):accepted+emailAccepted?"accepted":"no_recipients"};
+    }
     // Match individual lesson/payment notifications. Multicast silently omits
     // non-friends even when they recently chatted with this school's account.
     const targets = [...new Set(audience.targets)];

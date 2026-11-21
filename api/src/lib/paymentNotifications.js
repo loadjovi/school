@@ -7,6 +7,9 @@ import {getStudentAliasInfo} from "./auth.js";
 import {sendPaymentRequiredEmail,sendFinancePaymentEmail} from "./email.js";
 import {emailConfigured} from "./tenantEmailConfig.mjs";
 import {paymentNoticeCandidates,paymentNoticeKey,noticeInScope,deliverPaymentNotices,uniformNeedsPayment,familyPaymentInfo,reminderNotices,uniformNotificationStates} from "./paymentNoticeRules.mjs";
+import {lineFirstLabEnabled} from "./labNoticeDelivery.mjs";
+import {notifyUniformPaymentRequiredLine,uniformPaymentLineId} from "./uniformPaymentLine.js";
+import {notifyFinanceTransfer} from "./lineAdminTodoNotification.mjs";
 
 const safe=value=>String(value).replaceAll("'","''");
 const decode=row=>({...JSON.parse(row.payload||"{}"),id:row.rowKey});
@@ -24,6 +27,7 @@ export function paymentPlatformUrl(){
   return "https://lively-field-09afddc00.6.azurestaticapps.net/";
 }
 export async function processPaymentNotifications(schoolId,{scope={kind:"all"},preview=false,retryFailed=false}={}){
+  const lineFirst=typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled();
   const configsName=process.env.UNIFORM_EVENT_CONFIG_TABLE||"TenantUniformEventConfig";
   const [uniformRows,familyRows,configRows,students,mappings,auditRows]=await Promise.all([
     rows("TenantUniformEventRequest",schoolId),rows("TenantFamilyEventRegistration",schoolId),rows(configsName,schoolId),listStudentMaster("",schoolId),listUserStudentMappings("active",schoolId),rows("TenantUniformEventAudit",schoolId)
@@ -41,9 +45,10 @@ export async function processPaymentNotifications(schoolId,{scope={kind:"all"},p
     return creatorOwns?{...item,requesterEmail:String(creator.actor).toLowerCase()}:item;
   });
   let notices=paymentNoticeCandidates({uniforms:uniformItems,families:familyRows.map(decode),configs,students,mappings,canonicalById}).filter(item=>noticeInScope(item,scope));
+  if(lineFirst)notices=notices.filter(notice=>notice.category!=="dinner_open"&&(!notice.kind||!configs.find(c=>c.module===notice.kind&&c.id===notice.activityId)?.openAt||Date.parse(configs.find(c=>c.module===notice.kind&&c.id===notice.activityId).openAt)<=Date.now()));
   if(scope.reminder===true){if(scope.kind!=="uniform")throw Error("Invalid reminder scope");notices=reminderNotices(notices)}
   const ledger=client("TenantPaymentNotification"),audit=client("TenantUniformEventAudit");
-  const disabled=process.env.LAB_ENVIRONMENT==="functional-uat",configured=emailConfigured(schoolId);
+  const disabled=process.env.LAB_ENVIRONMENT==="functional-uat"&&!lineFirst,configured=lineFirst||emailConfigured(schoolId);
   const ownedRows=await rows("TenantPaymentNotification",schoolId),stateMap=new Map(ownedRows.map(row=>[row.rowKey,row]));
   const repository={states:async()=>stateMap,
     async claim(key,notice,old){
@@ -51,7 +56,7 @@ export async function processPaymentNotifications(schoolId,{scope={kind:"all"},p
       const row={partitionKey:schoolId,rowKey:key,schoolId,status:"SENDING",recipient:notice.recipient,category:notice.category,sourceId:notice.sourceId,version:notice.version,createdAt:old?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()};
       try{if(old)await ledger.updateEntity(row,"Replace",{etag:old.etag});else await ledger.createEntity(row);return true}catch(e){if([409,412].includes(e.statusCode))return false;throw e}
     },
-    async finish(key,status,detail={}){const old=await ledger.getEntity(schoolId,key);await ledger.updateEntity({partitionKey:schoolId,rowKey:key,status,updatedAt:new Date().toISOString(),detail:JSON.stringify(detail)},"Merge",{etag:old.etag})},
+    async finish(key,status,detail={}){const old=await ledger.getEntity(schoolId,key);await ledger.updateEntity({partitionKey:schoolId,rowKey:key,status,...(detail.channel?{channel:detail.channel}:{}),updatedAt:new Date().toISOString(),detail:JSON.stringify(detail)},"Merge",{etag:old.etag})},
     async audit(action,notice,key){await audit.createTable().catch(e=>{if(e.statusCode!==409)throw e});await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action,subjectId:notice.sourceId,actor:"payment_notification",at:new Date().toISOString(),details:JSON.stringify({notificationId:key,recipient:notice.recipient,category:notice.category})})},
     async stillDue(notice){
       if(notice.category==="uniform"){const row=await get(client("TenantUniformEventRequest"),schoolId,notice.sourceId);const item=row&&decode(row);if(!item||!uniformNeedsPayment(item)||item.amount!==notice.amount)return false;
@@ -85,22 +90,25 @@ export async function processPaymentNotifications(schoolId,{scope={kind:"all"},p
   const school=await getTenantDirectory(schoolId);
   let financeNotification;
   try{
-    const financeNotices=await financeData();
-    financeNotification=await deliverPaymentNotices({notices:financeNotices,repository,configured,disabled,preview,retryFailed,send:notice=>sendFinancePaymentEmail({...notice,schoolId,schoolName:school?.systemName||school?.schoolName||"弦樂團",appUrl:paymentPlatformUrl()})});
+    const financeNotices=(await financeData()).filter(notice=>!lineFirst||notice.stage==="reported");
+    financeNotification=await deliverPaymentNotices({notices:financeNotices,repository,configured,disabled,preview,retryFailed,send:notice=>sendFinancePaymentEmail({...notice,schoolId,schoolName:school?.systemName||school?.schoolName||"弦樂團",appUrl:paymentPlatformUrl(),notificationId:lineFirst?`finance-transfer:${notice.sourceType}:${notice.itemId}:${JSON.parse(notice.version)[2]}`:"payment:"+paymentNoticeKey(notice),stillDue:()=>repository.stillDue(notice),...(lineFirst&&["uniform","family"].includes(notice.sourceType)?{lineSender:recipient=>notifyFinanceTransfer(schoolId,{kind:notice.sourceType,id:notice.itemId,reportedAt:JSON.parse(notice.version)[2],recipientEmails:[recipient]})}:{})})});
     const potential=financeNoticeCandidates({uniforms:uniformRows.map(decode),families:familyRows.map(decode),configs,staff:[],recipients:["scope@example.invalid"]});
     financeNotification.noFinanceRecipients=!financeNotices.length&&potential.some(n=>scope.kind==="all"||scope.kind===n.sourceType&&scope.id===n.itemId);
   }
   catch(error){console.error("finance payment notification failed",{schoolId,error:error.message});financeNotification={status:"failed",failed:1}}
 
   const result=await deliverPaymentNotices({notices,repository,configured,disabled,preview,retryFailed,
-    send:notice=>sendPaymentRequiredEmail({...notice,schoolId,schoolName:school?.systemName||school?.schoolName||"弦樂團",appUrl:paymentPlatformUrl()})});
+    send:notice=>{
+      const uniform=uniformItems.find(item=>item.id===notice.sourceId),original=uniform&&(uniform.parentEmail||uniform.requesterEmail)===notice.recipient;
+      return sendPaymentRequiredEmail({...notice,schoolId,schoolName:school?.systemName||school?.schoolName||"弦樂團",appUrl:paymentPlatformUrl(),notificationId:uniform&&!notice.reminder&&original?uniformPaymentLineId(uniform):"payment:"+paymentNoticeKey(notice),stillDue:()=>repository.stillDue(notice),...(lineFirst&&original&&!notice.reminder?{lineSender:()=>notifyUniformPaymentRequiredLine(schoolId,uniform)}:{})});
+    }});
   const sourceNotices=new Set(notices.map(item=>item.category+":"+item.sourceId));
   const missingUniform=uniformRows.map(decode).filter(item=>uniformNeedsPayment(item)&&noticeInScope({category:"uniform",sourceId:item.id},scope)&&!sourceNotices.has("uniform:"+item.id)).length;
   const missingFamily=familyRows.map(decode).filter(item=>familyPaymentInfo(configs.find(c=>c.module===item.kind&&c.id===item.activityId),item).needsPayment&&noticeInScope({category:"family",sourceId:item.id,kind:item.kind,activityId:item.activityId},scope)&&!sourceNotices.has("family:"+item.id)).length;
   const missingRecipients=missingUniform+missingFamily;
-  const financeStates=preview?ownedRows.filter(row=>row.category==="finance").map(row=>({recipient:row.recipient,sourceId:row.sourceId,status:row.status,updatedAt:row.updatedAt})):undefined;
+  const financeStates=preview?ownedRows.filter(row=>row.category==="finance").map(row=>({recipient:row.recipient,sourceId:row.sourceId,status:row.status,channel:row.channel,updatedAt:row.updatedAt})):undefined;
   const uniformStates=preview?uniformNotificationStates(uniformItems,notices,ownedRows):undefined;
-  return {...result,financeNotification,...(preview?{uniformStates,financeStates}:{}),status:missingRecipients&&["complete","not_required","preview"].includes(result.status)?"partial":result.status,missingRecipients,configured:configured&&!disabled,scope};
+  return {...result,financeNotification,...(preview?{uniformStates,financeStates}:{}),status:missingRecipients&&["complete","not_required","preview"].includes(result.status)?"partial":result.status,missingRecipients,configured:configured&&!disabled,scope,...(lineFirst?{deliveryPolicy:"line_first_email_fallback"}:{})};
 }
 export async function safePaymentNotifications(schoolId,options){
   try{return await processPaymentNotifications(schoolId,options)}catch(error){console.error("payment notifications failed",{schoolId,error:error.message});return {status:"failed",sent:0,remaining:0,failed:1,error:"寄送程序未完成，請查看通知紀錄後重試"}}

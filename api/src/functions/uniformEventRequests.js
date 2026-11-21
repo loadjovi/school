@@ -11,6 +11,7 @@ import {upsertCurrentCompetitionMaster,latestCompetitionRequest} from "../lib/co
 
 import {notifyUniformReview,notifyUniformCancellation} from "../lib/lineAdminTodoNotification.mjs";
 import {notifyUniformPaymentRequired,uniformPaymentLineStates,uniformPaymentLineEligible} from "../lib/uniformPaymentLine.js";
+import {lineFirstLabEnabled} from "../lib/labNoticeDelivery.mjs";
 
 const kinds=new Set(["regularUniform","competitionUniform","fieldTrip","yearEndDinner"]);
 // 已核對的歷史公費配發，依校別與學生 ID 登錄；不依姓名或尺寸推定資格。
@@ -249,9 +250,9 @@ app.http("uniformEventRequests",{
           await upsertCurrentCompetitionMaster(schoolId,student,latestCompetitionRequest(candidates,next.studentId),access.email||"admin");
         }catch(error){masterSyncPending=true;console.error("competition master pending after request update",data.id,error)}
       }
-      const applicantLineStatus=shouldNotify?await notifyUniformCancellation(schoolId,{...next,id:data.id}):undefined;
+      const applicantLineStatus=shouldNotify&&!(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())?await notifyUniformCancellation(schoolId,{...next,id:data.id}):undefined;
       const paymentLineNotification=shouldNotify&&uniformPaymentLineEligible(next)?await notifyUniformPaymentRequired(schoolId,{...next,id:data.id}):undefined;
-      let notificationStatus="not_attempted",paymentNotification=null;
+      let notificationStatus="not_attempted",notificationChannel="",paymentNotification=null;
       if(shouldNotify&&uniformNeedsPayment(next)){
         paymentNotification=await safePaymentNotifications(schoolId,{scope:{kind:"uniform",id:data.id}});
         notificationStatus=paymentNotificationStatus(paymentNotification);
@@ -264,12 +265,13 @@ app.http("uniformEventRequests",{
             if(String(alias?.canonicalStudentId||mapping.studentId)===String(next.studentId))recipients.add(mapping.parentEmail);
           }
           const student=await getStudentMaster(next.studentId,schoolId);
-          const result=await sendUniformRequestStatusEmail({schoolId,schoolName:ctx.tenant?.systemName||ctx.tenant?.schoolName,recipients:[...recipients],studentName:student?.studentName||"學生",kind:next.kind,status:next.status,size:next.size,quantity:next.quantity});
+          const result=await sendUniformRequestStatusEmail({schoolId,schoolName:ctx.tenant?.systemName||ctx.tenant?.schoolName,recipients:next.status==="CANCELLED"&&next.parentEmail?[next.parentEmail]:[...recipients],studentName:student?.studentName||"學生",kind:next.kind,status:next.status,size:next.size,quantity:next.quantity,notificationId:`uniform-status:${data.id}:${next.status}:${next.updatedAt}`,cancelReason:next.cancelReason});
           notificationStatus=result.status;
+          notificationChannel=result.channel||"email";
           if(result.status!=="sent")console.warn("uniform request email not fully sent",{requestId:data.id,status:result.status,recipientCount:result.recipientCount||0});
         }catch(e){notificationStatus="failed";console.error("uniform request email failed",{requestId:data.id,error:e?.message||String(e)})}
       }
-      return json({item:{...next,id:data.id},notificationStatus,masterSyncPending,paymentNotification,applicantLineStatus,paymentLineNotification});
+      return json({item:{...next,id:data.id},notificationStatus,notificationChannel,masterSyncPending,paymentNotification,applicantLineStatus,paymentLineNotification});
     }catch(e){
       if(e instanceof SyntaxError||String(e.message||"").startsWith("Invalid")||String(e.message||"").startsWith("Only"))return err(e.message);
       console.error("uniformEventRequests",e);return err("Request processing failed",500);

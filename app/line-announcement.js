@@ -51,7 +51,7 @@ function drawRecipients(host,items){
   for(const item of items||[]){
     const row=document.createElement("p"),name=String(item.name||"LINE 帳號"),reference=String(item.reference||"").slice(0,6);
     const reason=item.httpStatus===429?"（額度或發送頻率限制）":[401,403].includes(item.httpStatus)?"（請檢查官方帳號設定）":item.httpStatus===400?"（對象或訊息遭拒絕）":item.status==="failed"?"（可重試）":"";
-    row.textContent=name+(reference?" · "+reference:"")+"｜"+(item.status==="accepted"?"API 已受理，收件待確認":item.status==="failed"?"API 發送失敗"+reason:"已綁定，尚未發送");
+    row.textContent=name+(reference?" · "+reference:"")+"｜"+(item.status==="email_accepted"?"Email 已受理，收件待確認":item.status==="accepted"?"API 已受理，收件待確認":item.status==="failed"?"API 發送失敗"+reason:"已綁定，尚未發送");
     row.style.overflowWrap="anywhere";host.append(row);
   }
 }
@@ -84,7 +84,7 @@ function drawHistory(items){
     const row=document.createElement("div");row.className="history-item";
     const title=document.createElement("b");title.textContent=item.label;
     const meta=document.createElement("small"),unit=item.audience==="activityGroup"?"個群組":"人";
-    meta.textContent=`${new Date(item.updatedAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"})}｜API 受理 ${item.accepted} ${unit}｜失敗 ${item.failed} ${unit}｜實際收件未確認`;
+    meta.textContent=`${new Date(item.updatedAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"})}｜API 受理 ${item.accepted} ${unit}${item.emailAccepted?"｜Email 受理 "+item.emailAccepted+" 人":""}｜失敗 ${item.failed} ${unit}｜實際收件未確認`;
     const text=document.createElement("p");text.textContent=item.text;row.append(title,meta,text);
     if(item.recipientResults?.length){
       const details=document.createElement("details"),summary=document.createElement("summary"),list=document.createElement("div");summary.textContent="查看逐人結果";drawRecipients(list,item.recipientResults);details.append(summary,list);
@@ -122,9 +122,9 @@ form.addEventListener("submit",async event=>{
     const result=await request(body);if(revision!==draftRevision)return;
     confirmed={...body,action:"send",preview:result.preview};
     $("previewRecipient").textContent="收件對象："+result.targetLabel;
-    $("previewCounts").textContent=audience==="activityGroup"?"訊息將送往上述 1 個 LINE 群組。":`符合 ${result.matched} 個帳號，已綁定 ${result.deliverable} 個 LINE，未綁定 ${result.unbound} 個帳號。`;
+    $("previewCounts").textContent=audience==="activityGroup"?"訊息將送往上述 1 個 LINE 群組。":`符合 ${result.matched} 個帳號，已綁定 ${result.deliverable} 個 LINE，未綁定 ${result.unbound} 個帳號。${result.lineFirst?"LINE 未受理者改寄 Email。":""}`;
     drawRecipients($("previewRecipients"),result.recipients);
-    $("previewMessage").textContent=body.text;$("recipientPreview").hidden=false;send.hidden=result.deliverable===0;
+    $("previewMessage").textContent=body.text;$("recipientPreview").hidden=false;send.hidden=result.deliverable===0&&!(result.emailFallbackCandidates>0);
   }catch(error){status.textContent=error.message}
   finally{setBusy(false)}
 });
@@ -133,7 +133,7 @@ send.addEventListener("click",async()=>{
   try{
     const result=await request(snapshot);if(revision!==draftRevision)return;
     const unit=snapshot.audience==="activityGroup"?"個群組":"人";
-    status.textContent=`LINE API 已受理 ${result.accepted} ${unit}，失敗 ${result.failed} ${unit}；實際收件待確認。`+(result.failed?"可重試本次相同發送。":"")+(result.historySaved===false?"發送紀錄暫時無法儲存，請勿重複發送。":"");
+    status.textContent=`LINE API 已受理 ${result.accepted} ${unit}，${result.lineFirst?"Email 已受理 "+Number(result.emailAccepted||0)+" 人，":""}失敗 ${result.failed} ${unit}；實際收件待確認。`+(result.failed?"可重試本次相同發送。":"")+(result.fallbackStatus==="no_group_email_roster"?"志工群組沒有可核對的個人 Email 名單，無法備援寄信。":"")+(result.historySaved===false?"發送紀錄暫時無法儲存，請勿重複發送。":"");
     drawRecipients($("deliveryRecipients"),result.recipientResults);$("deliveryReport").hidden=!result.recipientResults?.length;
     if(!result.failed){confirmed=null;$("recipientPreview").hidden=true}
     try{await loadOptions()}catch{$("history").textContent="發送紀錄暫時無法讀取。"}

@@ -1,3 +1,4 @@
+import {lineFirstLabEnabled} from "../lib/labNoticeDelivery.mjs";
 import {safePaymentNotifications} from "../lib/paymentNotifications.js";
 import {notifyFinanceTransfer,retryFinanceTransfer} from "../lib/lineAdminTodoNotification.mjs";
 import {notifyTenantPaymentVerified} from "../lib/tenantLineFeeNotice.js";
@@ -52,7 +53,7 @@ app.http("uniformTransferReport",{methods:["POST","PATCH"],authLevel:"anonymous"
   catch(e){if(e.statusCode===412)return fail("Order changed; refresh",409);throw e}
   const [paymentNotification,financeLineStatus]=await Promise.all([
    safePaymentNotifications(schoolId,{scope:{kind:"uniform",id:b.requestId}}),
-   notifyFinanceTransfer(schoolId,{kind:"uniform",id:b.requestId,reportedAt:stamp})
+   (typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())?undefined:notifyFinanceTransfer(schoolId,{kind:"uniform",id:b.requestId,reportedAt:stamp})
   ]);
   return json({paymentStatus:next.paymentStatus,paymentNotification,financeLineStatus});
  }catch(e){console.error("uniformTransferReport",e);return fail("Unable to report transfer",500)}

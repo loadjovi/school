@@ -4,6 +4,8 @@ import { ensureTenantTables, table, tenantSchoolPartition, listStudentMaster, li
 import { needsTrainingAttendance } from "./calendarEvents.js";
 import { isTrainingEventType } from "../lib/trainingEventTypes.js";
 import { dispatchLineAbsenceNotifications } from "../lib/lineAbsenceNotification.mjs";
+import {dispatchSchoolAbsenceEmails} from "../lib/schoolAbsenceMail.mjs";
+import {lineFirstLabEnabled} from "../lib/labNoticeDelivery.mjs";
 import { sortTrainingRoster } from "../lib/trainingRosterOrder.mjs";
 
 const safe=v=>String(v||"").replaceAll("'","''");
@@ -90,7 +92,8 @@ app.http("trainingAttendance",{methods:["GET","POST"],authLevel:"anonymous",rout
     if(statuses.get(studentId)==="absent"&&String(previousById.get(studentId)?.status||"")!=="absent")newAbsences.push({status:"absent",date:String(event.eventDate||""),classType:"training",eventId,eventTitle:String(event.title||"訓練／加練"),studentId,name:String(s.studentName||""),groupName:String(s.groupName||""),section:String(s.section||"")});
     await table("tenantTrainingAttendance").upsertEntity({partitionKey:sid,rowKey:recordKey(eventId,studentId),schoolId:sid,eventId,eventDate:String(event.eventDate),studentId,studentName:String(s.studentName||""),groupName:String(s.groupName||""),section:String(s.section||""),status:statuses.get(studentId),recordedBy:String(a.email||""),recordedByName:String(a.displayName||a.email||""),updatedAt:now},"Replace");
   }
-  try{await dispatchLineAbsenceNotifications({schoolId,date:String(event.eventDate||""),items:newAbsences,actorName:String(a.displayName||a.email||"")})}
+  let lineNotification;try{lineNotification=await dispatchLineAbsenceNotifications({schoolId,date:String(event.eventDate||""),items:newAbsences,actorName:String(a.displayName||a.email||"")})}
   catch(error){console.error("LINE training absence notification failed",{schoolId,eventId,error:String(error?.message||error)})}
+  if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())try{await dispatchSchoolAbsenceEmails({schoolId,date:String(event.eventDate||""),items:newAbsences,actor:a.email,lineNotification})}catch(error){console.error("Training absence fallback notification failed",{schoolId,eventId})}
   return json({ok:true,recorded:roster.length,expected:roster.length,lastSavedAt:now});
 }});

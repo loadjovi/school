@@ -78,9 +78,9 @@ app.http("comprehensiveAttendance",{
       });
       if(status==="absent"&&!oldRows.some(x=>x.status==="absent"))newAbsences.push({date:sessionDate,classType:"comprehensive",studentId:String(item.studentId),name:String(master.studentName||""),groupName:String(master.groupName||""),section:String(master.section||"")});
     }
-    try{await dispatchLineAbsenceNotifications({schoolId,date:sessionDate,items:newAbsences.map(x=>({...x,status:"absent"})),actorName:String(access.displayName||access.email||"")})}
+    let lineNotification;try{lineNotification=await dispatchLineAbsenceNotifications({schoolId,date:sessionDate,items:newAbsences.map(x=>({...x,status:"absent"})),actorName:String(access.displayName||access.email||"")})}
     catch(error){console.error("LINE absence notification failed",{schoolId,sessionDate,error:String(error?.message||error)})}
-    try{await dispatchSchoolAbsenceEmails({schoolId,date:sessionDate,items:newAbsences,actor:access.email})}
+    try{await dispatchSchoolAbsenceEmails({schoolId,date:sessionDate,items:newAbsences.map(x=>({...x,status:"absent"})),lineNotification,actor:access.email})}
     catch(error){console.error("school absence mail audit failed",{schoolId,sessionDate,error:String(error?.message||error)})}
     return json({ok:true,count:items.length,sessionDate},200);
   }

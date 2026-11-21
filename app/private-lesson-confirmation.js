@@ -34,7 +34,8 @@
   const workflowText={scheduled:"已預約",awaiting_parent:"待家長確認",issue:"家長回報問題",completed:"流程完成",cancelled:"已停課"};
   const workflowClass={scheduled:"warn",awaiting_parent:"warn",issue:"bad",completed:"ok",cancelled:"bad"};
   const notificationTypeText={scheduled:"預約",rescheduled:"改期",cancelled:"停課",completed:"完課確認",confirmed:"家長確認",issue:"問題回報"};
-  const emailText={sent:"Email 已寄送",accepted:"Email 已受理發送",partial:"Email 部分寄送",failed:"Email 寄送失敗",unknown:"Email 狀態待確認",not_configured:"Email 尚未設定",no_recipients:"尚無收件人 Email",disabled:"Email 通知已由後台關閉",pending:"Email 準備中",not_required:""};
+  const prefersLine=()=>document.documentElement?.dataset?.lineFirstNotifications==="true";
+  const emailText={skipped_line_accepted:"LINE 已受理，本次不重複寄 Email",sent:"Email 已寄送",accepted:"Email 已受理發送",partial:"Email 部分寄送",failed:"Email 寄送失敗",unknown:"Email 狀態待確認",not_configured:"Email 尚未設定",no_recipients:"尚無收件人 Email",disabled:"Email 通知已由後台關閉",pending:"Email 準備中",not_required:""};
   function localDate(){const d=new Date(),x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,10)}
   function localTime(){const d=new Date();return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`}
   function shiftDate(date,days){const d=new Date(`${date}T12:00:00`);d.setDate(d.getDate()+Number(days||0));const x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,10)}
@@ -111,7 +112,8 @@
   }
   function notifyToast(result,successText){
     const m=result?.emailNotification||{};
-    if(m.status==="sent")toast(`✅ ${successText}，Email 已寄送 ${m.sentCount||m.recipientCount||1} 位`);
+    if(m.status==="skipped_line_accepted")toast(`✅ ${successText}，LINE 已受理，本次不重複寄 Email`);
+    else if(m.status==="sent")toast(`✅ ${successText}，Email 已寄送 ${m.sentCount||m.recipientCount||1} 位`);
     else if(m.status==="accepted")toast(`✅ ${successText}，Email 已受理發送 ${m.acceptedCount||m.recipientCount||1} 位`);
     else if(m.status==="partial")toast(`⚠️ ${successText}；部分 Email 寄送失敗`);
     else if(m.status==="no_recipients")toast(`✅ ${successText}；目前尚無可通知的 Email`);
@@ -164,7 +166,7 @@
     const lateNote='<div class="muted" style="margin-top:6px">以預約開始時間為準：超過 10 分鐘才到課選「遲到後完成」；10 分鐘內到課選「完成上課」。</div>';
     let action="";
     if(w==="scheduled"){
-      if(canChange(x))action=`${scheduleEditor(x,"teacher")}${cancelButton(x,"teacher")}<button class="secondary" style="width:100%;margin-top:8px" onclick="resendPrivateLessonEmail('${esc(x.studentId)}','${esc(x.lessonId)}','teacher')">📨 重寄預約 Email</button>`;
+      if(canChange(x))action=`${scheduleEditor(x,"teacher")}${cancelButton(x,"teacher")}<button class="secondary" style="width:100%;margin-top:8px" onclick="resendPrivateLessonEmail('${esc(x.studentId)}','${esc(x.lessonId)}','teacher')">${prefersLine()?"📨 重送預約通知（LINE 優先）":"📨 重寄預約 Email"}</button>`;
       else if(String(x.lessonDate)===today()){
         const k=lessonDomKey(x.lessonId),ended=canComplete(x);
         action=`<div class="notice" style="margin-top:10px"><b>今天是預約上課日</b><br>上課已開始，原預約時間固定為 ${esc(x.startTime)}～${esc(x.endTime)}；開啟或儲存上課內容都不會改動預約時間。</div><label>實際課程內容（可修正）</label><textarea id="completeContent_${k}" rows="3" maxlength="500">${esc(x.lessonContent||"")}</textarea>${weeklyGoalEditor(x,"complete_"+k)}<button class="secondary" style="width:100%;margin-top:8px" onclick="savePrivateLessonContent('${esc(x.studentId)}','${esc(x.lessonId)}')">💾 儲存上課內容</button>${ended?`<label>實際上課狀態</label><select id="completeAttendance_${k}"><option value="present" ${x.actualAttendanceStatus!=="late"?"selected":""}>完成上課</option><option value="late" ${x.actualAttendanceStatus==="late"?"selected":""}>遲到後完成</option></select>${lateNote}<button class="primary" onclick="completePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">✅ 已完成上課並通知家長</button>`:`<div class="muted" style="margin-top:8px">預約結束時間 ${esc(x.endTime)} 後，才可送出「完成上課」。</div>`}`;
@@ -172,7 +174,7 @@
         const k=lessonDomKey(x.lessonId);
         action=`<div class="notice" style="margin-top:10px"><b>本堂尚未完成老師端登記</b><br>請補寫實際上課內容，確認後送交家長；新建立的下一堂預約不影響本筆紀錄。</div><label>實際上課狀態</label><select id="completeAttendance_${k}"><option value="present" ${x.actualAttendanceStatus!=="late"?"selected":""}>完成上課</option><option value="late" ${x.actualAttendanceStatus==="late"?"selected":""}>遲到後完成</option></select>${lateNote}<label>實際課程內容（可修正）</label><textarea id="completeContent_${k}" rows="2" maxlength="500">${esc(x.lessonContent||"")}</textarea>${weeklyGoalEditor(x,"complete_"+k)}<button class="secondary" style="width:100%;margin-top:8px" onclick="savePrivateLessonContent('${esc(x.studentId)}','${esc(x.lessonId)}')">💾 先儲存上課內容</button><button class="primary" onclick="completePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">✅ 已完成上課並通知家長</button>`;
       }else action=`<div class="notice" style="margin-top:10px">預約已同步給家長；預約日期與時間會固定保留。</div>`;
-    }else if(w==="awaiting_parent")action=`<div class="notice" style="margin-top:10px">老師已完成上課，等待家長確認；家長可在 LINE 回覆星級與評語，同時確認完課。</div><button class="secondary" style="width:100%;margin-top:8px" onclick="resendPrivateLessonLine('${esc(x.studentId)}','${esc(x.lessonId)}')">💬 重發完課 LINE 通知</button><button class="secondary" style="width:100%;margin-top:8px" onclick="resendPrivateLessonEmail('${esc(x.studentId)}','${esc(x.lessonId)}','teacher')">📨 重寄完課確認 Email</button>`;
+    }else if(w==="awaiting_parent")action=`<div class="notice" style="margin-top:10px">老師已完成上課，等待家長確認；家長可在 LINE 回覆星級與評語，同時確認完課。</div><button class="secondary" style="width:100%;margin-top:8px" onclick="resendPrivateLessonLine('${esc(x.studentId)}','${esc(x.lessonId)}')">💬 重發完課 LINE 通知</button><button class="secondary" style="width:100%;margin-top:8px" onclick="resendPrivateLessonEmail('${esc(x.studentId)}','${esc(x.lessonId)}','teacher')">${prefersLine()?"📨 重送完課通知（LINE 優先）":"📨 重寄完課確認 Email"}</button>`;
     else if(w==="issue"){
       const k=lessonDomKey(x.lessonId);
       action=`<div class="error" style="margin-top:10px"><b>家長回報問題</b><br>${esc(x.parentNote||"請聯繫家長確認")}</div><label>實際上課狀態</label><select id="completeAttendance_${k}"><option value="present" ${x.actualAttendanceStatus!=="late"?"selected":""}>完成上課</option><option value="late" ${x.actualAttendanceStatus==="late"?"selected":""}>遲到後完成</option></select>${lateNote}<label>修正後課程內容（選填）</label><textarea id="completeContent_${k}" rows="2" maxlength="500">${esc(x.lessonContent||"")}</textarea>${weeklyGoalEditor(x,"complete_"+k)}<button class="primary" onclick="completePrivateLesson('${esc(x.studentId)}','${esc(x.lessonId)}')">再次送出完課確認</button>`;
@@ -283,18 +285,20 @@
   };
   window.resendPrivateLessonEmail=async function(studentId,lessonId,source="teacher"){
     if(!studentId||!lessonId)return;const x=(state.privateLessons||[]).find(r=>String(r.lessonId)===String(lessonId)),kind=workflow(x)==="scheduled"?"預約":"完課確認";
-    if(!confirm(`確定重寄「${currentStudentName(studentId)}」這筆${kind} Email？`))return;
-    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"resend_email"})});notifyToast(r,`${kind} Email 已重寄`);if(source==="admin"&&typeof refreshAdminFollowup==="function")await refreshAdminFollowup();else{await loadPrivateLessons();render()}}catch(e){toast("❌ "+e.message)}
+    if(!confirm(prefersLine()?`確定重送「${currentStudentName(studentId)}」這筆${kind}通知？優先使用 LINE，未受理時改寄 Email。`:`確定重寄「${currentStudentName(studentId)}」這筆${kind} Email？`))return;
+    try{const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"resend_email"})});notifyToast(r,prefersLine()?`${kind}通知處理完成`:`${kind} Email 已重寄`);if(source==="admin"&&typeof refreshAdminFollowup==="function")await refreshAdminFollowup();else{await loadPrivateLessons();render()}}catch(e){toast("❌ "+e.message)}
   };
   const lineResendsInFlight=new Set();
   window.resendPrivateLessonLine=async function(studentId,lessonId){
     if(!studentId||!lessonId||lineResendsInFlight.has(String(lessonId)))return;
-    if(!confirm(`確定重發「${currentStudentName(studentId)}」本堂完課 LINE 給已綁定的家長？\n\n家長必須用自己的 LINE 回覆；有效星級與評語會同時確認完成上課。`))return;
+    if(!confirm(prefersLine()?`確定重送「${currentStudentName(studentId)}」本堂完課通知？LINE 未受理時改寄 Email。`:`確定重發「${currentStudentName(studentId)}」本堂完課 LINE 給已綁定的家長？\n\n家長必須用自己的 LINE 回覆；有效星級與評語會同時確認完成上課。`))return;
     lineResendsInFlight.add(String(lessonId));
     try{
       const r=await api("/api/private-lesson",{method:"PATCH",body:JSON.stringify({studentId,lessonId,action:"resend_line"})});
       const labels={accepted:"LINE 已受理，請在家長自己的 LINE 確認收件",partial:"部分 LINE 發送失敗，請檢查家長綁定",not_bound:"目前沒有已綁定 LINE 的家長",not_configured:"學校 LINE 尚未設定完成",disabled:"此環境尚未啟用 LINE 通知",failed:"LINE 發送失敗，請稍後再試"};
-      toast(labels[r.lineNotification?.status]||"LINE 發送狀態待確認");
+      if(r.mailAcceptedCount)toast(`LINE 已受理 ${r.lineAcceptedCount||0} 位；備援 Email 已受理 ${r.mailAcceptedCount} 位${r.emailNotification?.status==="partial"?"，部分通知未完成":""}`);
+      else if(prefersLine()&&r.emailNotification&&!["accepted","skipped_line_accepted"].includes(r.emailNotification.status))toast("通知尚未完成，請檢查 LINE 綁定與 Email 設定");
+      else toast(labels[r.lineNotification?.status]||"LINE 發送狀態待確認");
       await loadPrivateLessons();render();
     }catch(e){toast("❌ "+e.message)}
     finally{lineResendsInFlight.delete(String(lessonId))}

@@ -11,7 +11,7 @@ const nextAttempt = notice => notice.state==="queued" ? notice.at : notice.state
 export function paidActivityNoticeSummary(row) {
   return Object.entries(states(row)).filter(([kind])=>kinds.includes(kind)).map(([kind,notice])=>{
     const result={kind,status:notice.state,scheduledAt:notice.at};
-    for(const field of ["accepted","failed","unbound"])if(Number.isSafeInteger(notice.result?.[field])&&notice.result[field]>=0)result[field]=notice.result[field];
+    for(const field of ["accepted","emailAccepted","failed","unbound"])if(Number.isSafeInteger(notice.result?.[field])&&notice.result[field]>=0)result[field]=notice.result[field];
     if(notice.result?.deliveryMode==="push")result.deliveryMode="push";
     if(notice.lastAttemptAt)result.lastAttemptAt=notice.lastAttemptAt;
     return result;
@@ -92,7 +92,7 @@ export async function dispatchPaidActivityNotices(table, row, now=Date.now()) {
     results.push({...result,kind});
     if (actual?.key===notice.key && actual.state==="sending" && actual.leaseUntil===notice.leaseUntil) {
       const summary={status:result.status};
-      for(const field of ["accepted","failed","unbound"])if(Number.isSafeInteger(result[field])&&result[field]>=0)summary[field]=result[field];
+      for(const field of ["accepted","emailAccepted","failed","unbound"])if(Number.isSafeInteger(result[field])&&result[field]>=0)summary[field]=result[field];
       if(result.deliveryMode==="push")summary.deliveryMode="push";
       latestNotices[kind]={...actual,state:result.status,lastAttemptAt:new Date(checkedAt).toISOString(),result:summary};
     }

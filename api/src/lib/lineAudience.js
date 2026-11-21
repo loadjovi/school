@@ -60,6 +60,7 @@ export async function resolveLineAudience(schoolId, botUserId, {roles,groups,stu
   return {
     targets:[...recipients.keys()].sort(),recipients:[...recipients.values()].sort((a,b)=>a.userId.localeCompare(b.userId)),
     unbound:accounts.filter(account=>!/^U[0-9a-f]{32}$/i.test(account?.lineUserId||"")).length,
-    matched:emails.size
+    matched:emails.size,
+    contacts:identities.map((email,index)=>({email,userId:/^U[0-9a-f]{32}$/i.test(accounts[index]?.lineUserId||"")?accounts[index].lineUserId:""}))
   };
 }

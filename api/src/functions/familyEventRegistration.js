@@ -1,3 +1,4 @@
+import {lineFirstLabEnabled} from "../lib/labNoticeDelivery.mjs";
 import {app} from "@azure/functions";
 import {TableClient} from "@azure/data-tables";
 import {createHash,randomUUID} from "node:crypto";
@@ -124,7 +125,7 @@ app.http("familyEventRegistration",{
     const needsVerification=payload.paymentStatus==="REPORTED_UNVERIFIED";
     const [paymentNotification,financeLineStatus]=await Promise.all([
       (familyPaymentInfo(cfg,payload).needsPayment||needsVerification)?safePaymentNotifications(schoolId,{scope:{kind:"family",id}}):null,
-      needsVerification?notifyFinanceTransfer(schoolId,{kind:"family",id,reportedAt:payload.transferReport.reportedAt}):undefined,
+      needsVerification&&!(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())?notifyFinanceTransfer(schoolId,{kind:"family",id,reportedAt:payload.transferReport.reportedAt}):undefined,
     ]);
     return json({item:{...payload,id},paymentNotification,financeLineStatus},201);
    }
@@ -172,7 +173,7 @@ app.http("familyEventRegistration",{
    const reporting=body.action==="REPORT_TRANSFER";
    const [paymentNotification,financeLineStatus]=await Promise.all([
      reporting?safePaymentNotifications(schoolId,{scope:{kind:"family",id:actual}}):null,
-     reporting?notifyFinanceTransfer(schoolId,{kind:"family",id:actual,reportedAt:next.transferReport.reportedAt}):undefined
+     reporting&&!(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())?notifyFinanceTransfer(schoolId,{kind:"family",id:actual,reportedAt:next.transferReport.reportedAt}):undefined
    ]);
    const lineNotification=body.action==="VERIFY_PAYMENT"?await notifyTenantPaymentVerified(schoolId,{
      kind:old.kind,id:actual,at:next.verifiedAt,parentEmail:old.parentEmail

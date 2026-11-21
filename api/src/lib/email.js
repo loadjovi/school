@@ -1,6 +1,7 @@
 import { EmailClient } from "@azure/communication-email";
 import {getTenantLineParentContact} from "./tenantLineAccounts.js";
 import {tenantEmailAddress,tenantEmailConfig} from "./tenantEmailConfig.mjs";
+import {lineFirstLabEnabled,deliverLabNotice,labNoticeUrl} from "./labNoticeDelivery.mjs";
 
 function clean(v,max=500){return String(v||"").trim().slice(0,max)}
 function esc(v){return clean(v,2000).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]))}
@@ -17,7 +18,8 @@ async function recipientList(schoolId, values) {
   return [...new Set(resolved.filter(Boolean))];
 }
 
-export async function sendPaymentRequiredEmail({schoolId,recipient="",category="uniform",schoolName="弦樂團",title="",studentNames=[],amount=null,size="",quantity=1,appUrl="",reminder=false}={}){
+export async function sendPaymentRequiredEmail({schoolId,recipient="",category="uniform",schoolName="弦樂團",title="",studentNames=[],amount=null,size="",quantity=1,appUrl="",reminder=false,notificationId="",lineSender,stillDue}={}){
+  if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())return deliverLabNotice({schoolId,recipients:[recipient],eventId:notificationId,subject:title+"｜繳款通知",lineSender,stillDue,text:[`【LAB｜${schoolName}】`,title,category==="dinner_open"?"已開放報名，請至平台確認費用與參加方式。":"您有待繳費項目，請至平台查看收款帳戶。",studentNames.length?"學生："+studentNames.join("、"):"",Number.isSafeInteger(amount)&&amount>0?"應繳金額：NT$ "+amount.toLocaleString("zh-TW"):"",size?`尺寸：${size}｜${quantity} 件`:"","匯款後請回報日期與帳號末五碼。",labNoticeUrl(schoolId)].filter(Boolean).join("\n")});
   const address=await recipientEmail(schoolId,recipient);
   if(!address)return {status:"failed"};
   const c=tenantEmailConfig(schoolId);if(!c.connectionString||!c.senderAddress)return {status:"not_configured"};
@@ -37,7 +39,8 @@ export async function sendPaymentRequiredEmail({schoolId,recipient="",category="
   return {status:String(result.status).toLowerCase()==="succeeded"?"sent":String(result.status).toLowerCase()==="failed"?"failed":"unconfirmed",id:result.id};
 }
 
-export async function sendFinancePaymentEmail({schoolId,recipient,schoolName="弦樂團",title,stage,amount,parentEmail="",studentNames=[],sourceId,appUrl}){
+export async function sendFinancePaymentEmail({schoolId,recipient,schoolName="弦樂團",title,stage,amount,parentEmail="",studentNames=[],sourceId,appUrl,notificationId="",lineSender,stillDue}){
+ if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())return deliverLabNotice({schoolId,recipients:[recipient],eventId:notificationId,subject:title+"｜財務待辦",lineSender,stillDue,text:[`【LAB｜${schoolName}】財務待辦`,title,stage==="reported"?"家長已回報匯款，請核對實際入帳後完成核帳。":"新增應繳款項，請留意後續入帳。",studentNames.join("、"),`金額：NT$ ${amount}`,labNoticeUrl(schoolId)].filter(Boolean).join("\n")});
  const address=await recipientEmail(schoolId,recipient);if(!address)return {status:"failed"};
  const c=tenantEmailConfig(schoolId);if(!c.connectionString)return {status:"not_configured"};
  const url=new URL(c.appUrl||appUrl);if(url.protocol!=="https:"||url.username||url.password)throw Error("Invalid platform URL");
@@ -47,7 +50,11 @@ export async function sendFinancePaymentEmail({schoolId,recipient,schoolName="�
  return {status:String(result.status).toLowerCase()==="succeeded"?"sent":String(result.status).toLowerCase()==="failed"?"failed":"unconfirmed",id:result.id};
 }
 
-export async function sendUniformRequestStatusEmail({schoolId,schoolName="弦樂團",recipients=[],studentName="",kind="",status="",size="",quantity=1}={}){
+export async function sendUniformRequestStatusEmail({schoolId,schoolName="弦樂團",recipients=[],studentName="",kind="",status="",size="",quantity=1,notificationId="",cancelReason=""}={}){
+  if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()){
+   const state={PENDING:"待學校審核",APPROVED:"已核准，請至平台查看後續流程",ORDERED:"已採購，等待到貨",ARRIVED:"已到貨，等待領取安排",READY_FOR_PICKUP:"可以領取，請依學校通知辦理",CANCELLED:"申請已取消",FULFILLED:"已完成領用"}[status]||status;
+   return deliverLabNotice({schoolId,recipients,eventId:notificationId,subject:"團服申請進度通知",text:[`【LAB｜${schoolName}】`,studentName,kind==="competitionUniform"?"A 團比賽服":"團 T",`尺寸：${size}｜${quantity} 件`,state,cancelReason?"原因："+cancelReason:"",labNoticeUrl(schoolId)].filter(Boolean).join("\n")});
+  }
   const addresses=await recipientList(schoolId,recipients);
   if(!addresses.length)return {status:"no_recipients"};
   const c=tenantEmailConfig(schoolId);if(!c.connectionString||!c.senderAddress)return {status:"not_configured"};
@@ -147,6 +154,10 @@ export function formatPrivateLessonNotice({
 
 export async function sendPrivateLessonWorkflowEmail(options={}){
   const {schoolId,recipients=[]}=options;
+  if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()){
+   const message=formatPrivateLessonNotice({...options,appUrl:labNoticeUrl(schoolId)});
+   return deliverLabNotice({schoolId,recipients,eventId:options.notificationId,subject:message.subject,text:"【LAB】\n"+message.plainText,lineSender:options.lineSender});
+  }
   const emails=await recipientList(schoolId,recipients);
   if(!emails.length)return {status:"no_recipients",recipientCount:0,sentCount:0,failedCount:0};
   const c=tenantEmailConfig(schoolId);
@@ -172,6 +183,7 @@ export async function sendPrivateLessonParentEmail(options={}){
 
 
 export async function sendParentApprovalEmail({schoolId,schoolName="",recipient="",parentName="",studentName="",grade="",groupName="",instrument=""}={}){
+  if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())return deliverLabNotice({schoolId,recipients:[recipient],subject:"家長帳號認證完成",text:[`【LAB｜${schoolName||"學校平台"}】`,`${parentName||"家長"} 您好，${studentName}的家長帳號認證已完成。`,[grade,groupName,instrument].filter(Boolean).join("｜"),"請使用原申請 Gmail 登入平台。",labNoticeUrl(schoolId)].join("\n")});
   const address=await recipientEmail(schoolId,recipient);
   if(!address)return {status:"no_recipient",recipientCount:0,sentCount:0,failedCount:0};
   const cfg=tenantEmailConfig(schoolId);
@@ -229,6 +241,7 @@ export async function sendParentApprovalEmail({schoolId,schoolName="",recipient=
 export async function sendTeacherAccessEnabledEmail({
   schoolId,recipient="",teacherName="",schoolName="",appUrl="",privateOnly=false,boundStudentCount=0
 }={}){
+  if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())return deliverLabNotice({schoolId,recipients:[recipient],subject:"老師帳號權限已開通",text:[`【LAB｜${schoolName||"學校平台"}】`,`${teacherName||"老師"} 的教學帳號已開通。`,privateOnly?`個別課學生：${boundStudentCount} 位。`:"請登入平台查看已授權的教學與點名功能。","請使用原 Gmail 登入並完成 LINE 綁定。",labNoticeUrl(schoolId)].join("\n")});
   const address=await recipientEmail(schoolId,recipient);
   if(!address)return {status:"no_recipient",recipientCount:0,sentCount:0,failedCount:0};
   const cfg=tenantEmailConfig(schoolId);

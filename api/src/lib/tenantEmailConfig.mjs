@@ -1,6 +1,7 @@
 import {defaultTenantId} from "./storage.js";
 
 const buildSuppressesExternalEmail = false;
+const buildEnablesLabEmailFallback = false;
 const trimSetting = value => String(value || "").trim();
 const empty = Object.freeze({connectionString: "", senderAddress: "", appUrl: "", mode: "unconfigured"});
 
@@ -16,8 +17,8 @@ function httpsUrl(value) {
   } catch { return ""; }
 }
 
-export function tenantEmailConfig(schoolId) {
-  if (buildSuppressesExternalEmail || process.env.LAB_ENVIRONMENT === "functional-uat") {
+export function tenantEmailConfig(schoolId,{fallback=false}={}) {
+  if ((buildSuppressesExternalEmail || process.env.LAB_ENVIRONMENT === "functional-uat") && !(buildEnablesLabEmailFallback&&process.env.LAB_ENVIRONMENT==="functional-uat"&&fallback)) {
     return {...empty, mode: "lab_suppressed"};
   }
   if (typeof schoolId !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(schoolId || "") || schoolId.length > 60) return empty;

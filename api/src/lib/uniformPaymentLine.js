@@ -4,11 +4,19 @@ import {workflowLineEnabled} from "./lineAdminTodoNotification.mjs";
 import {resolveTenantLineChannel} from "./lineTenantConfig.js";
 import {sendTenantFeeLine} from "./tenantLineFeeNotice.js";
 import {uniformNeedsPayment} from "./paymentNoticeRules.mjs";
+import {lineFirstLabEnabled,deliverLabNotice,labNoticeLineResult,labNoticeUrl,labNoticeStates} from "./labNoticeDelivery.mjs";
 
 export const uniformPaymentLineEligible = item => ["regularUniform","competitionUniform"].includes(item?.kind) && uniformNeedsPayment(item);
 export const uniformPaymentLineId = item => `uniform:${item.id}:payment-required:${item.amount}`;
 
 export async function notifyUniformPaymentRequired(schoolId,item){
+ if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()&&uniformPaymentLineEligible(item)){
+  const text=["團服繳款通知",item.kind==="regularUniform"?"團 T":"A 團比賽服",`尺寸：${item.size}｜${item.quantity||1} 件`,`應繳金額：NT$ ${item.amount.toLocaleString("zh-TW")}`,"申請已核准。請至平台查看收款帳戶，匯款後回報日期與帳號末五碼。",labNoticeUrl(schoolId)].join("\n");
+  return labNoticeLineResult(await deliverLabNotice({schoolId,eventId:uniformPaymentLineId(item),recipients:[item.parentEmail||item.requesterEmail],subject:"團服申請已核准｜待繳款",text,lineSender:()=>notifyUniformPaymentRequiredLine(schoolId,item)}));
+ }
+ return notifyUniformPaymentRequiredLine(schoolId,item);
+}
+export async function notifyUniformPaymentRequiredLine(schoolId,item){
  if(!uniformPaymentLineEligible(item))return {status:"ineligible"};
  if(!workflowLineEnabled())return {status:"disabled"};
  const parentEmail=item.parentEmail||item.requesterEmail;
@@ -47,5 +55,13 @@ export async function uniformPaymentLineStates(schoolId,items){
     ...(row.attemptedAt?{attemptedAt:row.attemptedAt}:{}),...(row.acceptedAt?{acceptedAt:row.acceptedAt}:{})};
   }
  }catch(error){if(error.statusCode!==404)for(const id of Object.keys(states))states[id]={status:"unknown",retryAllowed:true}}
+ if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()){
+  const delivery=await labNoticeStates(schoolId,eligible.map(item=>({id:item.id,eventId:uniformPaymentLineId(item),recipient:item.parentEmail||item.requesterEmail})));
+  for(const [id,row] of Object.entries(delivery)){
+   if(row.status==="accepted"&&row.channel==="email")states[id]={status:"email_sent",retryAllowed:false,acceptedAt:row.acceptedAt};
+   else if(row.mailStatus==="not_configured")states[id]={status:"email_not_configured",retryAllowed:true};
+   else if(row.mailStatus==="no_recipient")states[id]={status:"email_missing",retryAllowed:true};
+  }
+ }
  return states;
 }

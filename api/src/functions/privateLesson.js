@@ -7,6 +7,7 @@ import {
 import { formatPrivateLessonNotice,sendPrivateLessonWorkflowEmail } from "../lib/email.js";
 import { getSystemSettings } from "../lib/settings.js";
 import {notifyPrivateLessonLine} from "../lib/linePrivateLesson.js";
+import {lineFirstLabEnabled} from "../lib/labNoticeDelivery.mjs";
 import {validateParentLessonReview} from "../lib/privateLessonReview.mjs";
 import {normalizeWeeklyGoals,readWeeklyGoals,isPublishedLesson} from "../lib/musicLearningGoals.mjs";
 
@@ -157,6 +158,11 @@ async function notifyWorkflow({request,schoolId,schoolName,entity,studentName,te
       lessonContent:String(entity.lessonContent||""),weeklyPracticeGoals:eventType==="completed"?readWeeklyGoals(entity.weeklyPracticeGoalsJson):[],previousDate:String(previous.lessonDate||""),previousStartTime:String(previous.startTime||""),previousEndTime:String(previous.endTime||""),
       reason:String(eventType==="rescheduled"?entity.rescheduleReason||"":entity.cancelReason||""),note:String(entity.parentNote||""),actorName,appUrl
     };
+    if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()){
+      const routed=await sendPrivateLessonWorkflowEmail({...notice,notificationId:["private",entity.rowKey,eventType,entity.updatedAt,lineDeliveryId].join(":"),
+       lineSender:email=>notifyPrivateLessonLine(schoolId,{recipients:[email],entity,eventType,deliveryId:lineDeliveryId,format:origin=>formatPrivateLessonNotice({...notice,appUrl:origin}).plainText})});
+      return {...routed,status:routed.status==="sent"?(routed.mailAcceptedCount?"accepted":"skipped_line_accepted"):routed.status,recipientCount:routed.results?.filter(r=>r.channel==="email").length||0,acceptedCount:routed.mailAcceptedCount||0};
+    }
     const [mail,lineStatus]=await Promise.all([
       notifyEmail&&settings.emailNotificationsEnabled?sendPrivateLessonWorkflowEmail(notice):{status:"disabled",recipientCount:0,sentCount:0,failedCount:0},
       notifyLine?notifyPrivateLessonLine(schoolId,{
@@ -326,9 +332,9 @@ app.http("privateLesson",{
           actorEmail:a.email,actorName:a.displayName||teacherName,notifyEmail:false,lineDeliveryId:`resend:${now}`});
         entity.lineNotificationStatus=String(result.lineStatus||"failed");
         let notificationAuditPersisted=true;
-        try{await table("tenantPrivateLesson").updateEntity({partitionKey:entity.partitionKey,rowKey:entity.rowKey,lineNotificationStatus:entity.lineNotificationStatus},"Merge")}
+        try{if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())notificationAuditPersisted=await persistNotificationAudit(entity,"completed",result,a.email);else await table("tenantPrivateLesson").updateEntity({partitionKey:entity.partitionKey,rowKey:entity.rowKey,lineNotificationStatus:entity.lineNotificationStatus},"Merge")}
         catch(error){notificationAuditPersisted=false;console.warn("Private lesson LINE resend audit failed",{schoolId,status:error?.statusCode})}
-        return json({ok:true,item:view(entity,teacherName),lineNotification:{status:entity.lineNotificationStatus,resendCount:entity.lineNotificationResendCount},notificationAuditPersisted});
+        return json({ok:true,item:view(entity,teacherName),lineNotification:{status:entity.lineNotificationStatus,resendCount:entity.lineNotificationResendCount},...(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()?{emailNotification:emailResponse(result,entity),notificationChannel:result.channel,mailAcceptedCount:result.mailAcceptedCount||0,lineAcceptedCount:result.lineAcceptedCount||0}:{}),notificationAuditPersisted});
       }
 
       if(action==="resend_email"){

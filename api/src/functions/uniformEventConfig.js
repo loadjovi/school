@@ -1,4 +1,5 @@
 import { app } from "@azure/functions";
+import {lineFirstLabEnabled} from "../lib/labNoticeDelivery.mjs";
 import { TableClient } from "@azure/data-tables";
 import { randomUUID } from "node:crypto";
 import { getTenantContext, json } from "../lib/auth.js";
@@ -142,12 +143,12 @@ app.http("uniformEventConfig",{
         throw error;
       }
       await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"config.save",subjectId:record.rowKey,actor:String(access.email||"admin").slice(0,200),at:record.updatedAt,details:JSON.stringify({before:before?JSON.parse(before.payload||"{}"):null,after:JSON.parse(record.payload)}).slice(0,20000)});
-      const [paymentNotification,lineResults] = await Promise.all([
-        ["fieldTrip","yearEndDinner"].includes(data.module)?safePaymentNotifications(schoolId,{scope:{kind:"activity",module:data.module,id:data.id}}):null,
-        record.paidLineDueAt && Date.parse(record.paidLineDueAt)<=Date.now()
-          ? client.getEntity(schoolId,record.rowKey).then(row=>dispatchPaidActivityNotices(client,row)) : [],
-        ["fieldTrip","calendarActivity"].includes(data.module)?syncActivityCalendar(schoolId,access,data):null
-      ]);
+      const payment=()=>["fieldTrip","yearEndDinner"].includes(data.module)?safePaymentNotifications(schoolId,{scope:{kind:"activity",module:data.module,id:data.id}}):null;
+      const line=()=>record.paidLineDueAt&&Date.parse(record.paidLineDueAt)<=Date.now()?client.getEntity(schoolId,record.rowKey).then(row=>dispatchPaidActivityNotices(client,row)):[];
+      const calendar=()=>["fieldTrip","calendarActivity"].includes(data.module)?syncActivityCalendar(schoolId,access,data):null;
+      let paymentNotification,lineResults;
+      if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()){paymentNotification=await payment();lineResults=await line();await calendar()}
+      else [paymentNotification,lineResults]=await Promise.all([payment(),line(),calendar()]);
       const scheduledAt = record.paidLineDueAt;
       const activityLineNotification = lineResults[0] || (scheduledAt && Date.parse(scheduledAt)>savedAt
         ? {status:process.env.LINE_PAID_ACTIVITY_SCHEDULER_TOKEN ? "scheduled" : "scheduler_unconfigured",scheduledAt} : null);

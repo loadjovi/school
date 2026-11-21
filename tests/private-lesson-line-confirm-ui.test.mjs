@@ -29,7 +29,7 @@ test("parent lesson summary keeps content and review safe, with notification met
 });
 
 test("only the waiting parent card exposes the teacher's LINE resend action",()=>{
- const context={state:{expandedPrivateLessonId:"lesson1"},workflow:x=>x.workflowStatus,workflowClass:{},workflowText:{},
+ const context={state:{expandedPrivateLessonId:"lesson1"},prefersLine:()=>false,workflow:x=>x.workflowStatus,workflowClass:{},workflowText:{},
   needsLessonCatchup:()=>false,lessonDomKey:x=>x,currentStudentName:()=>"測試學生",studentMetaLine:()=>"",weeklyGoalEditor:()=>"",teacherLessonHeader:()=>"",lessonSummary:()=>"",esc};
  const row=runInNewContext(part('  function teacherLessonRow(x){','  window.toggleTeacherPrivateLesson=')+';teacherLessonRow',context);
  assert.match(row({lessonId:"lesson1",studentId:"student1",workflowStatus:"awaiting_parent"}),/重發完課 LINE 通知/);
@@ -38,7 +38,7 @@ test("only the waiting parent card exposes the teacher's LINE resend action",()=
 
 test("rapid clicks produce one LINE request and provider failure is never labeled delivered",async()=>{
  const messages=[],requests=[];let release;
- const context={window:{},currentStudentName:()=>"測試學生",confirm:()=>true,
+ const context={window:{},prefersLine:()=>false,currentStudentName:()=>"測試學生",confirm:()=>true,
   toast:text=>messages.push(text),loadPrivateLessons:async()=>{},render:()=>{},
   api:async(_path,args)=>{requests.push(JSON.parse(args.body));return new Promise(resolve=>{release=resolve})}};
  runInNewContext(part('  const lineResendsInFlight=', '  window.cancelPrivateLessonTeacher='),context);
@@ -50,6 +50,10 @@ test("rapid clicks produce one LINE request and provider failure is never labele
  const second=context.window.resendPrivateLessonLine("student1","lesson1");
  release({lineNotification:{status:"accepted"}});await second;
  assert.match(messages.at(-1),/已受理.*家長自己的 LINE/);
+ context.prefersLine=()=>true;
+ const fallback=context.window.resendPrivateLessonLine("student1","lesson1");
+ release({lineNotification:{status:"not_bound"},emailNotification:{status:"accepted"},mailAcceptedCount:1,lineAcceptedCount:0});await fallback;
+ assert.match(messages.at(-1),/備援 Email 已受理 1 位/);
 });
 
 test("parent pending panel offers a manual status refresh without requiring another confirmation",()=>{

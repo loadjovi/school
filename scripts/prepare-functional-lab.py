@@ -51,6 +51,7 @@ BANNER = r'''
 "use strict";
 if(document.getElementById("functional-uat-banner"))return;
 const labName="__LAB_NAME__",labPurpose="__LAB_PURPOSE__",labColor="__LAB_COLOR__";
+if(__LINE_FIRST_LAB__)document.documentElement.dataset.lineFirstNotifications="true";
 document.title=document.title.replace(/^(?:【UAT LAB】|【新版 LAB】|【舊版 LAB】)/,"");
 document.title="【"+labName+"】"+document.title;
 const attach=()=>{
@@ -150,18 +151,18 @@ def prepare(output: Path, *, line_uat: bool = False) -> None:
     storage.write_text('import {assertLabIsolation} from "./labIsolation.mjs";\n'+
         original.replace(marker,'const conn=()=>{assertLabIsolation();return process.env.STORAGE_CONNECTION_STRING;};'),
         encoding="utf-8")
-    # Never deliver emails from tests, even if somebody accidentally configures ACS.
+    # Direct Email is disabled in LAB; the named LINE LAB separately enables gated fallback.
     email=lib/"tenantEmailConfig.mjs"
     text=email.read_text(encoding="utf-8")
     expected='const buildSuppressesExternalEmail = false;'
     if expected not in text:raise RuntimeError("Email config has changed; review required")
-    email.write_text(text.replace(expected,'const buildSuppressesExternalEmail = true; // LAB: external email permanently disabled'),
+    email.write_text(text.replace(expected,'const buildSuppressesExternalEmail = true; // LAB: direct Email disabled; fallback is separately gated'),
                      encoding="utf-8")
     app=output/"app"
     lab_name="新版 LAB" if line_uat else "舊版 LAB"
     lab_purpose="LINE 整合驗證" if line_uat else "正式功能同步"
     lab_color="#176352" if line_uat else "#284e8c"
-    banner=BANNER.replace("__LAB_NAME__",lab_name).replace("__LAB_PURPOSE__",lab_purpose).replace("__LAB_COLOR__",lab_color)
+    banner=BANNER.replace("__LAB_NAME__",lab_name).replace("__LAB_PURPOSE__",lab_purpose).replace("__LAB_COLOR__",lab_color).replace("__LINE_FIRST_LAB__","true" if line_uat else "false")
     app.joinpath("functional-lab-banner.js").write_text(banner.lstrip(),encoding="utf-8")
     count=0
     for page in app.rglob("*.html"):
@@ -186,6 +187,15 @@ def prepare(output: Path, *, line_uat: bool = False) -> None:
     install_sop_parent_binding(api)
     install_sop_data_tools(api,app)
     if line_uat:
+        policy=lib/"labNoticeDelivery.mjs"
+        current=policy.read_text(encoding="utf-8")
+        marker="const buildEnablesLineFirstLab = false;"
+        if marker not in current:raise RuntimeError("LAB notification policy flag has changed")
+        policy.write_text(current.replace(marker,"const buildEnablesLineFirstLab = true;"),encoding="utf-8")
+        current=email.read_text(encoding="utf-8")
+        marker="const buildEnablesLabEmailFallback = false;"
+        if marker not in current:raise RuntimeError("LAB fallback mail flag has changed")
+        email.write_text(current.replace(marker,"const buildEnablesLabEmailFallback = true;"),encoding="utf-8")
         todo_notifications=lib/"lineAdminTodoNotification.mjs"
         current=todo_notifications.read_text(encoding="utf-8")
         marker="const buildEnablesLabAdminTodos = false;"

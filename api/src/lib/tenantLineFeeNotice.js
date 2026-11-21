@@ -4,6 +4,7 @@ import {resolveTenantLineChannel} from "./lineTenantConfig.js";
 import {getTenantLineRecipient, lineHash} from "./tenantLineAccounts.js";
 import {pushLineMessage} from "./lineMessaging.mjs";
 import {workflowLineEnabled} from "./lineAdminTodoNotification.mjs";
+import {lineFirstLabEnabled,deliverLabNotice,labNoticeLineResult} from "./labNoticeDelivery.mjs";
 
 const paymentLabels = new Map([
   ["regularUniform", "團 T"], ["competitionUniform", "A 團比賽服"],
@@ -19,11 +20,13 @@ export async function notifyTenantPaymentVerified(schoolId, {kind, id, at, paren
     ? "團服已進入備貨／採購流程，請至平台查看領取進度。"
     : uniform ? "請至平台查看團服領取進度。" : "報名已完成，請至平台查看報名與繳費紀錄。";
   const labLabel = process.env.LAB_ENVIRONMENT === "functional-uat" ? "【LAB】" : "";
-  return sendTenantFeeLine(schoolId, {
+  const notice={
     id: `${uniform ? "uniform" : "family"}:${id}:verified:${at}`,
     at, parentEmail, confirmation: true,
     text: `${labLabel}繳費通知｜${title}\n財務已確認您的匯款入帳。\n${nextStep}`
-  });
+  };
+  if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())return labNoticeLineResult(await deliverLabNotice({schoolId,eventId:notice.id,recipients:[parentEmail],subject:"繳費已確認入帳",text:notice.text,lineSender:()=>sendTenantFeeLine(schoolId,notice)}));
+  return sendTenantFeeLine(schoolId,notice);
 }
 
 // The retry key is durably reserved before any outbound request. LINE may

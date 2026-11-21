@@ -272,9 +272,9 @@ function activityLineNoticeHtml(activity){
  const states={queued:"已排程",sending:"發送中",accepted:"LINE 已受理",partial:"部分失敗",failed:"發送失敗",no_recipients:"沒有可通知的家長",disabled:"未啟用",expired:"已停止"};
  const notices=Array.isArray(activity.activityLineNotifications)?activity.activityLineNotifications:[];
  const rows=notices.map(notice=>{
-  const counts=[Number.isInteger(notice.accepted)?"受理 "+notice.accepted+" 位":"",Number.isInteger(notice.failed)?"失敗 "+notice.failed+" 位":"",Number.isInteger(notice.unbound)?"未綁定 "+notice.unbound+" 個帳號":""].filter(Boolean).join("｜");
+  const counts=[Number.isInteger(notice.accepted)?"LINE 受理 "+notice.accepted+" 位":"",notice.emailAccepted?"Email 受理 "+notice.emailAccepted+" 位":"",Number.isInteger(notice.failed)?"失敗 "+notice.failed+" 位":"",Number.isInteger(notice.unbound)?"未綁定 "+notice.unbound+" 個帳號":""].filter(Boolean).join("｜");
   const at=notice.lastAttemptAt||notice.scheduledAt;
-  return "<p><b>"+(notice.kind==="payment"?"繳款通知":"報名通知")+"：</b>"+esc(states[notice.status]||notice.status)+(counts?"<br>"+esc(counts):"")+(at?"<br>"+esc(formatTime(at))+"（台灣時間）":"")+(notice.status==="accepted"&&notice.deliveryMode!=="push"?"<br>舊版批次通知，未記錄個別推播結果。":"")+"</p>";
+  return "<p><b>"+(notice.kind==="payment"?"繳款通知":"報名通知")+"：</b>"+esc(notice.emailAccepted&&notice.status==="accepted"?"通知已受理（LINE 優先／Email 備援）":states[notice.status]||notice.status)+(counts?"<br>"+esc(counts):"")+(at?"<br>"+esc(formatTime(at))+"（台灣時間）":"")+(notice.status==="accepted"&&notice.deliveryMode!=="push"?"<br>舊版批次通知，未記錄個別推播結果。":"")+"</p>";
  }).join("");
  const paid=[activity.studentFee,activity.firstAdultFee,activity.extraAdultFee,activity.extraChildFee].some(fee=>fee>0)&&(activity.module!=="yearEndDinner"||activity.paymentOpen===true&&activity.feeStatus==="PUBLISHED");
  const now=Date.now(),within=paid&&activity.enabled&&(!activity.openAt||Date.parse(activity.openAt)<=now)&&(!activity.closeAt||Date.parse(activity.closeAt)>now);
@@ -451,10 +451,10 @@ function table(id,rows,columns,actions=false){
    const labels={SENT:"已通知",NOT_SENT:"尚無寄送紀錄",PARTIAL:"部分家長已通知",FAILED:"寄送失敗",UNCONFIRMED:"寄送結果待確認",MISSING_RECIPIENT:"尚無可收信家長，請檢查綁定",NOT_REQUIRED:"目前無須催繳"};
    const time=value=>value?new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}):"—";
    const notification=payable?"<div class='payment-email-record' role='status'><strong>匯款通知："+esc(mail?labels[mail.status]||"待確認":"通知紀錄未載入，請更新通知紀錄")+"</strong>"+(mail?.lastSentAt?"<p>最後成功寄送："+esc(time(mail.lastSentAt))+"（台灣時間）｜累計 "+Number(mail.sentCount||0)+" 封</p>":"")+(mail?.recipients?.length?"<details><summary>查看各家長通知紀錄</summary>"+mail.recipients.map(p=>"<p>"+esc(p.recipient)+"｜"+esc(labels[p.status]||"待確認")+"<br>最後寄送："+esc(time(p.lastSentAt))+"｜成功 "+Number(p.sentCount||0)+" 次</p>").join("")+"</details>":"")+"</div>":"";
-   const remind=payable&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&["","AWAITING_TRANSFER"].includes(String(r.paymentStatus||""))&&Number.isSafeInteger(r.amount)&&r.amount>0?"<button type='button' data-payment-reminder='"+i+"'"+(mail?.reminderSentToday?" disabled":"")+">"+(mail?.reminderSentToday?"今日已通知":"再次寄送匯款提醒 Email")+"</button><p class='hint'>僅提醒尚未回報匯款的家長；同一筆款項每天最多一次。已通知不代表已匯款。</p>":"";
+   const remind=payable&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&["","AWAITING_TRANSFER"].includes(String(r.paymentStatus||""))&&Number.isSafeInteger(r.amount)&&r.amount>0?"<button type='button' data-payment-reminder='"+i+"'"+(mail?.reminderSentToday?" disabled":"")+">"+(mail?.reminderSentToday?"今日已通知":"再次發送繳款通知（LINE 優先）")+"</button><p class='hint'>僅提醒尚未回報匯款的家長；同一筆款項每天最多一次。已通知不代表已匯款。</p>":"";
    const line=r.paymentLineNotification||{status:"not_sent"};
    const payableLine=payable&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&["","AWAITING_TRANSFER"].includes(String(r.paymentStatus||""))&&Number.isSafeInteger(r.amount)&&r.amount>0;
-   const lineNotice=payableLine?"<div class='payment-line-record' role='status'><strong>"+esc(uniformPaymentLineSummary(line))+"</strong>"+(line.acceptedAt?"<p>受理時間："+esc(time(line.acceptedAt))+"（台灣時間）</p>":"")+(!["accepted","unconfirmed","target_changed"].includes(line.status)&&line.retryAllowed!==false?"<button type='button' data-payment-line='"+i+"'>補送繳款 LINE 通知</button>":"")+"</div>":"";
+   const lineNotice=payableLine?"<div class='payment-line-record' role='status'><strong>"+esc(uniformPaymentLineSummary(line))+"</strong>"+(line.acceptedAt?"<p>"+(line.status==="email_sent"?"Email ":"LINE ")+"受理時間："+esc(time(line.acceptedAt))+"（台灣時間）</p>":"")+(!["accepted","email_sent","unconfirmed","target_changed"].includes(line.status)&&line.retryAllowed!==false?"<button type='button' data-payment-line='"+i+"'>補送繳款 LINE 通知</button>":"")+"</div>":"";
    controls="<td data-label='狀態管理'>"+directIssue+receive+(r.status==="APPROVED"&&!mayCollect?"<p class='hint'>財務確認入帳後會自動列入採購需求。</p>":"")+progress+procurementAdjust+amount+lineNotice+notification+remind+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
   }
@@ -468,7 +468,7 @@ function table(id,rows,columns,actions=false){
  el(id).innerHTML=rows.length?"<table><thead><tr>"+header+(actions?"<th>狀態管理</th>":"")+"</tr></thead><tbody>"+body+"</tbody></table>":"<p>目前沒有資料</p>";
 }
 function uniformPaymentLineSummary(notice={}){
- return ({not_sent:"LINE 尚無繳款通知紀錄",accepted:"LINE 已受理繳款通知（實際收件待確認）",not_bound:"原申請人尚未綁定本校 LINE",applicant_unknown:"這筆申請沒有原申請人資料",disabled:"此校尚未啟用 LINE 繳款通知",pending:"LINE 發送結果待確認，可補送查核",unconfirmed:"LINE 發送結果待查，請先核對訊息紀錄",unknown:"LINE 通知紀錄暫時無法讀取",target_changed:"LINE 綁定已異動，請先核對收件帳號",ineligible:"目前無須發送 LINE 繳款通知"})[notice.status]||"LINE 通知結果待確認";
+ return ({not_sent:"LINE 尚無繳款通知紀錄",accepted:"LINE 已受理繳款通知（實際收件待確認）",email_sent:"LINE 未受理，已改寄 Email（服務已受理）",email_not_configured:"LINE 未受理，Email 寄信服務尚未設定",email_missing:"LINE 未受理，找不到可收信的家長 Email",not_bound:"原申請人尚未綁定本校 LINE",applicant_unknown:"這筆申請沒有原申請人資料",disabled:"此校尚未啟用 LINE 繳款通知",pending:"LINE 發送結果待確認，可補送查核",unconfirmed:"LINE 發送結果待查，請先核對訊息紀錄",unknown:"LINE 通知紀錄暫時無法讀取",target_changed:"LINE 綁定已異動，請先核對收件帳號",ineligible:"目前無須發送 LINE 繳款通知"})[notice.status]||"LINE 通知結果待確認";
 }
 function csv(name,rows,keys){
  const cell=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
@@ -914,7 +914,7 @@ async function updateUniformRequest(row,body,{expectedStatus="",expectedProcurem
    showRequestUpdateFeedback(row,"更新未完成："+(updateError?.message||"重新查詢的申請狀態不符，請重新核對後再操作。"),{error:true,bankKind});return false;
   }
   const savedText=expectedStatus==="APPROVED"?(updated.acquisition==="PUBLIC"?"已核准，已列入採購需求。":"已核准，待家長匯款 NT$ "+updated.amount.toLocaleString("zh-TW")+"。") :successText;
-  const notice=body.action==="SET_PROCUREMENT_QUANTITY"?"":updateError?"通知結果待確認。":result?.notificationStatus==="sent"?"已寄送家長通知信。":result?.notificationStatus==="disabled"?"LAB 未對外寄送 Email。":"通知信狀態待確認。";
+  const notice=body.action==="SET_PROCUREMENT_QUANTITY"?"":updateError?"通知結果待確認。":result?.notificationStatus==="sent"?(result?.notificationChannel==="line"?"LINE 已受理，本次不寄 Email。":result?.notificationChannel==="email"?"Email 已受理。":result?.paymentNotification?.deliveryPolicy?"通知已依 LINE 優先規則處理。":"已寄送家長通知信。"):result?.notificationStatus==="disabled"?"LAB 未對外寄送 Email。":"通知信狀態待確認。";
   const lineStatus={
    accepted:"；LINE 已受理原申請人的通知",
    not_bound:"；原申請人尚未綁定 LINE",

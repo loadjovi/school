@@ -96,14 +96,14 @@ export async function leaveActivityLineGroup(channel,groupId){
 export async function recordLineAnnouncement(schoolId,entry){
   const results=announcementRecipientResults(entry.recipientResults);
   await (await center()).upsertEntity({partitionKey:tenantSchoolPartition(schoolId),rowKey:"sent:"+entry.requestId,
-    audience:entry.audience,label:entry.label,text:entry.text,accepted:entry.accepted,failed:entry.failed,
+    audience:entry.audience,label:entry.label,text:entry.text,accepted:entry.accepted,emailAccepted:Number(entry.emailAccepted)||0,failed:entry.failed,
     deliveryMode:entry.deliveryMode||"multicast",recipientResults:JSON.stringify(results),omittedRecipients:Math.max(0,(entry.recipientResults?.length||0)-results.length),
     actor:entry.actor,updatedAt:new Date().toISOString()},"Replace");
 }
 function announcementRecipientResults(values){
   const results=[];let length=2;
   for(const value of Array.isArray(values)?values:[]){
-    if(!/^[a-f0-9]{12}$/.test(value?.reference||"")||!["accepted","failed"].includes(value.status))continue;
+    if(!/^[a-f0-9]{12}$/.test(value?.reference||"")||!["accepted","email_accepted","failed"].includes(value.status))continue;
     const result={reference:value.reference,name:String(value.name||"LINE 帳號").slice(0,80),status:value.status,...(Number.isInteger(value.httpStatus)&&value.httpStatus>=100&&value.httpStatus<600?{httpStatus:value.httpStatus}:{})};
     const size=JSON.stringify(result).length+(results.length?1:0);
     if(results.length>=100||length+size>30000)break;
@@ -115,7 +115,7 @@ export async function lineAnnouncementHistory(schoolId){
   const partitionKey=tenantSchoolPartition(schoolId),items=[];
   for await(const row of (await center()).listEntities({queryOptions:{filter:`PartitionKey eq '${safe(partitionKey)}' and RowKey ge 'sent:' and RowKey lt 'sent;'`}})){
     let results=[];try{results=announcementRecipientResults(JSON.parse(row.recipientResults||"[]"))}catch{}
-    items.push({audience:row.audience,label:row.label,text:row.text,accepted:row.accepted,failed:row.failed,actor:row.actor,updatedAt:row.updatedAt,deliveryMode:row.audience==="activityGroup"?"group":row.deliveryMode==="push"?"push":"multicast",recipientResults:results,omittedRecipients:Number(row.omittedRecipients)||0,deliveryConfirmed:false});
+    items.push({audience:row.audience,label:row.label,text:row.text,accepted:row.accepted,emailAccepted:Number(row.emailAccepted)||0,failed:row.failed,actor:row.actor,updatedAt:row.updatedAt,deliveryMode:row.audience==="activityGroup"?"group":row.deliveryMode==="push"?"push":"multicast",recipientResults:results,omittedRecipients:Number(row.omittedRecipients)||0,deliveryConfirmed:false});
   }
   return items.sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).slice(0,20);
 }

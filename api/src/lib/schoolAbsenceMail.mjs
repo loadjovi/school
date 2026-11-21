@@ -4,6 +4,7 @@ import {TableClient,TableServiceClient} from "@azure/data-tables";
 import {tenantSchoolPartition,defaultTenantId,getTenantDirectory} from "./storage.js";
 import {getSystemSettings} from "./settings.js";
 import {tenantEmailAddress,tenantEmailConfig} from "./tenantEmailConfig.mjs";
+import {lineFirstLabEnabled} from "./labNoticeDelivery.mjs";
 
 // School staff are the explicitly authorized "校方查詢帳號" (school-access),
 // NOT every instructor nor parent. Only notify for group-class absences.
@@ -24,7 +25,7 @@ export function absenceNotificationCandidates(items=[]){
  // Caller passes the saved, validated roster rather than arbitrary user names.
  const byKey=new Map();
  for(const item of items){
-  if(item.status!=="absent"||!allowed.has(item.classType)||!item.studentId)continue;
+  if(item.status!=="absent"||(!allowed.has(item.classType)&&!(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()&&item.classType==="training"))||!item.studentId)continue;
   const key=hash([item.date,item.studentId,item.classType,item.groupName||"",item.classType==="section"?item.section||"":""]);
   if(!byKey.has(key))byKey.set(key,item);
  }
@@ -56,7 +57,7 @@ async function staffEmails(schoolId){
  try{rows=JSON.parse(String(entity.emailsJson||"[]"))}catch{}
  return [...new Set((Array.isArray(rows)?rows:[]).map(tenantEmailAddress).filter(Boolean))].sort();
 }
-const classLabel={section:"分部課",ensemble:"合奏課",comprehensive:"綜合課"};
+const classLabel={section:"分部課",ensemble:"合奏課",comprehensive:"綜合課",training:"訓練／加練"};
 export function schoolAbsenceMailContent({date,students,appUrl,schoolName="學校平台"}){
  const title=`【${truncate(schoolName,120)}】${date} 學生缺席通知（${students.length} 位）`;
  const lines=[
@@ -82,15 +83,16 @@ async function deliver(address,mail,{senderAddress:sender,connectionString:conn}
  }catch(err){return {status:"failed",messageId:"",error:truncate(err?.message||err,240)}}
 }
 // Returned rows are safe for the admin viewer. No message body or secrets persist.
-export async function dispatchSchoolAbsenceEmails({schoolId,date,items=[],actor=""}){
+export async function dispatchSchoolAbsenceEmails({schoolId,date,items=[],actor="",lineNotification}){
+ const lineFirst=typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled();
  const students=absenceNotificationCandidates(items);
  if(!students.length)return {created:0,sent:0,skipped:0};
  const log=await logs();
  const recipients=await staffEmails(schoolId);
- const enabled=(await getSystemSettings(schoolId)).emailNotificationsEnabled===true;
+ const enabled=lineFirst||(await getSystemSettings(schoolId)).emailNotificationsEnabled===true;
  const recipientsForAudit=recipients.length?recipients:[""];
  const batches=new Map(),now=new Date().toISOString(),sid=schoolAbsenceLogPartition(schoolId);
- const config=tenantEmailConfig(sid);
+ const config=tenantEmailConfig(sid,{fallback:lineFirst});
  let created=0,sent=0,skipped=0;
  for(const recipient of recipientsForAudit){
   const pending=[];
@@ -109,7 +111,8 @@ export async function dispatchSchoolAbsenceEmails({schoolId,date,items=[],actor=
  const tenant=enabled&&config.connectionString&&batches.size?await getTenantDirectory(sid):null;
  for(const [recipient,rows] of batches){
   let result;
-  if(!recipient)result={status:"no_recipient",messageId:"",error:"尚未設定校方查詢帳號收件人"};
+  if(lineFirst&&lineNotification?.sent)result={status:"line_accepted",messageId:"",error:"LINE 已受理，本次不重複寄 Email"};
+  else if(!recipient)result={status:"no_recipient",messageId:"",error:"尚未設定校方查詢帳號收件人"};
   else if(config.mode==="lab_suppressed")result={status:"lab_suppressed",messageId:"",error:"LAB 不寄送真實通知"};
   else if(!enabled||config.mode==="disabled")result={status:"disabled",messageId:"",error:"學校 Email 通知功能尚未啟用"};
   else{

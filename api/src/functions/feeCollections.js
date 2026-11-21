@@ -5,6 +5,7 @@ import {ensureStudentAccess,getTenantContext,json} from "../lib/auth.js";
 import {listUserStudentMappings} from "../lib/storage.js";
 import {tenantFeeEnabled} from "../lib/lineTenantConfig.js";
 import {notifyTenantPaymentVerified,sendTenantFeeLine} from "../lib/tenantLineFeeNotice.js";
+import {lineFirstLabEnabled,deliverLabNotice,labNoticeLineResult} from "../lib/labNoticeDelivery.mjs";
 import {notifyFinanceTransfer} from "../lib/lineAdminTodoNotification.mjs";
 import {
   FEE_PROJECT_KINDS,FEE_PROJECT_STATUSES,PAYMENT_STATUSES,canParentReport,isIsoDate,isSafeId,
@@ -199,10 +200,12 @@ function notifyParent(schoolId, project, association, event, parentEmail, source
     REPORTED:"已收到匯款回報，等待財務核帳",
     CORRECTION_REQUESTED:"匯款資料需要補正，請登入平台查看"
   };
-  return sendTenantFeeLine(schoolId,{
+  const notice={
     id:[project.id,association.id,event.action,event.at].join(":"),at:event.at,parentEmail:recipient(parentEmail),
     text:`繳費通知｜${project.title}\n${labels[event.action]}`
-  });
+  };
+  if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())return deliverLabNotice({schoolId,eventId:notice.id,recipients:[notice.parentEmail],subject:project.title+"｜繳費進度",text:notice.text,lineSender:()=>sendTenantFeeLine(schoolId,notice)}).then(labNoticeLineResult);
+  return sendTenantFeeLine(schoolId,notice);
 }
 
 app.http("feeCollectionProjects",{
@@ -285,7 +288,7 @@ app.http("feeCollectionTransfers",{
         const event=next.paymentHistory.at(-1);
         const [lineNotification,financeLineStatus]=await Promise.all([
           notifyParent(schoolId,project,association,event,event.lineRecipient),
-          notifyFinanceTransfer(schoolId,{kind:association.sourceType,id:association.sourceId,reportedAt:timestamp})
+          (typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())?undefined:notifyFinanceTransfer(schoolId,{kind:association.sourceType,id:association.sourceId,reportedAt:timestamp})
         ]);
         return json({paymentStatus:next.paymentStatus,reportedAt:timestamp,lineNotification,financeLineStatus});
       }

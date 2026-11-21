@@ -69,9 +69,9 @@ app.http("ensembleAttendance",{
       await client.createEntity({partitionKey:tenantStudentPartition(schoolId,item.studentId),rowKey:rowKey("e"),schoolId,studentId:String(item.studentId),eventDate:sessionDate,groupName:master.groupName,section:master.section||"待確認",status:String(item.status||"present"),minutes:Number(item.minutes||0),teacher:a.email,teacherName:String(a.displayName||a.email||""),actorRole:a.role==="admin"?"admin":"teacher",classType:"ensemble",createdAt:now});
       if(String(item.status)==="absent"&&!oldRows.some(x=>x.status==="absent"))newAbsences.push({date:sessionDate,classType:"ensemble",studentId:String(item.studentId),name:String(master.studentName||""),groupName,section:String(master.section||"")});
     }
-    try{await dispatchLineAbsenceNotifications({schoolId,date:sessionDate,items:newAbsences.map(x=>({...x,status:"absent"})),actorName:String(a.displayName||a.email||"")})}
+    let lineNotification;try{lineNotification=await dispatchLineAbsenceNotifications({schoolId,date:sessionDate,items:newAbsences.map(x=>({...x,status:"absent"})),actorName:String(a.displayName||a.email||"")})}
     catch(error){console.error("LINE absence notification failed",{schoolId,sessionDate,error:String(error?.message||error)})}
-    try{await dispatchSchoolAbsenceEmails({schoolId,date:sessionDate,items:newAbsences,actor:a.email})}
+    try{await dispatchSchoolAbsenceEmails({schoolId,date:sessionDate,items:newAbsences.map(x=>({...x,status:"absent"})),lineNotification,actor:a.email})}
     catch(error){console.error("school absence mail audit failed",{schoolId,sessionDate,error:String(error?.message||error)})}
     return json({ok:true,count:items.length,sessionDate,groupName},200);
   }

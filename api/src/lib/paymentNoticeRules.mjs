@@ -106,7 +106,7 @@ export async function deliverPaymentNotices({notices,repository,send,configured=
     const status=result.status==="sent"?"SENT":result.status==="failed"?"FAILED":"UNCONFIRMED";
     // If a provider accepted a mail but the final ledger update fails, leave
     // the claim in SENDING. Never automatically resend an uncertain delivery.
-    try{await repository.finish(key,status,{providerId:result.id||""});await repository.audit("payment.email."+status.toLowerCase(),notice,key)}
+    try{await repository.finish(key,status,{providerId:result.id||"",channel:result.channel||"email"});await repository.audit("payment.email."+status.toLowerCase(),notice,key)}
     catch(error){summary.unconfirmed++;return}
     if(status==="SENT")summary.sent++;else if(status==="FAILED")summary.failed++;else summary.unconfirmed++;
   }));
@@ -135,7 +135,7 @@ export function uniformNotificationStates(uniforms,notices,ledger,now=new Date()
    const latest=relevant.find(r=>r.status!=="OBSOLETE"),today=expected.find(n=>n.recipient===recipient),reminderKey=today&&paymentNoticeKey(reminderNotices([today],now)[0]);
    const todayReminder=history.find(r=>r.rowKey===reminderKey);
    const status=["SENDING","UNCONFIRMED"].includes(latest?.status)?"UNCONFIRMED":latest?.status==="FAILED"?"FAILED":currentSent.length?"SENT":"NOT_SENT";
-   return {recipient,status,lastSentAt:sent[0]?.updatedAt||sent[0]?.createdAt||null,sentCount:sent.length,reminderSentToday:todayReminder?.status==="SENT"};
+   return {recipient,status,lastSentAt:sent[0]?.updatedAt||sent[0]?.createdAt||null,sentCount:sent.length,reminderSentToday:todayReminder?.status==="SENT",...(sent[0]?.channel?{channel:sent[0].channel}:{})};
   });
   const due=uniformNeedsPayment(item),sentHistory=history.filter(r=>r.status==="SENT"&&(!due||recipients.includes(r.recipient))).sort((a,b)=>String(b.updatedAt||b.createdAt).localeCompare(String(a.updatedAt||a.createdAt)));
   const status=!due?"NOT_REQUIRED":!expected.length?"MISSING_RECIPIENT":people.some(r=>r.status==="UNCONFIRMED")?"UNCONFIRMED":people.some(r=>r.status==="FAILED")?"FAILED":people.every(r=>r.status==="SENT")?"SENT":people.some(r=>r.status==="SENT")?"PARTIAL":"NOT_SENT";
