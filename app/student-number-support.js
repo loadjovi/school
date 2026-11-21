@@ -22,7 +22,7 @@
       try{
         const d=await api("/api/student-registration",{method:"PATCH",body:JSON.stringify(body)});
         const ns=d?.notification?.status;
-        if(ns==="sent")toast("✅ 已核准並綁定，認證通知信已寄出");
+        if(ns==="sent")toast(d.notification.channel==="line"?"✅ 已核准並綁定，LINE 已受理，本次不寄 Email":d.notification.channel==="email"?"✅ 已核准並綁定，備援 Email 已受理":"✅ 已核准並綁定，認證通知信已寄出");
         else if(ns==="not_configured")toast("✅ 已核准並綁定；Email 尚未完成設定");
         else if(ns==="failed")toast("✅ 已核准並綁定；但通知信寄送失敗");
         else toast("✅ 已核准並綁定");

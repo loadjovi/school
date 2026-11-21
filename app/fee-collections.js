@@ -144,7 +144,7 @@ async function verifyTransfer(event){
   event.preventDefault();const form=event.currentTarget,values=new FormData(form),amount=Number(form.dataset.amount);
   if(!confirm("已逐一比對銀行實際入帳日期、金額與末五碼，確認入帳？"))return;
   try{showStatus("正在完成核帳…");const {lineNotification}=await api("fee-collections/transfers",{method:"PATCH",body:JSON.stringify({projectId:form.dataset.project,chargeId:form.dataset.charge,action:"VERIFY",amount,bankPostedAt:values.get("bankPostedAt"),note:values.get("note")})});await loadProjects();
-    const labels={accepted:"LINE 已受理家長通知。",not_bound:"家長尚無此校 LINE 綁定，請家長至平台查看。",disabled:"此校尚未開啟家長入帳 LINE 通知。"};
+    const labels={accepted:"LINE 已受理家長通知。",email_sent:"LINE 未受理，備援 Email 已受理。",mixed_sent:"通知已分別由 LINE 與備援 Email 受理。",email_not_configured:"LINE 未受理，Email 寄信服務尚未設定。",email_missing:"LINE 未受理，家長尚無可收信的 Email。",not_bound:"家長尚無此校 LINE 綁定，請家長至平台查看。",disabled:"此校尚未開啟家長入帳 LINE 通知。"};
     showStatus("已確認入帳。"+(labels[lineNotification?.status]||"家長 LINE 通知尚未確認送出。")) }catch(error){showStatus(error.message,"error")}
 }
 
@@ -228,7 +228,7 @@ document.addEventListener("click",async event=>{
       const {lineNotification}=await api("fee-collections/transfers",{method:"PATCH",body:JSON.stringify({
         projectId:target.dataset.project,chargeId:target.dataset.charge,action:"RETRY_LINE_NOTICE"
       })});
-      const labels={accepted:"LINE 已受理通知。",pending:"尚未確認 LINE 受理，可稍後重試。",not_bound:"家長尚未綁定此校 LINE。",
+      const labels={accepted:"LINE 已受理通知。",email_sent:"LINE 未受理，備援 Email 已受理。",mixed_sent:"通知已分別由 LINE 與備援 Email 受理。",email_not_configured:"LINE 未受理，Email 寄信服務尚未設定。",email_missing:"LINE 未受理，家長尚無可收信的 Email。",pending:"尚未確認 LINE 受理，可稍後重試。",not_bound:"家長尚未綁定此校 LINE。",
         disabled:"此校未啟用 LINE 收費通知。",target_changed:"家長已變更綁定，原通知無法重送。",ineligible:"通知已超過重試期限。"};
       showStatus(labels[lineNotification?.status]||"無法送出通知。");
     }

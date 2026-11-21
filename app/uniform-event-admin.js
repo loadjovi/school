@@ -672,9 +672,9 @@ function appendLabFinanceRetry(card,item,type){
    if(type==="uniform")body.requestId=item.id;
    else Object.assign(body,{kind:item.kind,activityId:item.activityId,registrationId:item.id});
    const {financeLineStatus}=await api(path,{method:"PATCH",body:JSON.stringify(body)});
-   const labels={sent:"LINE 已受理。請在財務人員的 LINE 確認收件。",partial:"LINE 只受理部分通知，可再試一次。",not_assigned:"請由 Global 管理中心指派此校財務人員。",not_bound:"已指派的財務人員尚未綁定此校 LINE。",not_configured:"此校尚未開啟財務 LINE 通知。",lab_suppressed:"這個 LAB 環境未開放財務 LINE 通知。",ineligible:"只可補送回報未滿 23 小時、且仍待核帳的匯款。"};
+   const labels={sent:"LINE 已受理。請在財務人員的 LINE 確認收件。",email_sent:"LINE 未受理，財務備援 Email 已受理。",mixed_sent:"財務通知已分別由 LINE 與備援 Email 受理。",email_not_configured:"LINE 未受理，Email 寄信服務尚未設定。",email_missing:"LINE 未受理，財務人員尚無可收信的 Email。",partial:"部分通知尚未完成，請查看發送紀錄。",not_assigned:"請由 Global 管理中心指派此校財務人員。",not_bound:"已指派的財務人員尚未綁定此校 LINE。",not_configured:"此校尚未開啟財務 LINE 通知。",lab_suppressed:"這個 LAB 環境未開放財務 LINE 通知。",ineligible:"只可補送回報未滿 23 小時、且仍待核帳的匯款。"};
    retryMessage.textContent=labels[financeLineStatus]||"通知未成功送出，請稍後重試。";
-   if(financeLineStatus==="sent")return;
+   if(["sent","email_sent","mixed_sent"].includes(financeLineStatus))return;
   }catch(error){retryMessage.textContent=error.message}
   retry.disabled=false;
  });

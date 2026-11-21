@@ -106,11 +106,11 @@
     const role=String(state?.me?.role||""),cap=state?.me?.capabilities||{};
     if(role==="admin")return [
       "/roster-support.js",
-      "/student-number-support.js?v=20260918-1105",
+      "/student-number-support.js?v=20261121-line-first-notice-labels",
       "/student-change-admin.js?v=20261102-student-workflow",
       "/parent-link-admin.js?v=20261115-line-coverage-summary-parent-identity",
       "/teacher-settings.js?v=20261002-teacher-types",
-      "/teacher-admin.js?v=20261025-parent-review-student",
+      "/teacher-admin.js?v=20261121-line-first-notice-labels",
       "/batch-upgrade.js?v=20261102-student-workflow",
       "/roster-import.js?v=20261102-student-workflow",
       "/attendance-support.js?v=20260928-2148",
@@ -137,7 +137,7 @@
       "/teacher-navigation.js?v=20261002-teacher-types-home-priorities-20261119",
       "/training-attendance.js?v=20261102-activity-boundary",
       "/comprehensive-support.js?v=20261002-save-confirm",
-      "/private-lesson-confirmation.js?v=20261121-line-first-email-fallback",
+      "/private-lesson-confirmation.js?v=20261121-line-first-notice-labels",
       "/teacher-line-account.js?v=20261119-teacher-binding-home-priorities-notification-center"
     ];
     if(["unassigned","contextDenied"].includes(role))return [
@@ -149,7 +149,7 @@
       "/parent-activity-notice.js?v=20261016-new-activity-alert-parent-tasks",
       "/uniform-payment-state.js?v=20261026-payment-email",
       "/practice-timer.js?v=20261004-manual4h",
-      "/private-lesson-confirmation.js?v=20261121-line-first-email-fallback",
+      "/private-lesson-confirmation.js?v=20261121-line-first-notice-labels",
       "/parent-semester-attendance.js?v=20261003-practice20",
       "/parent-home-summary.js?v=20261103-tshirt-size-reminder-parent-tasks-home-priorities-20261119-final-parent-clear-20261121",
       "/parent-uniform-payment-notice.js?v=20261026-payment-email-parent-tasks-parent-clear-20261121",
