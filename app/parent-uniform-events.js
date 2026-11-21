@@ -502,7 +502,7 @@ async function renderInlineActivities(){
   const activityNotice=window.parentActivityNotice;
   function drawNotice(){
    const unseen=activityNotice.unseen(cfg,me,students).filter(item=>item.module==="calendarActivity"||activityNotice.registrationOpen(item));
-   notice.replaceChildren();notice.hidden=!unseen.length;
+   notice.replaceChildren();notice.hidden=!unseen.length;notice.setAttribute("role","status");
    if(!unseen.length)return;
    notice.append(element("h2","🔔 新活動或活動更新（"+unseen.length+"）"),element("p","請留意活動日期與注意事項。點選後可直接查看活動。","muted"));
    for(const item of unseen.slice(0,3)){
@@ -520,7 +520,7 @@ async function renderInlineActivities(){
    if(details)details.open=true;
    const target=details?.querySelector("summary")||card;
    if(target===card)card.tabIndex=-1;
-   target.focus({preventScroll:true});target.scrollIntoView({block:"start"});
+   target.focus({preventScroll:true});card.classList.add("activity-selected");card.scrollIntoView({block:"start"});
   }
   const history=hosts.history;history.replaceChildren();
   if(!(registration.items||[]).length)history.append(element("p","目前沒有活動報名或付款紀錄。","muted"));
@@ -624,11 +624,16 @@ async function renderInlineActivities(){
    }
   }
   if(!window.__parentActivityDeepLinkHandled){
-   window.__parentActivityDeepLinkHandled=true;
    const query=new URLSearchParams(location.search),target=query.get("activity"),view=query.get("view");
    const item=cfg.find(x=>activityNotice.key(x)===target);
-   if(item&&document.getElementById("activity_"+target))openActivity(item);
-   else if(["events","performance","history","uniform"].includes(view))select(view);
+   if(item&&document.getElementById("activity_"+target)){openActivity(item);window.__parentActivityDeepLinkHandled=true}
+   else{
+    if(["events","performance","history","uniform"].includes(view))select(view);
+    if(target){
+     notice.replaceChildren(element("h2","找不到這筆活動"),element("p","此活動可能已關閉或不適用孩子的團別，請返回家長首頁確認。","muted"));
+     notice.hidden=false;notice.setAttribute("role","alert");
+    }else window.__parentActivityDeepLinkHandled=true;
+   }
   }
  }catch(e){for(const host of Object.values(hosts)){host.replaceChildren();host.append(element("p","資料讀取失敗："+e.message,"hint"))}}
 }

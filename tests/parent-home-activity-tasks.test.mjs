@@ -63,7 +63,7 @@ test("a direct activity link opens its rendered registration form even when the 
  const deepLink=source.slice(source.indexOf("  if(!window.__parentActivityDeepLinkHandled)"),source.indexOf(" }catch(e){for(const host of Object.values(hosts))"));
  const summary={focus(){this.focused=true},scrollIntoView(){this.scrolled=true}};
  const details={open:false,querySelector:()=>summary};
- const card={querySelector:()=>details};
+ const card={querySelector:()=>details,classList:{add(){}},scrollIntoView(){this.scrolled=true}};
  const cfg=[trip("open")],windows={};
  const context={window:windows,URLSearchParams,location:{search:"?view=performance&activity=fieldTrip%3Aopen"},cfg,
   activityNotice:{key:item=>item.module+":"+item.id,mark(){}},select:view=>{windows.view=view},
@@ -72,5 +72,5 @@ test("a direct activity link opens its rendered registration form even when the 
  assert.equal(windows.view,"performance");
  assert.equal(details.open,true);
  assert.equal(summary.focused,true);
- assert.equal(summary.scrolled,true);
+ assert.equal(card.scrolled,true);
 });

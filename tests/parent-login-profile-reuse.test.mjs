@@ -26,11 +26,22 @@ test("Google and LINE login can reuse complete child profiles from the same auth
  }
 });
 
-test("the optional login payload does not expose child profiles to non-parent roles or schoolless access",async()=>{
- for(const role of ["teacher","privateTeacher","admin","globalAdmin"]){
-  const response=await harness({role}).get("includeStudentProfiles=1");assert.equal(response.data.studentProfiles,undefined);
+test("the standard parent identity has the same authorized child and group fields for Google and LINE",async()=>{
+ for(const authProvider of ["google","line"]){
+  const response=await harness({authProvider}).get("");
+  assert.deepEqual(JSON.parse(JSON.stringify(response.data.students)),[{studentId:"student1",name:"孩子甲",groupName:"A"}]);
+  assert.equal(response.data.studentProfiles,undefined);
+  assert.equal(response.data.students[0].studentIdAliases,undefined);
  }
- assert.equal((await harness({schoolId:""}).get("includeStudentProfiles=1")).data.studentProfiles,undefined);
+});
+
+test("the optional login payload does not expose child profiles to non-parent roles or schoolless access",async()=>{
+ for(const authProvider of ["google","line"])for(const role of ["teacher","privateTeacher","admin","globalAdmin"]){
+  const response=await harness({authProvider,role}).get("includeStudentProfiles=1");assert.equal(response.data.studentProfiles,undefined);assert.deepEqual(Array.from(response.data.students),[]);
+ }
+ for(const authProvider of ["google","line"]){
+  const response=await harness({authProvider,schoolId:""}).get("includeStudentProfiles=1");assert.equal(response.data.studentProfiles,undefined);assert.deepEqual(Array.from(response.data.students),[]);
+ }
  assert.equal((await harness({authenticated:false}).get("includeStudentProfiles=1")).status,401);
  assert.equal((await harness().get("")).data.studentProfiles,undefined);
 });

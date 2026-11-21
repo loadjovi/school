@@ -94,6 +94,14 @@ test("activity actions distinguish an open signup, a future opening, and a dinne
  registrations[0].paymentStatus="VERIFIED";assert.match(article(ctx.home(),"open"),/報名完成/);
 });
 
+test("a free calendar homepage action retains its own module and activity identity",async()=>{
+ const {ctx}=parentHome();await ctx.refreshParentHomeUpdates();
+ ctx.state.parentActivityConfigs=[{module:"calendarActivity",id:"competition",title:"A 團全國賽",enabled:true,targetGroups:"A,B",eventDate:"2026-12-09",endDate:"2026-12-10"}];
+ const card=ctx.home().split('<article class="parent-home-activity">').find(x=>x.startsWith('<div class="parent-home-activity-head"><b>A 團全國賽</b>')).split('</article>')[0];
+ assert.match(card,/免報名/);assert.match(card,/>查看活動 ›/);assert.match(card,/activity=calendarActivity%3Acompetition/);
+ assert.doesNotMatch(card,/activity=fieldTrip|立即報名|查看報名/);
+});
+
 test("a slow activity response cannot become the next child's or school's homepage content",async()=>{
  const {ctx}=parentHome();let release;
  ctx.api=()=>new Promise(resolve=>{release=resolve});const request=ctx.refreshParentHomeUpdates();

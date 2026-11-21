@@ -4,6 +4,9 @@ import {resolveTenantLineChannel,tenantFeeEnabled} from "../lib/lineTenantConfig
 import {getTenantGoogleLink} from "../lib/tenantLineAccounts.js";
 import { recordTeacherLogin } from "../lib/teacherLoginAudit.js";
 import { touchTeacherLastLogin, listTenantRolesByEmail, listTenantDirectory, getTenantDirectory, getTeacherDirectory, activeTeacherSupport, getMappedStudentsByEmail, defaultTenantId, saveUserIdentity } from "../lib/storage.js";
+function parentStudentSummary(access){
+  return access.role==="parent"&&access.schoolId?(access.students||[]).map(student=>({studentId:String(student.studentId||""),name:String(student.name||student.studentName||""),groupName:String(student.groupName||"")})).filter(student=>student.studentId):[];
+}
 function parentStudentProfiles(access,request){
   if(access.role!=="parent"||!access.schoolId||request.query?.get("includeStudentProfiles")!=="1")return {};
   // Reuse the students already authorized by getAccess for this account/school.
@@ -25,7 +28,7 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
     }
     return json({authProvider:"line",email:a.contactEmail||"",displayName:a.displayName,role:a.role,
       schoolId:a.schoolId,schoolName:a.schoolName||"",systemName:a.systemName||"",
-      capabilities,contexts:a.contexts||[],activeContextKey:a.activeContextKey||"",...parentStudentProfiles(a,request),
+      capabilities,contexts:a.contexts||[],activeContextKey:a.activeContextKey||"",students:parentStudentSummary(a),...parentStudentProfiles(a,request),
       assignments:a.sectionAssignments||a.assignments||[],ensembleGroups:a.ensembleGroups||[],
       comprehensiveEnabled:a.comprehensiveEnabled===true,privateStudentIds:a.privateStudentIds||[],temporaryAssignment:a.temporaryAssignment||null});
   }
@@ -123,7 +126,7 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
     memberships:a.memberships||[],capabilities:{...a.capabilities,...features},
     assignments:a.sectionAssignments||a.assignments||[],ensembleGroups:a.ensembleGroups||[],
     comprehensiveEnabled:a.comprehensiveEnabled===true,privateStudentIds:a.privateStudentIds||[],temporaryAssignment:a.temporaryAssignment||null,
-    students:a.role==="parent"?(a.students||[]).map(student=>({studentId:String(student.studentId||""),name:String(student.name||student.studentName||""),groupName:String(student.groupName||"")})).filter(student=>student.studentId):[],
+    students:parentStudentSummary(a),
     contexts,activeContextKey,...parentStudentProfiles(a,request)
   });
 }});
