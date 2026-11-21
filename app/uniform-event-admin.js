@@ -555,6 +555,7 @@ for(const [key,id] of [["competition","calendarExampleCompetition"],["christmas"
  if(el("existingActivity").value&&!confirm("帶入範例會覆蓋目前活動欄位，確定繼續？"))return;
  if(el("existingActivity").value){el("existingActivity").value="";el("existingActivity").dispatchEvent(new Event("change"))}
  for(const [field,value] of Object.entries(calendarExamples[key]))el("config").elements[field].value=value;
+ window.dispatchEvent(new Event("activityDatesLoaded"));
  updateActivityAudiencePreview();el("configSaveFeedback").textContent="已帶入範例，請核對日期、團別、地點與注意事項後再儲存。";
 });
 syncConfig();
