@@ -1,3 +1,4 @@
+import "./payment-resolution.js?v=20261121-payment-resolution";
 const accountOnly=document.documentElement.hasAttribute("data-line-account");
 const legacyLineEntry=!accountOnly&&(location.hash==="#lineBinding"||new URLSearchParams(location.search).has("line_link")||new URLSearchParams(location.search).has("line_error"));
 if(legacyLineEntry)location.replace("/line-account.html"+location.search+"#lineBinding");
@@ -5,7 +6,7 @@ const $=id=>document.getElementById(id);
 const esc=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[char]);
 const money=value=>Number.isSafeInteger(Number(value))?`NT$ ${Number(value).toLocaleString("zh-TW")}`:"待確認";
 const dateTime=value=>value?new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"}):"—";
-const projectLabels={TEAM_T:"團 T",YEAR_END_DINNER:"期末聚餐"},projectStatuses={DRAFT:"草稿",OPEN:"開放繳費",CLOSED:"已結束"},paymentStatuses={AWAITING_TRANSFER:"待匯款",REPORTED_UNVERIFIED:"已回報，待核帳",VERIFIED:"已確認入帳",NOT_REQUIRED:"無須繳費",SOURCE_MISSING:"來源資料遺失"};
+const projectLabels={TEAM_T:"團 T",YEAR_END_DINNER:"期末聚餐"},projectStatuses={DRAFT:"草稿",OPEN:"開放繳費",CLOSED:"已結束"},paymentStatuses={ADJUSTMENT_REQUIRED:"待補差額，流程暫停",SUPPLEMENT_REPORTED:"已補款，待核帳",REFUND_REQUESTED:"待財務退款",REFUNDED:"已退款作廢",AWAITING_TRANSFER:"待匯款",REPORTED_UNVERIFIED:"已回報，待核帳",VERIFIED:"已確認入帳",NOT_REQUIRED:"無須繳費",SOURCE_MISSING:"來源資料遺失"};
 const state={me:null,projects:[],templates:[],activities:[],line:null,busy:false};
 
 function headers(){
@@ -101,7 +102,7 @@ function financeCharge(project,charge){
   const retry=charge.canRetryNotice?`<button class="secondary" data-action="retry-notice" data-project="${esc(project.id)}" data-charge="${esc(charge.id)}">重試 LINE 通知</button>`:"";
   const details=charge.paymentStatus==="REPORTED_UNVERIFIED"?`<div class="notice warn">回報 ${esc(money(report.amount))}｜匯款日 ${esc(report.transferDate||"—")}｜帳號末五碼 <b>${esc(report.lastFive||"—")}</b>｜回報時間 ${esc(dateTime(report.reportedAt))}</div>`:"";
   const forms=charge.paymentStatus==="REPORTED_UNVERIFIED"&&state.me.capabilities?.financeVerifier===true?`<div class="row"><form class="verify-form" data-project="${esc(project.id)}" data-charge="${esc(charge.id)}" data-amount="${esc(charge.amount)}"><label>銀行實際入帳日</label><input name="bankPostedAt" type="date" required><label>核帳備註</label><textarea name="note" maxlength="300" required placeholder="例如：已核對銀行入帳明細"></textarea><button type="submit">確認已入帳</button></form><form class="correction-form" data-project="${esc(project.id)}" data-charge="${esc(charge.id)}"><label>要求補正原因</label><textarea name="reason" maxlength="300" required placeholder="例如：查無此金額，請重新確認日期與末五碼"></textarea><button type="submit" class="warn-action">退回家長補正</button></form></div>`:"";
-  return `<div class="charge"><div class="charge-head"><strong>${esc(charge.parentEmail||"家長帳號待確認")}<br><span class="muted">${esc(charge.studentIds?.join("、")||charge.studentId||"—")}</span></strong><span class="status ${statusClass(charge.paymentStatus)}">${esc(status)}</span></div><p>應繳：<b>${esc(money(charge.amount))}</b>｜來源：${charge.sourceType==="uniform"?"團 T":"期末聚餐"}</p>${details}${forms}${retry}</div>`;
+  return `<div class="charge" data-resolution-source="${esc(charge.sourceId)}"><div class="charge-head"><strong>${esc(charge.parentEmail||"家長帳號待確認")}<br><span class="muted">${esc(charge.studentIds?.join("、")||charge.studentId||"—")}</span></strong><span class="status ${statusClass(charge.paymentStatus)}">${esc(status)}</span></div><p>應繳：<b>${esc(money(charge.amount))}</b>｜來源：${charge.sourceType==="uniform"?"團 T":"期末聚餐"}</p>${details}${forms}${retry}</div>`;
 }
 
 function adminProject(project){
@@ -114,11 +115,22 @@ function adminProject(project){
 }
 
 function renderProjects(){
+  renderPaymentResolutionTasks();
   if(!state.projects.length){$("projects").innerHTML=`<div class="card"><h2>${state.me?.role==="admin"?"目前沒有收費專案":"目前沒有需要處理的費用"}</h2><p class="muted">${state.me?.role==="admin"?"請先建立草稿，再同步團 T 或期末聚餐的既有資料。":"目前沒有需要您繳費或回報的項目；仍可先完成 LINE 通知綁定，方便日後接收弦樂團的重要資訊。"}</p></div>`;return}
   $("projects").innerHTML=`<h2>${state.me?.role==="admin"?"收費專案與核帳":"家庭費用資訊"}</h2>${state.projects.map(project=>state.me.role==="admin"?adminProject(project):parentProject(project)).join("")}`;
   document.querySelectorAll(".transfer-form").forEach(form=>form.addEventListener("submit",reportTransfer));
   document.querySelectorAll(".verify-form").forEach(form=>form.addEventListener("submit",verifyTransfer));
   document.querySelectorAll(".correction-form").forEach(form=>form.addEventListener("submit",requestCorrection));
+  if(window.paymentResolutionUI.enabled()&&state.me.capabilities?.financeVerifier)for(const project of state.projects)for(const charge of project.charges||[]){if(charge.paymentStatus!=="REPORTED_UNVERIFIED")continue;const host=[...document.querySelectorAll("[data-resolution-source]")].find(el=>el.dataset.resolutionSource===charge.sourceId);if(host)window.paymentResolutionUI.financeControls(host,{...charge,id:charge.sourceId},charge.sourceType,api,loadProjects)}
+}
+
+
+async function renderPaymentResolutionTasks(){
+ if(accountOnly||!window.paymentResolutionUI.enabled())return;
+ let host=document.getElementById("paymentResolutionTasks");if(!host){host=document.createElement("section");host.id="paymentResolutionTasks";host.className="card";$("projects").before(host)}
+ if(state.me.role==="parent")return window.paymentResolutionUI.loadParent(host,api,loadProjects);
+ if(state.me.capabilities?.financeVerifier!==true){host.hidden=true;return}
+ try{const {items=[]}=await api("uniform-events/payment-resolution");host.replaceChildren();host.hidden=!items.length;if(!items.length)return;const title=document.createElement("h2");title.textContent="補款與退費";host.append(title);for(const item of items){const card=document.createElement("section"),label=document.createElement("h3");label.textContent=(item.title||"款項處理")+"｜"+item.parentEmail;card.append(label);window.paymentResolutionUI.financeControls(card,item,item.sourceType,api,loadProjects);host.append(card)}}catch(error){host.textContent="補款與退費進度無法讀取："+error.message}
 }
 
 async function createProject(event){

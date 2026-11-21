@@ -12,12 +12,15 @@
     syncScope();if(!parent()||loading)return;
     const current=context,version=++generation;loading=true;loadedAt=Date.now();
     try{
-      const [uniformResult,familyResult]=await Promise.allSettled([api("/api/uniform-events/requests"),api("/api/uniform-events/family-registration")]);
+      const [uniformResult,familyResult,resolutionResult]=await Promise.allSettled([api("/api/uniform-events/requests"),api("/api/uniform-events/family-registration"),document.documentElement?.hasAttribute("data-payment-resolution")?api("/api/uniform-events/payment-resolution"):Promise.resolve({items:[]})]);
       if(scope()!==current||generation!==version)return;
       const data=uniformResult.value,families=familyResult.value;
+      if(resolutionResult.status==="rejected")throw Error("補款與退費狀態暫時無法讀取");
       registrations=Array.isArray(families?.items)?families.items:null;
       if(!Array.isArray(data?.items)||!registrations)throw Error("付款資料格式不完整");
-      items=[...data.items,...families.items];error="";
+      const combined=new Map([...data.items,...families.items].map(item=>[(model.family(item)?"family":"uniform")+":"+item.id,item]));
+      for(const item of resolutionResult.value?.items||[])combined.set(item.sourceType+":"+item.id,{...item,amount:item.paymentResolution.expectedAmount,paymentOpen:true,activityTitle:item.title});
+      items=[...combined.values()];error="";
     }catch(cause){
       if(scope()!==current||generation!==version)return;
       items=null;error="暫時無法讀取付款狀態，請重新讀取。";
@@ -29,7 +32,7 @@
   window.getParentActivityRegistrations=()=>scope()===context?registrations:null;
   function invalidate(){items=null;registrations=null;loadedAt=0;error="";generation++;loading=false}
   window.openParentUniformPayment=function(id){
-    if(!parent()||!items?.some(item=>String(item.id)===id&&(model.due(item)||model.reported(item))))return;
+    if(!parent()||!items?.some(item=>String(item.id)===id&&(model.due(item)||model.reported(item)||model.held?.(item))))return;
     const item=items.find(item=>String(item.id)===id),family=model.family(item);
     if(!(family?/^family:(fieldTrip|yearEndDinner):[A-Za-z0-9_-]{1,80}:[a-f0-9]{32}$/.test(id):/^[a-f0-9-]{36}$/i.test(id)))return;
     state.parentUniformFocus=(family?"family-payment:":"payment:")+id;return go("uniformEvents");
@@ -40,12 +43,14 @@
     const label=family?item.activityTitle||"活動繳費":item.kind==="regularUniform"?"團 T":"A 團比賽服";
     const valid=family?/^family:(fieldTrip|yearEndDinner):[A-Za-z0-9_-]{1,80}:[a-f0-9]{32}$/.test(String(item.id)):/^[a-f0-9-]{36}$/i.test(String(item.id)),id=valid?String(item.id):"";
     const detail=family?`學生 ${ids.length} 位｜陪同者 ${Number(item.adults||0)} 位`:`尺寸：${esc(item.size||"待確認")}｜${Number(item.quantity||1)} 件`;
-    return `<div class="parent-payment-row"><strong>${esc(name)}｜${esc(label)}</strong><span class="muted">${detail}</span><span class="parent-payment-amount">${pending?"本筆金額":"應繳金額"}：<b>NT$ ${item.amount.toLocaleString("zh-TW")}</b></span><button type="button" class="${pending?"secondary":"primary"}" ${id?"":"disabled"} onclick="openParentUniformPayment('${id}')">${pending?"查看核帳進度":"查看帳戶並回報匯款"} ›</button></div>`;
+    const held=model.held?.(item),balance=item.paymentResolution?.balance;
+    return `<div class="parent-payment-row"><strong>${esc(name)}｜${esc(label)}</strong><span class="muted">${detail}</span><span class="parent-payment-amount">${pending?"本筆金額":"應繳金額"}：<b>NT$ ${item.amount.toLocaleString("zh-TW")}</b>${held?`｜${balance>0?"尚待補繳 NT$ "+balance.toLocaleString("zh-TW"):"款項處理中"}`:""}</span><button type="button" class="${pending?"secondary":"primary"}" ${id?"":"disabled"} onclick="openParentUniformPayment('${id}')">${held?"處理補款／退費":pending?"查看核帳進度":"查看帳戶並回報匯款"} ›</button></div>`;
   }
   function panel(){
     if(error)return `<section class="card parent-payment-notice" role="status"><h2>付款提醒暫時無法讀取</h2><p>${error}</p><button type="button" class="secondary" onclick="refreshParentUniformPayments()">重新讀取付款狀態</button></section>`;
     if(items===null)return `<div class="notice parent-payment-loading" role="status">正在確認付款進度…</div>`;
     const alerts=model.alerts(items),content=[];
+    if(alerts.held?.length)content.push(`<section class="card parent-payment-notice is-due" role="status"><h2>待處理款項（${alerts.held.length}）</h2><p>有差額或退費申請，流程已暫停。請查看並選擇補款或退費。</p>${alerts.held.map(item=>row(item,true)).join("")}</section>`);
     if(alerts.due.length){
       content.push(`<section class="card parent-payment-notice is-due" role="status" aria-labelledby="parent-payment-title"><div class="parent-payment-heading"><h2 id="parent-payment-title">💳 待繳費（${alerts.due.length}）</h2><button type="button" class="secondary" onclick="refreshParentUniformPayments()" ${loading?"disabled":""}>更新</button></div><p>請完成匯款，再回報日期與<strong>轉出帳號末五碼</strong>。</p>${alerts.due.map(item=>row(item,false)).join("")}</section>`);
     }

@@ -70,7 +70,7 @@
    const count=summary.uniform?.filter(x=>x.kind===kind&&x.status==='PENDING').length||0;if(count)rows.push([key,label,count,'筆']);
   }
   if(state.me?.capabilities?.financeVerifier===true&&summary.uniform!==null&&summary.family!==null){
-   const count=(summary.uniform?.filter(x=>!['CANCELLED','FULFILLED'].includes(x.status)&&x.paymentStatus==='REPORTED_UNVERIFIED').length||0)+(summary.family?.filter(x=>x.registrationStatus==='REGISTERED'&&x.paymentStatus==='REPORTED_UNVERIFIED').length||0);
+   const count=(summary.uniform?.filter(x=>!['CANCELLED','FULFILLED'].includes(x.status)&&['REPORTED_UNVERIFIED','ADJUSTMENT_REQUIRED','SUPPLEMENT_REPORTED','REFUND_REQUESTED'].includes(x.paymentStatus)).length||0)+(summary.family?.filter(x=>x.registrationStatus==='REGISTERED'&&['REPORTED_UNVERIFIED','ADJUSTMENT_REQUIRED','SUPPLEMENT_REPORTED','REFUND_REQUESTED'].includes(x.paymentStatus)).length||0);
    if(count)rows.push(['finance','匯款待核帳',count,'筆']);
   }
   return rows.map(([key,label,count,unit])=>`<button type="button" class="aw-todo" data-admin-todo="${key}"><span>${label}</span><b>${count} ${unit}</b><span aria-hidden="true">›</span></button>`).join('')+(summary.loading?'<p role="status">正在讀取待辦…</p>':summary.error?'<p class="notice" role="status">部分待辦讀取失敗，請重新讀取；尚未確認的項目不列為 0 筆。</p>':summary.loadedAt&&!rows.length?'<p class="notice">目前沒有待審申請或待核帳款項。</p>':'');

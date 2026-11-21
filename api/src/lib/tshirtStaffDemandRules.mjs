@@ -20,6 +20,7 @@ export function newStaffDemand(input,{loan,demands=[],unitPrice,actor,at}){
  return {parentEmail,parentName,studentId,category:input.category,size:input.size,quantity:input.quantity,schoolYear:input.schoolYear,semester:input.semester,note:input.note.trim(),status:"APPROVED",paymentStatus:free?"NOT_REQUIRED":"AWAITING_TRANSFER",unitPrice:free?0:unitPrice,amount:free?0:unitPrice*input.quantity,createdBy:actor,createdAt:at,updatedAt:at};
 }
 export function updateStaffDemand(previous,input,{finance=false,actor,at}){
+ if(previous.paymentResolution&&["ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED","REFUNDED"].includes(previous.paymentStatus))fail("此筆補款／退費尚未結案，請由財務差額流程處理",409);
  const next={...previous,updatedAt:at};
  if(input.action==="VERIFY_DEMAND_PAYMENT"){
   if(!finance)fail("僅具財務權限人員可確認入帳",403);

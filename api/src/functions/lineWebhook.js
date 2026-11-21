@@ -6,6 +6,7 @@ import {getTenantLineAccount,recordTenantLineFriendship} from "../lib/tenantLine
 import {refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
 import {parseActivityLineBinding,consumeActivityLineBinding,leaveActivityLineGroup} from "../lib/lineActivityGroups.js";
 import {receivePrivateLessonReview} from "../lib/linePrivateLesson.js";
+import {receivePaymentRefundRequest} from "../lib/paymentResolution.js";
 import {tenantLineParentReply,tenantLineReplyKind,tenantLineStaffReply,tenantLineStaffReplyKind} from "../lib/tenantLineReplies.mjs";
 import {resolveTenantLineChannel,lineTargetMatchesChannel,tenantWebhookLinks} from "../lib/lineTenantConfig.js";
 import {
@@ -69,6 +70,9 @@ async function handleLineWebhook(request,schoolId,legacyRoute){
           const result=await receivePrivateLessonReview(channel,userId,event.message.text);
           await replyLineMessage(event.replyToken,result,options);
           continue;
+        }
+        if(channel.loginConfigured&&/^#申請退費(?:\s|$)/u.test(event.message.text)){
+          await replyLineMessage(event.replyToken,await receivePaymentRefundRequest(channel,userId,event.message.text),options);continue;
         }
         const staffKind=channel.loginConfigured && tenantLineStaffReplyKind(event.message.text);
         if(staffKind){

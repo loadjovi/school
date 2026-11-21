@@ -80,6 +80,7 @@ async function dinnerConfig(schoolId,activityId){
 }
 
 function dinnerAmount(config,item){
+  if(item.paymentResolution)return item.paymentResolution.expectedAmount;
   if([PAYMENT_STATUSES.REPORTED_UNVERIFIED,PAYMENT_STATUSES.VERIFIED].includes(item.paymentStatus)&&Number.isSafeInteger(item.transferReport?.expectedAmount))return item.transferReport.expectedAmount;
   if(config?.feeStatus!=="PUBLISHED")return Number.isSafeInteger(item.estimatedAmount)?item.estimatedAmount:null;
   const rates=[config.firstAdultFee,config.extraAdultFee,config.extraChildFee];
@@ -101,7 +102,7 @@ function ownsCharge(access,association,source){
 
 function safeTransfer(item,allowFinancial){
   if(allowFinancial)return item;
-  const {transferReport,verificationNote,bankPostedAt,lastTransferReport,paymentHistory,...safe}=item;return safe;
+  const {transferReport,verificationNote,bankPostedAt,lastTransferReport,paymentHistory,paymentResolution,paymentResolutionEvents,...safe}=item;return safe;
 }
 
 async function buildCharge(schoolId,project,association,access,config){
@@ -119,6 +120,7 @@ async function buildCharge(schoolId,project,association,access,config){
     transferReport:safeSource.transferReport||null,verifiedAt:safeSource.verifiedAt||"",verifiedBy:safeSource.verifiedBy||"",
     bankPostedAt:safeSource.bankPostedAt||"",verificationNote:safeSource.verificationNote||"",
     correctionReason:safeSource.correctionReason||"",canReport:access.role==="parent"&&ownsCharge(access,association,source)&&canParentReport({projectStatus:project.status,paymentStatus:source.paymentStatus||PAYMENT_STATUSES.AWAITING_TRANSFER,amount}),
+    paymentResolution:safeSource.paymentResolution||null,
     sourceMissing:false,canRetryNotice:access.capabilities?.financeVerifier===true&&Boolean(source.paymentHistory?.at(-1)?.lineRecipient),etag:loaded.row.etag
   };
 }
@@ -288,7 +290,7 @@ app.http("feeCollectionTransfers",{
         const event=next.paymentHistory.at(-1);
         const [lineNotification,financeLineStatus]=await Promise.all([
           notifyParent(schoolId,project,association,event,event.lineRecipient),
-          (typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())?undefined:notifyFinanceTransfer(schoolId,{kind:association.sourceType,id:association.sourceId,reportedAt:timestamp})
+          notifyFinanceTransfer(schoolId,{kind:association.sourceType,id:association.sourceId,reportedAt:timestamp})
         ]);
         return json({paymentStatus:next.paymentStatus,reportedAt:timestamp,lineNotification,financeLineStatus});
       }

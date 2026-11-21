@@ -1,4 +1,5 @@
 import {lineFirstLabEnabled} from "../lib/labNoticeDelivery.mjs";
+import {paymentOnHold} from "../lib/paymentResolutionRules.mjs";
 import {safePaymentNotifications} from "../lib/paymentNotifications.js";
 import {notifyFinanceTransfer,retryFinanceTransfer} from "../lib/lineAdminTodoNotification.mjs";
 import {notifyTenantPaymentVerified} from "../lib/tenantLineFeeNotice.js";
@@ -20,6 +21,7 @@ app.http("uniformTransferReport",{methods:["POST","PATCH"],authLevel:"anonymous"
   const t=await db("TenantUniformEventRequest"),row=await find(t,schoolId,b.requestId);
   if(!row)return fail("Order not found",404);
   const old=JSON.parse(row.payload||"{}");
+  if(old.paymentResolution&&paymentOnHold(old))return fail("此筆須由補款／退費流程處理，不能直接核帳或重新回報全額",409);
   if(!["regularUniform","competitionUniform"].includes(old.kind)||(request.method==="POST"&&!ensureStudentAccess(access,old.studentId)))return fail("Forbidden",403);
   if(!["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(old.status)||!Number.isSafeInteger(old.amount)||old.amount<=0)return fail("Order not payable",409);
   if(request.method==="PATCH"){

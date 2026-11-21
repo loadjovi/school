@@ -1,3 +1,4 @@
+import "./payment-resolution.js?v=20261121-payment-resolution";
 import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv,tshirtPurchaseOrderCsv} from "./tshirt-procurement-plan.mjs?v=20261117-auto-procurement";
 const $=id=>document.getElementById(id);
 const term=currentTshirtTerm();
@@ -81,7 +82,7 @@ function drawParents(){
  links.forEach((x,i)=>select.add(new Option(`${x.parentName||"家長"} · ${students.get(String(x.studentId)).studentName||students.get(String(x.studentId)).name||x.studentId}（${x.parentEmail}）`,String(i))));
  if([...select.options].some(x=>x.value===before))select.value=before;
 }
-function staffStatus(x){return x.status==="APPROVED"?(x.category==="CADRE_FIRST"?"首次公費待採購":x.paymentStatus==="VERIFIED"?"已核帳，待採購":"待財務核帳"):({ORDERED:"已採購待到貨",ARRIVED:"已到貨",FULFILLED:"已處理完成",CANCELLED:"已取消"})[x.status]||x.status}
+function staffStatus(x){if(x.paymentResolution&&window.paymentResolutionUI?.labels[x.paymentStatus])return window.paymentResolutionUI.labels[x.paymentStatus];return x.status==="APPROVED"?(x.category==="CADRE_FIRST"?"首次公費待採購":x.paymentStatus==="VERIFIED"?"已核帳，待採購":"待財務核帳"):({ORDERED:"已採購待到貨",ARRIVED:"已到貨",FULFILLED:"已處理完成",CANCELLED:"已取消"})[x.status]||x.status}
 function drawStaff(){
  const body=$("tshirtStaffRecords");body.replaceChildren();
  const list=data.staffDemands.filter(x=>Number(x.schoolYear)===plan.term.schoolYear&&Number(x.semester)===plan.term.semester||["APPROVED","ORDERED","ARRIVED"].includes(x.status)&&Number(x.schoolYear)*2+Number(x.semester)<plan.term.schoolYear*2+plan.term.semester);
@@ -90,14 +91,16 @@ function drawStaff(){
   const card=document.createElement("details");card.className="tshirt-demand-record";
   const title=document.createElement("summary");title.textContent=`${x.parentName}｜${STAFF_CATEGORIES[x.category]}｜${x.size} × ${x.quantity} 件｜${staffStatus(x)}`;card.append(title);
   const desc=document.createElement("p");desc.textContent=`${x.schoolYear} 學年度${x.semester===1?"上":"下"}學期｜應繳 NT$${x.amount}｜${x.note||"未填備註"}`;card.append(desc);
-  if(x.category!=="CADRE_FIRST"&&x.status==="APPROVED"&&x.paymentStatus!=="VERIFIED"){
+  if(canVerifyFinance)window.paymentResolutionUI?.financeControls(card,x,"staff",call,load);
+  const resolutionHeld=Boolean(x.paymentResolution)&&["ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED","REFUNDED"].includes(x.paymentStatus);
+  if(!resolutionHeld&&x.category!=="CADRE_FIRST"&&x.status==="APPROVED"&&x.paymentStatus!=="VERIFIED"){
    if(canVerifyFinance){
     const form=document.createElement("form");form.className="tshirt-demand-finance";
     form.innerHTML='<h4>財務確認實際入帳</h4><label>入帳日期<input name="date" type="date" required></label><label>實際金額<input name="amount" type="number" min="1" step="1" required></label><label>匯款末五碼<input name="lastFive" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" required></label><label>核帳說明<input name="note" maxlength="300" required></label><button type="submit">確認此筆已入帳</button>';
     form.addEventListener("submit",async e=>{e.preventDefault();if(!confirm(`確認已核對 ${x.parentName} 的實際入帳 NT$${x.amount}？`))return;await saveChange(x,{action:"VERIFY_DEMAND_PAYMENT",bankPostedDate:form.elements.date.value,paidAmount:Number(form.elements.amount.value),lastFive:form.elements.lastFive.value,note:form.elements.note.value},form.querySelector("button"))});card.append(form);
    }else{const hint=document.createElement("p");hint.textContent="請具財務權限人員展開此筆需求，核對實際入帳。";card.append(hint)}
   }
-  const next={APPROVED:x.category==="CADRE_FIRST"||x.paymentStatus==="VERIFIED"?[["ORDERED","標記已採購"],["CANCELLED","取消需求"]]:[["CANCELLED","取消需求"]],ORDERED:[["ARRIVED","標記已到貨"]],ARRIVED:[["FULFILLED","確認需求已處理完成"]]}[x.status]||[];
+  const next=resolutionHeld?[]:{APPROVED:x.category==="CADRE_FIRST"||x.paymentStatus==="VERIFIED"?[["ORDERED","標記已採購"],["CANCELLED","取消需求"]]:[["CANCELLED","取消需求"]],ORDERED:[["ARRIVED","標記已到貨"]],ARRIVED:[["FULFILLED","確認需求已處理完成"]]}[x.status]||[];
   for(const [status,label] of next){const button=document.createElement("button");button.type="button";button.textContent=label;button.addEventListener("click",async()=>{
    const note=prompt(label+"：請填寫實際處理說明（這裡只更新需求進度；驗收、庫存與發放請依原流程另行登記）。");if(!note?.trim())return;
    await saveChange(x,{action:"UPDATE_DEMAND_STATUS",status,note:note.trim()},button);

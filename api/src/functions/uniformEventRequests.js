@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { getTenantContext, ensureStudentAccess, getStudentAliasInfo, json } from "../lib/auth.js";
 import { getStudentMaster, listUserStudentMappings } from "../lib/storage.js";
 import { sendUniformRequestStatusEmail } from "../lib/email.js";
+import {paymentOnHold,ownsResolution} from "../lib/paymentResolutionRules.mjs";
 import {safePaymentNotifications,paymentNotificationStatus} from "../lib/paymentNotifications.js";
 import {uniformNeedsPayment} from "../lib/paymentNoticeRules.mjs";
 import { getUniformPrice } from "../lib/uniformPricing.js";
@@ -104,7 +105,8 @@ app.http("uniformEventRequests",{
         for await(const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
           const item=decode(e);
           if(access.role==="admin"||ensureStudentAccess(access,item.studentId)){
-            if(access.role==="admin"&&access.capabilities?.financeVerifier!==true){const {transferReport,verificationNote,bankPostedAt,...safe}=item;out.push(safe)}
+            if(access.role==="admin"&&access.capabilities?.financeVerifier!==true){const {transferReport,verificationNote,bankPostedAt,paymentResolution,paymentResolutionEvents,...safe}=item;out.push(safe)}
+            else if(item.paymentResolution&&access.role==="parent"&&!ownsResolution(access,item,ensureStudentAccess)){const {paymentResolution,paymentResolutionEvents,...safe}=item;out.push({...safe,paymentResolution:{expectedAmount:paymentResolution.expectedAmount,balance:paymentResolution.balance,reason:paymentResolution.reason}})}
             else out.push(item);
           }
         }
@@ -160,6 +162,7 @@ app.http("uniformEventRequests",{
       if(!previous)return err("Not found",404);
       if(data.etag!==previous.etag)return err("Record changed, refresh and retry",409);
       const before=decode(previous);
+      if(before.paymentResolution&&paymentOnHold(before))return err("此筆補款／退費尚未結案，請由財務處理，不能變更金額或推進申請",409);
       if(data.action==="SEND_PAYMENT_LINE"){
         if(access.role!=="admin")return err("Admin only",403);
         if(!uniformPaymentLineEligible(before))return err("目前不是待家長匯款的團服申請，無須補送繳款通知",409);

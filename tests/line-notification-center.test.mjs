@@ -172,7 +172,7 @@ test("the standalone LINE account page fetches no projects, bank templates or fi
  const ctx={console,document:{documentElement:{hasAttribute:()=>true},getElementById:id=>elements[id]||null,addEventListener(){}},location:{hash:"",search:"",pathname:"/line-account.html"},history:{replaceState(){}},URLSearchParams,
   sessionStorage:{getItem:()=>""},fetch:async url=>{calls.push(url);return {ok:true,json:async()=>url==="/api/me"?{role:"parent",schoolId:"school-a",capabilities:{lineAccount:true,feeCollections:true}}:{configured:true,bound:true,googleLinked:true,authProvider:"google",lineDisplayName:"家長"}}}
  };
- runInNewContext(read("app/fee-collections.js").replace('if(!legacyLineEntry)load();','globalThis.loadAccount=load;'),ctx);
+ runInNewContext(read("app/fee-collections.js").replace(/^import .*;\n/gm,"").replace('if(!legacyLineEntry)load();','globalThis.loadAccount=load;'),ctx);
  await ctx.loadAccount();assert.deepEqual(calls,["/api/me","/api/line/school-account"]);
  assert.equal(elements.roleTitle.textContent,"LINE 通知設定");assert.equal(elements.status.hidden,true);
  assert.doesNotMatch(elements.lineBinding.innerHTML,/收費|費用|專案/);
@@ -183,7 +183,7 @@ test("the standalone LINE account page fetches no projects, bank templates or fi
 
 test("legacy LINE binding bookmarks redirect to the account-only page before requesting billing data",()=>{
  const redirects=[],calls=[];
- runInNewContext(read("app/fee-collections.js"),{document:{documentElement:{hasAttribute:()=>false},getElementById:()=>null,addEventListener(){}},location:{hash:"#lineBinding",search:"?line_link=confirm",replace:url=>redirects.push(url)},URLSearchParams,sessionStorage:{getItem:()=>""},fetch:(...args)=>calls.push(args)});
+ runInNewContext(read("app/fee-collections.js").replace(/^import .*;\n/gm,""),{document:{documentElement:{hasAttribute:()=>false},getElementById:()=>null,addEventListener(){}},location:{hash:"#lineBinding",search:"?line_link=confirm",replace:url=>redirects.push(url)},URLSearchParams,sessionStorage:{getItem:()=>""},fetch:(...args)=>calls.push(args)});
  assert.deepEqual(redirects,["/line-account.html?line_link=confirm#lineBinding"]);assert.equal(calls.length,0);
 });
 

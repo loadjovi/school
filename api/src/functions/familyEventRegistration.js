@@ -1,4 +1,5 @@
 import {lineFirstLabEnabled} from "../lib/labNoticeDelivery.mjs";
+import {paymentOnHold} from "../lib/paymentResolutionRules.mjs";
 import {app} from "@azure/functions";
 import {TableClient} from "@azure/data-tables";
 import {createHash,randomUUID} from "node:crypto";
@@ -46,7 +47,7 @@ function publicRegistration(row,access){
  // Financial verification data never appears in a publicly enumerable config endpoint.
  if(access.role==="admin"){
   if(access.capabilities?.financeVerifier===true)return r;
-  const {transferReport,verificationNote,bankPostedAt,...safe}=r;return safe;
+  const {transferReport,verificationNote,bankPostedAt,paymentResolution,paymentResolutionEvents,...safe}=r;return safe;
  }
  const {etag,...safe}=r;return safe;
 }
@@ -74,7 +75,7 @@ app.http("familyEventRegistration",{
       if(!configCache.has(key)){const config=await get(configs,schoolId,key);configCache.set(key,config?JSON.parse(config.payload||"{}"):null)}
       const config=configCache.get(key),payment=familyPaymentInfo(config,r);
       const reported=["REPORTED_UNVERIFIED","VERIFIED"].includes(r.paymentStatus)&&Number.isSafeInteger(r.transferReport?.expectedAmount)?r.transferReport.expectedAmount:payment.amount;
-      list.push({...publicRegistration(row,access),amount:reported,paymentOpen:payment.paymentOpen,activityTitle:config?.title||r.activityId});
+      list.push({...publicRegistration(row,access),amount:r.paymentResolution?.expectedAmount??reported,paymentOpen:payment.paymentOpen,activityTitle:config?.title||r.activityId});
      }
     }
     return json({items:list});
@@ -140,6 +141,7 @@ app.http("familyEventRegistration",{
    if(!previous)return fail("Registration not found",404);
    const old=decode(previous),actual=old.id;
    if(access.role==="parent"&&!ownsRegistration(access,old))return fail("Forbidden",403);
+   if(old.paymentResolution&&paymentOnHold(old))return fail("此筆須由補款／退費流程處理，不能直接核帳或重新回報全額",409);
    if(old.registrationStatus!=="REGISTERED")return fail("Registration not active",409);
    if(body.action==="RETRY_FINANCE_LINE"){
     if(access.role!=="admin"||access.capabilities?.financeVerifier!==true)return fail("僅指定財務人員可補送通知",403);

@@ -41,6 +41,16 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         self.assertFalse((self.lab/"api/src/functions/lineUatFeeFixture.js").exists())
         self.assertIn("const buildEnablesDemoFees = false;",(self.lab/"api/src/lib/lineTenantConfig.js").read_text())
         self.assertNotIn("data-line-uat-fees",(self.lab/"app/fee-collections.html").read_text())
+    def test_payment_resolution_is_only_enabled_in_named_line_lab(self):
+        path="api/src/lib/paymentResolutionRules.mjs"
+        self.assertIn("const buildEnablesPaymentResolution = false;",(ROOT/path).read_text())
+        self.assertIn("const buildEnablesPaymentResolution = false;",(self.lab/path).read_text())
+        self.assertNotIn('data-payment-resolution="true"',(self.lab/"app/parent-uniform-events.html").read_text())
+        with tempfile.TemporaryDirectory(prefix="sh-resolution-uat-") as work:
+            output=Path(work)/"release"
+            module.prepare(output,line_uat=True)
+            self.assertIn("const buildEnablesPaymentResolution = true;",(output/path).read_text())
+            self.assertIn('data-payment-resolution="true"',(output/"app/parent-uniform-events.html").read_text())
     def test_manual_finance_line_retry_is_only_exposed_in_named_line_uat(self):
         filename="app/uniform-event-admin.html"
         marker="data-line-uat-finance-retry"

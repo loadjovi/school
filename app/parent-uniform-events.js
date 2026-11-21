@@ -1,6 +1,7 @@
+import "./payment-resolution.js?v=20261121-payment-resolution";
 import {confirmedReceived} from "./competition-paper-receipts.js";
 import "./parent-activity-notice.js?v=20261016-new-activity-alert-parent-tasks";
-import "./uniform-payment-state.js?v=20261026-payment-email";
+import "./uniform-payment-state.js?v=20261121-payment-resolution";
 import {buildUniformGrowth} from "./uniform-growth.js?v=20261017-first-public";
 import {roster as competitionRoster} from "./competition-roster-data.js";
 const competitionByName=new Map(competitionRoster.map(row=>[row[1],{style:row[2],size:row[3]}]));
@@ -332,7 +333,8 @@ async function loadUniformRequestProgress(){
    if(item.status==="FULFILLED")card.append(element("p",`實際領取：${formatDate(item.issuedAt)||"日期待確認"}｜領取人：${item.receivedBy||"待核對"}｜件數：${item.issuedQuantity||item.quantity||1}`,"hint"));
    if(["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(item.status)&&item.acquisition!=="PUBLIC"){
     const payment=element("div",undefined,"payment-account");payment.id="uniform-payment-"+item.id;card.append(payment);
-    if(Number.isSafeInteger(item.amount)&&item.amount>0){
+    if(item.paymentResolution&&item.paymentStatus!=="VERIFIED"){payment.append(element("p",window.paymentResolutionUI.labels[item.paymentStatus]||"款項處理中"),element("p","請至上方「補款與退費」處理；勿重新匯全額。"))}
+    else if(Number.isSafeInteger(item.amount)&&item.amount>0){
      if(["REPORTED_UNVERIFIED","VERIFIED"].includes(item.paymentStatus)){
       payment.append(element("strong",item.paymentStatus==="VERIFIED"?"✅ 學校已確認入帳":"🕒 已回報匯款，等待學校核帳"));
       payment.append(element("p","本筆金額：NT$ "+item.amount.toLocaleString("zh-TW")));
@@ -467,10 +469,12 @@ function appendActivityFeeBreakdown(card,config,registration){
 }
 function activityPaymentLabel(item,config){
  if(item.paymentStatus==="NOT_OPEN")return config?.paymentOpen===true||config?.collectionOpen===true?"已開放匯款，待您回報":"尚未開放匯款";
+ if(item.paymentResolution&&window.paymentResolutionUI.labels[item.paymentStatus])return window.paymentResolutionUI.labels[item.paymentStatus];
  return {REPORTED_UNVERIFIED:"已回報匯款，待幹部核帳",VERIFIED:"已確認入帳"}[item.paymentStatus]||"待確認";
 }
 async function appendActivityPayment(card,item,match){
  if(!["fieldTrip","yearEndDinner"].includes(item.kind))return;
+ if(item.paymentResolution&&item.paymentStatus!=="VERIFIED"){card.append(element("p",(window.paymentResolutionUI.labels[item.paymentStatus]||"款項處理中")+"；請至上方「補款與退費」處理。"));return}
  if(["REPORTED_UNVERIFIED","VERIFIED"].includes(item.paymentStatus)){
   const box=element("div",undefined,"payment-account");
   box.append(element("strong",item.paymentStatus==="VERIFIED"?"✅ 學校已確認入帳":"🕒 已回報匯款，等待學校核帳"));
@@ -565,7 +569,7 @@ async function renderInlineActivities(){
      host.append(card);continue;
     }
     const already=(registration.items||[]).find(x=>x.kind===item.module&&x.activityId===item.id);
-    if(already){card.append(element("p",(already.paymentStatus==="VERIFIED"?"報名完成":"已送出報名")+"・"+activityPaymentLabel(already,item),"status-pill"));appendActivityFeeBreakdown(card,item,already);await appendActivityPayment(card,already,item);host.append(card);continue}
+    if(already){card.append(element("p",(already.registrationStatus==="CANCELLED"?"報名已作廢":already.paymentStatus==="VERIFIED"?"報名完成":"已送出報名")+"・"+activityPaymentLabel(already,item),"status-pill"));appendActivityFeeBreakdown(card,item,already);await appendActivityPayment(card,already,item);host.append(card);continue}
     if(!["yearEndDinner","fieldTrip"].includes(item.module)){card.append(element("p","活動資訊依校方公告。","hint"));host.append(card);continue}
     appendActivityRates(card,item);
     const now=Date.now();
@@ -638,3 +642,8 @@ async function renderInlineActivities(){
  }catch(e){for(const host of Object.values(hosts)){host.replaceChildren();host.append(element("p","資料讀取失敗："+e.message,"hint"))}}
 }
 renderInlineActivities();
+
+const paymentResolutionHost=document.getElementById("paymentResolutionTasks");
+const refreshPaymentResolution=()=>window.paymentResolutionUI.loadParent(paymentResolutionHost,parentApi,async()=>{await loadUniformRequestProgress();await renderInlineActivities()});
+refreshPaymentResolution();
+window.addEventListener("focus",refreshPaymentResolution);

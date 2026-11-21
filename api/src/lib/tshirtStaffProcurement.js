@@ -14,7 +14,7 @@ export async function staffProcurement(request,ctx,{loanClient,audit,linked,data
   await client.createTable().catch(e=>{if(e.statusCode!==409)throw e});
   const schoolId=ctx.schoolId,actor=String(ctx.access.email||"admin"),at=new Date().toISOString();
   const finance=ctx.access.capabilities?.financeVerifier===true;
-  const safe=item=>{if(finance)return item;const {lastFive,bankPostedDate,verificationNote,paidAmount,...rest}=item;return rest};
+  const safe=item=>{if(finance)return item;const {lastFive,bankPostedDate,verificationNote,paidAmount,paymentResolution,paymentResolutionEvents,...rest}=item;return rest};
   const all=async()=>{const out=[];for await(const row of client.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}}))out.push(decode(row));return out};
   if(request.method==="GET")return response({items:(await all()).map(safe),canVerifyFinance:finance});
   const input=data||await request.json();let next,id,old;

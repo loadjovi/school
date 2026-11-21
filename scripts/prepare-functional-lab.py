@@ -187,6 +187,11 @@ def prepare(output: Path, *, line_uat: bool = False) -> None:
     install_sop_parent_binding(api)
     install_sop_data_tools(api,app)
     if line_uat:
+        resolution=lib/"paymentResolutionRules.mjs"
+        current=resolution.read_text(encoding="utf-8")
+        marker="const buildEnablesPaymentResolution = false;"
+        if marker not in current:raise RuntimeError("Payment resolution LAB flag has changed")
+        resolution.write_text(current.replace(marker,"const buildEnablesPaymentResolution = true;"),encoding="utf-8")
         policy=lib/"labNoticeDelivery.mjs"
         current=policy.read_text(encoding="utf-8")
         marker="const buildEnablesLineFirstLab = false;"
@@ -216,6 +221,8 @@ def prepare(output: Path, *, line_uat: bool = False) -> None:
             if '<html lang="zh-Hant">' not in contents:
                 raise RuntimeError(f"Unexpected HTML root in {filename}")
             page.write_text(contents.replace('<html lang="zh-Hant">',f'<html lang="zh-Hant" {attribute}>',1),encoding="utf-8")
+        for page in app.rglob("*.html"):
+            page.write_text(page.read_text(encoding="utf-8").replace('<html ', '<html data-payment-resolution="true" ',1),encoding="utf-8")
 
     # No real identities/records or copied secret settings in the release.
     for forbidden in (api/"local.settings.json",app/".env"):

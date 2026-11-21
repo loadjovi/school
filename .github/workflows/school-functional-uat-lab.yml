@@ -81,7 +81,7 @@ jobs:
           node --test tests/private-lesson-line-review.test.mjs tests/private-lesson-line-confirm-ui.test.mjs tests/private-lesson-parent-line.test.mjs tests/parent-private-review-refresh-guard.test.mjs tests/private-lesson-no-auto-redraw.test.mjs api/test/privateLessonCompletionResilience.test.mjs
           node --test api/test/schoolScheduleRestore.test.mjs api/test/teacherLoginHistory.test.mjs api/test/sopLabDemoPreservation.test.mjs
           node --test tests/lab-data-reset.test.mjs tests/lab-private-fixtures.test.mjs
-          node --test tests/lab-line-first-notifications.test.mjs tests/tenant-line-isolation.test.mjs tests/tenant-line-workflows.test.mjs tests/tenant-notification-isolation.test.mjs tests/fee-collection-rules.test.mjs tests/line-activity-calendar.test.mjs tests/line-latest-announcements.test.mjs tests/line-today-courses.test.mjs
+          node --test tests/payment-resolution.test.mjs tests/lab-line-first-notifications.test.mjs tests/tenant-line-isolation.test.mjs tests/tenant-line-workflows.test.mjs tests/tenant-notification-isolation.test.mjs tests/fee-collection-rules.test.mjs tests/line-activity-calendar.test.mjs tests/line-latest-announcements.test.mjs tests/line-today-courses.test.mjs
           find .functional-lab-build/api/src -name '*.js' -print0 | xargs -0 -n1 node --check
           find .functional-lab-build/api/src -name '*.mjs' -print0 | xargs -0 -n1 node --check
           find .functional-lab-build/app -maxdepth 1 -name '*.js' -print0 | xargs -0 -n1 node --check

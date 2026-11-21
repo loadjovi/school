@@ -1,3 +1,4 @@
+import "./payment-resolution.js?v=20261121-payment-resolution";
 const $=id=>document.getElementById(id);
 function headers(){const token=sessionStorage.getItem("google_id_token")||"",school=sessionStorage.getItem("school_context_id")||"",role=sessionStorage.getItem("role_context")||"";return {"Content-Type":"application/json",...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(school?{"X-School-Id":school}:{}),...(role?{"X-Role-Context":role}:{})}}
 async function api(path,options={}){const r=await fetch("/api/"+path,{...options,credentials:"same-origin",cache:"no-store",headers:headers()});const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||"HTTP "+r.status);return data}
@@ -8,6 +9,7 @@ function reviewCard(item,type){
  card.append(line("strong",(type==="uniform"?(item.kind==="regularUniform"?"團 T":"A 團比賽服"):item.kind==="yearEndDinner"?"期末聚餐":"交流／快閃活動")+"｜"+(type==="uniform"?item.studentId:item.parentEmail)));
  const expected=type==="uniform"?item.amount:report.expectedAmount;
  const detail=line("div",`應繳 NT$ ${Number(expected||0).toLocaleString("zh-TW")}｜回報 NT$ ${amount.toLocaleString("zh-TW")}｜家長回報匯款日期 ${report.transferDate||"未提供"}｜匯出帳號末五碼 ${report.lastFive||"未提供"}`);detail.className="details";card.append(detail);
+ if(window.paymentResolutionUI?.enabled()&&item.paymentResolution){window.paymentResolutionUI.financeControls(card,item,type,api,load);return card}
  const form=document.createElement("form"),dateLabel=line("label","銀行實際入帳日期"),date=document.createElement("input");date.type="date";date.required=true;dateLabel.append(date);
  const noteLabel=line("label","核帳備註（請記錄銀行查核依據）"),note=document.createElement("textarea");note.required=true;note.maxLength=300;note.rows=2;noteLabel.append(note);
  const button=line("button","確認已入帳"),status=line("p","");button.type="submit";status.setAttribute("role","status");form.append(dateLabel,noteLabel,button,status);card.append(form);
@@ -17,11 +19,12 @@ function reviewCard(item,type){
   else await api("uniform-events/family-registration",{method:"PATCH",body:JSON.stringify({kind:item.kind,activityId:item.activityId,registrationId:item.id,action:"VERIFY_PAYMENT",amount,bankPostedAt:date.value,note:note.value.trim()})});
   status.textContent="已確認入帳";await load();
  }catch(error){status.textContent="核帳失敗："+error.message;button.disabled=false}});
+ window.paymentResolutionUI?.financeControls(card,item,type,api,load);
  return card;
 }
 async function load(){try{
  const [uniform,family]=await Promise.all([api("uniform-events/requests"),api("uniform-events/family-registration")]);
- const u=(uniform.items||[]).filter(x=>x.paymentStatus==="REPORTED_UNVERIFIED"),f=(family.items||[]).filter(x=>x.paymentStatus==="REPORTED_UNVERIFIED");
+ const u=(uniform.items||[]).filter(x=>["REPORTED_UNVERIFIED","ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED"].includes(x.paymentStatus)),f=(family.items||[]).filter(x=>["REPORTED_UNVERIFIED","ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED"].includes(x.paymentStatus));
  $("uniformRows").replaceChildren(...(u.length?u.map(x=>reviewCard(x,"uniform")):[line("p","目前沒有待核對的團服匯款。")]));
  $("familyRows").replaceChildren(...(f.length?f.map(x=>reviewCard(x,"family")):[line("p","目前沒有待核對的活動匯款。")]));
  $("status").textContent=`待核帳：團服 ${u.length} 筆、活動 ${f.length} 筆。`;
