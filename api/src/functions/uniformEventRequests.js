@@ -10,6 +10,7 @@ import { getUniformPrice } from "../lib/uniformPricing.js";
 import {upsertCurrentCompetitionMaster,latestCompetitionRequest} from "../lib/competitionUniformMaster.js";
 
 import {notifyUniformReview,notifyUniformCancellation} from "../lib/lineAdminTodoNotification.mjs";
+import {notifyUniformPaymentRequired,uniformPaymentLineStates,uniformPaymentLineEligible} from "../lib/uniformPaymentLine.js";
 
 const kinds=new Set(["regularUniform","competitionUniform","fieldTrip","yearEndDinner"]);
 // 已核對的歷史公費配發，依校別與學生 ID 登錄；不依姓名或尺寸推定資格。
@@ -109,6 +110,10 @@ app.http("uniformEventRequests",{
         const used=new Set(out.filter(x=>x.kind==="competitionUniform"&&x.acquisition==="PUBLIC"&&x.status!=="CANCELLED").map(x=>String(x.studentId)));
         const historical=[];
         for(const id of historicalPublicIssues[schoolId]||[])if(access.role==="admin"||ensureStudentAccess(access,id)){used.add(id);historical.push(id)}
+        if(access.role==="admin"){
+          const lineStates=await uniformPaymentLineStates(schoolId,out);
+          for(const item of out)if(lineStates[item.id])item.paymentLineNotification=lineStates[item.id];
+        }
         return json({items:out,publicUsedStudentIds:[...used],historicalPublicStudentIds:historical});
       }
       const data=await request.json();
@@ -146,13 +151,21 @@ app.http("uniformEventRequests",{
         const staffLineStatus=access.role==="parent"?await notifyUniformReview(schoolId,{...payload,id}):undefined;
         if(staffLineStatus&&staffLineStatus!=="sent")console.info("LINE uniform review notification skipped or failed",{schoolId,requestId:id,status:staffLineStatus});
         const paymentNotification=uniformNeedsPayment(payload)?await safePaymentNotifications(schoolId,{scope:{kind:"uniform",id}}):null;
-        return json({item:{...payload,id},masterSyncPending,paymentNotification,notificationStatus:paymentNotificationStatus(paymentNotification),staffLineStatus},201);
+        const paymentLineNotification=uniformPaymentLineEligible(payload)?await notifyUniformPaymentRequired(schoolId,{...payload,id}):undefined;
+        return json({item:{...payload,id},masterSyncPending,paymentNotification,notificationStatus:paymentNotificationStatus(paymentNotification),staffLineStatus,paymentLineNotification},201);
       }
       if(!validId(data.id)||!safe(data.etag,200))return err("Invalid update");
       const previous=await find(client,schoolId,data.id);
       if(!previous)return err("Not found",404);
       if(data.etag!==previous.etag)return err("Record changed, refresh and retry",409);
       const before=decode(previous);
+      if(data.action==="SEND_PAYMENT_LINE"){
+        if(access.role!=="admin")return err("Admin only",403);
+        if(!uniformPaymentLineEligible(before))return err("目前不是待家長匯款的團服申請，無須補送繳款通知",409);
+        await audit(schoolId,access,"request.payment_line",data.id,{kind:before.kind,amount:before.amount});
+        const paymentLineNotification=await notifyUniformPaymentRequired(schoolId,before);
+        return json({item:before,paymentLineNotification});
+      }
       if(access.role==="parent"&&!await studentGuard(access,schoolId,before.studentId))return err("Forbidden",403);
       const next={...JSON.parse(previous.payload),updatedAt:new Date().toISOString()};
       let action="request.status",auditDetail={},shouldNotify=false;
@@ -237,6 +250,7 @@ app.http("uniformEventRequests",{
         }catch(error){masterSyncPending=true;console.error("competition master pending after request update",data.id,error)}
       }
       const applicantLineStatus=shouldNotify?await notifyUniformCancellation(schoolId,{...next,id:data.id}):undefined;
+      const paymentLineNotification=shouldNotify&&uniformPaymentLineEligible(next)?await notifyUniformPaymentRequired(schoolId,{...next,id:data.id}):undefined;
       let notificationStatus="not_attempted",paymentNotification=null;
       if(shouldNotify&&uniformNeedsPayment(next)){
         paymentNotification=await safePaymentNotifications(schoolId,{scope:{kind:"uniform",id:data.id}});
@@ -255,7 +269,7 @@ app.http("uniformEventRequests",{
           if(result.status!=="sent")console.warn("uniform request email not fully sent",{requestId:data.id,status:result.status,recipientCount:result.recipientCount||0});
         }catch(e){notificationStatus="failed";console.error("uniform request email failed",{requestId:data.id,error:e?.message||String(e)})}
       }
-      return json({item:{...next,id:data.id},notificationStatus,masterSyncPending,paymentNotification,applicantLineStatus});
+      return json({item:{...next,id:data.id},notificationStatus,masterSyncPending,paymentNotification,applicantLineStatus,paymentLineNotification});
     }catch(e){
       if(e instanceof SyntaxError||String(e.message||"").startsWith("Invalid")||String(e.message||"").startsWith("Only"))return err(e.message);
       console.error("uniformEventRequests",e);return err("Request processing failed",500);

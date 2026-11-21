@@ -56,6 +56,7 @@ function credentials(schoolId, legacy = false) {
     loginId, loginSecret, loginFingerprint, appOrigin,
     parentMenuId: setting("PARENT_RICH_MENU_ID"), staffMenuId: setting("STAFF_RICH_MENU_ID"),
     paymentLineEnabled: paymentNotifications === "true",
+    paymentRequestLineEnabled: isolatedPaymentFlow,
     financeTransferLineEnabled: isolatedPaymentFlow,
     paymentConfirmationLineEnabled: isolatedPaymentFlow
   };
@@ -87,7 +88,7 @@ export async function listTenantLineLoginSchools(tenants) {
 
 function resolveChannel(id, tenant, row) {
   const legacy = id === defaultTenantId() && !row;
-  const {channelSecret, accessToken, loginId, loginSecret, loginFingerprint, appOrigin, parentMenuId, staffMenuId, paymentLineEnabled, financeTransferLineEnabled, paymentConfirmationLineEnabled} = credentials(id, legacy);
+  const {channelSecret, accessToken, loginId, loginSecret, loginFingerprint, appOrigin, parentMenuId, staffMenuId, paymentLineEnabled, paymentRequestLineEnabled, financeTransferLineEnabled, paymentConfirmationLineEnabled} = credentials(id, legacy);
   const status = row?.status || (legacy && channelSecret && accessToken ? "active" : "setup");
   const configured = Boolean(
     (tenant?.status === "active" || tenant?.status === "onboarding") &&
@@ -105,7 +106,7 @@ function resolveChannel(id, tenant, row) {
     loginConfigured, loginId: loginConfigured ? loginId : "",
     loginSecret: loginConfigured ? loginSecret : "", appOrigin: loginConfigured ? appOrigin : "",
     oauthVersion: loginConfigured ? fingerprint(row.botUserId + loginFingerprint) : "",
-    parentMenuId, staffMenuId, paymentLineEnabled, financeTransferLineEnabled, paymentConfirmationLineEnabled
+    parentMenuId, staffMenuId, paymentLineEnabled, paymentRequestLineEnabled, financeTransferLineEnabled, paymentConfirmationLineEnabled
   };
 }
 

@@ -5,7 +5,7 @@ import {runInNewContext} from "node:vm";
 const source=readFileSync(new URL("../src/functions/uniformEventRequests.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"");
 function harness({bank=true,price=400}={}){
  let access={role:"parent",email:"parent@example.invalid"},schoolId="school-a",handler,sequence=0,writes=0;
- const tables=new Map(),notices=[];
+ const tables=new Map(),notices=[],lineNotices=[];
  const db=name=>{
   if(!tables.has(name))tables.set(name,new Map());const rows=tables.get(name);
   return {createTable:async()=>{},getEntity:async(p,r)=>{const row=rows.get(p+":"+r);if(!row)throw Object.assign(Error("missing"),{statusCode:404});return {...row}},
@@ -14,7 +14,7 @@ function harness({bank=true,price=400}={}){
    listEntities:async function*({queryOptions}={}){for(const row of rows.values())if(!queryOptions||queryOptions.filter.includes("'"+row.partitionKey+"'"))yield {...row}}
   };
  };
- const setBank=value=>{const name="TenantUniformPaymentAccounts";db(name);const rows=tables.get(name),key="school-a:uniform:regularUniform";if(value)rows.set(key,{partitionKey:"school-a",rowKey:"uniform:regularUniform",payload:'{"templateId":"bank-one"}'});else rows.delete(key)};
+ const setBank=(value,kind="regularUniform")=>{const name="TenantUniformPaymentAccounts";db(name);const rows=tables.get(name),key="school-a:uniform:"+kind;if(value)rows.set(key,{partitionKey:"school-a",rowKey:"uniform:"+kind,payload:'{"templateId":"bank-one"}'});else rows.delete(key)};
  setBank(bank);
  const context={app:{http:(name,config)=>{handler=config.handler}},TableClient:{fromConnectionString:(connection,name)=>db(name)},randomUUID:()=>"record-"+(++sequence),
   getTenantContext:async()=>({access,schoolId}),ensureStudentAccess:(value,id)=>id==="student-one",getStudentAliasInfo:async id=>({canonicalStudentId:id}),json:(body,status=200)=>({status,jsonBody:body}),
@@ -22,12 +22,15 @@ function harness({bank=true,price=400}={}){
   sendUniformRequestStatusEmail:async()=>({status:"disabled"}),safePaymentNotifications:async(school,options)=>{notices.push({school,options});return {status:"disabled"}},paymentNotificationStatus:result=>result?.status||"not_attempted",uniformNeedsPayment:item=>item.status==="APPROVED"&&item.amount>0,
   getUniformPrice:async()=>({unitPrice:price}),upsertCurrentCompetitionMaster:async()=>{},latestCompetitionRequest:items=>items[0],notifyUniformReview:async()=>"not_configured",notifyUniformCancellation:async()=>"not_required",process:{env:{STORAGE_CONNECTION_STRING:"test"}},console
  };
+ context.uniformPaymentLineEligible=item=>["regularUniform","competitionUniform"].includes(item?.kind)&&item.acquisition!=="PUBLIC"&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(item.status)&&Number.isSafeInteger(item.amount)&&item.amount>0&&["","AWAITING_TRANSFER"].includes(String(item.paymentStatus||""));
+ context.notifyUniformPaymentRequired=async(school,item)=>{lineNotices.push({school,item});return {status:"accepted"}};
+ context.uniformPaymentLineStates=async()=>({});
  runInNewContext(source,context);
  const call=(method,body)=>handler({method,query:new URLSearchParams(),json:async()=>body});
- const create=()=>call("POST",{kind:"regularUniform",studentId:"student-one",size:"S",quantity:2});
+ const create=(data={kind:"regularUniform",studentId:"student-one",size:"S",quantity:2})=>call("POST",data);
  const admin=()=>{access={role:"admin",email:"admin@example.invalid",capabilities:{financeVerifier:true}}};
  const get=async()=>{const result=await call("GET");return result.jsonBody.items[0]};
- return {call,create,admin,get,setBank,notices,writes:()=>writes,setAccess:value=>{access=value},setSchool:value=>{schoolId=value}};
+ return {call,create,admin,get,setBank,notices,lineNotices,writes:()=>writes,setAccess:value=>{access=value},setSchool:value=>{schoolId=value}};
 }
 test("a parent shirt application becomes payable after admin approval and the parent reads the same persisted state",async()=>{
  const h=harness(),created=await h.create();assert.equal(created.status,201);assert.equal(created.jsonBody.item.status,"PENDING");
@@ -35,6 +38,33 @@ test("a parent shirt application becomes payable after admin approval and the pa
  h.setAccess({role:"parent",email:"parent@example.invalid"});const saved=await h.get();
  assert.equal(saved.id,before.id);assert.equal(saved.status,"APPROVED");assert.equal(saved.amount,800);assert.equal(saved.unitPrice,400);assert.equal(saved.paymentStatus,"AWAITING_TRANSFER");assert.equal(saved.size,"S");assert.equal(saved.quantity,2);
  assert.equal(h.writes(),2);assert.equal(h.notices.length,1);assert.equal(h.notices[0].options.scope.id,before.id);
+ assert.equal(h.lineNotices.length,1);assert.equal(h.lineNotices[0].item.parentEmail,"parent@example.invalid");assert.equal(result.jsonBody.paymentLineNotification.status,"accepted");
+});
+test("an already-approved unpaid request can send its missing LINE notice without another approval or amount change",async()=>{
+ const h=harness();await h.create();h.admin();const before=await h.get();
+ await h.call("PATCH",{id:before.id,etag:before.etag,status:"APPROVED"});const approved=await h.get(),writes=h.writes();
+ const sent=await h.call("PATCH",{id:approved.id,etag:approved.etag,action:"SEND_PAYMENT_LINE"});
+ assert.equal(sent.status,200);assert.equal(sent.jsonBody.paymentLineNotification.status,"accepted");assert.equal(h.writes(),writes);
+ assert.equal((await h.get()).amount,800);assert.equal((await h.get()).status,"APPROVED");assert.equal(h.notices.length,1);
+ h.setAccess({role:"parent",email:"parent@example.invalid"});assert.equal((await h.call("PATCH",{id:approved.id,etag:approved.etag,action:"SEND_PAYMENT_LINE"})).status,403);
+});
+test("pending and cancelled requests cannot send payable LINE reminders",async()=>{
+ const h=harness();await h.create();h.admin();const before=await h.get();
+ assert.equal((await h.call("PATCH",{id:before.id,etag:before.etag,action:"SEND_PAYMENT_LINE"})).status,409);
+ await h.call("PATCH",{id:before.id,etag:before.etag,status:"CANCELLED",reason:"家長取消"});const cancelled=await h.get();
+ assert.equal((await h.call("PATCH",{id:cancelled.id,etag:cancelled.etag,action:"SEND_PAYMENT_LINE"})).status,409);assert.equal(h.lineNotices.length,0);
+});
+test("a competition purchase that is automatically approved also sends its payable LINE notice",async()=>{
+ const h=harness({price:2625});h.setBank(true,"competitionUniform");
+ const result=await h.create({kind:"competitionUniform",studentId:"student-one",style:"女",size:"M",acquisition:"PURCHASE"});
+ assert.equal(result.status,201);assert.equal(result.jsonBody.item.status,"APPROVED");assert.equal(result.jsonBody.paymentLineNotification.status,"accepted");
+ assert.equal(h.lineNotices.length,1);assert.equal(h.lineNotices[0].item.amount,2625);assert.equal(h.lineNotices[0].item.parentEmail,"parent@example.invalid");
+});
+test("a public competition request never sends a payment-required LINE notice",async()=>{
+ const h=harness();const created=await h.create({kind:"competitionUniform",studentId:"student-one",style:"女",size:"M",acquisition:"PUBLIC"});
+ assert.equal(created.status,201);h.admin();const before=await h.get();
+ assert.equal((await h.call("PATCH",{id:before.id,etag:before.etag,status:"APPROVED"})).status,200);assert.equal(h.lineNotices.length,0);
+ assert.equal((await h.get()).paymentStatus,"NOT_REQUIRED");
 });
 test("missing account rejects approval without changing the request; binding the account lets the same request proceed",async()=>{
  const h=harness({bank:false});await h.create();h.admin();const before=await h.get(),input={id:before.id,etag:before.etag,status:"APPROVED"};

@@ -28,21 +28,21 @@ export async function notifyTenantPaymentVerified(schoolId, {kind, id, at, paren
 
 // The retry key is durably reserved before any outbound request. LINE may
 // accept a request whose local network response was lost.
-export async function sendTenantFeeLine(schoolId, {id, at, parentEmail, text, confirmation = false}) {
+export async function sendTenantFeeLine(schoolId, {id, at, parentEmail, text, confirmation = false, paymentRequest = false, stillDue}) {
   if (!id || !(Date.now() - Date.parse(at) < 23 * 60 * 60 * 1000)) {
     return {status: "ineligible"};
   }
   if (!parentEmail) return {status: "not_bound"};
   try {
     const channel = await resolveTenantLineChannel(schoolId);
-    const enabled = confirmation ? channel.paymentConfirmationLineEnabled : channel.paymentLineEnabled;
+    const enabled = confirmation ? channel.paymentConfirmationLineEnabled : paymentRequest ? channel.paymentRequestLineEnabled : channel.paymentLineEnabled;
     if (!channel.loginConfigured || !enabled) return {status: "disabled"};
     const account = await getTenantLineRecipient(schoolId, parentEmail, channel.botUserId);
     if (!account) return {status: "not_bound"};
     const target = lineHash(channel.botUserId + ":" + account.lineUserId);
     const db = TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING, "TenantLineFeeNotice");
     await db.createTable().catch(error => {if (error.statusCode !== 409) throw error;});
-    let row = {partitionKey: schoolId, rowKey: lineHash(id), target, retryKey: randomUUID(), status: "pending"};
+    let row = {partitionKey: schoolId, rowKey: lineHash(id), target, retryKey: randomUUID(), status: "pending", createdAt:at};
     try {
       await db.createEntity(row);
     } catch (error) {
@@ -50,10 +50,16 @@ export async function sendTenantFeeLine(schoolId, {id, at, parentEmail, text, co
       row = await db.getEntity(row.partitionKey, row.rowKey);
     }
     if (row.target !== target) return {status: "target_changed"};
-    if (row.status === "accepted") return {status: "accepted"};
+    if (row.status === "accepted") return {status: "accepted",acceptedAt:row.acceptedAt,alreadyAccepted:true};
+    const age=Date.now()-Date.parse(row.createdAt);
+    if (paymentRequest && !(age>=0&&age<23*60*60*1000)) return {status:"unconfirmed"};
+    const attemptedAt=new Date().toISOString();
+    if(paymentRequest)await db.updateEntity({partitionKey:row.partitionKey,rowKey:row.rowKey,attemptedAt},"Merge");
+    if(stillDue&&!await stillDue())return {status:"ineligible"};
     await pushLineMessage(account.lineUserId, text, {accessToken: channel.accessToken, retryKey: row.retryKey});
-    await db.updateEntity({partitionKey: row.partitionKey, rowKey: row.rowKey, status: "accepted"}, "Merge");
-    return {status: "accepted"};
+    const acceptedAt=new Date().toISOString();
+    await db.updateEntity({partitionKey: row.partitionKey, rowKey: row.rowKey, status: "accepted",acceptedAt}, "Merge");
+    return {status: "accepted",acceptedAt};
   } catch (error) {
     console.warn("Tenant fee LINE notification pending", {schoolId, status: error?.status || error?.statusCode});
     return {status: "pending"};

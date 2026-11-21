@@ -7,7 +7,7 @@ const controller=source.slice(source.indexOf("function showRequestUpdateFeedback
 const renderer=source.slice(source.indexOf("function table("),source.indexOf("function csv("));
 const pending={id:"order-one",kind:"regularUniform",studentId:"student-one",size:"S",quantity:1,status:"PENDING",amount:null,etag:"e1"};
 const approved={...pending,status:"APPROVED",amount:400,paymentStatus:"AWAITING_TRANSFER",etag:"e2"};
-function harness({account=true,finance=true,patchError=null,persist=true,readError=false,price=400}={}){
+function harness({account=true,finance=true,patchError=null,persist=true,readError=false,price=400,lineStatus="accepted"}={}){
  let stored={...pending},bankTab=false;const select={value:"APPROVED"},handlers={},confirmations=[],nodes={status:{textContent:""},requests:{innerHTML:"",addEventListener:(type,fn)=>{handlers[type]=fn},querySelector:()=>select},uniformBankKind:{value:""},uniformBankForm:{elements:{kind:{value:""}}},uniformBankSettings:{open:false,scrollIntoView(){this.scrolled=true}}},calls=[];
  const scope={cachedRequests:[{...stored}],visibleModuleRequests:[{...stored}],pendingRequestIds:new Set(),requestUpdateFeedback:new Map(),issueErrors:new Map(),cachedStock:[],hasFinanceAccess:finance,window:{},console,confirm:text=>{confirmations.push(text);return true},
   document:{querySelector:()=>({click(){bankTab=true}})},loadUniformBank:async()=>{},el:id=>nodes[id],esc:value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])),
@@ -15,9 +15,11 @@ function harness({account=true,finance=true,patchError=null,persist=true,readErr
    calls.push({path,options});
    if(path.includes("uniform-payment-account"))return {item:account?{templateId:"bank-one"}:null};
    if(options?.method==="PATCH"){
-    if(persist)stored={...approved,amount:price};
+    const body=JSON.parse(options.body),paymentLineNotification={status:lineStatus,retryAllowed:lineStatus!=="accepted"};
+    if(body.action==="SEND_PAYMENT_LINE"){stored={...stored,paymentLineNotification};scope.cachedRequests=[{...stored}];return {item:{...stored},paymentLineNotification}}
+    if(persist)stored={...approved,amount:price,paymentLineNotification};
     if(patchError)throw patchError;
-    return {item:{...approved},notificationStatus:"disabled"};
+    return {item:{...approved},notificationStatus:"disabled",paymentLineNotification};
    }
    if(readError)throw Error("讀回逾時");return {items:[{...stored}]};
   },
@@ -27,7 +29,7 @@ function harness({account=true,finance=true,patchError=null,persist=true,readErr
  runInNewContext(renderer+controller+";this.ui={checkUniformApprovalAccount,updateUniformRequest};",scope);
  const click=source.slice(source.indexOf('el("requests").addEventListener("click",async e=>{'),source.indexOf('el("inventoryForm").onsubmit='));
  runInNewContext(click,scope);
- return {scope,nodes,calls,confirmations,bankTab:()=>bankTab,click:target=>handlers.click({target:target||{dataset:{update:"0"},closest:()=>null}}),setAccount:value=>{account=value},stored:()=>stored,update:()=>scope.ui.updateUniformRequest(pending,{status:"APPROVED"},{expectedStatus:"APPROVED"})};
+ return {scope,nodes,calls,confirmations,bankTab:()=>bankTab,click:target=>handlers.click({target:target||{dataset:{update:"0"},closest:()=>null}}),setApproved:()=>{stored={...approved};scope.cachedRequests=[{...stored}];scope.visibleModuleRequests=[{...stored}];scope.renderModuleRequests()},setAccount:value=>{account=value},stored:()=>stored,update:()=>scope.ui.updateUniformRequest(pending,{status:"APPROVED"},{expectedStatus:"APPROVED"})};
 }
 test("the real approval button checks prerequisites, confirms the action and persists the intended request",async()=>{
  const h=harness({account:false});await h.click();assert.equal(h.confirmations.length,0);assert.equal(h.calls.filter(call=>call.options?.method==="PATCH").length,0);
@@ -89,4 +91,17 @@ test("feedback is escaped, scoped to its own request and retained across redraws
 });
 test("public uniform approval does not require a collection account",async()=>{
  const h=harness({account:false});assert.equal(await h.scope.ui.checkUniformApprovalAccount({...pending,kind:"competitionUniform",acquisition:"PUBLIC"}),true);assert.equal(h.calls.length,0);
+});
+test("an already-approved request exposes a LINE resend action and does not need another approval",async()=>{
+ const h=harness();h.setApproved();assert.match(h.nodes.requests.innerHTML,/data-payment-line='0'>補送繳款 LINE 通知/);
+ const button={dataset:{paymentLine:"0"}};await h.click({closest:selector=>selector==="button[data-payment-line]"?button:null});
+ const changes=h.calls.filter(call=>call.options?.method==="PATCH");assert.equal(changes.length,1);
+ assert.deepEqual(JSON.parse(changes[0].options.body),{action:"SEND_PAYMENT_LINE",id:pending.id,etag:"e2"});
+ assert.equal(h.stored().status,"APPROVED");assert.equal(h.stored().amount,400);
+ assert.match(h.nodes.requests.innerHTML,/LINE 已受理繳款通知（實際收件待確認）/);assert.doesNotMatch(h.nodes.requests.innerHTML,/data-payment-line|LINE 已送達/);
+});
+test("approval displays the actual LINE outcome independently of disabled LAB email",async()=>{
+ const h=harness({lineStatus:"not_bound"});await h.update();
+ assert.match(h.nodes.requests.innerHTML,/已核准，待家長匯款 NT\$ 400/);assert.match(h.nodes.requests.innerHTML,/LAB 未對外寄送 Email/);
+ assert.match(h.nodes.requests.innerHTML,/原申請人尚未綁定本校 LINE/);assert.doesNotMatch(h.nodes.requests.innerHTML,/LINE 已受理|LINE 已送達/);
 });
