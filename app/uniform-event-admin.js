@@ -28,7 +28,7 @@ async function api(path,options={}){
  const data=await r.json().catch(()=>({}));
  if(r.status===401){setAuthGate("API 回傳 401 Unauthorized：登入憑證未通過後端驗證，所有管理操作已停用。");throw Error("401 Unauthorized：請重新登入")}
  if(r.status===403){if(/財務/.test(String(data.error||"")))throw Error(data.error);setAuthGate("API 回傳 403 Forbidden：目前帳號沒有此校管理員權限。");throw Error("403 Forbidden：權限不足")}
- if(!r.ok)throw Error(data.error||"HTTP "+r.status);
+ if(!r.ok){const error=Error(data.error||"HTTP "+r.status);error.code=data.code||"";throw error}
  if(data.paymentNotification&&window.finishPaymentNotificationBatches){
   data.paymentNotification=await window.finishPaymentNotificationBatches(data.paymentNotification);
   const n=data.paymentNotification;
@@ -64,6 +64,7 @@ window.addEventListener("tshirtStaffDemandsLoaded",event=>{cachedStaffFinanceIte
 let visibleModuleRequests=[],moduleRequestsAll=[],showRequestHistory=false;
 const pendingRequestIds=new Set();
 const issueErrors=new Map();
+const requestUpdateFeedback=new Map();
 const receivingDrafts=new Map();
 let activeReceivingForm=null,activeReceivingRequestId="",activeReceivingTab="";
 let uniformStudentNames=new Map();
@@ -453,6 +454,11 @@ function table(id,rows,columns,actions=false){
    const remind=payable&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&["","AWAITING_TRANSFER"].includes(String(r.paymentStatus||""))&&Number.isSafeInteger(r.amount)&&r.amount>0?"<button type='button' data-payment-reminder='"+i+"'"+(mail?.reminderSentToday?" disabled":"")+">"+(mail?.reminderSentToday?"今日已通知":"再次寄送匯款提醒 Email")+"</button><p class='hint'>僅提醒尚未回報匯款的家長；同一筆款項每天最多一次。已通知不代表已匯款。</p>":"";
    controls="<td data-label='狀態管理'>"+directIssue+receive+(r.status==="APPROVED"&&!mayCollect?"<p class='hint'>財務確認入帳後會自動列入採購需求。</p>":"")+progress+procurementAdjust+amount+notification+remind+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
+  }
+  const feedback=actions&&requestUpdateFeedback.get(r.id);
+  if(feedback){
+   const bank=feedback.bankKind?(hasFinanceAccess?"<button type='button' data-request-bank='"+esc(feedback.bankKind)+"'>設定此團服收款帳戶</button>":"<p>請由本校財務人員設定收款帳戶後，再核准。</p>"):"";
+   controls=controls.replace(/<\/td>$/,()=>"<div class='notice request-update-feedback' role='"+(feedback.error?"alert":"status")+"' aria-live='polite'><p>"+esc(feedback.text)+"</p>"+bank+"</div></td>");
   }
   return "<tr>"+cells+controls+"</tr>";
  }).join("");
@@ -863,16 +869,46 @@ el("config").onsubmit=async e=>{
 };
 document.getElementById("retryAdminAuth").addEventListener("click",start);
 start();
+function showRequestUpdateFeedback(row,text,{error=false,bankKind=""}={}){
+ requestUpdateFeedback.set(row.id,{text,error,bankKind});el("status").textContent=text;renderModuleRequests();
+}
+async function checkUniformApprovalAccount(row){
+ if(row.acquisition==="PUBLIC"||!["regularUniform","competitionUniform"].includes(row.kind))return true;
+ if(pendingRequestIds.has(row.id))return false;
+ pendingRequestIds.add(row.id);showRequestUpdateFeedback(row,"正在檢查收款設定…");
+ try{
+  const data=await api("uniform-events/uniform-payment-account?kind="+encodeURIComponent(row.kind));
+  if(!data.item){showRequestUpdateFeedback(row,"尚未核准：請先設定此團服的收款帳戶，再核准申請。",{error:true,bankKind:row.kind});return false}
+  requestUpdateFeedback.delete(row.id);return true;
+ }catch(error){showRequestUpdateFeedback(row,"尚未核准：收款設定檢查失敗，"+error.message,{error:true});return false}
+ finally{pendingRequestIds.delete(row.id);renderModuleRequests()}
+}
+function requestUpdateWasSaved(updated,body,{expectedStatus,expectedProcurementQuantity,expectedProcurementBreakdown}){
+ if(!updated)return false;
+ if(expectedStatus){
+  if(updated.status!==expectedStatus)return false;
+  if(expectedStatus!=="APPROVED"||updated.acquisition==="PUBLIC")return true;
+  return updated.paymentStatus==="AWAITING_TRANSFER"&&Number.isSafeInteger(updated.amount)&&updated.amount>0;
+ }
+ if(expectedProcurementQuantity!==null)return updated.procurementQuantity===expectedProcurementQuantity&&JSON.stringify(updated.procurementBreakdown)===JSON.stringify(expectedProcurementBreakdown);
+ return body.action==="SET_AMOUNT"&&Number.isSafeInteger(updated.amount)&&updated.amount>0&&updated.paymentStatus==="AWAITING_TRANSFER";
+}
 async function updateUniformRequest(row,body,{expectedStatus="",expectedProcurementQuantity=null,expectedProcurementBreakdown=null,successText="申請已更新"}={}){
  if(pendingRequestIds.has(row.id))return;
- pendingRequestIds.add(row.id);renderModuleRequests();
- el("status").textContent="正在儲存申請異動並通知家長…";
+ pendingRequestIds.add(row.id);showRequestUpdateFeedback(row,"正在儲存並確認申請狀態…");
+ let result=null,updateError=null;
  try{
-  const result=await api("uniform-events/requests",{method:"PATCH",body:JSON.stringify({id:row.id,etag:row.etag,...body})});
-  const index=cachedRequests.findIndex(x=>x.id===row.id);
-  if(index>=0)cachedRequests[index]={...cachedRequests[index],...result.item};
-  pendingRequestIds.delete(row.id);renderModuleRequests();
-  el("status").textContent=body.action==="SET_PROCUREMENT_QUANTITY"?successText:successText+(result.notificationStatus==="sent"?"，已寄送家長通知信":"；家長頁面已同步，通知信未確認送達");
+  try{result=await api("uniform-events/requests",{method:"PATCH",body:JSON.stringify({id:row.id,etag:row.etag,...body})})}
+  catch(error){updateError=error}
+  const data=await api("uniform-events/requests");
+  if(!Array.isArray(data.items))throw Error("申請清單未能讀回");
+  const updated=data.items.find(x=>x.id===row.id);cachedRequests=data.items;
+  if(!requestUpdateWasSaved(updated,body,{expectedStatus,expectedProcurementQuantity,expectedProcurementBreakdown})){
+   const bankKind=updateError?.code==="UNIFORM_PAYMENT_ACCOUNT_REQUIRED"?row.kind:"";
+   showRequestUpdateFeedback(row,"更新未完成："+(updateError?.message||"重新查詢的申請狀態不符，請重新核對後再操作。"),{error:true,bankKind});return false;
+  }
+  const savedText=expectedStatus==="APPROVED"?(updated.acquisition==="PUBLIC"?"已核准，已列入採購需求。":"已核准，待家長匯款 NT$ "+updated.amount.toLocaleString("zh-TW")+"。") :successText;
+  const notice=body.action==="SET_PROCUREMENT_QUANTITY"?"":updateError?"通知結果待確認。":result?.notificationStatus==="sent"?"已寄送家長通知信。":result?.notificationStatus==="disabled"?"LAB 未對外寄送 Email。":"通知信狀態待確認。";
   const lineStatus={
    accepted:"；LINE 已受理原申請人的通知",
    not_bound:"；原申請人尚未綁定 LINE",
@@ -880,18 +916,14 @@ async function updateUniformRequest(row,body,{expectedStatus="",expectedProcurem
    not_configured:"；此校的 LINE 尚未啟用",
    lab_suppressed:"；此 LAB 未啟用 LINE 私訊",
    failed:"；LINE 通知發送失敗"
-  }[result.applicantLineStatus]||"";
+  }[result?.applicantLineStatus]||"";
+  pendingRequestIds.delete(row.id);showRequestUpdateFeedback(row,savedText+notice+lineStatus);
   await load();
-  if(lineStatus)el("status").textContent=successText+lineStatus;
+  el("status").textContent=savedText+notice+lineStatus;return true;
  }catch(error){
-  try{
-   const data=await api("uniform-events/requests"),updated=(data.items||[]).find(x=>x.id===row.id);
-   cachedRequests=data.items||[];
-   const saved=updated&&(expectedStatus?updated.status===expectedStatus:expectedProcurementQuantity!==null&&updated.procurementQuantity===expectedProcurementQuantity&&JSON.stringify(updated.procurementBreakdown)===JSON.stringify(expectedProcurementBreakdown));
-   el("status").textContent=saved?successText+"；已向後端確認，通知信狀態待查": "更新未完成："+error.message;
-  }catch(refreshError){el("status").textContent="無法確認異動結果："+error.message+"；請按下方「重新整理」核對。"}
-  finally{pendingRequestIds.delete(row.id);renderModuleRequests()}
+  showRequestUpdateFeedback(row,"異動結果待確認："+(updateError?.message||error.message)+"；請重新整理核對，暫勿重複送出。",{error:true});return false;
  }
+ finally{pendingRequestIds.delete(row.id);renderModuleRequests()}
 }
 let uniformBankTemplates=[];
 async function loadUniformBankTemplates(){
@@ -1009,9 +1041,18 @@ function openProcurementForm(row,cell,trigger,correction){
 el("requests").addEventListener("change",e=>{
  const select=e.target.closest("select[data-index]");if(!select)return;
  const button=el("requests").querySelector("button[data-update='"+select.dataset.index+"']");if(!button)return;
- button.textContent=select.value==="READY_FOR_PICKUP"?"開放領取並通知家長":select.value==="CANCELLED"?"取消申請並通知家長":select.value?"確認更新並通知家長":"選擇後執行";
+ const publicRequest=visibleModuleRequests[Number(select.dataset.index)]?.acquisition==="PUBLIC";
+ button.textContent=select.value==="APPROVED"?(publicRequest?"核准並列入採購需求":"核准並開放家長匯款"):select.value==="READY_FOR_PICKUP"?"開放領取並通知家長":select.value==="CANCELLED"?"取消申請並通知家長":select.value?"確認更新並通知家長":"選擇後執行";
 });
 el("requests").addEventListener("click",async e=>{
+ const bankButton=e.target.closest("button[data-request-bank]");
+ if(bankButton){
+  if(!hasFinanceAccess)return;
+  const kind=bankButton.dataset.requestBank;if(!["regularUniform","competitionUniform"].includes(kind))return;
+  document.querySelector('[data-admin-tab="accounts"]').click();
+  el("uniformBankKind").value=kind;el("uniformBankForm").elements.kind.value=kind;el("uniformBankSettings").open=true;
+  await loadUniformBank();el("uniformBankSettings").scrollIntoView({block:"start"});return;
+ }
  const reminder=e.target.closest("button[data-payment-reminder]");
  if(reminder){
   const row=visibleModuleRequests[Number(reminder.dataset.paymentReminder)];if(!row)return;
@@ -1157,7 +1198,8 @@ el("requests").addEventListener("click",async e=>{
  if(status==="ORDERED"&&row.kind==="regularUniform"){
   openProcurementForm(row,e.target.closest("td"),e.target,false);return;
  }
- const confirmation=status==="ORDERED"?"已向廠商下單，確認登記為待到貨？":status==="READY_FOR_PICKUP"?"確認庫存已驗收入庫，並開放家長領取？送出後家長畫面會顯示「可以領取」，系統將寄送通知信。此步驟不代表已實際發放。":status==="CANCELLED"?"確定取消這筆申請並通知家長？":"確定更新這筆申請並通知家長？";
+ if(status==="APPROVED"&&!await checkUniformApprovalAccount(row))return;
+ const confirmation=status==="APPROVED"?(row.acquisition==="PUBLIC"?"確認核准這筆公費申請，並列入採購需求？":"確認核准這筆申請，並開放家長匯款？"):status==="ORDERED"?"已向廠商下單，確認登記為待到貨？":status==="READY_FOR_PICKUP"?"確認庫存已驗收入庫，並開放家長領取？送出後家長畫面會顯示「可以領取」，系統將寄送通知信。此步驟不代表已實際發放。":status==="CANCELLED"?"確定取消這筆申請並通知家長？":"確定更新這筆申請並通知家長？";
  if(!confirm(confirmation))return;
  const reason=status==="CANCELLED"?prompt("請填寫取消原因（家長可在申請紀錄查看）",""):"";
  if(status==="CANCELLED"&&(!reason||!reason.trim())){el("status").textContent="取消申請須填寫原因";return}

@@ -45,7 +45,7 @@ function validProcurementBreakdown(parts,request,total){
  }
  return count===total&&parent>=request.quantity;
 }
-const err=(msg,status=400)=>json({error:msg},status);
+const err=(msg,status=400,code="")=>json({error:msg,...(code?{code}:{})},status);
 const encode=x=>JSON.stringify(x);
 const decode=e=>({...JSON.parse(e.payload||"{}"),id:e.rowKey,etag:e.etag,updatedAt:e.updatedAt});
 async function find(client,schoolId,id){try{return await client.getEntity(schoolId,id)}catch(e){if(e.statusCode===404)return null;throw e}}
@@ -206,8 +206,9 @@ app.http("uniformEventRequests",{
             next.amount=0;next.paymentStatus="NOT_REQUIRED";
           }else{
             const account=await find(TableClient.fromConnectionString(connection(),"TenantUniformPaymentAccounts"),schoolId,"uniform:"+before.kind);
-            if(!account)return err("請先設定此團服的收款帳戶，再核准申請",409);
+            if(!account)return err("請先設定此團服的收款帳戶，再核准申請",409,"UNIFORM_PAYMENT_ACCOUNT_REQUIRED");
             next.unitPrice=(await getUniformPrice(schoolId,before.kind)).unitPrice;
+            if(!Number.isSafeInteger(next.unitPrice)||next.unitPrice<=0)return err("團服價格尚未正確設定，請由財務人員確認後再核准",409);
             next.amount=next.unitPrice*(before.kind==="regularUniform"?before.quantity:1);
             next.paymentStatus="AWAITING_TRANSFER";
           }
