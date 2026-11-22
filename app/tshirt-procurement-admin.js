@@ -1,10 +1,10 @@
 import "./payment-resolution.js?v=20261122-single-parent-message";
-import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv,tshirtPurchaseOrderCsv,tshirtOrderCandidates} from "./tshirt-procurement-plan.mjs?v=20261122-master-orders";
+import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv,tshirtPurchaseOrderCsv,tshirtOrderCandidates} from "./tshirt-procurement-plan.mjs?v=20261122-active-history";
 const $=id=>document.getElementById(id);
 const term=currentTshirtTerm();
 let data=null,plan=null,loading=false,reloadRequested=false,canVerifyFinance=false,links=[],extraBySize={},revision=0,canCreateOrder=false,purchaseOrderRequestKey="";
 let activePlanFilter="";
-const planFilters={first:"學生首次公費",extra:"學生自費加購",staff:"幹部／志工需求",total:"本期需求合計",covered:"已採購／已交付",need:"尚需採購（已知尺寸）"};
+const planFilters={first:"學生首次公費",extra:"學生自費加購",staff:"幹部／志工需求",total:"處理中需求合計",covered:"已採購／待發放",need:"尚需採購（已知尺寸）"};
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function call(path,options={}){
  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),options.method==="POST"?90000:20000);
@@ -74,7 +74,7 @@ function drawPlanMetrics(){
 }
 function drawPlanDetails(){
  if(!plan)return;
- const need=activePlanFilter==="need",name=planFilters[activePlanFilter]||"全部需求";
+ const need=activePlanFilter==="need",name=planFilters[activePlanFilter]||"全部處理中需求";
  const rows=plan.rows.filter(row=>activePlanFilter==="first"?row.type==="STUDENT_FIRST":activePlanFilter==="extra"?row.type==="STUDENT_EXTRA":activePlanFilter==="staff"?Object.hasOwn(STAFF_CATEGORIES,row.type):activePlanFilter==="covered"?row.covered:true);
  $("tshirtPlanPeopleTable").hidden=need;$("tshirtPlanNeedTable").hidden=!need;
  $("tshirtPlanClearFilter").hidden=!activePlanFilter;
@@ -82,13 +82,19 @@ function drawPlanDetails(){
   const sizes=plan.sizes.filter(row=>row.need===null||row.need>0),count=value=>value===null?"待盤點":value;
   $("tshirtPlanDetailCount").textContent=name+"｜"+(plan.needUnits===null?"待盤點":plan.needUnits+" 件");
   $("tshirtPlanFilterSummary").textContent=plan.needUnits===null?"部分尺寸尚未盤點，請先核對庫存。":plan.needUnits===0?"目前已知尺寸的需求已有庫存或已下單數量可供應，無須新增採購。":"依各尺寸扣除可用庫存與已下單備貨後，顯示尚缺件數。";
-  $("tshirtPlanNeedRows").innerHTML=sizes.map(row=>`<tr><th scope="row">${row.size}</th><td data-label="需求合計">${row.total}</td><td data-label="已採購／交付">${row.covered}</td><td data-label="待審／付款／核帳">${row.waiting}</td><td data-label="可用庫存">${count(row.available)}</td><td data-label="備貨待到貨">${row.incoming}</td><td data-label="尚需採購"><strong>${count(row.need)}</strong></td></tr>`).join("")||'<tr><td colspan="7">目前無需新增採購</td></tr>';
+  $("tshirtPlanNeedRows").innerHTML=sizes.map(row=>`<tr><th scope="row">${row.size}</th><td data-label="需求合計">${row.total}</td><td data-label="已採購／待發放">${row.covered}</td><td data-label="待審／付款／核帳">${row.waiting}</td><td data-label="可用庫存">${count(row.available)}</td><td data-label="備貨待到貨">${row.incoming}</td><td data-label="尚需採購"><strong>${count(row.need)}</strong></td></tr>`).join("")||'<tr><td colspan="7">目前無需新增採購</td></tr>';
  }else{
   const quantity=rows.reduce((sum,row)=>sum+row.quantity,0);
   $("tshirtPlanDetailCount").textContent=activePlanFilter?`${name}｜${quantity} 件（${rows.length} 筆）`:`查看需求明細與待辦（${rows.length} 筆）`;
   $("tshirtPlanFilterSummary").textContent=`${name}：${quantity} 件，共 ${rows.length} 筆。`;
   $("tshirtPlanDetailRows").innerHTML=rows.map(row=>`<tr><td data-label="姓名">${esc(row.person)}</td><td data-label="類別">${esc(row.category)}</td><td data-label="尺寸">${esc(row.size||"待填寫")}</td><td data-label="件數">${row.quantity}</td><td data-label="進度">${esc(row.status)}</td><td data-label="備註">${esc(row.note)}</td></tr>`).join("")||'<tr><td colspan="6">目前沒有符合此篩選的需求</td></tr>';
  }
+}
+function drawCompletedHistory(){
+ const rows=plan.completedRows||[],quantity=rows.reduce((sum,row)=>sum+row.quantity,0);
+ $("tshirtPlanCompletedCount").textContent=`已完成發放（歷史紀錄）｜${quantity} 件（${rows.length} 筆）`;
+ $("tshirtPlanCompletedSummary").textContent="已完成的資料保留於此，供查詢過去領取紀錄。";
+ $("tshirtPlanCompletedRows").innerHTML=rows.map(row=>`<tr><td data-label="姓名">${esc(row.person)}</td><td data-label="類別">${esc(row.category)}</td><td data-label="尺寸">${esc(row.size||"待核對")}</td><td data-label="件數">${row.quantity}</td><td data-label="進度">${esc(row.status)}</td><td data-label="完成日期">${esc(Number.isFinite(Date.parse(row.completedAt))?displayTime(row.completedAt):"日期未登錄")}</td><td data-label="備註">${esc(row.note)}</td></tr>`).join("")||'<tr><td colspan="7">此學期尚無完成發放紀錄</td></tr>';
 }
 function selectPlanFilter(key){
  if(!plan||key&&!Object.hasOwn(planFilters,key))return;
@@ -98,20 +104,20 @@ function selectPlanFilter(key){
 }
 function draw(){
  if(!data)return;
- try{plan=buildTshirtProcurementPlan({...data,schoolYear:Number($("tshirtPlanYear").value),semester:Number($("tshirtPlanSemester").value),extraBySize})}catch(e){plan=null;$("tshirtPlanStatus").textContent=e.message;$("tshirtPlanMetrics").replaceChildren();$("tshirtPlanDetailRows").replaceChildren();$("tshirtPlanNeedRows").replaceChildren();$("tshirtPlanClearFilter").hidden=true;$("tshirtPlanDetailCount").textContent="需求明細暫停顯示";$("tshirtPlanFilterSummary").textContent=e.message;exportEnabled(false);return}
+ try{plan=buildTshirtProcurementPlan({...data,schoolYear:Number($("tshirtPlanYear").value),semester:Number($("tshirtPlanSemester").value),extraBySize})}catch(e){plan=null;$("tshirtPlanStatus").textContent=e.message;$("tshirtPlanMetrics").replaceChildren();$("tshirtPlanDetailRows").replaceChildren();$("tshirtPlanNeedRows").replaceChildren();$("tshirtPlanClearFilter").hidden=true;$("tshirtPlanDetailCount").textContent="需求明細暫停顯示";$("tshirtPlanCompletedRows").replaceChildren();$("tshirtPlanCompletedCount").textContent="歷史紀錄暫停顯示";$("tshirtPlanFilterSummary").textContent=e.message;exportEnabled(false);return}
  const p=plan;drawPlanMetrics();
  $("tshirtPlanPeriod").textContent=`${p.term.label}｜加購申請期間 ${p.term.start} 起至 ${p.term.end} 前；跨期未結案併入。首次需求依目前在團名冊（儲備團 ${p.reserveCount} 位）。`;
  const knownSizesReady=!p.missingStock.length&&!p.warnings.some(x=>/尚未分配尺碼/.test(x));
  $("tshirtPlanStatus").textContent=p.canFinalize?"尺寸、需求與款項資料已齊，請核對下方採購件數與 10 件門檻。":knownSizesReady&&p.unknownUnits?"已知尺寸的需求可先建立採購單；待填尺寸需求會明確排除，補齊後再另行處理。":knownSizesReady&&p.waitingUnits?"已核帳與公費需求已自動列入採購。待審核、匯款或核帳的需求會另列。":"目前為採購規劃，仍有資料待補齊；CSV 會一併列出待辦。";
  $("tshirtPlanWarnings").innerHTML=p.warnings.length?`<ul>${p.warnings.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:"";
  const count=v=>v===null?"待盤點":v;
- $("tshirtPlanSizeRows").innerHTML=p.sizes.map(x=>`<tr><th scope="row">${x.size}</th><td data-label="首次公費">${x.first+x.cadreFirst}</td><td data-label="自費加購">${x.studentExtra+x.cadreExtra+x.volunteerExtra}</td><td data-label="需求合計">${x.total}</td><td data-label="已採購／交付">${x.covered}</td><td data-label="可用庫存">${count(x.available)}</td><td data-label="備貨待到貨">${x.incoming}</td><td data-label="尚需採購"><strong>${count(x.need)}</strong></td><td data-label="另加備貨"><input type="number" min="0" max="100" step="1" inputmode="numeric" value="${x.extra}" data-plan-extra="${x.size}" aria-label="${x.size} 尺寸另加備貨件數"></td><td data-label="規劃採購"><strong>${count(x.order)}</strong></td></tr>`).join("");
+ $("tshirtPlanSizeRows").innerHTML=p.sizes.map(x=>`<tr><th scope="row">${x.size}</th><td data-label="首次公費">${x.first+x.cadreFirst}</td><td data-label="自費加購">${x.studentExtra+x.cadreExtra+x.volunteerExtra}</td><td data-label="需求合計">${x.total}</td><td data-label="已採購／待發放">${x.covered}</td><td data-label="可用庫存">${count(x.available)}</td><td data-label="備貨待到貨">${x.incoming}</td><td data-label="尚需採購"><strong>${count(x.need)}</strong></td><td data-label="另加備貨"><input type="number" min="0" max="100" step="1" inputmode="numeric" value="${x.extra}" data-plan-extra="${x.size}" aria-label="${x.size} 尺寸另加備貨件數"></td><td data-label="規劃採購"><strong>${count(x.order)}</strong></td></tr>`).join("");
  const units=p.orderUnits;
  $("tshirtPlanOrderTotal").textContent=units===null?"規劃採購：待庫存盤點後計算。":`規劃採購 ${units} 件（已知尺寸尚缺 ${p.needUnits} ＋另加備貨 ${p.extraUnits}）。`+(units===0?"目前已知尺寸無需新購。":units<10?`距離最低採購 10 件，尚差 ${10-units} 件；可於各尺寸填寫另加備貨。`:"已達最低採購 10 件。")+(p.unknownUnits?`另有 ${p.unknownUnits} 件待填尺寸，尚未計入採購尺碼。`:"");
  canCreateOrder=Number.isSafeInteger(units)&&units>=10&&knownSizesReady;
  const create=$("confirmTshirtPurchaseOrder");create.disabled=!canCreateOrder;create.title=canCreateOrder?"建立採購單並將尺碼列入已下單待到貨":units===0?"目前沒有需要採購的數量":units!==null&&units<10?"尚未達最低採購 10 件":"請先完成庫存或已採購尺碼資料";
  $("tshirtPurchaseOrderHint").textContent=canCreateOrder?(p.unknownUnits?`可建立目前已知的 ${units} 件；尚有 ${p.unknownUnits} 件待填尺寸，本次不會列入。`:`可將目前 ${units} 件正式轉為採購單。`):create.title;
- drawPlanDetails();
+ drawPlanDetails();drawCompletedHistory();
  $("tshirtPlanLoanNote").textContent=`志工借用／送洗中 ${p.loans.length} 件另列於完整 CSV，不增加新購需求。學生退團或停用的申請 ${p.excludedRequests} 筆不列入；幹部／志工已領取或已處理完成者不列入本表與採購 CSV；領用歷史仍可至「幹部／志工」查詢，自費加購另計。`;
  exportEnabled(true);create.disabled=!canCreateOrder;drawStaff();drawOrders();
 }
@@ -120,6 +126,7 @@ async function load(){
  $("tshirtPlanStatus").textContent="正在整合學生、首次領用、加購、幹部／志工需求與正式庫存…";
  $("tshirtPlanMetrics").replaceChildren();$("tshirtPlanSizeRows").replaceChildren();$("tshirtPlanWarnings").replaceChildren();$("tshirtPlanDetailRows").replaceChildren();$("tshirtPurchaseOrders").replaceChildren();$("tshirtPlanOrderTotal").textContent="";canCreateOrder=false;
  $("tshirtPlanNeedRows").replaceChildren();$("tshirtPlanClearFilter").hidden=true;$("tshirtPlanFilterSummary").textContent="正在讀取明細…";$("tshirtPlanDetailCount").textContent="正在讀取需求明細…";
+ $("tshirtPlanCompletedRows").replaceChildren();$("tshirtPlanCompletedCount").textContent="已完成發放（歷史紀錄）｜讀取中…";
  const paths=["student-master","uniform-events/tshirt-historical-size","uniform-events/requests","uniform-events/inventory","uniform-events/parent-loans?view=procurement","uniform-events/parent-loans","uniform-events/tshirt-purchase-orders","student-parent-links"];
  const results=await Promise.allSettled(paths.map(path=>call(path)));
  try{
@@ -130,7 +137,7 @@ async function load(){
   data={students:items(values[0]),history:items(values[1]),requests:items(values[2]),stock:items(values[3]),staffDemands:items(values[4]),parentLoans:items(values[5]),purchaseOrders:items(values[6])};
   window.dispatchEvent(new CustomEvent("tshirtStaffDemandsLoaded",{detail:{items:data.staffDemands}}));
   canVerifyFinance=values[4].canVerifyFinance===true;links=items(values[7]);drawParents();draw();
- }catch(e){$("tshirtPlanStatus").textContent="採購總表讀取失敗："+e.message+"。請重新整理；資料未齊前不提供採購數字與匯出。";$("tshirtPlanFilterSummary").textContent="明細讀取失敗，請重新整理。";$("tshirtPlanDetailCount").textContent="需求明細讀取失敗";$("tshirtStaffRecords").replaceChildren();exportEnabled(false)}
+ }catch(e){$("tshirtPlanStatus").textContent="採購總表讀取失敗："+e.message+"。請重新整理；資料未齊前不提供採購數字與匯出。";$("tshirtPlanFilterSummary").textContent="明細讀取失敗，請重新整理。";$("tshirtPlanDetailCount").textContent="需求明細讀取失敗";$("tshirtPlanCompletedCount").textContent="已完成發放（歷史紀錄）｜讀取失敗";$("tshirtPlanCompletedSummary").textContent="請重新整理後查詢。";$("tshirtStaffRecords").replaceChildren();exportEnabled(false)}
  finally{loading=false;if(reloadRequested){reloadRequested=false;await load()}}
 }
 function drawParents(){
@@ -171,7 +178,7 @@ async function saveChange(record,payload,button){
 }
 $("tshirtPlanYear").value=term.schoolYear;$("tshirtPlanSemester").value=term.semester;
 $("tshirtPlanReload").addEventListener("click",load);
-for(const id of ["tshirtPlanYear","tshirtPlanSemester"])$(id).addEventListener("change",()=>{extraBySize={};purchaseOrderRequestKey="";activePlanFilter="";draw()});
+for(const id of ["tshirtPlanYear","tshirtPlanSemester"])$(id).addEventListener("change",()=>{extraBySize={};purchaseOrderRequestKey="";activePlanFilter="";$("tshirtPlanCompleted").open=false;draw()});
 $("tshirtPlanMetrics").addEventListener("click",event=>{const button=event.target.closest?.("[data-plan-filter]");if(button)selectPlanFilter(button.dataset.planFilter)});
 $("tshirtPlanClearFilter").addEventListener("click",()=>selectPlanFilter(""));
 $("tshirtPlanSizeRows").addEventListener("change",e=>{
@@ -214,6 +221,6 @@ $("openTshirtPlanFromReports")?.addEventListener("click",()=>document.querySelec
 $("openStaffTshirtDemand")?.addEventListener("click",()=>{document.querySelector('[data-tshirt-view="procurement"]').click();$("tshirtStaffDemandEntry").open=true;$("tshirtStaffDemandEntry").scrollIntoView({block:"start",behavior:"smooth"})});
 window.addEventListener("uniformRequestsLoaded",()=>{if(!$("tshirtProcurementPanel").hidden)load()});
 window.addEventListener("uniformInventoryLoaded",()=>{if(!$("tshirtProcurementPanel").hidden)load()});
-window.addEventListener("uniformAdminAuth",e=>{if(!e.detail?.authenticated){revision++;data=null;plan=null;activePlanFilter="";$("tshirtPlanMetrics").replaceChildren();$("tshirtPlanDetailRows").replaceChildren();$("tshirtPlanNeedRows").replaceChildren();$("tshirtPlanClearFilter").hidden=true;$("tshirtPlanFilterSummary").textContent="請先完成管理員登入。";$("tshirtPlanDetailCount").textContent="請先完成管理員登入";exportEnabled(false)}});
+window.addEventListener("uniformAdminAuth",e=>{if(!e.detail?.authenticated){revision++;data=null;plan=null;activePlanFilter="";$("tshirtPlanMetrics").replaceChildren();$("tshirtPlanDetailRows").replaceChildren();$("tshirtPlanNeedRows").replaceChildren();$("tshirtPlanClearFilter").hidden=true;$("tshirtPlanFilterSummary").textContent="請先完成管理員登入。";$("tshirtPlanDetailCount").textContent="請先完成管理員登入";$("tshirtPlanCompletedRows").replaceChildren();$("tshirtPlanCompletedCount").textContent="請先完成管理員登入";exportEnabled(false)}});
 
 window.addEventListener("tshirtParentLoansChanged",()=>load());

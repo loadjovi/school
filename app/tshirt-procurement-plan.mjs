@@ -31,42 +31,48 @@ export function buildTshirtProcurementPlan({students=[],history=[],requests=[],s
  requests=requests.map(x=>project(x,requestOrders.get(x.id)));
  staffDemands=staffDemands.map(x=>project(x,staffOrders.get(x.id)));
  const current=students.filter(s=>isCurrentTshirtStudent(s)&&["A","B","C"].includes(groupOf(s)));
- const studentMap=new Map(current.map(s=>[String(s.studentId||s.id),s]));
- const rows=[],warnings=[];let excludedRequests=0,carryover=0;
- for(const student of current){
+ const studentMap=new Map(current.map(s=>[String(s.studentId||s.id),s])),allStudentMap=new Map(students.map(s=>[String(s.studentId||s.id),s]));
+ const rows=[],completedRows=[],warnings=[];let excludedRequests=0,carryover=0;
+ for(const student of students.filter(s=>["A","B","C"].includes(groupOf(s)))){
   const id=String(student.studentId||student.id),h=byHistory.get(id),group=groupOf(student);
   const issued=h?(h.historicalIssued===true||h.received===true||positive(h.issuedQuantity)>0):(["A","B"].includes(group)&&String(student.studentName||student.name||"").replace(/\s/g,"")!=="李沛臻");
   const handed=Boolean(h?.schoolIssuedAt)||h?.source==="PARENT_CONFIRMED_FIRST_PUBLIC";
-  // A past physical handoff awaiting parent acknowledgement is not a new order.
-  if((issued||handed)&&!within(h?.schoolIssuedAt||h?.receivedAt,term))continue;
-  rows.push({type:"STUDENT_FIRST",category:"學生首次公費",person:String(student.studentName||student.name||id),studentId:id,group:group==="C"?"儲備團":group+" 團",size:String(h?.schoolIssuedSize||h?.receivedSize||h?.size||""),quantity:1,status:handed||issued?"已交付":"待首次發放",covered:handed||issued,ready:true,requestId:"",note:handed&&!issued?"學校已交付，待家長確認；不重複採購":""});
+  const completedAt=h?.schoolIssuedAt||h?.receivedAt||"";
+  if(issued||handed){
+   if(within(completedAt,term))completedRows.push({type:"STUDENT_FIRST",category:"學生首次公費",person:String(student.studentName||student.name||id),studentId:id,group:group==="C"?"儲備團":group+" 團",size:String(h?.schoolIssuedSize||h?.receivedSize||h?.size||""),quantity:1,status:handed&&!issued?"學校已發放，待家長確認":"已完成發放",covered:true,ready:false,completedAt,requestId:"",note:handed&&!issued?"學校已實際交付":""});
+   continue;
+  }
+  if(!studentMap.has(id))continue;
+  rows.push({type:"STUDENT_FIRST",category:"學生首次公費",person:String(student.studentName||student.name||id),studentId:id,group:group==="C"?"儲備團":group+" 團",size:String(h?.size||""),quantity:1,status:"待首次發放",covered:false,ready:true,requestId:"",note:""});
  }
  for(const request of requests){
   if(request.kind!=="regularUniform"||request.status==="CANCELLED")continue;
-  const student=studentMap.get(String(request.studentId));
+  const completed=request.status==="FULFILLED",completedAt=request.issuedAt||request.fulfilledAt||"";
+  const student=(completed?allStudentMap:studentMap).get(String(request.studentId));
   if(!student){excludedRequests++;continue}
   const inTerm=within(request.createdAt,term),overdue=outstanding(request.status)&&(!day(request.createdAt)||day(request.createdAt)<term.start);
-  if(!inTerm&&!overdue)continue;
+  if(!inTerm&&!overdue&&!(completed&&within(completedAt,term)))continue;
   if(overdue)carryover++;
   const quantity=positive(request.quantity);
   if(!quantity){warnings.push("部分加購申請件數異常，請核對申請紀錄");continue}
   const covered=["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(request.status);
   const ready=request.status==="APPROVED"&&request.paymentStatus==="VERIFIED";
   const labels={PENDING:"待審核",APPROVED:request.paymentStatus==="VERIFIED"?"已入帳，已列入採購需求":request.paymentStatus==="REPORTED_UNVERIFIED"?"待財務核帳":"待匯款",ORDERED:"已採購待到貨",ARRIVED:"已到貨",READY_FOR_PICKUP:"可領取",FULFILLED:"已領取"};
-  rows.push({type:"STUDENT_EXTRA",category:"學生自費加購",person:String(student.studentName||student.name||request.studentId),studentId:String(request.studentId),group:groupOf(student)==="C"?"儲備團":groupOf(student)+" 團",size:String(request.size||""),quantity,status:labels[request.status]||"狀態待核對",covered,ready,requestId:request.id||"",note:overdue?"跨期未結案，併入目前需求":""});
+  (completed?completedRows:rows).push({type:"STUDENT_EXTRA",category:"學生自費加購",person:String(student.studentName||student.name||request.studentId),studentId:String(request.studentId),group:groupOf(student)==="C"?"儲備團":groupOf(student)+" 團",size:String(request.size||""),quantity,status:labels[request.status]||"狀態待核對",covered,ready,...(completed?{completedAt}:{}),requestId:request.id||"",note:overdue?"跨期未結案，併入目前需求":""});
  }
  const loanMap=new Map(parentLoans.map(x=>[String(x.parentEmail||"").trim().toLowerCase(),x]));
  for(const demand of staffDemands){
   // Completed staff receipts belong to the issue history, not procurement demand.
   const physical=loanMap.get(String(demand.parentEmail||"").trim().toLowerCase());
-  if(["CANCELLED","FULFILLED"].includes(demand.status)||!STAFF_CATEGORIES[demand.category]||demand.category==="CADRE_FIRST"&&physical?.status==="ISSUED_LIFETIME")continue;
+  if(demand.status==="CANCELLED"||!STAFF_CATEGORIES[demand.category])continue;
+  const completed=demand.status==="FULFILLED"||demand.category==="CADRE_FIRST"&&physical?.status==="ISSUED_LIFETIME",completedAt=demand.fulfilledAt||(demand.category==="CADRE_FIRST"?physical?.issuedAt:"")||demand.progressAt||"";
   const inTerm=Number(demand.schoolYear)===term.schoolYear&&Number(demand.semester)===term.semester;
   const previous=Number(demand.schoolYear)<term.schoolYear||Number(demand.schoolYear)===term.schoolYear&&Number(demand.semester)<term.semester;
-  if(!inTerm&&!(previous&&outstanding(demand.status)))continue;
+  if(!inTerm&&!(previous&&outstanding(demand.status)&&!completed)&&!(completed&&within(completedAt,term)))continue;
   const quantity=positive(demand.quantity);if(!quantity)continue;
-  if(!inTerm)carryover++;
-  const covered=["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(demand.status);
-  rows.push({type:demand.category,category:STAFF_CATEGORIES[demand.category],person:demand.parentName||demand.parentEmail||"姓名待核對",studentId:demand.studentId||"",group:demand.category.startsWith("CADRE")?"幹部":"志工",size:demand.size||"",quantity,status:({PENDING:"待確認",APPROVED:demand.paymentStatus==="VERIFIED"||demand.category==="CADRE_FIRST"?"已確認，待採購":"待財務核帳",ORDERED:"已採購待到貨",ARRIVED:"已到貨",FULFILLED:"已處理完成"})[demand.status]||demand.status,covered,ready:demand.status==="APPROVED"&&(demand.category==="CADRE_FIRST"||demand.paymentStatus==="VERIFIED"),requestId:demand.id||"",note:!inTerm?"跨期未結案，併入目前需求":""});
+  if(!inTerm&&!completed)carryover++;
+  const covered=completed||["ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(demand.status);
+  (completed?completedRows:rows).push({type:demand.category,category:STAFF_CATEGORIES[demand.category],person:demand.parentName||demand.parentEmail||"姓名待核對",studentId:demand.studentId||"",group:demand.category.startsWith("CADRE")?"幹部":"志工",size:demand.size||"",quantity,...(completed?{completedAt}:{}),status:completed?"已完成發放":({PENDING:"待確認",APPROVED:demand.paymentStatus==="VERIFIED"||demand.category==="CADRE_FIRST"?"已確認，待採購":"待財務核帳",ORDERED:"已採購待到貨",ARRIVED:"已到貨",FULFILLED:"已處理完成"})[demand.status]||demand.status,covered,ready:!completed&&demand.status==="APPROVED"&&(demand.category==="CADRE_FIRST"||demand.paymentStatus==="VERIFIED"),requestId:demand.id||"",note:!inTerm?"跨期未結案，併入目前需求":""});
  }
  // Unreceived first applications are real demand, including corrected legacy records.
  for(const loan of parentLoans){
@@ -124,7 +130,7 @@ export function buildTshirtProcurementPlan({students=[],history=[],requests=[],s
  if(missingStock.length)warnings.push(`${missingStock.join("、")} 尺寸尚未完成庫存盤點`);
  if(waiting)warnings.push(`${waiting} 件待審核、匯款或財務核帳，尚未列入採購`);
  if(carryover)warnings.push(`${carryover} 筆跨期未結案需求已併入，請核對是否仍需購買`);
- return {term,rows,sizes,warnings:[...new Set(warnings)],currentCount:current.length,reserveCount:current.filter(s=>groupOf(s)==="C").length,firstUnits:sum(x=>x.type==="STUDENT_FIRST"?x.quantity:0),studentExtraUnits:sum(x=>x.type==="STUDENT_EXTRA"?x.quantity:0),staffUnits:sum(x=>STAFF_CATEGORIES[x.type]?x.quantity:0),totalUnits:sum(x=>x.quantity),coveredUnits:sum(x=>x.covered?x.quantity:0),waitingUnits:waiting,unknownUnits,missingStock,needUnits:need,extraUnits,orderUnits:need===null?null:need+extraUnits,canFinalize:!unknownUnits&&!missingStock.length&&!waiting&&!warnings.some(x=>/尚未分配尺碼/.test(x)),excludedRequests,carryover,loans:parentLoans.filter(x=>x.role==="VOLUNTEER"&&["BORROWED","WASHING"].includes(x.status))};
+ return {term,rows,completedRows:completedRows.sort((a,b)=>String(b.completedAt).localeCompare(String(a.completedAt))),completedUnits:completedRows.reduce((sum,row)=>sum+row.quantity,0),sizes,warnings:[...new Set(warnings)],currentCount:current.length,reserveCount:current.filter(s=>groupOf(s)==="C").length,firstUnits:sum(x=>x.type==="STUDENT_FIRST"?x.quantity:0),studentExtraUnits:sum(x=>x.type==="STUDENT_EXTRA"?x.quantity:0),staffUnits:sum(x=>STAFF_CATEGORIES[x.type]?x.quantity:0),totalUnits:sum(x=>x.quantity),coveredUnits:sum(x=>x.covered?x.quantity:0),waitingUnits:waiting,unknownUnits,missingStock,needUnits:need,extraUnits,orderUnits:need===null?null:need+extraUnits,canFinalize:!unknownUnits&&!missingStock.length&&!waiting&&!warnings.some(x=>/尚未分配尺碼/.test(x)),excludedRequests,carryover,loans:parentLoans.filter(x=>x.role==="VOLUNTEER"&&["BORROWED","WASHING"].includes(x.status))};
 }
 
 export function tshirtPurchaseOrderCsv(order,{exportedAt=new Date().toISOString()}={}){
@@ -139,8 +145,8 @@ export function tshirtPurchaseOrderCsv(order,{exportedAt=new Date().toISOString(
 }
 
 export function tshirtPlanCsv(plan,{supplierOnly=false,exportedAt=new Date().toISOString()}={}){
- const header=["資料類別","學期","尺寸","學生首次公費","學生自費加購","幹部首次公費","幹部自費加購","志工自費加購","需求合計","已採購或已交付","尚待供應","可用庫存","庫存抵用","尚需採購","另加備貨","規劃採購","待確認件數","姓名","學生ID","身分類別","需求件數","處理狀態","紀錄ID","備註","已採購備貨待到貨"];
- const lines=[header],notes=[...plan.warnings,`匯出時間 ${exportedAt}`,"首次需求依目前在團名冊；加購依所選學期及跨期未結案申請。歷史尺寸登錄不是加購。",`志工借用／送洗 ${plan.loans.length} 件另列，不自動增加新購需求。`].join("；");
+ const header=["資料類別","學期","尺寸","學生首次公費","學生自費加購","幹部首次公費","幹部自費加購","志工自費加購","需求合計","已採購待發放","尚待供應","可用庫存","庫存抵用","尚需採購","另加備貨","規劃採購","待確認件數","姓名","學生ID","身分類別","需求件數","處理狀態","紀錄ID","備註","已採購備貨待到貨"];
+ const lines=[header],notes=[...plan.warnings,`匯出時間 ${exportedAt}`,"僅列處理中需求；已完成發放另存歷史，不計入目前採購。首次需求依目前在團名冊；加購依所選學期及跨期未結案申請。歷史尺寸登錄不是加購。",`志工借用／送洗 ${plan.loans.length} 件另列，不自動增加新購需求。`].join("；");
  const summary=Array(header.length).fill("");summary[0]="總計";summary[1]=plan.term.label;
  for(const [index,key] of [[3,"firstUnits"],[4,"studentExtraUnits"],[8,"totalUnits"],[9,"coveredUnits"],[13,"needUnits"],[14,"extraUnits"],[15,"orderUnits"],[16,"waitingUnits"]])summary[index]=plan[key]??"待盤點";
  for(const [index,key] of [[5,"CADRE_FIRST"],[6,"CADRE_EXTRA"],[7,"VOLUNTEER_EXTRA"]])summary[index]=plan.rows.filter(x=>x.type===key).reduce((n,x)=>n+x.quantity,0);

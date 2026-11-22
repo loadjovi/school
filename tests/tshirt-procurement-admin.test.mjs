@@ -5,7 +5,7 @@ import {runInNewContext} from "node:vm";
 import * as model from "../app/tshirt-procurement-plan.mjs";
 function harness(failure="",{holdRequests=false}={}){
  const nodes=new Map(),node=id=>{
-  if(!nodes.has(id))nodes.set(id,{id,value:"",hidden:false,disabled:false,options:[],children:[],handlers:{},dataset:{},scrollIntoView(){this.scrolled=true;this.scrollCalls=(this.scrollCalls||0)+1},setAttribute(){},addEventListener(k,fn){this.handlers[k]=fn},replaceChildren(...children){this.options=children;this.children=children;this.innerHTML=""},add(option){this.options.push(option)},append(...children){this.children.push(...children)}});
+  if(!nodes.has(id))nodes.set(id,{id,value:"",hidden:false,open:false,disabled:false,options:[],children:[],handlers:{},dataset:{},scrollIntoView(){this.scrolled=true;this.scrollCalls=(this.scrollCalls||0)+1},setAttribute(){},addEventListener(k,fn){this.handlers[k]=fn},replaceChildren(...children){this.options=children;this.children=children;this.innerHTML=""},add(option){this.options.push(option)},append(...children){this.children.push(...children)}});
   return nodes.get(id);
  };
  const posts=[];let csv="",getCount=0,releaseRequests,heldSignal;const held=new Promise(resolve=>{heldSignal=resolve});
@@ -99,12 +99,12 @@ function metricFixture(){
 }
 test("each category and covered metric reveals exactly its own rows and quantity, with one clear route back to all details",async()=>{
  const h=metricFixture();await h.load();
- for(const [filter,pieces,rows,included,excluded] of [["first",2,2,/首次甲.*已交付乙/,/加購同學|幹部丙|志工丁/],["extra",4,3,/加購同學/,/首次甲|已交付乙|幹部丙|志工丁/],["staff",4,2,/幹部丙.*志工丁/,/首次甲|已交付乙|加購同學/],["covered",2,2,/已交付乙.*加購同學/,/首次甲|幹部丙|志工丁/],["total",10,7,/首次甲.*志工丁/,/does-not-exist/]]){
+ for(const [filter,pieces,rows,included,excluded] of [["first",1,1,/首次甲/,/已交付乙|加購同學|幹部丙|志工丁/],["extra",4,3,/加購同學/,/首次甲|已交付乙|幹部丙|志工丁/],["staff",4,2,/幹部丙.*志工丁/,/首次甲|已交付乙|加購同學/],["covered",1,1,/加購同學/,/首次甲|已交付乙|幹部丙|志工丁/],["total",9,6,/首次甲.*志工丁/,/已交付乙/]]){
   h.filter(filter);const body=h.node("tshirtPlanDetailRows").innerHTML;
   assert.equal((body.match(/<tr>/g)||[]).length,rows);assert.match(body,included);assert.doesNotMatch(body,excluded);assert.match(h.node("tshirtPlanDetailCount").textContent,new RegExp(pieces+" 件"));
   assert.equal(h.node("tshirtPlanDetails").open,true);assert.equal(h.node("tshirtPlanDetails").scrolled,true);assert.equal(h.node("tshirtPlanClearFilter").hidden,false);assert.match(h.node("tshirtPlanMetrics").innerHTML,new RegExp('data-plan-filter="'+filter+'" aria-pressed="true"'));
  }
- h.node("tshirtPlanClearFilter").handlers.click();assert.equal((h.node("tshirtPlanDetailRows").innerHTML.match(/<tr>/g)||[]).length,7);assert.equal(h.node("tshirtPlanClearFilter").hidden,true);assert.equal(h.posts.length,0);assert.equal(h.getCount(),8);
+ h.node("tshirtPlanClearFilter").handlers.click();assert.equal((h.node("tshirtPlanDetailRows").innerHTML.match(/<tr>/g)||[]).length,6);assert.equal(h.node("tshirtPlanClearFilter").hidden,true);assert.equal(h.posts.length,0);assert.equal(h.getCount(),8);
 });
 test("pending procurement reveals net shortages by size, keeps unpaid pieces out, and handles zero or unknown stock explicitly",async()=>{
  const h=metricFixture();await h.load();h.filter("need");assert.equal(h.node("tshirtPlanPeopleTable").hidden,true);assert.equal(h.node("tshirtPlanNeedTable").hidden,false);assert.match(h.node("tshirtPlanDetailCount").textContent,/7 件/);
@@ -120,6 +120,18 @@ test("empty metric results are explicit and a refresh retains the filter without
 });
 test("view filters do not change the authoritative export or the quantities submitted for the whole purchase order",async()=>{
  const h=metricFixture();await h.load();h.node("tshirtPlanSizeRows").handlers.change({target:{dataset:{planExtra:"M"},value:"3",setCustomValidity(){}}});assert.match(h.node("tshirtPlanOrderTotal").textContent,/規劃採購 10 件/);
- h.filter("first");h.node("exportTshirtPlan").handlers.click();for(const name of ["首次甲","已交付乙","加購同學","幹部丙","志工丁"])assert.ok(h.csv().includes(name));
+ h.filter("first");h.node("exportTshirtPlan").handlers.click();for(const name of ["首次甲","加購同學","幹部丙","志工丁"])assert.ok(h.csv().includes(name));assert.doesNotMatch(h.csv(),/已交付乙/);
  await h.node("confirmTshirtPurchaseOrder").handlers.click();assert.equal(h.posts.length,1);assert.equal(h.posts[0].action,"CREATE");assert.equal(h.posts[0].items.reduce((sum,x)=>sum+x.quantity,0),10);assert.ok(h.posts[0].items.some(x=>x.size==="2L"&&x.quantity===3));
+});
+
+
+test("the fulfilled first purchase is collapsed in history while a second purchase for that child is the only active add-on",async()=>{
+ const h=harness();h.bodies["uniform-events/tshirt-historical-size"].items[0].historicalIssued=true;
+ const old={id:"old-s",kind:"regularUniform",studentId:"111001",size:"S",quantity:1,status:"FULFILLED",paymentStatus:"VERIFIED",createdAt:"2026-11-21T00:00:00Z",issuedAt:"2026-11-22T01:00:00Z"};
+ const current={...old,id:"new-xs",size:"XS",status:"APPROVED",paymentStatus:"REPORTED_UNVERIFIED",issuedAt:undefined};h.bodies["uniform-events/requests"].items=[old,current];
+ await h.load();h.filter("extra");assert.match(h.node("tshirtPlanDetailCount").textContent,/1 件（1 筆）/);assert.match(h.node("tshirtPlanDetailRows").innerHTML,/XS.*待財務核帳/);assert.doesNotMatch(h.node("tshirtPlanDetailRows").innerHTML,/已領取/);
+ assert.match(h.node("tshirtPlanCompletedCount").textContent,/已完成發放.*1 件（1 筆）/);assert.match(h.node("tshirtPlanCompletedRows").innerHTML,/data-label="尺寸">S<.*已領取/);assert.doesNotMatch(h.node("tshirtPlanCompletedRows").innerHTML,/XS/);assert.equal(h.node("tshirtPlanCompleted").open,false);assert.equal(h.posts.length,0);
+ for(const status of ["ORDERED","ARRIVED","READY_FOR_PICKUP"]){current.status=status;current.paymentStatus="VERIFIED";await h.load();assert.match(h.node("tshirtPlanDetailRows").innerHTML,/XS/);assert.match(h.node("tshirtPlanCompletedCount").textContent,/1 件（1 筆）/)}
+ current.status="FULFILLED";current.issuedAt="2026-11-22T02:00:00Z";await h.load();assert.match(h.node("tshirtPlanDetailCount").textContent,/0 件（0 筆）/);assert.match(h.node("tshirtPlanCompletedCount").textContent,/2 件（2 筆）/);assert.ok(h.node("tshirtPlanCompletedRows").innerHTML.indexOf('>XS<')<h.node("tshirtPlanCompletedRows").innerHTML.indexOf('>S<'));
+ h.setFailure("uniform-events/inventory");await h.load();assert.equal(h.node("tshirtPlanCompletedRows").innerHTML,"");assert.match(h.node("tshirtPlanCompletedCount").textContent,/讀取失敗/);
 });

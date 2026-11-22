@@ -15,7 +15,7 @@ test("actual growth purchases add exact quantities to first shirts, while cancel
 });
 test("persisted first issue is authoritative, and a physical handoff pending acknowledgement never orders again",()=>{
  const a=args();a.history[0]={studentId:"111001",size:"8",historicalIssued:false,schoolIssuedAt:"2026-10-20T00:00:00Z",schoolIssuedSize:"8"};
- const p=build(a);assert.equal(p.firstUnits,2);assert.equal(p.coveredUnits,1);assert.equal(p.sizes[0].need,0);
+ const p=build(a);assert.equal(p.firstUnits,1);assert.equal(p.coveredUnits,0);assert.equal(p.completedUnits,1);assert.equal(p.completedRows[0].studentId,"111001");assert.match(p.completedRows[0].status,/待家長確認/);assert.equal(p.sizes[0].need,0);
  a.history[0].schoolIssuedAt="2026-06-20T00:00:00Z";assert.equal(build(a).firstUnits,1);
  a.history[0]={studentId:"111001",size:"8",historicalIssued:true};assert.equal(build(a).firstUnits,1);
 });
@@ -104,7 +104,24 @@ test("received staff are absent from procurement names, totals and CSV while sep
  a.parentLoans=[{parentEmail:"cadre@example.com",parentName:"已領取幹部",role:"CADRE",status:"ISSUED_LIFETIME",size:"XL",issuedAt:"2026-10-15T01:17:00Z"}];
  a.staffDemands=[first,extra,{...extra,id:"completed",parentName:"已完成志工",category:"VOLUNTEER_EXTRA",status:"FULFILLED",quantity:3}];
  const p=build(a);assert.equal(p.staffUnits,2);assert.equal(p.totalUnits,4);assert.equal(p.sizes.find(x=>x.size==="XL").cadreFirst,0);assert.equal(p.sizes.find(x=>x.size==="XL").cadreExtra,2);assert.equal(p.rows.filter(x=>x.type==="CADRE_FIRST").length,0);
- const csv=tshirtPlanCsv(p);assert.doesNotMatch(csv,/已領取幹部|已完成志工/);assert.match(csv,/另購家長/);
+ assert.equal(p.completedUnits,4);assert.equal(p.completedRows.length,2);const csv=tshirtPlanCsv(p);assert.doesNotMatch(csv,/已領取幹部|已完成志工/);assert.match(csv,/另購家長/);
  assert.equal(a.parentLoans[0].status,"ISSUED_LIFETIME");assert.equal(a.staffDemands[0].status,"APPROVED");
  a.staffDemands=[];assert.equal(build(a).staffUnits,0);
+});
+
+
+test("an issued first purchase becomes history while the same child's second purchase remains a separate active demand",()=>{
+ const a={schoolYear:115,semester:1,students:[student("111003","A")],history:[{studentId:"111003",historicalIssued:true,size:"12"}],stock:inventory(),requests:[request({id:"first-purchase",size:"S",quantity:1,status:"FULFILLED",issuedAt:"2026-11-22T01:00:00Z"}),request({id:"second-purchase",size:"XS",quantity:1,paymentStatus:"REPORTED_UNVERIFIED"})]};
+ const before=structuredClone(a),p=build(a);assert.equal(p.studentExtraUnits,1);assert.equal(p.totalUnits,1);assert.equal(p.coveredUnits,0);assert.equal(p.waitingUnits,1);assert.equal(p.rows.length,1);assert.equal(p.rows[0].requestId,"second-purchase");assert.equal(p.completedUnits,1);assert.equal(p.completedRows[0].requestId,"first-purchase");assert.equal(p.completedRows[0].size,"S");assert.equal(p.completedRows[0].completedAt,"2026-11-22T01:00:00Z");
+ assert.equal(p.needUnits,0);assert.equal(p.sizes.find(x=>x.size==="S").total,0);assert.equal(p.sizes.find(x=>x.size==="XS").total,1);assert.deepEqual(a,before);
+ const csv=tshirtPlanCsv(p);assert.match(csv,/second-purchase/);assert.doesNotMatch(csv,/first-purchase/);
+});
+test("purchase and arrival notices never archive a request before actual issuance",()=>{
+ const a=args();a.requests=[request({id:"awaiting-issue",quantity:1,status:"ORDERED",stockReceivedAt:"2026-11-22T00:00:00Z"})];
+ for(const status of ["ORDERED","ARRIVED","READY_FOR_PICKUP"]){a.requests[0].status=status;const p=build(a);assert.ok(p.rows.some(x=>x.requestId==="awaiting-issue"));assert.equal(p.completedRows.some(x=>x.requestId==="awaiting-issue"),false)}
+ a.requests[0].status="FULFILLED";const p=build(a);assert.equal(p.rows.some(x=>x.requestId==="awaiting-issue"),false);assert.ok(p.completedRows.some(x=>x.requestId==="awaiting-issue"));
+});
+test("completed issues for former pupils remain historical and never return to current procurement",()=>{
+ const a=args();a.students.push(student("111004","A",{status:"inactive",studentName:"已退團學生"}));a.requests=[request({id:"former-issued",studentId:"111004",status:"FULFILLED",quantity:1,issuedAt:"2026-11-20T00:00:00Z"})];
+ const p=build(a);assert.equal(p.studentExtraUnits,0);assert.equal(p.rows.some(x=>x.studentId==="111004"),false);assert.equal(p.completedRows[0].person,"已退團學生");assert.doesNotMatch(tshirtPlanCsv(p),/已退團學生/);
 });
