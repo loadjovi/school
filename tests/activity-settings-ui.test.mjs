@@ -49,7 +49,7 @@ test("a hidden saved calendar announcement is described as unpublished and its s
 
 test("activity config loading populates the list even if unrelated family statistics cannot render",async()=>{
  const elements={settings:{innerHTML:""},status:{textContent:""},familyStatus:{textContent:""},familyRows:{textContent:""},requestsStatus:{textContent:""},stockStatus:{textContent:""}};
- const context={el:id=>elements[id],esc,configActivityTypes:new Set(["yearEndDinner","calendarActivity"]),activityTypes:new Set(["yearEndDinner"]),cachedFamilyRegistrations:[],savedConfigs:[],activeAdminTab:"settings",hasFinanceAccess:false,
+ const context={el:id=>elements[id],esc,configActivityTypes:new Set(["yearEndDinner","calendarActivity"]),activityTypes:new Set(["yearEndDinner"]),cachedFamilyRegistrations:[],savedConfigs:[],activeAdminTab:"settings",hasFinanceAccess:false,financeWorkspace:false,
   fetch:async()=>({ok:true,json:async()=>[]}),api:async path=>({items:path==="uniform-events/config"?[dinner,calendar]:[]}),syncConfig:()=>{},
   refreshFamilyStatistics:()=>{throw Error("unrelated family view failure")},renderUniformRequestAlerts:()=>{},
   CustomEvent:class{constructor(type){this.type=type}},dispatchEvent:()=>{},console:{warn:()=>{}}

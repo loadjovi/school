@@ -40,13 +40,13 @@ test("disabled fee projects do not produce admin or parent navigation entries wh
  const parent=services(cap,{me:{role:"parent",capabilities:cap},page:"home"});
  assert.doesNotMatch(parent.render(),/fee-collections.html/);assert.match(parent.render(),/line-account.html/);
 });
-test("the real finance shortcut is shown only to finance verifiers and uses the original application review flow",async()=>{
- assert.doesNotMatch(jobs()(true),/data-admin-todo="finance"/);
- assert.match(jobs({financeVerifier:true})(true),/data-admin-todo="finance"[\s\S]*財務核帳/);
- const start=source.indexOf(" document.addEventListener('click',async e=>{"),end=source.indexOf(" document.addEventListener('click',e=>{",start),calls=[],frame={src:""};let handler;
- runInNewContext(source.slice(start,end),{document:{addEventListener:(_event,fn)=>{handler=fn},getElementById:()=>frame},window:{openSchoolAdminWorkspace:async group=>calls.push(group)},encodeURIComponent,toast:message=>{throw Error(message)}});
+test("only finance verifiers see the dedicated finance shortcut, and finance todos open its independent workspace",async()=>{
+ assert.doesNotMatch(jobs()(true),/data-workspace-tool="finance"/);
+ assert.match(jobs({financeVerifier:true})(true),/data-workspace-tool="finance"[\s\S]*財務核帳/);
+ const start=source.indexOf(" document.addEventListener('click',async e=>{"),end=source.indexOf(" document.addEventListener('click',e=>{",start),calls=[];let handler;
+ runInNewContext(source.slice(start,end),{document:{addEventListener:(_event,fn)=>{handler=fn},getElementById:()=>{throw Error("finance must not replace the operations frame")}},window:{openSchoolAdminService:async service=>calls.push(service),openSchoolAdminWorkspace:async group=>{throw Error("finance must not enter "+group)}},encodeURIComponent,toast:message=>{throw Error(message)}});
  await handler({preventDefault(){},target:{closest:()=>({dataset:{adminTodo:"finance"},hasAttribute:()=>false})}});
- assert.deepEqual(calls,["uniformAdmin"]);assert.match(frame.src,/uniform-event-admin.html\?embedded=school.*task=finance/);assert.doesNotMatch(frame.src,/fee-collections/);
+ assert.deepEqual(calls,["finance"]);
  assert.doesNotMatch(source,/data-demo-fee-entry|LAB 收費專案驗證（DEMO）|data-workspace-service-entry/);
 });
 test("existing service nodes move once into the same common-job grid, and own LINE binding remains available in More",()=>{

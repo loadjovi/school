@@ -11,6 +11,7 @@ app.http("uniformEventAudit",{methods:["GET"],authLevel:"anonymous",route:"unifo
   await t.createTable().catch(e=>{if(e.statusCode!==409)throw e});
   const records=[];
   for await(const row of t.listEntities({queryOptions:{filter:`PartitionKey eq '${ctx.schoolId.replaceAll("'","''")}'`}})){
+   if(ctx.access.capabilities?.financeVerifier!==true&&/^(uniform\.(transfer\.|price\.)|payment-resolution\.|payment\.email\.|finance\.|request\.(payment|amount_confirm)|family\.(REPORT_TRANSFER|VERIFY_PAYMENT)|tshirt\.staff\.VERIFY_DEMAND_PAYMENT)/.test(row.action||""))continue;
    records.push({id:row.rowKey,at:row.at||null,actor:row.actor||"unknown",action:row.action||"unknown",subjectId:row.subjectId||"",details:row.details||""});
   }
   records.sort((a,b)=>String(b.at).localeCompare(String(a.at)));

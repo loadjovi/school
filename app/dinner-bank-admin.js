@@ -14,6 +14,7 @@ const fields=["bankName","bankCode","accountHolder","accountNumber"];
 let current="";
 let bankPanelExpanded=false;
 async function refresh(){
+ if(!window.uniformFinanceWorkspace?.authorized)return;
  const dinner=moduleEl.value==="yearEndDinner";
  panel.hidden=!dinner||!bankPanelExpanded;
  if(!dinner)return;
@@ -50,6 +51,7 @@ const templateSelect=document.getElementById("bankTemplateSelect");
 const templateForm=document.getElementById("bankTemplateForm");
 let templates=[];
 async function loadTemplates(){
+ if(!window.uniformFinanceWorkspace?.authorized)return;
  try{
   const response=await fetch("/api/uniform-events/payment-account-templates",{credentials:"same-origin",headers:bankAuthHeaders()});
   const data=await response.json();if(!response.ok)throw Error(data.error||"HTTP "+response.status);
@@ -191,4 +193,5 @@ function installQuickBankBinding(){
  fill();
  updateBound();
 }
-installQuickBankBinding();
+window.addEventListener("uniformAdminAuth",event=>{if(event.detail?.authenticated&&event.detail?.finance&&event.detail?.financeWorkspace)loadTemplates()});
+if(window.uniformFinanceWorkspace?.authorized)loadTemplates();

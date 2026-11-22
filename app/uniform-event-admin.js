@@ -1,4 +1,7 @@
 import "./payment-resolution.js?v=20261122-single-parent-message";
+import {createFinanceActivitySettings} from "./finance-activity-settings.js?v=20261123-finance-workspace";
+const financeWorkspace=window.uniformFinanceWorkspace?.isFinance===true;
+let financeActivitySettings;
 import {createTshirtStockCounter} from "./tshirt-stock-count.js?v=20261122-opened-stock";
 import {createTshirtStockDetails} from "./tshirt-stock-details.js?v=20261122-opened-count-state";
 const el=id=>document.getElementById(id);
@@ -7,11 +10,12 @@ if(uniformRequestFlowHint)uniformRequestFlowHint.textContent="團 T 核帳後，
 let adminAuthenticated=false,hasFinanceAccess=false;
 function setAuthGate(reason=""){
  adminAuthenticated=!reason;
+ if(reason&&window.uniformFinanceWorkspace){window.uniformFinanceWorkspace.authorized=false;const financeShell=el("financeWorkspaceShell");if(financeShell)financeShell.hidden=true;}
  const gate=document.getElementById("authGate"),area=document.getElementById("protectedAdminArea");
  gate.style.display=reason?"block":"none";
  area.inert=!!reason;
  if(reason){document.getElementById("authGateReason").textContent=reason;document.getElementById("status").textContent=reason}
- window.dispatchEvent(new CustomEvent("uniformAdminAuth",{detail:{authenticated:adminAuthenticated}}));
+ window.dispatchEvent(new CustomEvent("uniformAdminAuth",{detail:{authenticated:adminAuthenticated,finance:hasFinanceAccess,financeWorkspace}}));
 }
 function adminAuthHeaders(){
  const token=sessionStorage.getItem("google_id_token")||"";
@@ -30,13 +34,14 @@ async function api(path,options={}){
  finally{clearTimeout(timeout)}
  const data=await r.json().catch(()=>({}));
  if(r.status===401){setAuthGate("API 回傳 401 Unauthorized：登入憑證未通過後端驗證，所有管理操作已停用。");throw Error("401 Unauthorized：請重新登入")}
- if(r.status===403){if(/財務/.test(String(data.error||"")))throw Error(data.error);setAuthGate("API 回傳 403 Forbidden：目前帳號沒有此校管理員權限。");throw Error("403 Forbidden：權限不足")}
+ if(r.status===403){if(/財務/.test(String(data.error||""))){if(financeWorkspace)setAuthGate(data.error);throw Error(data.error);}setAuthGate("API 回傳 403 Forbidden：目前帳號沒有此校管理員權限。");throw Error("403 Forbidden：權限不足")}
  if(!r.ok){const error=Error(data.error||"HTTP "+r.status);error.code=data.code||"";throw error}
  if(data.paymentNotification&&window.finishPaymentNotificationBatches){
   data.paymentNotification=await window.finishPaymentNotificationBatches(data.paymentNotification);
   const n=data.paymentNotification;
   data.notificationStatus=n.status==="complete"&&!n.remaining&&!n.failed&&!n.unconfirmed&&(n.sent||n.alreadySent)?"sent":n.status;
  }
+ if(financeWorkspace&&["POST","PATCH"].includes(options.method)&&window.parent!==window)window.parent.postMessage({type:"school-service-updated",service:"finance",schoolId:sessionStorage.getItem("school_context_id")},location.origin);
  return data;
 }
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[],receivedRequestIds=new Set();
@@ -54,8 +59,9 @@ function syncFinanceViews(uniform,family,staff){
  if(!Array.isArray(uniform?.items)||!Array.isArray(family?.items)||!Array.isArray(staff?.items))throw Error("核帳資料不完整，請重新讀取");
  const uniformChanged=JSON.stringify(cachedRequests)!==JSON.stringify(uniform.items),familyChanged=JSON.stringify(cachedFamilyRegistrations)!==JSON.stringify(family.items),staffChanged=JSON.stringify(cachedStaffFinanceItems)!==JSON.stringify(staff.items);
  cachedRequests=uniform.items;cachedFamilyRegistrations=family.items;cachedStaffFinanceItems=staff.items;
- if(uniformChanged){renderUniformRequestAlerts();if(["regularUniform","competitionUniform"].includes(activeAdminTab))renderModuleRequests()}
- if(familyChanged)refreshFamilyStatistics();
+ window.uniformFinanceNoticeLabels=Object.fromEntries(cachedRequests.map(row=>[row.id,(uniformStudentNames.get(String(row.studentId))||row.studentId)+"｜"+(row.kind==="regularUniform"?"團 T":"A 團比賽服")+"｜"+row.size]));
+ if(uniformChanged&&!financeWorkspace){renderUniformRequestAlerts();if(["regularUniform","competitionUniform"].includes(activeAdminTab))renderModuleRequests()}
+ if(familyChanged&&!financeWorkspace)refreshFamilyStatistics();
  if(uniformChanged||staffChanged)window.dispatchEvent(new CustomEvent("uniformRequestsLoaded"));
 }
 function staffFinancePending(items=cachedStaffFinanceItems){return (items||[]).filter(x=>x.status==="APPROVED"&&x.category!=="CADRE_FIRST"&&x.paymentStatus!=="VERIFIED")}
@@ -73,7 +79,7 @@ function showFinancePending(uniformItems=cachedRequests,familyItems=cachedFamily
   :cachedStaffFinanceItems===null?"💰 財務核帳｜幹部／志工需求尚未讀取完成":"💰 財務核帳｜目前無待核帳款項";
 }
 async function refreshFinancePending(){
- if(!hasFinanceAccess||!adminAuthenticated||document.visibilityState!=="visible")return;
+ if(!financeWorkspace||!hasFinanceAccess||!adminAuthenticated||document.visibilityState!=="visible")return;
  try{
   const [uniform,family,staff]=await Promise.all([api("uniform-events/requests"),api("uniform-events/family-registration"),api("uniform-events/parent-loans?view=procurement")]);
   syncFinanceViews(uniform,family,staff);
@@ -249,6 +255,7 @@ function placeSharedUniformPanels(){
  renderModuleRequests();
 }
 function syncUniformModuleVisibility(){
+ if(financeWorkspace)return;
  placeSharedUniformPanels();
  const finance=el("uniformFinanceSettings"),isUniform=["regularUniform","competitionUniform"].includes(activeAdminTab);
  if(isUniform){
@@ -258,7 +265,7 @@ function syncUniformModuleVisibility(){
   el("uniformPriceForm").elements.kind.value=activeAdminTab;
   if(typeof showUniformPrice==="function")showUniformPrice();
  }
- finance.hidden=!isUniform||!hasFinanceAccess;
+ finance.hidden=true;
  for(const panel of document.querySelectorAll("[data-admin-view]")){
   const tab=panel.dataset.adminView;
   panel.hidden=tab!==activeAdminTab;
@@ -456,7 +463,7 @@ function table(id,rows,columns,actions=false){
    const queuedForPurchase=r.status==="APPROVED"&&mayCollect;
    const next={PENDING:[["APPROVED",payable?"核准，等待付款":"核准，等待採購"],["CANCELLED","取消申請"]],APPROVED:[],ORDERED:[["CANCELLED","取消申請"]],ARRIVED:[...(mayCollect&&r.received?[["READY_FOR_PICKUP","開放領取"]]:[]),["CANCELLED","取消申請"]]}[r.status]||[];
    const procurementAdjust=r.kind==="團 T"&&!r.purchaseOrderId&&r.status==="ORDERED"&&!r.received?"<button type='button' data-procurement='"+i+"'>更正採購尺碼與件數</button>":"";
-   const amount=r.status==="APPROVED"&&r.acquisition!=="PUBLIC"&&!Number.isSafeInteger(r.amount)?"<button type='button' data-amount='"+i+"'>補正應繳金額</button>":"";
+   const amount=financeWorkspace&&hasFinanceAccess&&r.status==="APPROVED"&&r.acquisition!=="PUBLIC"&&!Number.isSafeInteger(r.amount)?"<button type='button' data-amount='"+i+"'>補正應繳金額</button>":"";
    const stockKey=r.kind==="A 團比賽服"?"competition:"+r.style+":"+r.size:"regular:"+r.size;
    const stock=cachedStock.find(x=>x.key===stockKey),needed=r.kind==="A 團比賽服"?1:Number(r.quantity);
    const existingStock=!r.received&&stock&&Number(stock.onHand)-Number(stock.reserved||0)-Number(stock.unavailable||0)>=needed;
@@ -471,18 +478,18 @@ function table(id,rows,columns,actions=false){
    const mail=window.uniformPaymentEmailStates?.[r.id];
    const labels={SENT:"已通知",NOT_SENT:"尚無寄送紀錄",PARTIAL:"部分家長已通知",FAILED:"寄送失敗",UNCONFIRMED:"寄送結果待確認",MISSING_RECIPIENT:"尚無可收信家長，請檢查綁定",NOT_REQUIRED:"目前無須催繳"};
    const time=value=>value?new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}):"—";
-   const notification=payable?"<div class='payment-email-record' role='status'><strong>匯款通知："+esc(mail?labels[mail.status]||"待確認":"通知紀錄未載入，請更新通知紀錄")+"</strong>"+(mail?.lastSentAt?"<p>最後成功寄送："+esc(time(mail.lastSentAt))+"（台灣時間）｜累計 "+Number(mail.sentCount||0)+" 封</p>":"")+(mail?.recipients?.length?"<details><summary>查看各家長通知紀錄</summary>"+mail.recipients.map(p=>"<p>"+esc(p.recipient)+"｜"+esc(labels[p.status]||"待確認")+"<br>最後寄送："+esc(time(p.lastSentAt))+"｜成功 "+Number(p.sentCount||0)+" 次</p>").join("")+"</details>":"")+"</div>":"";
-   const remind=payable&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&["","AWAITING_TRANSFER"].includes(String(r.paymentStatus||""))&&Number.isSafeInteger(r.amount)&&r.amount>0?"<button type='button' data-payment-reminder='"+i+"'"+(mail?.reminderSentToday?" disabled":"")+">"+(mail?.reminderSentToday?"今日已通知":"再次發送繳款通知（LINE 優先）")+"</button><p class='hint'>僅提醒尚未回報匯款的家長；同一筆款項每天最多一次。已通知不代表已匯款。</p>":"";
+   const notification=financeWorkspace&&hasFinanceAccess&&payable?"<div class='payment-email-record' role='status'><strong>匯款通知："+esc(mail?labels[mail.status]||"待確認":"通知紀錄未載入，請更新通知紀錄")+"</strong>"+(mail?.lastSentAt?"<p>最後成功寄送："+esc(time(mail.lastSentAt))+"（台灣時間）｜累計 "+Number(mail.sentCount||0)+" 封</p>":"")+(mail?.recipients?.length?"<details><summary>查看各家長通知紀錄</summary>"+mail.recipients.map(p=>"<p>"+esc(p.recipient)+"｜"+esc(labels[p.status]||"待確認")+"<br>最後寄送："+esc(time(p.lastSentAt))+"｜成功 "+Number(p.sentCount||0)+" 次</p>").join("")+"</details>":"")+"</div>":"";
+   const remind=financeWorkspace&&hasFinanceAccess&&payable&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&["","AWAITING_TRANSFER"].includes(String(r.paymentStatus||""))&&Number.isSafeInteger(r.amount)&&r.amount>0?"<button type='button' data-payment-reminder='"+i+"'"+(mail?.reminderSentToday?" disabled":"")+">"+(mail?.reminderSentToday?"今日已通知":"再次發送繳款通知（LINE 優先）")+"</button><p class='hint'>僅提醒尚未回報匯款的家長；同一筆款項每天最多一次。已通知不代表已匯款。</p>":"";
    const line=r.paymentLineNotification||{status:"not_sent"};
    const payableLine=payable&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&["","AWAITING_TRANSFER"].includes(String(r.paymentStatus||""))&&Number.isSafeInteger(r.amount)&&r.amount>0;
-   const lineNotice=payableLine?"<div class='payment-line-record' role='status'><strong>"+esc(uniformPaymentLineSummary(line))+"</strong>"+(line.acceptedAt?"<p>"+(line.status==="email_sent"?"Email ":"LINE ")+"受理時間："+esc(time(line.acceptedAt))+"（台灣時間）</p>":"")+(!["accepted","email_sent","unconfirmed","target_changed"].includes(line.status)&&line.retryAllowed!==false?"<button type='button' data-payment-line='"+i+"'>補送繳款 LINE 通知</button>":"")+"</div>":"";
+   const lineNotice=financeWorkspace&&hasFinanceAccess&&payableLine?"<div class='payment-line-record' role='status'><strong>"+esc(uniformPaymentLineSummary(line))+"</strong>"+(line.acceptedAt?"<p>"+(line.status==="email_sent"?"Email ":"LINE ")+"受理時間："+esc(time(line.acceptedAt))+"（台灣時間）</p>":"")+(!["accepted","email_sent","unconfirmed","target_changed"].includes(line.status)&&line.retryAllowed!==false?"<button type='button' data-payment-line='"+i+"'>補送繳款 LINE 通知</button>":"")+"</div>":"";
    const staffNotice=r.parentEmail&&(r.status==="PENDING"||r.kind==="A 團比賽服"&&r.acquisition==="PURCHASE"&&r.status==="APPROVED"&&payableLine)?"<button type='button' class='secondary' data-staff-notice='"+i+"'>補送幹部通知</button>":"";
    controls="<td data-label='狀態管理'>"+directIssue+receive+(r.status==="APPROVED"&&!mayCollect?"<p class='hint'>"+(r.kind==="團 T"?"核帳後有庫存可直接發放；庫存不足才列入採購。":"財務確認入帳後會自動列入採購需求。")+"</p>":"")+progress+procurementAdjust+amount+staffNotice+lineNotice+notification+remind+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
   }
   const feedback=actions&&requestUpdateFeedback.get(r.id);
   if(feedback){
-   const bank=feedback.bankKind?(hasFinanceAccess?"<button type='button' data-request-bank='"+esc(feedback.bankKind)+"'>設定此團服收款帳戶</button>":"<p>請由本校財務人員設定收款帳戶後，再核准。</p>"):"";
+   const bank=feedback.bankKind?(financeWorkspace&&hasFinanceAccess?"<button type='button' data-request-bank='"+esc(feedback.bankKind)+"'>設定此團服收款帳戶</button>":"<p>請財務人員至「財務核帳 → 匯款帳戶」設定後，再核准。</p>"):"";
    controls=controls.replace(/<\/td>$/,()=>"<div class='notice request-update-feedback' role='"+(feedback.error?"alert":"status")+"' aria-live='polite'><p>"+esc(feedback.text)+"</p>"+bank+"</div></td>");
   }
   return "<tr>"+cells+controls+"</tr>";
@@ -564,6 +571,7 @@ function syncConfig(){
  if(!activity){form.elements.enabled.value="true"}
  el("configEnabledWrap").dataset.savedEnabled=String(savedConfigs.find(x=>x.module===module&&x.id===select.value)?.enabled===true);
  updateActivityAudiencePreview();
+ if(!financeWorkspace&&module==="yearEndDinner"){form.elements.enabled.disabled=true;el("configModeHint").textContent="先建立餐會資料；由財務人員在「財務核帳 → 活動收費」設定費用並開放報名與匯款。";}
  if(typeof window.syncDinnerBankVisibility==="function")window.syncDinnerBankVisibility();
  syncSelectedActivityNotice();
  queueMicrotask(()=>{window.dispatchEvent(new Event("activityDatesLoaded"));syncFieldTripCollection()});
@@ -601,6 +609,7 @@ for(const [key,id] of [["competition","calendarExampleCompetition"],["christmas"
 });
 syncConfig();
 async function load(){
+ if(financeWorkspace)return loadInlineFinance();
  try{
   const response=await fetch("/api/students",{credentials:"same-origin",cache:"no-store",headers:typeof window.uniformEventAuthHeaders==="function"?window.uniformEventAuthHeaders():{}});
   if(response.ok){
@@ -678,27 +687,36 @@ function restoreActivitySelection(schoolId){
 }
 async function start(){
  try{
-  setAuthGate("正在驗證管理員身分…");const me=await api("me");if(me.role!=="admin"){setAuthGate("登入帳號不是此校管理員，已停用管理操作。");throw Error("僅限管理員")}setAuthGate("");
-  const finance=me.capabilities?.financeVerifier===true;hasFinanceAccess=finance;
-  el("status").textContent="已驗證管理員："+(me.displayName||me.email||"")+(finance?"｜具財務核帳權限":"｜未指派財務權限");
-  document.querySelector('[data-admin-tab="accounts"]').hidden=!finance;
-  const financeSettings=el("uniformFinanceSettings");if(financeSettings)financeSettings.hidden=!finance;
-  el("inlineFinanceReview").hidden=!finance;
+  await window.uniformFinanceWorkspace?.ready;
+  await window.uniformAdminModulesReady;
+  setAuthGate("正在驗證管理員身分…");
+  const me=await api("me");
+  if(me.role!=="admin"){setAuthGate("此功能僅限本校後台人員使用。");return}
+  hasFinanceAccess=me.capabilities?.financeVerifier===true;
+  if(financeWorkspace&&!hasFinanceAccess){setAuthGate("此區僅限已指派財務權限的人員使用。");return}
+  window.uniformFinanceWorkspace?.activate(me);setAuthGate("");
+  el("status").textContent=financeWorkspace?"財務人員："+(me.displayName||me.email||""):"管理員："+(me.displayName||me.email||"");
+  document.querySelector('[data-admin-tab="accounts"]').hidden=true;
+  if(financeWorkspace){
+   try{const data=await api("students"),students=Array.isArray(data)?data:data.items||[];uniformStudentNames=new Map(students.map(row=>[String(row.studentId||row.id),String(row.name||row.studentName||row.studentId)]))}catch{}
+   financeActivitySettings??=createFinanceActivitySettings({host:el("financeActivitiesPanel"),api,onSaved:async()=>{await loadInlineFinance();await window.refreshPaymentEmailStatus?.()}});
+   await Promise.all([loadInlineFinance(),loadUniformBankTemplates(),loadUniformPrices(),financeActivitySettings.load()]);
+   return;
+  }
+  el("uniformFinanceSettings").hidden=true;el("inlineFinanceReview").hidden=true;
   await load();
   const task=new URLSearchParams(location.search).get("task");
-  if(task==="finance"&&finance){el("inlineFinanceReview").open=true;el("inlineFinanceReview").scrollIntoView({block:"start"})}
   if(["tshirt","competition"].includes(task)){
    const module=task==="tshirt"?"regularUniform":"competitionUniform";document.querySelector('[data-admin-tab="'+module+'"]').click();
    document.querySelector(task==="tshirt"?'[data-tshirt-view="requests"]':'[data-competition-view="requests"]')?.click();el("uniformRequestsPanel").scrollIntoView({block:"start"});
   }
   if(["activity","guideUniform"].includes(task)){
    if(task==="activity")document.querySelector('[data-admin-tab="settings"]').click();
-   const guide=document.createElement("aside");guide.className="notice";guide.style.cssText="padding:14px;margin:12px 0;background:#fff8e7;border:1px solid #e9c972;border-radius:10px";
-   guide.textContent=task==="activity"?"建立演出／活動：① 選擇免報名公告或需報名活動 → ② 填日期、團別與內容 → ③ 核對家長顯示設定，再儲存。訓練課程請回到「課表與行事曆」。":"團服申請：① 選團 T 或比賽服 → ② 選家長申請 → ③ 核對取得方式、付款與領取進度。";document.querySelector('nav.admin-tabs').after(guide);
+   const guide=document.createElement("aside");guide.className="notice";
+   guide.textContent=task==="activity"?"填寫活動日期、團別與內容，再儲存。費用與收款由財務人員在「財務核帳」設定。訓練課程請回到「課表與行事曆」。":"選擇團服與申請，依進度核准、採購及發放。";document.querySelector('nav.admin-tabs').after(guide);
   }
   restoreActivitySelection(me.schoolId);
-  if(finance&&el("inlineFinanceReview").open)await loadInlineFinance();
- }catch(e){setAuthGate("管理員驗證未完成："+(e.message||String(e))+"。請重新檢查登入。")}
+ }catch(e){setAuthGate("驗證或資料讀取未完成："+(e.message||String(e))+"。請重新檢查登入。")}
 }
 el("reload").onclick=()=>load().catch(e=>el("status").textContent=e.message);
 function appendLabFinanceRetry(card,item,type){
@@ -736,6 +754,16 @@ function financeCard(item,type){
  const expected=item.paymentResolution?.expectedAmount??(type==="family"?report.expectedAmount:item.amount);
  const title=document.createElement("strong");title.textContent=(type==="staff"?"幹部／志工團 T":type==="uniform"?(item.kind==="regularUniform"?"團 T":"A 團比賽服"):(item.kind==="yearEndDinner"?"期末聚餐":"交流／快閃活動"))+"｜"+(type==="uniform"?(uniformStudentNames.get(String(item.studentId))||item.studentId):item.parentEmail);
  const info=document.createElement("p");info.textContent="應繳 NT$ "+Number(expected||0).toLocaleString("zh-TW")+"｜回報 NT$ "+amount.toLocaleString("zh-TW")+"｜家長回報日期 "+(report.transferDate||"未提供")+"｜匯出帳號末五碼 "+(report.lastFive||"未提供");
+ if(type==="uniform"&&item.status==="APPROVED"&&item.acquisition!=="PUBLIC"&&!Number.isSafeInteger(item.amount)){
+  const repair=document.createElement("button"),message=document.createElement("p");repair.type="button";repair.textContent="依目前團服價格補正應繳金額";message.setAttribute("role","status");
+  repair.addEventListener("click",async()=>{if(!hasFinanceAccess||!financeWorkspace||!confirm("確認依目前團服價格補正這筆應繳金額？"))return;repair.disabled=true;try{await api("uniform-events/requests",{method:"PATCH",body:JSON.stringify({action:"SET_AMOUNT",id:item.id,etag:item.etag})});await loadInlineFinance()}catch(error){message.textContent=error.message;repair.disabled=false}});card.append(title,info,repair,message);return card;
+ }
+ if(type==="staff"&&!window.paymentResolutionUI?.enabled()){
+  const form=document.createElement("form"),message=document.createElement("p"),submit=document.createElement("button"),fields={};submit.type="submit";submit.textContent="確認此筆已入帳";
+  for(const [key,label,type] of [["date","銀行實際入帳日期","date"],["amount","銀行實收金額","number"],["lastFive","匯款末五碼","text"],["note","核帳說明","text"]]){const row=document.createElement("label"),input=document.createElement("input");row.textContent=label;input.type=type;input.required=true;if(key==="amount"){input.min="1";input.step="1"}if(key==="lastFive"){input.pattern="[0-9]{5}";input.maxLength=5}if(key==="note")input.maxLength=300;fields[key]=input;row.append(input);form.append(row)}
+  form.append(submit,message);card.append(title,info,form);
+  form.addEventListener("submit",async event=>{event.preventDefault();if(!hasFinanceAccess||!financeWorkspace||!confirm("確認已核對銀行實際入帳？"))return;submit.disabled=true;try{await api("uniform-events/parent-loans",{method:"PATCH",body:JSON.stringify({action:"VERIFY_DEMAND_PAYMENT",id:item.id,etag:item.etag,bankPostedDate:fields.date.value,paidAmount:Number(fields.amount.value),lastFive:fields.lastFive.value,note:fields.note.value.trim()})});await loadInlineFinance()}catch(error){message.textContent=error.message;submit.disabled=false}});return card;
+ }
  if(window.paymentResolutionUI?.enabled()&&(item.paymentResolution||type==="staff")){card.append(title,info);window.paymentResolutionUI.financeControls(card,item,type,api,loadInlineFinance);return card}
  const form=document.createElement("form"),date=document.createElement("input"),note=document.createElement("textarea"),submit=document.createElement("button"),message=document.createElement("p");
  date.type="date";date.required=true;note.required=true;note.maxLength=300;note.rows=2;submit.type="submit";submit.textContent="確認已入帳";message.setAttribute("role","status");
@@ -752,7 +780,7 @@ function financeCard(item,type){
     ?await api("uniform-events/uniform-transfer-report",{method:"PATCH",body:JSON.stringify({requestId:item.id,etag:item.etag,amount,bankPostedAt:date.value,note:note.value.trim()})})
     :await api("uniform-events/family-registration",{method:"PATCH",body:JSON.stringify({kind:item.kind,activityId:item.activityId,registrationId:item.id,action:"VERIFY_PAYMENT",amount,bankPostedAt:date.value,note:note.value.trim()})});
    const labels={accepted:"LINE 已受理家長通知。",not_bound:"家長尚無此校 LINE 綁定，請家長至平台查看。",disabled:"此校尚未開啟家長入帳 LINE 通知。"};
-   await load();await loadInlineFinance();
+   if(!financeWorkspace)await load();await loadInlineFinance();
    el("inlineFinanceStatus").prepend("已確認入帳。"+(labels[result.lineNotification?.status]||"家長 LINE 通知尚未確認送出。")+" ");
 
   }catch(error){message.textContent="核帳失敗："+error.message;submit.disabled=false}
@@ -761,22 +789,17 @@ function financeCard(item,type){
  return card;
 }
 async function loadInlineFinance(){
- if(!hasFinanceAccess||!adminAuthenticated)return;
+ if(!financeWorkspace||!hasFinanceAccess||!adminAuthenticated)return;
  el("inlineFinanceStatus").textContent="正在讀取待核帳資料…";
  try{
   const [uniform,family,staff]=await Promise.all([api("uniform-events/requests"),api("uniform-events/family-registration"),api("uniform-events/parent-loans?view=procurement")]);
   syncFinanceViews(uniform,family,staff);
-  const u=(uniform.items||[]).filter(x=>["REPORTED_UNVERIFIED","ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED"].includes(x.paymentStatus)),f=(family.items||[]).filter(x=>["REPORTED_UNVERIFIED","ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED"].includes(x.paymentStatus));
+  const u=(uniform.items||[]).filter(x=>["REPORTED_UNVERIFIED","ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED"].includes(x.paymentStatus)||x.status==="APPROVED"&&x.acquisition!=="PUBLIC"&&!Number.isSafeInteger(x.amount)),f=(family.items||[]).filter(x=>["REPORTED_UNVERIFIED","ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED"].includes(x.paymentStatus));
   const empty=text=>{const p=document.createElement("p");p.textContent=text;return p};
   el("inlineFinanceUniform").replaceChildren(...(u.length?u.map(x=>financeCard(x,"uniform")):[empty("目前沒有待核對的團服匯款。")]));
   el("inlineFinanceFamily").replaceChildren(...(f.length?f.map(x=>financeCard(x,"family")):[empty("目前沒有待核對的活動匯款。")]));
   const staffPending=staffFinancePending();
-  if(staffPending.length&&window.paymentResolutionUI?.enabled())el("inlineFinanceUniform").append(...staffPending.map(x=>financeCard(x,"staff")));
-  else if(staffPending.length){
-   const hint=empty("幹部／志工團 T 自費需求 "+staffPending.length+" 筆待核款；請確認實際入帳後再核帳。"),button=document.createElement("button");button.type="button";button.textContent="前往幹部／志工需求核帳";
-   button.addEventListener("click",()=>{activeAdminTab="regularUniform";syncUniformModuleVisibility();document.querySelector('[data-tshirt-view="procurement"]')?.click();el("tshirtStaffRecords")?.scrollIntoView({block:"start",behavior:"smooth"})});
-   el("inlineFinanceUniform").append(hint,button);
-  }
+  if(staffPending.length)el("inlineFinanceUniform").append(...staffPending.map(x=>financeCard(x,"staff")));
   el("inlineFinanceStatus").textContent="待核帳：團服 "+u.length+" 筆、幹部／志工 "+staffPending.length+" 筆、活動 "+f.length+" 筆。";
   showFinancePending(uniform.items||[],family.items||[]);
   if(window.paymentResolutionUI?.enabled())renderResolutionFinanceHistory(uniform,family,staff);
@@ -799,6 +822,7 @@ function syncFieldTripCollection(){
  el("fieldTripCollectionHint").textContent=!activityId?"請先儲存活動；若已選帳戶，儲存時會自動綁定。":!published||!enabled?"請先在上方「開放給家長報名」選擇顯示並儲存。":!bound?"請先綁定並確認本活動的收款帳戶。":"已具備開放條件；選擇收款狀態，再按下方儲存按鈕。";
 }
 async function refreshFieldTripBanks(){
+ if(!financeWorkspace||!hasFinanceAccess||!adminAuthenticated)return;
  const select=el("fieldTripBankTemplate"),message=el("fieldTripBankStatus");
  if(!select)return;
  const activityId=el("existingActivity").value,previous=fieldTripSelectionActivityId===activityId?select.value:"";
@@ -881,11 +905,15 @@ el("config").onsubmit=async e=>{
    if(module==="yearEndDinner"){item.feeStatus=item.enabled?"PUBLISHED":"DRAFT";item.paymentOpen=item.enabled;}
    for(const key of ["studentFee","firstAdultFee","extraAdultFee","extraChildFee"])item[key]=Number(f.get(key)||0);
   }
-  if(module==="yearEndDinner"&&item.enabled&&!el("existingActivity").value)throw Error("請先以「暫不顯示」儲存新活動，再選擇收款帳戶並啟用。");
-  if(module==="yearEndDinner"&&item.enabled&&!window.dinnerBankSelection?.())throw Error("請先為這場期末聚餐選擇有效的收款帳戶。");
+  if(activityTypes.has(module)&&!financeWorkspace){
+   for(const key of ["paymentMode","feeStatus","paymentOpen","collectionOpen","studentFee","firstAdultFee","extraAdultFee","extraChildFee"])delete item[key];
+   if(module==="yearEndDinner")item.enabled=savedConfigs.find(x=>x.module===module&&x.id===id)?.enabled===true;
+  }
+  if(financeWorkspace&&module==="yearEndDinner"&&item.enabled&&!el("existingActivity").value)throw Error("請先以「暫不顯示」儲存新活動，再選擇收款帳戶並啟用。");
+  if(financeWorkspace&&module==="yearEndDinner"&&item.enabled&&!window.dinnerBankSelection?.())throw Error("請先為這場期末聚餐選擇有效的收款帳戶。");
   if(module==="fieldTrip"&&item.collectionOpen&&(!el("existingActivity").value||!item.enabled||!savedConfigs.some(x=>x.module==="fieldTrip"&&x.id===id&&x.enabled===true)||fieldTripBoundActivityId!==id||!fieldTripBoundAccount))throw Error("請先儲存並開放家長報名，再確認此活動收款帳戶，才能開放第二階段收款。");
   if(!confirm("確定儲存設定？")){feedback.textContent="已取消儲存";return}
-  if(module==="yearEndDinner"&&item.enabled){
+  if(financeWorkspace&&module==="yearEndDinner"&&item.enabled){
    feedback.textContent="正在綁定並核對本活動收款帳戶…";
    await window.applyDinnerBankSelection(id);
    bankVerifiedOnSave=true;
@@ -896,7 +924,7 @@ el("config").onsubmit=async e=>{
    feedback.textContent="活動已建立，正在綁定並驗證收款帳戶…";
    await bindSelectedFieldTripAccount(id);bankVerifiedOnSave=true;
   }
-  if(module==="yearEndDinner"&&!item.enabled&&window.hasDinnerBankTemplateSelection?.()){
+  if(financeWorkspace&&module==="yearEndDinner"&&!item.enabled&&window.hasDinnerBankTemplateSelection?.()){
    feedback.textContent="活動已儲存，正在綁定並核對收款帳戶…";
    await window.applyDinnerBankSelection(id);
    bankVerifiedOnSave=true;
@@ -937,8 +965,8 @@ async function checkUniformApprovalAccount(row){
  if(pendingRequestIds.has(row.id))return false;
  pendingRequestIds.add(row.id);showRequestUpdateFeedback(row,"正在檢查收款設定…");
  try{
-  const data=await api("uniform-events/uniform-payment-account?kind="+encodeURIComponent(row.kind));
-  if(!data.item){showRequestUpdateFeedback(row,"尚未核准：請先設定此團服的收款帳戶，再核准申請。",{error:true,bankKind:row.kind});return false}
+  const data=await api("uniform-events/uniform-payment-account?view=availability&kind="+encodeURIComponent(row.kind));
+  if(data.configured!==true){showRequestUpdateFeedback(row,"尚未核准：請先設定此團服的收款帳戶，再核准申請。",{error:true,bankKind:row.kind});return false}
   requestUpdateFeedback.delete(row.id);return true;
  }catch(error){showRequestUpdateFeedback(row,"尚未核准：收款設定檢查失敗，"+error.message,{error:true});return false}
  finally{pendingRequestIds.delete(row.id);renderModuleRequests()}
@@ -989,6 +1017,7 @@ async function updateUniformRequest(row,body,{expectedStatus="",expectedProcurem
 }
 let uniformBankTemplates=[];
 async function loadUniformBankTemplates(){
+ if(!financeWorkspace||!hasFinanceAccess||!adminAuthenticated)return;
  const form=el("uniformBankForm"),select=form.elements.templateId,message=el("uniformBankMessage");
  try{const data=await api("uniform-events/payment-account-templates");uniformBankTemplates=(data.items||[]).filter(t=>t.active===true);
   select.replaceChildren(new Option("請選擇已建立的幹部收款帳戶",""));
@@ -1017,7 +1046,6 @@ el("uniformBankForm").addEventListener("submit",async e=>{
  try{await api("uniform-events/uniform-payment-account",{method:"POST",body:JSON.stringify({kind:form.elements.kind.value,templateId:selected.id})});await loadUniformBank();message.textContent="已綁定幹部收款帳戶。"}
  catch(error){message.textContent="綁定失敗："+error.message}
 });
-loadUniformBankTemplates();
 window.addEventListener("uniformBankTemplatesLoaded",loadUniformBankTemplates);
 let uniformPrices={};
 syncUniformModuleVisibility();
@@ -1053,7 +1081,9 @@ el("uniformPriceForm").addEventListener("submit",async e=>{
  try{await api("uniform-events/prices",{method:"POST",body:JSON.stringify({kind,basePrice,reason,etag:uniformPrices[kind]?.etag??null})});form.elements.reason.value="";await loadUniformPrices();message.textContent+=" 新價格已儲存。"}
  catch(error){message.textContent="價格更新失敗："+error.message}
 });
-loadUniformPrices();
+window.addEventListener("uniformPriceKindChanged",showUniformPrice);
+window.addEventListener("uniformBankTemplatesLoaded",()=>{if(financeWorkspace&&hasFinanceAccess&&adminAuthenticated)financeActivitySettings?.load()});
+window.addEventListener("uniformFinanceReload",()=>{if(financeWorkspace&&hasFinanceAccess&&adminAuthenticated)Promise.all([loadInlineFinance(),loadUniformBankTemplates(),loadUniformPrices(),financeActivitySettings?.load()]).catch(error=>el("status").textContent=error.message)});
 const tshirtSizes=["8","10","12","XS","S","M","L","XL","2L","3L","5L"];
 function openProcurementForm(row,cell,trigger,correction){
  if(cell.querySelector("form"))return;
@@ -1355,3 +1385,13 @@ window.addEventListener("tshirtParentLoansChanged",()=>load());
 
 
 window.addEventListener("tshirtPurchaseOrdersChanged",()=>load());
+
+window.addEventListener("message",async event=>{
+ if(financeWorkspace||!adminAuthenticated||event.origin!==location.origin||event.source!==window.parent||event.data?.type!=="school-finance-updated"||event.data.schoolId!==sessionStorage.getItem("school_context_id"))return;
+ try{
+  const [requests,stock,received]=await Promise.all([api("uniform-events/requests"),api("uniform-events/inventory"),api("uniform-events/receiving")]);
+  cachedRequests=requests.items||[];cachedStock=stock.items||[];cachedStockDetails=stock;receivedRequestIds=new Set((received.items||[]).map(row=>String(row.requestId)));
+  window.uniformInventoryItems=cachedStock;renderUniformRequestAlerts();renderModuleRequests();renderModuleStock();
+  window.dispatchEvent(new CustomEvent("uniformRequestsLoaded"));window.dispatchEvent(new CustomEvent("uniformInventoryLoaded",{detail:{items:cachedStock}}));
+ }catch(error){el("status").textContent="財務資料已更新，請按重新整理讀取最新進度。"}
+});

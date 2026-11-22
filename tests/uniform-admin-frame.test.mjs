@@ -32,11 +32,12 @@ test("inventory buttons, CSV downloads and other tool links are not intercepted 
 function parentRuntime(){
  const loads=[],messages=[],opened=[],errors=[],frame={dataset:{},style:{},src:"/uniform-event-admin.html?embedded=school",contentWindow:{location:{href:origin+"/uniform-event-admin.html?embedded=school"}},addEventListener:(type,fn)=>{if(type==="load")loads.push(fn)}};
  const window={openSchoolAdminWorkspace:async group=>opened.push(group),addEventListener:(type,fn)=>{if(type==="message")messages.push(fn)}};
- const context={window,state:{me:{role:"admin",schoolId:"school-a"}},document:{getElementById:()=>frame},URL,URLSearchParams,location:{origin},toast:value=>errors.push(value)};
+ const state={me:{role:"admin",schoolId:"school-a",email:"admin@example.test"}},scopeKey=()=>state.me.email+"|"+state.me.schoolId;
+ const context={window,state,scopeKey,document:{getElementById:()=>frame},URL,URLSearchParams,location:{origin},toast:value=>errors.push(value)};
  const helper=workspace.slice(workspace.indexOf(" function bindUniformFrameNavigation("),workspace.indexOf(" const setGroup=",workspace.indexOf(" function bindUniformFrameNavigation(")));
  const start=workspace.indexOf(" window.addEventListener('message',event=>{"),end=workspace.indexOf(" window.addEventListener('message',event=>{",start+1);
  const bind=runInNewContext(helper+workspace.slice(start,end)+";bindUniformFrameNavigation",context);bind(frame);bind(frame);
- return {frame,loads,opened,errors,message:({origin:senderOrigin=origin,source=frame.contentWindow,data}={})=>messages[0]({origin:senderOrigin,source,data})};
+ return {frame,loads,opened,errors,state,scopeKey,bind:()=>bind(frame),message:({origin:senderOrigin=origin,source=frame.contentWindow,data}={})=>messages[0]({origin:senderOrigin,source,data})};
 }
 test("the parent accepts only its own embedded document and keeps valid height updates working",()=>{
  const h=parentRuntime();h.message({origin:"https://other.example.invalid",data:{type:"school-uniform-return"}});h.message({source:{},data:{type:"school-uniform-return"}});assert.equal(h.opened.length,0);
@@ -71,4 +72,11 @@ test("repairing an activity return still restores the exact saved activity in th
  const h=parentRuntime();h.frame.contentWindow.location.href=origin+"/?"+new URLSearchParams({adminActivity:"calendarActivity:competition",activitySchool:"school-a"});h.loads[0]();
  assert.deepEqual(h.opened,["uniformAdmin"]);const url=new URL(h.frame.src,origin);assert.equal(url.pathname,"/uniform-event-admin.html");assert.equal(url.searchParams.get("embedded"),"school");assert.equal(url.searchParams.get("activity"),"calendarActivity:competition");
  const foreign=parentRuntime();foreign.frame.contentWindow.location.href=origin+"/?"+new URLSearchParams({adminActivity:"calendarActivity:competition",activitySchool:"school-b"});foreign.loads[0]();assert.deepEqual(foreign.opened,["home"]);assert.equal(foreign.frame.src,"about:blank");
+});
+
+test("an operations frame from a previous school or identity is invalidated before the existing listener is reused",()=>{
+ const h=parentRuntime();assert.equal(h.frame.dataset.workspaceScope,h.scopeKey());assert.equal(h.loads.length,1);
+ h.state.me.schoolId="school-b";h.bind();assert.equal(h.frame.src,"about:blank");assert.equal(h.frame.dataset.workspaceScope,h.scopeKey());assert.equal(h.loads.length,1);
+ h.frame.src="/uniform-event-admin.html?embedded=school";h.bind();assert.equal(h.frame.src,"/uniform-event-admin.html?embedded=school","same verified scope retains the current document");
+ h.state.me.email="another@example.test";h.bind();assert.equal(h.frame.src,"about:blank");assert.equal(h.frame.dataset.workspaceScope,"another@example.test|school-b");assert.equal(h.loads.length,1);
 });

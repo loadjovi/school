@@ -95,6 +95,7 @@ app.http("uniformEventRequests",{
     const ctx=await getTenantContext(request);if(ctx.error)return ctx.error;
     const {schoolId,access}=ctx;
     if(!["admin","parent"].includes(access.role))return err("Forbidden",403);
+    if(request.method==="GET"&&request.query?.get("view")==="payment-notifications"&&(access.role!=="admin"||access.capabilities?.financeVerifier!==true))return err("僅指定財務人員可查看財務通知",403);
     try{
       const client=await table("requests");
       if(request.method==="GET"){
@@ -106,7 +107,7 @@ app.http("uniformEventRequests",{
         for await(const e of client.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
           const item=decode(e);
           if(access.role==="admin"||ensureStudentAccess(access,item.studentId)){
-            if(access.role==="admin"&&access.capabilities?.financeVerifier!==true){const {transferReport,verificationNote,bankPostedAt,paymentResolution,paymentResolutionEvents,...safe}=item;out.push(safe)}
+            if(access.role==="admin"&&access.capabilities?.financeVerifier!==true){const {transferReport,verificationNote,bankPostedAt,paymentHistory,paymentLineNotification,paymentResolution,paymentResolutionEvents,...safe}=item;out.push(safe)}
             else if(item.paymentResolution&&access.role==="parent"&&!ownsResolution(access,item,ensureStudentAccess)){const {paymentResolution,paymentResolutionEvents,...safe}=item;out.push({...safe,canResolvePayment:false,paymentResolution:{expectedAmount:paymentResolution.expectedAmount,balance:paymentResolution.balance,reason:paymentResolution.reason}})}
             else out.push(item);
           }
@@ -114,15 +115,16 @@ app.http("uniformEventRequests",{
         const used=new Set(out.filter(x=>x.kind==="competitionUniform"&&x.acquisition==="PUBLIC"&&x.status!=="CANCELLED").map(x=>String(x.studentId)));
         const historical=[];
         for(const id of historicalPublicIssues[schoolId]||[])if(access.role==="admin"||ensureStudentAccess(access,id)){used.add(id);historical.push(id)}
-        if(access.role==="admin"){
+        if(access.role==="admin"&&access.capabilities?.financeVerifier===true){
           const lineStates=await uniformPaymentLineStates(schoolId,out);
           for(const item of out)if(lineStates[item.id])item.paymentLineNotification=lineStates[item.id];
         }
         return json({items:out,publicUsedStudentIds:[...used],historicalPublicStudentIds:historical});
       }
       const data=await request.json();
+      if(data?.action==="SEND_PAYMENT_LINE"&&(access.role!=="admin"||access.capabilities?.financeVerifier!==true))return err("僅指定財務人員可發送繳款通知",403);
       if(["SEND_PAYMENT_NOTICES","SEND_PAYMENT_REMINDER"].includes(data?.action)){
-        if(request.method!=="PATCH"||access.role!=="admin")return err("Admin only",403);
+        if(request.method!=="PATCH"||access.role!=="admin"||access.capabilities?.financeVerifier!==true)return err("僅指定財務人員可發送財務通知",403);
         const scope=data.action==="SEND_PAYMENT_REMINDER"?{kind:"uniform",id:data.id,reminder:true}:data.scope||{kind:"all"};
         if(!["all","uniform","family","activity"].includes(scope.kind)||scope.kind!=="all"&&(typeof scope.id!=="string"||scope.id.length>250)||scope.kind==="activity"&&!["fieldTrip","yearEndDinner"].includes(scope.module))return err("Invalid notification scope",400);
         if(scope.reminder===true&&scope.kind!=="uniform")return err("Invalid reminder scope",400);

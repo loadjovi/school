@@ -1,7 +1,7 @@
 // Keep supported tools inside the already authenticated school workspace.
 (()=>{
  const query=new URLSearchParams(location.search),service=query.get('workspaceService'),schoolId=query.get('workspaceSchool');
- const frameIds={line:'awLineServiceFrame',fees:'awFeesServiceFrame'};
+ const frameIds={line:'awLineServiceFrame',fees:'awFeesServiceFrame',finance:'awFinanceServiceFrame'};
  let embedded=false;
  try{
   embedded=query.get('embedded')==='school'&&!!frameIds[service]&&window.parent!==window&&window.frameElement?.id===frameIds[service]&&window.parent.location.origin===location.origin&&/^[a-z0-9-]{2,60}$/.test(schoolId||'')&&sessionStorage.getItem('school_context_id')===schoolId;
@@ -18,7 +18,7 @@
   if(!link||link.hasAttribute('download')||String(link.target||'').toLowerCase()==='_blank')return;
   let url;try{url=new URL(link.href,location.href)}catch{return}
   if(url.origin!==location.origin)return;
-  const root=['/','/index.html'].includes(url.pathname),known=service==='line'?['backLink','returnActivityAfterSend'].includes(link.id):link.id==='feePlatformBack';
+  const root=['/','/index.html'].includes(url.pathname),known=service==='line'?['backLink','returnActivityAfterSend'].includes(link.id):(service==='finance'?link.id==='uniformPlatformBack':link.id==='feePlatformBack');
   let activity;
   if(root&&url.searchParams.has('adminActivity')){
    activity=url.searchParams.get('adminActivity');

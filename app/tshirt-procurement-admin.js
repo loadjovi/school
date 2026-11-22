@@ -2,7 +2,7 @@ import "./payment-resolution.js?v=20261122-single-parent-message";
 import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv,tshirtPurchaseOrderCsv,tshirtOrderCandidates} from "./tshirt-procurement-plan.mjs?v=20261122-active-history";
 const $=id=>document.getElementById(id);
 const term=currentTshirtTerm();
-let data=null,plan=null,loading=false,reloadRequested=false,canVerifyFinance=false,links=[],extraBySize={},revision=0,canCreateOrder=false,purchaseOrderRequestKey="";
+let data=null,plan=null,loading=false,reloadRequested=false,links=[],extraBySize={},revision=0,canCreateOrder=false,purchaseOrderRequestKey="";
 let activePlanFilter="";
 const planFilters={first:"學生首次公費",extra:"學生自費加購",staff:"幹部／志工需求",total:"處理中需求合計",covered:"已採購／待發放",need:"尚需採購（已知尺寸）"};
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -136,7 +136,7 @@ async function load(){
   if(values.some(x=>!Array.isArray(items(x))))throw Error("資料格式不完整，請重新整理");
   data={students:items(values[0]),history:items(values[1]),requests:items(values[2]),stock:items(values[3]),staffDemands:items(values[4]),parentLoans:items(values[5]),purchaseOrders:items(values[6])};
   window.dispatchEvent(new CustomEvent("tshirtStaffDemandsLoaded",{detail:{items:data.staffDemands}}));
-  canVerifyFinance=values[4].canVerifyFinance===true;links=items(values[7]);drawParents();draw();
+  links=items(values[7]);drawParents();draw();
  }catch(e){$("tshirtPlanStatus").textContent="採購總表讀取失敗："+e.message+"。請重新整理；資料未齊前不提供採購數字與匯出。";$("tshirtPlanFilterSummary").textContent="明細讀取失敗，請重新整理。";$("tshirtPlanDetailCount").textContent="需求明細讀取失敗";$("tshirtPlanCompletedCount").textContent="已完成發放（歷史紀錄）｜讀取失敗";$("tshirtPlanCompletedSummary").textContent="請重新整理後查詢。";$("tshirtStaffRecords").replaceChildren();exportEnabled(false)}
  finally{loading=false;if(reloadRequested){reloadRequested=false;await load()}}
 }
@@ -156,14 +156,9 @@ function drawStaff(){
   const card=document.createElement("details");card.className="tshirt-demand-record";
   const title=document.createElement("summary");title.textContent=`${x.parentName}｜${STAFF_CATEGORIES[x.category]}｜${x.size} × ${x.quantity} 件｜${staffStatus(x)}`;card.append(title);
   const desc=document.createElement("p");desc.textContent=`${x.schoolYear} 學年度${x.semester===1?"上":"下"}學期｜應繳 NT$${x.amount}｜${x.note||"未填備註"}`;card.append(desc);
-  if(canVerifyFinance)window.paymentResolutionUI?.financeControls(card,x,"staff",call,load);
   const resolutionHeld=Boolean(x.paymentResolution)&&["ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED","REFUNDED"].includes(x.paymentStatus);
-  if(!resolutionHeld&&x.category!=="CADRE_FIRST"&&x.status==="APPROVED"&&x.paymentStatus!=="VERIFIED"){
-   if(canVerifyFinance){
-    const form=document.createElement("form");form.className="tshirt-demand-finance";
-    form.innerHTML='<h4>財務確認實際入帳</h4><label>入帳日期<input name="date" type="date" required></label><label>實際金額<input name="amount" type="number" min="1" step="1" required></label><label>匯款末五碼<input name="lastFive" inputmode="numeric" pattern="[0-9]{5}" maxlength="5" required></label><label>核帳說明<input name="note" maxlength="300" required></label><button type="submit">確認此筆已入帳</button>';
-    form.addEventListener("submit",async e=>{e.preventDefault();if(!confirm(`確認已核對 ${x.parentName} 的實際入帳 NT$${x.amount}？`))return;await saveChange(x,{action:"VERIFY_DEMAND_PAYMENT",bankPostedDate:form.elements.date.value,paidAmount:Number(form.elements.amount.value),lastFive:form.elements.lastFive.value,note:form.elements.note.value},form.querySelector("button"))});card.append(form);
-   }else{const hint=document.createElement("p");hint.textContent="請具財務權限人員展開此筆需求，核對實際入帳。";card.append(hint)}
+  if(x.category!=="CADRE_FIRST"&&x.status==="APPROVED"&&x.paymentStatus!=="VERIFIED"){
+   const hint=document.createElement("p");hint.textContent=resolutionHeld?"款項處理中，請由財務核帳區完成後再採購。":"待財務核帳，完成後會自動納入採購。";card.append(hint);
   }
   const next=resolutionHeld?[]:{APPROVED:x.purchaseOrderId?[]:[["CANCELLED","取消需求"]],ORDERED:[],ARRIVED:[["FULFILLED","確認需求已處理完成"]]}[x.status]||[];
   for(const [status,label] of next){const button=document.createElement("button");button.type="button";button.textContent=label;button.addEventListener("click",async()=>{

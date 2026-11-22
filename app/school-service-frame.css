@@ -7,3 +7,5 @@ html.school-service-embedded[data-workspace-service="line"] main>section.card:fi
 html.school-service-embedded .card:first-of-type{margin-top:0}
 html.school-service-embedded :is(input,select,textarea,button){max-width:100%}
 @media(max-width:600px){html.school-service-embedded .card{padding:16px}html.school-service-embedded main{padding-bottom:18px}}
+
+html.school-service-embedded[data-workspace-service="finance"] #uniformPlatformBack,html.school-service-embedded[data-workspace-service="finance"] body>h1,html.school-service-embedded[data-workspace-service="finance"] body>h1+p{display:none!important}

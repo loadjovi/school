@@ -14,7 +14,8 @@ function paymentAccountHandler(module){return async request=>{
 
   const ctx=await getTenantContext(request);if(ctx.error)return ctx.error;
   const {access,schoolId}=ctx;
-  if(!["admin","parent"].includes(access.role))return fail("Forbidden",403);
+  if(!["admin","parent"].includes(access.role)||access.role==="admin"&&access.capabilities?.financeVerifier!==true)return fail("僅指定財務人員或繳費家長可查看活動帳戶",403);
+  if(request.method!=="GET"&&(access.role!=="admin"||access.capabilities?.financeVerifier!==true))return fail("僅已指派的財務人員可設定活動帳戶",403);
   try{
    const data=request.method==="GET"?{activityId:new URL(request.url).searchParams.get("activityId")}:await request.json();
    if(!validId(data?.activityId))return fail("Invalid activity ID");

@@ -8,6 +8,9 @@ const find=async(t,p,r)=>{try{return await t.getEntity(p,r)}catch(e){if(e.status
 app.http("uniformPaymentAccount",{methods:["GET","POST"],authLevel:"anonymous",route:"uniform-events/uniform-payment-account",handler:async request=>{
  const ctx=await getTenantContext(request);if(ctx.error)return ctx.error;
  const {access,schoolId}=ctx;
+ const availability=request.method==="GET"&&access.role==="admin"&&new URL(request.url).searchParams.get("view")==="availability";
+ if(!["admin","parent"].includes(access.role)||access.role==="admin"&&access.capabilities?.financeVerifier!==true&&!availability)return fail("僅指定財務人員或原繳費家長可查看團服帳戶",403);
+ if(request.method!=="GET"&&(access.role!=="admin"||access.capabilities?.financeVerifier!==true))return fail("僅已指派的財務人員可設定團服帳戶",403);
  try{
   const input=request.method==="GET"?Object.fromEntries(new URL(request.url).searchParams):await request.json();
   if(!["regularUniform","competitionUniform"].includes(input.kind))return fail("Invalid kind");
@@ -25,8 +28,9 @@ app.http("uniformPaymentAccount",{methods:["GET","POST"],authLevel:"anonymous",r
    return json({saved:true});
   }
   if(access.role!=="admin"&&access.role!=="parent")return fail("Forbidden",403);
-  const account=await find(accounts,schoolId,key);if(!account)return json({item:null});
+  const account=await find(accounts,schoolId,key);if(!account)return json(availability?{configured:false}:{item:null});
   const bank=JSON.parse(account.payload||"{}");
+  if(availability)return json({configured:Boolean(bank.bankName&&bank.accountHolder&&/^[0-9]{3}$/.test(bank.bankCode||"")&&/^[0-9]{6,30}$/.test(bank.accountNumber||""))});
   if(access.role==="admin")return json({item:{...bank,updatedAt:account.updatedAt}});
   if(!valid(input.requestId))return fail("Order required",403);
   const requests=await db("TenantUniformEventRequest");

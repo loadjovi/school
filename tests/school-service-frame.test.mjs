@@ -10,14 +10,14 @@ function child({service='line',framed=true,frameId,querySchool='school-a',sessio
  const query=new URLSearchParams({embedded:embedded?'school':'',workspaceService:service,workspaceSchool:querySchool,...extra});
  const main={getBoundingClientRect:()=>({bottom:contentHeight})};
  const document={readyState:'loading',documentElement:{classList:{add:value=>classes.add(value)},dataset:{},scrollHeight:99999},body:{getBoundingClientRect:()=>({bottom:contentHeight})},querySelector:selector=>selector==='main'?main:null,addEventListener:(type,fn)=>{listeners[type]=fn}};
- const window={frameElement:framed?{id:frameId||({line:'awLineServiceFrame',fees:'awFeesServiceFrame'})[service]}:null,scrollY:0,requestAnimationFrame:callback=>frames.push(callback),addEventListener:(type,fn)=>{windowListeners[type]=fn}};
+ const window={frameElement:framed?{id:frameId||({line:'awLineServiceFrame',fees:'awFeesServiceFrame',finance:'awFinanceServiceFrame'})[service]}:null,scrollY:0,requestAnimationFrame:callback=>frames.push(callback),addEventListener:(type,fn)=>{windowListeners[type]=fn}};
  window.parent=framed?{location:{origin:parentOrigin},postMessage:(data,target)=>messages.push({data,target})}:window;
- const location={origin,search:'?'+query,href:origin+(service==='fees'?'/fee-collections.html':'/line-announcement.html')+'?'+query};
+ const location={origin,search:'?'+query,href:origin+(service==='fees'?'/fee-collections.html':service==='finance'?'/uniform-event-admin.html':'/line-announcement.html')+'?'+query};
  runInNewContext(source,{window,document,location,URL,URLSearchParams,sessionStorage:{getItem:()=>sessionSchool},ResizeObserver:class{constructor(callback){observed=callback}observe(){}}});
  const ready=()=>listeners.DOMContentLoaded?.();
  const flush=()=>{while(frames.length)frames.shift()()};
  const click=(href,options={})=>{
-  const link=href?{href,id:options.id||({line:'backLink',fees:'feePlatformBack'})[service],target:options.target||'',hasAttribute:name=>name==='download'&&!!options.download}:null;
+  const link=href?{href,id:options.id||({line:'backLink',fees:'feePlatformBack',finance:'uniformPlatformBack'})[service],target:options.target||'',hasAttribute:name=>name==='download'&&!!options.download}:null;
   const {id,target,download,...eventOptions}=options;
   const event={button:0,prevented:false,preventDefault(){this.prevented=true},target:{closest:()=>link},...eventOptions};listeners.click?.(event);return event;
  };
@@ -84,4 +84,21 @@ test('both HTML pages load the scoped bridge while preserving their business mod
  assert.match(line,/id="backLink" href="\/"/);assert.match(fees,/id="feePlatformBack" class="back" href="\/"/);
  assert.match(line,/type="module" src="\/line-announcement\.js\?v=20261122-simple-group-routing/);assert.match(fees,/type="module" src="\/fee-collections\.js\?v=\d{8}-[a-z0-9-]+/);
  assert.match(css,/html\.school-service-embedded body>header/);assert.match(css,/#functional-uat-banner/);assert.doesNotMatch(css,/#roleTitle/);
+});
+
+test('the dedicated finance frame returns through its own verified bridge and reports its natural height',()=>{
+ const h=child({service:'finance',extra:{workspace:'finance'}});
+ assert.equal(h.classes.has('school-service-embedded'),true);assert.equal(h.document.documentElement.dataset.workspaceService,'finance');assert.equal(h.classes.has('school-service-activity-return'),false);
+ assert.equal(h.click(origin+'/',{id:'uniformPlatformBack',target:'_top'}).prevented,true);
+ assert.deepEqual(JSON.parse(JSON.stringify(h.messages[0])),{data:{type:'school-service-return',service:'finance',schoolId:'school-a'},target:origin});
+ h.ready();h.resize();h.flush();assert.equal(h.messages.at(-1).data.type,'school-service-height');assert.equal(h.messages.at(-1).data.service,'finance');assert.equal(h.messages.at(-1).data.schoolId,'school-a');assert.equal(h.messages.at(-1).data.height,852);assert.equal(h.messages.at(-1).target,origin);
+ h.height(400);h.resize();h.flush();assert.equal(h.messages.at(-1).data.height,402);
+ const before=h.messages.length;
+ for(const href of [origin+'/?adminActivity=calendarActivity:competition&activitySchool=school-a',origin+'/uniform-event-admin.html?activity=calendarActivity:competition&activitySchool=school-a',origin+'/line-account.html','https://other.example.invalid/'])assert.equal(h.click(href,{id:'uniformPlatformBack'}).prevented,false);
+ assert.equal(h.messages.length,before);
+});
+test('finance bridge rejects unrelated frames, another school, a different parent origin and standalone pages',()=>{
+ for(const config of [{frameId:'awUniformFrame'},{frameId:'awLineServiceFrame'},{querySchool:'school-b'},{sessionSchool:''},{parentOrigin:'https://other.example.invalid'},{framed:false},{embedded:false}]){
+  const h=child({service:'finance',extra:{workspace:'finance'},...config});h.ready();h.flush();assert.equal(h.classes.size,0);assert.equal(h.click(origin+'/',{id:'uniformPlatformBack'}).prevented,false);assert.equal(h.messages.length,0);
+ }
 });

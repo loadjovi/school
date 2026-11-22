@@ -20,6 +20,17 @@ const modules=new Set(["competitionUniform","regularUniform","fieldTrip","yearEn
 const rowKey=(type,id)=>type+":"+id;
 const safeId=(s)=>typeof s==="string"&&/^[a-zA-Z0-9_-]{1,80}$/.test(s);
 const cleanText=(s,max=500)=>typeof s==="string"&&s.trim().length>0&&s.length<=max;
+const financialConfigFields=["paymentMode","feeStatus","paymentOpen","collectionOpen","studentFee","firstAdultFee","extraAdultFee","extraChildFee"];
+function preserveActivityFinance(data,previous,canChange=false){
+  const defaults={paymentMode:data.module==="yearEndDinner"?"PAY_NOW":"PAY_LATER",feeStatus:"DRAFT",paymentOpen:false,collectionOpen:false,studentFee:0,firstAdultFee:0,extraAdultFee:0,extraChildFee:0};
+  for(const field of financialConfigFields){
+    const saved=previous?.[field]??defaults[field];
+    if(!canChange&&Object.hasOwn(data,field)&&data[field]!==saved)return false;
+  }
+  for(const field of financialConfigFields)if(!Object.hasOwn(data,field))data[field]=previous?.[field]??defaults[field];
+  return true;
+}
+
 function validate(data){
   if(!data||typeof data!=="object"||!modules.has(data.module)||typeof data.enabled!=="boolean")throw new Error("Invalid module configuration");
   if(data.module==="fieldTrip"||data.module==="yearEndDinner"){
@@ -104,6 +115,10 @@ app.http("uniformEventConfig",{
         await client.deleteEntity(schoolId,key,{etag:before.etag});
         return json({ok:true,deleted:true,id:data.id});
       }
+      let before=null;
+      try{before=await client.getEntity(schoolId,rowKey(data.module,data.id))}catch(e){if(e.statusCode!==404)throw e}
+      const previous = before ? JSON.parse(before.payload||"{}") : null;
+      if(["fieldTrip","yearEndDinner"].includes(data.module)&&!preserveActivityFinance(data,previous,access.capabilities?.financeVerifier===true))return json({error:"僅指定財務人員可調整活動費用與開放收款"},403);
       validate(data);
       if(fixedUniformModules.has(data.module)&&data.enabled!==true)return json({error:"團 T 與 A 團比賽服固定啟用，無法關閉。"},400);
       if(data.module==="yearEndDinner"&&(data.paymentOpen!==data.enabled||data.feeStatus!==(data.enabled?"PUBLISHED":"DRAFT")))return json({error:"期末聚餐的收款與費率狀態須和家長端顯示同步。"},400);
@@ -128,11 +143,8 @@ app.http("uniformEventConfig",{
         payload:JSON.stringify({...data,enabled:data.enabled===true}),
         updatedAt:new Date().toISOString(),updatedBy:String(access.email||"admin").slice(0,255)
       };
-      let before=null;
-      try{before=await client.getEntity(schoolId,record.rowKey)}catch(e){if(e.statusCode!==404)throw e}
       const audit=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantUniformEventAudit");
       await audit.createTable().catch(e=>{if(e.statusCode!==409)throw e});
-      const previous = before ? JSON.parse(before.payload||"{}") : null;
       const savedAt = Date.parse(record.updatedAt);
       record = paidActivitySchedule(record,before,previous,data,savedAt);
       try{

@@ -9,11 +9,11 @@ const pending={id:"order-one",kind:"regularUniform",studentId:"student-one",size
 const approved={...pending,status:"APPROVED",amount:400,paymentStatus:"AWAITING_TRANSFER",etag:"e2"};
 function harness({account=true,finance=true,patchError=null,persist=true,readError=false,price=400,lineStatus="accepted"}={}){
  let stored={...pending},bankTab=false;const select={value:"APPROVED"},handlers={},confirmations=[],nodes={status:{textContent:""},requests:{innerHTML:"",addEventListener:(type,fn)=>{handlers[type]=fn},querySelector:()=>select},uniformBankKind:{value:""},uniformBankForm:{elements:{kind:{value:""}}},uniformBankSettings:{open:false,scrollIntoView(){this.scrolled=true}}},calls=[];
- const scope={cachedRequests:[{...stored}],visibleModuleRequests:[{...stored}],pendingRequestIds:new Set(),requestUpdateFeedback:new Map(),issueErrors:new Map(),cachedStock:[],hasFinanceAccess:finance,window:{},console,confirm:text=>{confirmations.push(text);return true},
+ const scope={cachedRequests:[{...stored}],visibleModuleRequests:[{...stored}],pendingRequestIds:new Set(),requestUpdateFeedback:new Map(),issueErrors:new Map(),cachedStock:[],financeWorkspace:false,hasFinanceAccess:finance,window:{},console,confirm:text=>{confirmations.push(text);return true},
   document:{querySelector:()=>({click(){bankTab=true}})},loadUniformBank:async()=>{},el:id=>nodes[id],esc:value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])),
   api:async(path,options)=>{
    calls.push({path,options});
-   if(path.includes("uniform-payment-account"))return {item:account?{templateId:"bank-one"}:null};
+   if(path.includes("uniform-payment-account"))return {configured:account};
    if(options?.method==="PATCH"){
     const body=JSON.parse(options.body),paymentLineNotification={status:lineStatus,retryAllowed:lineStatus!=="accepted"};
     if(body.action==="SEND_PAYMENT_LINE"){stored={...stored,paymentLineNotification};scope.cachedRequests=[{...stored}];return {item:{...stored},paymentLineNotification}}
@@ -41,7 +41,7 @@ test("the real approval button checks prerequisites, confirms the action and per
 test("a missing collection account blocks approval before mutation and explains the next step beside the request",async()=>{
  const h=harness({account:false});assert.equal(await h.scope.ui.checkUniformApprovalAccount(pending),false);
  assert.equal(h.calls.length,1);assert.equal(h.stored().status,"PENDING");assert.equal(h.scope.pendingRequestIds.size,0);
- assert.match(h.nodes.requests.innerHTML,/role='alert'.*尚未核准/);assert.match(h.nodes.requests.innerHTML,/data-request-bank='regularUniform'/);
+ assert.match(h.nodes.requests.innerHTML,/role='alert'.*尚未核准/);assert.match(h.nodes.requests.innerHTML,/財務核帳 → 匯款帳戶/);assert.doesNotMatch(h.nodes.requests.innerHTML,/data-request-bank/);
  h.setAccount(true);assert.equal(await h.scope.ui.checkUniformApprovalAccount(pending),true);assert.equal(await h.update(),true);
  assert.equal(h.scope.cachedRequests[0].status,"APPROVED");assert.equal(h.scope.cachedRequests[0].etag,"e2");
  assert.match(h.nodes.requests.innerHTML,/已核准，待家長匯款 NT\$ 400/);assert.doesNotMatch(h.nodes.requests.innerHTML,/data-request-bank|尚未核准/);
@@ -49,14 +49,16 @@ test("a missing collection account blocks approval before mutation and explains 
 });
 test("non-finance administrators see a finance instruction rather than an inaccessible settings shortcut",async()=>{
  const h=harness({account:false,finance:false});await h.scope.ui.checkUniformApprovalAccount(pending);
- assert.match(h.nodes.requests.innerHTML,/請由本校財務人員設定/);assert.doesNotMatch(h.nodes.requests.innerHTML,/data-request-bank/);
+ assert.match(h.nodes.requests.innerHTML,/請財務人員至「財務核帳 → 匯款帳戶」設定/);assert.doesNotMatch(h.nodes.requests.innerHTML,/data-request-bank/);
 });
-test("the account shortcut opens the finance tab for this uniform kind without binding an account automatically",async()=>{
- const h=harness({account:false});await h.scope.ui.checkUniformApprovalAccount(pending);
- const button={dataset:{requestBank:"regularUniform"}};await h.click({closest:selector=>selector==="button[data-request-bank]"?button:null});
- assert.equal(h.bankTab(),true);assert.equal(h.nodes.uniformBankKind.value,"regularUniform");assert.equal(h.nodes.uniformBankForm.elements.kind.value,"regularUniform");
- assert.equal(h.nodes.uniformBankSettings.open,true);assert.equal(h.nodes.uniformBankSettings.scrolled,true);assert.equal(h.stored().status,"PENDING");
- assert.equal(h.calls.filter(call=>call.options?.method==="PATCH"||call.options?.method==="POST").length,0);
+test("operations keep missing-account guidance without mounting a finance account shortcut, including for finance staff",async()=>{
+ for(const finance of [false,true]){
+  const h=harness({account:false,finance});await h.scope.ui.checkUniformApprovalAccount(pending);
+  assert.match(h.nodes.requests.innerHTML,/財務核帳 → 匯款帳戶/);assert.doesNotMatch(h.nodes.requests.innerHTML,/data-request-bank|設定此團服收款帳戶/);
+  assert.equal(h.bankTab(),false);assert.equal(h.nodes.uniformBankSettings.open,false);assert.equal(h.stored().status,"PENDING");
+  assert.equal(h.calls.filter(call=>call.options?.method==="PATCH"||call.options?.method==="POST").length,0);
+  assert.match(h.calls[0].path,/view=availability/);
+ }
 });
 test("an HTTP success response cannot complete approval while authoritative state is still pending",async()=>{
  const h=harness({persist:false});assert.equal(await h.update(),false);
@@ -74,7 +76,7 @@ test("a response timeout after persistence uses read-back without replaying the 
 test("a collection account removed during approval produces an actionable inline error",async()=>{
  const error=Object.assign(Error("請先設定此團服的收款帳戶，再核准申請"),{code:"UNIFORM_PAYMENT_ACCOUNT_REQUIRED"});
  const h=harness({persist:false,patchError:error});assert.equal(await h.update(),false);
- assert.match(h.nodes.requests.innerHTML,/更新未完成：請先設定/);assert.match(h.nodes.requests.innerHTML,/data-request-bank='regularUniform'/);
+ assert.match(h.nodes.requests.innerHTML,/更新未完成：請先設定/);assert.match(h.nodes.requests.innerHTML,/財務核帳 → 匯款帳戶/);assert.doesNotMatch(h.nodes.requests.innerHTML,/data-request-bank/);
  assert.equal(h.stored().status,"PENDING");
 });
 test("a read-back failure remains unconfirmed and never claims completion",async()=>{
@@ -92,13 +94,12 @@ test("feedback is escaped, scoped to its own request and retained across redraws
 test("public uniform approval does not require a collection account",async()=>{
  const h=harness({account:false});assert.equal(await h.scope.ui.checkUniformApprovalAccount({...pending,kind:"competitionUniform",acquisition:"PUBLIC"}),true);assert.equal(h.calls.length,0);
 });
-test("an already-approved request exposes a LINE resend action and does not need another approval",async()=>{
- const h=harness();h.setApproved();assert.match(h.nodes.requests.innerHTML,/data-payment-line='0'>補送繳款 LINE 通知/);
- const button={dataset:{paymentLine:"0"}};await h.click({closest:selector=>selector==="button[data-payment-line]"?button:null});
- const changes=h.calls.filter(call=>call.options?.method==="PATCH");assert.equal(changes.length,1);
- assert.deepEqual(JSON.parse(changes[0].options.body),{action:"SEND_PAYMENT_LINE",id:pending.id,etag:"e2"});
- assert.equal(h.stored().status,"APPROVED");assert.equal(h.stored().amount,400);
- assert.match(h.nodes.requests.innerHTML,/LINE 已受理繳款通知（實際收件待確認）/);assert.doesNotMatch(h.nodes.requests.innerHTML,/data-payment-line|LINE 已送達/);
+test("approved requests keep their application progress while financial notices and resend tools remain outside operations",()=>{
+ for(const finance of [false,true]){
+  const h=harness({finance});h.setApproved();
+  assert.doesNotMatch(h.nodes.requests.innerHTML,/data-payment-line|data-payment-reminder|payment-line-record|payment-email-record|補送繳款 LINE 通知/);
+  assert.equal(h.stored().status,"APPROVED");assert.equal(h.stored().amount,400);assert.equal(h.calls.length,0);
+ }
 });
 test("approval displays the actual LINE outcome independently of disabled LAB email",async()=>{
  const h=harness({lineStatus:"not_bound"});await h.update();

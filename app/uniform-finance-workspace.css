@@ -1,0 +1,17 @@
+html.finance-workspace #protectedAdminArea>:not(#financeWorkspaceShell){display:none!important}
+html.uniform-operations-workspace #inlineFinanceReview,html.uniform-operations-workspace #uniformFinanceSettings,html.uniform-operations-workspace [data-admin-view="accounts"],html.uniform-operations-workspace [data-admin-tab="accounts"],html.uniform-operations-workspace [data-financial-config],html.uniform-operations-workspace #activityFeePreview,html.uniform-operations-workspace #fieldTripCollectionPanel,html.uniform-operations-workspace #manageDinnerBank,html.uniform-operations-workspace #dinnerBankPanel{display:none!important}
+#financeWorkspaceShell{min-width:0}
+.finance-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 20px;position:sticky;top:0;z-index:2;background:#f6f8f7;padding:8px 0}
+.finance-tabs button{margin:0;min-height:44px;background:#e9efed;color:#245b4b;border:1px solid #cbdad3}
+.finance-tabs button[aria-selected="true"]{background:#245b4b;color:#fff;border-color:#245b4b}
+.finance-tabs button:focus-visible{outline:3px solid #c69526;outline-offset:2px}
+#financeWorkspaceShell [data-finance-panel]{margin-top:0}
+#financeWorkspaceShell #inlineFinanceReview>summary{display:none}
+#financeWorkspaceShell #inlineFinanceReview{border:0;background:transparent;padding:0}
+#financeWorkspaceShell #uniformFinanceSettings{background:#fff;margin:0;padding:20px}
+#financeWorkspaceShell #uniformFinanceSettings>h3{margin-top:0}
+#financeWorkspaceShell #uniformFinanceGrid{grid-template-columns:minmax(0,1fr)}
+#financeWorkspaceShell label{max-width:650px}
+#financeWorkspaceShell input,#financeWorkspaceShell select,#financeWorkspaceShell textarea{box-sizing:border-box;max-width:100%;width:100%;font-size:16px}
+.finance-activity-status{padding:12px;border-radius:10px;background:#eef5f1}
+@media(max-width:650px){.finance-tabs{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.finance-tabs button:first-child{grid-column:1/-1}.finance-tabs button{min-width:0;font-size:15px}.inline-finance-groups{grid-template-columns:minmax(0,1fr)}}

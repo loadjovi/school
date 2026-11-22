@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 const source=readFileSync(new URL("../app/school-admin-workspace.js",import.meta.url),"utf8"),origin="https://school.example.invalid";
-function harness({capabilities={lineAccount:true,feeCollections:true},sessionSchool="school-a"}={}){
+function harness({capabilities={lineAccount:true,feeCollections:true,financeVerifier:true},sessionSchool="school-a"}={}){
  const workspaceServices=runInNewContext(source.slice(source.indexOf(" const workspaceServices="),source.indexOf(" const accountTasks="))+";workspaceServices",{});
  const opens=[],errors=[],indicators={},frames={},rootClicks=[],messages=[],session=new Map(sessionSchool?[["school_context_id",sessionSchool]]:[]);
  const state={page:"admin",adminWorkspaceSection:"home",me:{role:"admin",email:"admin@example.test",schoolId:"school-a",capabilities},master:[{studentId:"one"}],registrations:[{id:"pending"}]};
@@ -12,14 +12,14 @@ function harness({capabilities={lineAccount:true,feeCollections:true},sessionSch
   const item={id,dataset:{},style:{},contentWindow:{location:{href:origin+path}},addEventListener(type,handler){if(type==="load")loads.push(handler)},get src(){return src},set src(value){src=value;assignments.push(value);this.contentWindow.location.href=value.startsWith("about:")?value:new URL(value,origin).href}};
   frames[id]=item;return {item,loads,assignments};
  }
- const line=frame("awLineServiceFrame","about:blank"),fees=frame("awFeesServiceFrame","about:blank"),uniform=frame("awUniformFrame","/uniform-event-admin.html?embedded=school");
+ const line=frame("awLineServiceFrame","about:blank"),fees=frame("awFeesServiceFrame","about:blank"),finance=frame("awFinanceServiceFrame","about:blank"),uniform=frame("awUniformFrame","/uniform-event-admin.html?embedded=school");
  let uniformClick;uniform.item.contentDocument={getElementById:id=>({value:id==="configModule"?"calendarActivity":"competition"}),addEventListener(type,handler){if(type==="click")uniformClick=handler}};
- const document={getElementById:id=>frames[id],querySelector:selector=>{const key=selector.includes('"line"')?"line":"fees";return indicators[key]||=( {hidden:true})},addEventListener(type,handler){if(type==="click")rootClicks.push(handler)}};
+ const document={getElementById:id=>frames[id],querySelector:selector=>{const key=selector.includes('"line"')?"line":selector.includes('"finance"')?"finance":"fees";return indicators[key]||=( {hidden:true})},addEventListener(type,handler){if(type==="click")rootClicks.push(handler)}};
  const scopeKey=()=>state.me.email+"|"+state.me.schoolId;
  const window={openSchoolAdminWorkspace:async group=>{opens.push(group);state.adminWorkspaceSection=group},addEventListener(type,handler){if(type==="message")messages.push(handler)}};
  const context={window,document,state,workspaceServices,scopeKey,sessionStorage:{getItem:key=>session.get(key)||"",setItem:(key,value)=>session.set(key,value)},URL,URLSearchParams,location:{origin},toast:value=>errors.push(value),api(){throw Error("return must not initialize APIs")},render(){throw Error("return must not rebuild app")},go(){throw Error("return must not reload app")}};
  const begin=source.indexOf(" function schoolServiceAllowed("),end=source.indexOf(" window.openSchoolAdminWorkspace=",begin);
- const helpers=runInNewContext(source.slice(begin,end)+";({serviceEntryUrl,bindSchoolServiceFrame})",context);
+ const helpers=runInNewContext(source.slice(begin,end)+";({schoolServiceAllowed,serviceEntryUrl,bindSchoolServiceFrame})",context);
  const clickStart=source.indexOf(" document.addEventListener('click',event=>{\n  if(event.defaultPrevented"),clickEnd=source.indexOf(" document.addEventListener('click',async e=>{",clickStart);
  runInNewContext(source.slice(clickStart,clickEnd),context);
  const messageStart=source.indexOf(" window.addEventListener('message',event=>{\n  const data=event.data,config=workspaceServices"),messageEnd=source.indexOf(" window.refreshSchoolAdminWorkspaceView=",messageStart);
@@ -31,11 +31,11 @@ function harness({capabilities={lineAccount:true,feeCollections:true},sessionSch
   const link={href:origin+workspaceServices[service].path,target:"",hasAttribute:()=>false,closest:()=>({dataset:{adminService:service}})};
   const event={button:0,prevented:false,preventDefault(){this.prevented=true},target:{closest:()=>link},...extra};rootClicks[0](event);return event;
  };
- return {window,state,line,fees,uniform,opens,errors,indicators,session,scopeKey,helpers,message,click,uniformClick:()=>uniformClick};
+ return {window,state,line,fees,finance,uniform,opens,errors,indicators,session,scopeKey,helpers,message,click,context,uniformClick:()=>uniformClick};
 }
 
-test("opening and returning from LINE or fees reuses the current workspace and frame without reloading main data",async()=>{
- for(const service of ["line","fees"]){
+test("opening and returning from finance, LINE or fees reuses the current workspace and frame without reloading main data",async()=>{
+ for(const service of ["line","fees","finance"]){
   const h=harness(),frame=h[service],master=h.state.master,registrations=h.state.registrations;
   assert.equal(await h.window.openSchoolAdminService(service),true);assert.equal(frame.assignments.length,1);
   const url=new URL(frame.item.src);assert.equal(url.searchParams.get("embedded"),"school");assert.equal(url.searchParams.get("workspaceService"),service);assert.equal(url.searchParams.get("workspaceSchool"),"school-a");
@@ -49,7 +49,7 @@ test("ordinary homepage clicks stay in the workspace while modified or new-tab l
  assert.equal(h.fees.assignments.length,0);
 });
 test("service routes preserve feature gates, the verified school and safe destinations",async()=>{
- const denied=harness({capabilities:{}});assert.equal(await denied.window.openSchoolAdminService("line"),false);assert.equal(await denied.window.openSchoolAdminService("fees"),false);assert.equal(denied.opens.length,0);
+ const denied=harness({capabilities:{}});assert.equal(await denied.window.openSchoolAdminService("line"),false);assert.equal(await denied.window.openSchoolAdminService("fees"),false);assert.equal(await denied.window.openSchoolAdminService("finance"),false);assert.equal(denied.opens.length,0);
  const staff=harness({capabilities:{lineRoleMenus:{staff:true}}});assert.equal(await staff.window.openSchoolAdminService("line"),true);
  const normal=harness();for(const href of ["https://other.example.invalid/line-announcement.html","/fee-collections.html","/line-announcement.html?fromActivity=calendarActivity:competition&activitySchool=other-school","/line-announcement.html?fromActivity=../escape&activitySchool=school-a"])assert.equal(await normal.window.openSchoolAdminService("line",href),false);
  const parent=harness();parent.state.me.role="parent";assert.equal(await parent.window.openSchoolAdminService("fees"),false);
@@ -85,4 +85,34 @@ test("forged activity returns cannot open a different form or a form from anothe
 test("cached in-frame root links are repaired once, while normal home returns preserve the tool",async()=>{
  const h=harness();await h.window.openSchoolAdminService("line");h.line.item.contentWindow.location.href=origin+"/";h.line.loads[0]();assert.equal(h.opens.at(-1),"home");assert.equal(h.line.item.src,"about:blank");
  h.line.loads[0]();assert.equal(h.opens.filter(group=>group==="home").length,1);await h.window.openSchoolAdminService("line");assert.equal(h.line.assignments.length,3);
+});
+
+test("finance navigation is separate from operations and rejects missing permissions and unsafe mode switches",async()=>{
+ const h=harness(),operations=h.uniform.item.src;
+ assert.equal(await h.window.openSchoolAdminService("finance"),true);
+ assert.equal(h.opens.at(-1),"financeAdmin");assert.equal(h.uniform.item.src,operations);assert.equal(h.uniform.assignments.length,0);
+ const url=new URL(h.finance.item.src);assert.equal(url.pathname,"/uniform-event-admin.html");assert.equal(url.searchParams.get("workspace"),"finance");
+ for(const task of ["finance","accounts","notifications","activity-fees"]){
+  const next=h.helpers.serviceEntryUrl("finance","/uniform-event-admin.html?workspace=finance&task="+task);assert.equal(next.searchParams.get("task"),task);
+ }
+ for(const href of ["/uniform-event-admin.html","/uniform-event-admin.html?workspace=finance&task=activity","https://other.example.invalid/uniform-event-admin.html?workspace=finance"]){
+  assert.equal(await h.window.openSchoolAdminService("finance",href),false);
+ }
+ for(const capabilities of [{},{feeCollections:true},{financeVerifier:false},{financeVerifier:"true"}]){
+  const denied=harness({capabilities});assert.equal(await denied.window.openSchoolAdminService("finance"),false);assert.equal(denied.finance.assignments.length,0);
+ }
+ h.state.me.role="parent";assert.equal(await h.window.openSchoolAdminService("finance"),false);
+});
+test("direct finance workspace calls cannot bypass the finance permission gate",async()=>{
+ const h=harness({capabilities:{lineAccount:true}}),start=source.indexOf(" window.openSchoolAdminWorkspace=async"),end=source.indexOf(" window.openSchoolAdminActivitySettings=",start),calls=[];
+ h.context.groups={home:["home"],financeAdmin:["finance"],uniformAdmin:["operations"]};h.context.inScope=()=>true;h.context.organize=()=>calls.push("organize");h.context.requestAnimationFrame=fn=>fn();h.context.window.scrollTo=()=>{};h.context.schoolServiceAllowed=h.helpers.schoolServiceAllowed;
+ runInNewContext(source.slice(start,end),h.context);
+ await h.window.openSchoolAdminWorkspace("financeAdmin");assert.equal(h.state.adminWorkspaceSection,"home");assert.equal(calls.length,0);
+ h.state.me.capabilities.financeVerifier=true;await h.window.openSchoolAdminWorkspace("financeAdmin");assert.equal(h.state.adminWorkspaceSection,"financeAdmin");assert.ok(calls.length);
+});
+test("finance entry links in operations move to the dedicated frame while retaining the operations document",async()=>{
+ const h=harness(),href=origin+"/uniform-event-admin.html?workspace=finance&task=accounts",link={href,target:"",hasAttribute:()=>false};
+ const event={button:0,prevented:false,preventDefault(){this.prevented=true},target:{closest:()=>link}};
+ h.uniformClick()(event);assert.equal(event.prevented,true);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(h.opens.at(-1),"financeAdmin");assert.equal(new URL(h.finance.item.src).searchParams.get("task"),"accounts");assert.equal(h.uniform.assignments.length,0);
 });

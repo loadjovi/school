@@ -1,6 +1,7 @@
 // The school workspace owns the application shell. This document contains only its tools.
 (()=>{
  const query=new URLSearchParams(location.search);
+ if(query.get('workspaceService')==='finance')return;
  let inWorkspace=false;
  try{inWorkspace=window.parent!==window&&window.frameElement?.id==='awUniformFrame'}catch{}
  const embedded=query.get('embedded')==='school'||inWorkspace;

@@ -2,8 +2,8 @@
  if(window.__schoolAdminWorkspace)return;
  window.__schoolAdminWorkspace=true;
  const groups={home:['工作首頁','先查看待辦，或選擇要辦理的工作。'],tasks:['待辦事項','點選一項待辦，直接進入處理畫面。'],more:['更多','操作紀錄、平台設定與使用說明。'],attendance:['出勤與請假','先選擇要處理的工作：一般課程點名、訓練點名、缺席追蹤或紀錄修正。'],accounts:['帳號管理','啟用老師、核准家長綁定，或設定校方查詢帳號。'],courses:['課表與行事曆','管理固定課表、停復課、併班及加練／寒暑訓等訓練課程。'],uniformAdmin:['團服與活動','管理團服，以及演出、比賽、快閃、交流與聯演活動。'],records:['操作紀錄','查詢資料異動及校方帳號使用紀錄。'],settings:['平台設定','調整通知、網站名稱與外觀。'],privateLookup:['個課紀錄查詢','依學生、日期與狀態查詢完整預約及異動紀錄。'],grades:['成績與練習','查看全體學生學期 20 分，或追蹤每月自主練習明細。']};
- Object.assign(groups,{lineNotice:['LINE 通知中心','選擇通知對象，預覽後發送訊息。'],feeCollections:['收費與核帳','查看收費專案、繳費進度與核帳紀錄。']});
- const workspaceServices={line:{group:'lineNotice',frameId:'awLineServiceFrame',path:'/line-announcement.html',title:'LINE 通知中心'},fees:{group:'feeCollections',frameId:'awFeesServiceFrame',path:'/fee-collections.html',title:'收費與核帳'}};
+ Object.assign(groups,{financeAdmin:['財務核帳','核對款項、處理補退款，管理收款帳戶與財務通知。'],lineNotice:['LINE 通知中心','選擇通知對象，預覽後發送訊息。'],feeCollections:['收費與核帳','查看收費專案、繳費進度與核帳紀錄。']});
+ const workspaceServices={finance:{group:'financeAdmin',frameId:'awFinanceServiceFrame',path:'/uniform-event-admin.html',title:'財務核帳'},line:{group:'lineNotice',frameId:'awLineServiceFrame',path:'/line-announcement.html',title:'LINE 通知中心'},fees:{group:'feeCollections',frameId:'awFeesServiceFrame',path:'/fee-collections.html',title:'收費與核帳'}};
  const accountTasks={
   pending:{title:'家長申請審核',description:'核對申請人與學生主檔，確認後再核准綁定。',steps:['核對申請','選擇學生','核准或退回']},
   families:{title:'家長綁定查詢／修正',description:'查詢每位學生的家長 Gmail，必要時修正錯誤綁定。',steps:['搜尋學生','核對 Gmail','儲存修正']},
@@ -15,10 +15,10 @@
  const jobIcons={attendance:'📋',students:'👥',courses:'📅',privateLookup:'🎻',uniformAdmin:'🎽',accounts:'🔑',grades:'📊',finance:'💰'};
  function homeJobs(primary){
   const jobs=shortcuts.filter(([key])=>['attendance','uniformAdmin'].includes(key)===primary);
-  if(primary&&state.me?.capabilities?.financeVerifier===true)jobs.push(['finance','財務核帳','核對團服、活動與補退款']);
-  return jobs.map(([key,title,desc])=>`<button type="button" ${key==='finance'?'data-admin-todo="finance"':`data-workspace-action="${key}"`}><span class="aw-job-icon" aria-hidden="true">${jobIcons[key]}</span><span class="aw-job-copy"><b>${title}</b><small>${desc}</small></span></button>`).join('');
+  if(primary&&state.me?.capabilities?.financeVerifier===true)jobs.push(['finance','財務核帳','核帳、補退款、帳戶與通知']);
+  return jobs.map(([key,title,desc])=>`<button type="button" ${key==='finance'?'data-workspace-tool="finance"':`data-workspace-action="${key}"`}><span class="aw-job-icon" aria-hidden="true">${jobIcons[key]}</span><span class="aw-job-copy"><b>${title}</b><small>${desc}</small></span></button>`).join('');
  }
- const guideTasks={parents:['核准家長帳號','accounts','① 找到待審申請 → ② 核對學生 → ③ 核准綁定'],students:['新增或調整學生','students','① 找到學生或新增資料 → ② 填寫異動內容 → ③ 儲存並核對'],cancel:['設定停課','schoolSchedule','① 選課程並按停課 → ② 選停課日期 → ③ 填寫原因並確認'],uniform:['處理團服申請','uniformAdmin','① 選團 T 或比賽服 → ② 進入家長申請 → ③ 依付款與領取進度處理'],event:['建立活動','activitySettings','① 選活動類型 → ② 填日期、團別與費用 → ③ 核對帳戶及家長顯示設定']};
+ const guideTasks={parents:['核准家長帳號','accounts','① 找到待審申請 → ② 核對學生 → ③ 核准綁定'],students:['新增或調整學生','students','① 找到學生或新增資料 → ② 填寫異動內容 → ③ 儲存並核對'],cancel:['設定停課','schoolSchedule','① 選課程並按停課 → ② 選停課日期 → ③ 填寫原因並確認'],uniform:['處理團服申請','uniformAdmin','① 選團 T 或比賽服 → ② 進入家長申請 → ③ 依付款與領取進度處理'],event:['建立活動','activitySettings','① 選活動類型 → ② 填日期、團別與內容 → ③ 核對家長顯示設定']};
  const scopeKey=()=>{let school=state.me?.schoolId||'';try{school=school||sessionStorage.getItem('school_context_id')||''}catch{}return String(state.me?.email||'')+'|'+String(school)};
  const guideKey=()=> 'school-admin-guide:'+scopeKey();
  // Treat the day as Asia/Taipei, regardless of the administrator's device timezone.
@@ -176,20 +176,25 @@
  const inScope=()=>typeof state!=='undefined'&&state.me?.role==='admin'&&state.page==='admin'&&!state.teacherAdminOpen&&!window.__roleModuleBootstrap&&!(window.__roleLoaderActive&&window.__roleModulesReady!==true);
  function schoolServiceAllowed(service){
   const capabilities=state.me?.capabilities||{};
-  return state.me?.role==='admin'&&(service==='fees'?!!capabilities.feeCollections:service==='line'?!!(capabilities.lineRoleMenus||capabilities.lineAccount):false);
+  return state.me?.role==='admin'&&(service==='finance'?capabilities.financeVerifier===true:service==='fees'?!!capabilities.feeCollections:service==='line'?!!(capabilities.lineRoleMenus||capabilities.lineAccount):false);
  }
  function serviceEntryUrl(service,href){
   const config=workspaceServices[service];if(!config||!schoolServiceAllowed(service))return null;
-  const url=new URL(config.path,location.origin),query=new URLSearchParams({embedded:'school',workspaceService:service,workspaceSchool:state.me.schoolId,v:'20261123-service-return'});
+  const url=new URL(config.path,location.origin),query=new URLSearchParams({embedded:'school',workspaceService:service,workspaceSchool:state.me.schoolId,v:'20261123-finance-workspace'});
   if(href){
    let source;try{source=new URL(href,location.origin)}catch{return null}
    if(source.origin!==location.origin||source.pathname!==config.path)return null;
+   if(service==='finance'){
+    if(source.searchParams.get('workspace')!=='finance')return null;
+    const task=source.searchParams.get('task');if(task&&!['finance','accounts','notifications','activity-fees'].includes(task))return null;if(task)query.set('task',task);
+   }
    if(source.searchParams.has('fromActivity')){
     const activity=source.searchParams.get('fromActivity');
     if(service!=='line'||!/^(calendarActivity|fieldTrip|yearEndDinner):[A-Za-z0-9_-]{1,80}$/.test(activity||'')||source.searchParams.get('activitySchool')!==state.me.schoolId)return null;
     query.set('fromActivity',activity);query.set('activitySchool',state.me.schoolId);query.set('returnMode','workspace');
    }
   }
+  if(service==='finance')query.set('workspace','finance');
   url.search=query;return url;
  }
  function bindSchoolServiceFrame(frame,service){
@@ -244,7 +249,10 @@
   if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261122-activity-date-bounds&task=activity';
  };
  function bindUniformFrameNavigation(frame){
-  if(!frame||frame.dataset.workspaceNavigationBound)return;
+  if(!frame)return;
+  if(frame.dataset.workspaceScope&&frame.dataset.workspaceScope!==scopeKey())frame.src='about:blank';
+  frame.dataset.workspaceScope=scopeKey();
+  if(frame.dataset.workspaceNavigationBound)return;
   frame.dataset.workspaceNavigationBound='true';
   frame.addEventListener('load',()=>{
    let route;try{route=new URL(frame.contentWindow.location.href)}catch{return}
@@ -255,6 +263,8 @@
      child.addEventListener('click',event=>{
       if(event.defaultPrevented||event.button>0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
       const link=event.target.closest?.('a[href]');if(!link||link.hasAttribute('download')||link.target==='_blank')return;
+      const finance=serviceEntryUrl('finance',link.href);
+      if(finance){event.preventDefault();window.openSchoolAdminService('finance',link.href).catch(error=>toast('財務核帳開啟失敗：'+error.message));return}
       const url=serviceEntryUrl('line',link.href);if(!url||!url.searchParams.has('fromActivity'))return;
       event.preventDefault();window.openSchoolAdminService('line',link.href).catch(error=>toast('通知中心開啟失敗：'+error.message));
      },true);
@@ -316,6 +326,8 @@
   if(!inScope())return;
   const main=document.querySelector('.main');if(!main)return;
   const activityEntry=activityWorkspaceEntry();if(activityEntry)state.adminWorkspaceSection='uniformAdmin';
+  const requestedService=Object.keys(workspaceServices).find(key=>workspaceServices[key].group===state.adminWorkspaceSection);
+  if(requestedService&&!schoolServiceAllowed(requestedService))state.adminWorkspaceSection='home';
   const group=groups[state.adminWorkspaceSection]?state.adminWorkspaceSection:'home';
   main.classList.add('school-admin-workspace');
   let root=document.getElementById('schoolAdminWorkspace');
@@ -350,6 +362,7 @@
   const text=(selector,value)=>{const n=root.querySelector(selector);if(n.textContent!==String(value))n.textContent=String(value)};
   text('h1',groups[group][0]);text('.aw-heading p',groups[group][1]);
   root.querySelector('.aw-workspace-back').hidden=group==='home';
+  const financeJob=root.querySelector('[data-workspace-tool="finance"]');if(financeJob)financeJob.hidden=!schoolServiceAllowed('finance');
   const serviceHost=root.querySelector('.aw-primary-jobs');
   for(const service of main.querySelectorAll('[data-admin-service]'))if(service.parentElement!==serviceHost)serviceHost.append(service);
   root.querySelector('[data-aw-line-binding]').hidden=!serviceHost.querySelector('[data-admin-service="line"]');
@@ -452,7 +465,8 @@
      return;
     }
     if(b.dataset.adminTodo==='parents'){await window.openSchoolAdminWorkspace('accounts');state.adminAccountWorkspaceTask='pending';organize();requestAnimationFrame(()=>document.querySelector('.aw-account-work-heading')?.scrollIntoView({block:'start',behavior:'smooth'}));return}
-    const task={tshirt:'tshirt',competition:'competition',competitionPayment:'competition',finance:'finance'}[b.dataset.adminTodo];if(task){await window.openSchoolAdminWorkspace('uniformAdmin');const frame=document.getElementById('awUniformFrame');if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261122-activity-date-bounds&task='+encodeURIComponent(task)}return;
+    if(b.dataset.adminTodo==='finance'){await window.openSchoolAdminService('finance');return}
+    const task={tshirt:'tshirt',competition:'competition',competitionPayment:'competition'}[b.dataset.adminTodo];if(task){await window.openSchoolAdminWorkspace('uniformAdmin');const frame=document.getElementById('awUniformFrame');if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261122-activity-date-bounds&task='+encodeURIComponent(task)}return;
    }
    const task=guideTasks[b.dataset.adminGuide];if(task){
     try{localStorage.setItem(guideKey(),'done')}catch{}const intro=document.querySelector('.aw-onboarding');if(intro)intro.open=false;
@@ -515,11 +529,12 @@
   event.preventDefault();window.openSchoolAdminService(service,link.href).catch(error=>toast('功能開啟失敗：'+error.message));
  });
  document.addEventListener('click',async e=>{
-  const button=e.target.closest?.('[data-workspace-group],[data-workspace-action],[data-open-teacher-admin],[data-teacher-directory-retry]');if(!button)return;
+  const button=e.target.closest?.('[data-workspace-group],[data-workspace-action],[data-workspace-tool],[data-open-teacher-admin],[data-teacher-directory-retry]');if(!button)return;
   e.preventDefault();
   try{
    if(button.hasAttribute('data-teacher-directory-retry')){const pending=window.loadTeacherAdminDirectory?.();organize();await pending;organize();return}
    if(button.hasAttribute('data-open-teacher-admin')){state.adminAccountWorkspaceTask='teachers';state.teacherAdminInlineOpen=true;organize();requestAnimationFrame(()=>document.getElementById('awTeacherAccountDetails')?.scrollIntoView({block:'start',behavior:'smooth'}));return}
+   if(button.dataset.workspaceTool)return await window.openSchoolAdminService(button.dataset.workspaceTool);
    if(button.dataset.workspaceGroup)return await window.openSchoolAdminWorkspace(button.dataset.workspaceGroup);
    const key=button.dataset.workspaceAction;
    if(groups[key])return await window.openSchoolAdminWorkspace(key);
@@ -553,6 +568,10 @@
   const data=event.data,config=workspaceServices[data?.service];if(!config||event.origin!==location.origin||!schoolServiceAllowed(data.service))return;
   const frame=document.getElementById(config.frameId);
   if(!frame||event.source!==frame.contentWindow||data.schoolId!==state.me.schoolId||frame.dataset.workspaceScope!==scopeKey())return;
+  if(data.type==='school-service-updated'&&data.service==='finance'){
+   const operations=document.getElementById('awUniformFrame');if(operations&&operations.dataset.workspaceScope===scopeKey())operations.contentWindow.postMessage({type:'school-finance-updated',schoolId:state.me.schoolId},location.origin);
+   summary.loadedAt=0;loadTasks(true);return;
+  }
   if(data.type==='school-service-height'){
    const height=Number(data.height);if(Number.isFinite(height)&&height>=200&&height<=50000){frame.style.height=Math.ceil(height)+'px';frame.dataset.serviceLoading='false';const indicator=document.querySelector('[data-service-loading="'+data.service+'"]');if(indicator)indicator.hidden=true}return;
   }

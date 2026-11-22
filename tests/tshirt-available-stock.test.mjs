@@ -91,7 +91,7 @@ test("second finance verification after a supplement uses the same stock path wi
 });
 test("the real request controls offer actual issue for allocated stock and procurement for shortages",()=>{
  const source=read("app/uniform-event-admin.js"),start=source.indexOf("function table("),end=source.indexOf("function uniformPaymentLineSummary",start),host={innerHTML:""};
- const table=runInNewContext(source.slice(start,end)+";table",{el:()=>host,esc:value=>String(value??""),cachedStock:[],window:{},requestUpdateFeedback:new Map(),issueErrors:new Map(),uniformPaymentLineSummary:()=>""});
+ const table=runInNewContext(source.slice(start,end)+";table",{el:()=>host,esc:value=>String(value??""),cachedStock:[],financeWorkspace:false,hasFinanceAccess:false,window:{},requestUpdateFeedback:new Map(),issueErrors:new Map(),uniformPaymentLineSummary:()=>""});
  table("requests",[{id:"ready",kind:"團 T",status:"READY_FOR_PICKUP",paymentStatus:"VERIFIED",received:true,size:"S",quantity:1}],[],true);assert.match(host.innerHTML,/確認實際發放/);assert.doesNotMatch(host.innerHTML,/data-master-order|data-ready-stock/);
  table("requests",[{id:"short",kind:"團 T",status:"APPROVED",paymentStatus:"VERIFIED",size:"S",quantity:1}],[],true);assert.match(host.innerHTML,/前往採購總表/);assert.doesNotMatch(host.innerHTML,/確認實際發放/);
 });
