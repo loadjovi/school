@@ -10,7 +10,7 @@ import {uniformNeedsPayment} from "../lib/paymentNoticeRules.mjs";
 import { getUniformPrice } from "../lib/uniformPricing.js";
 import {upsertCurrentCompetitionMaster,latestCompetitionRequest} from "../lib/competitionUniformMaster.js";
 
-import {notifyUniformReview,notifyUniformCancellation} from "../lib/lineAdminTodoNotification.mjs";
+import {notifyUniformReview,notifyUniformCancellation,uniformReviewNotice} from "../lib/lineAdminTodoNotification.mjs";
 import {notifyUniformPaymentRequired,uniformPaymentLineStates,uniformPaymentLineEligible} from "../lib/uniformPaymentLine.js";
 import {lineFirstLabEnabled} from "../lib/labNoticeDelivery.mjs";
 import {activeTshirtClaim} from "../lib/tshirtPurchaseOrderFlow.js";
@@ -169,6 +169,12 @@ app.http("uniformEventRequests",{
         if(data.status==="ORDERED")return err("請至『採購總表 → 確認轉採購單』統一下單，不再逐筆登記採購",409);
       }
       if(before.paymentResolution&&paymentOnHold(before))return err("此筆補款／退費尚未結案，請由財務處理，不能變更金額或推進申請",409);
+      if(data.action==="SEND_STAFF_NOTICE"){
+        if(access.role!=="admin")return err("Admin only",403);
+        if(!before.parentEmail||!uniformReviewNotice(before))return err("此申請目前不需要補送幹部通知",409);
+        await audit(schoolId,access,"request.staff_notice",data.id,{kind:before.kind,status:before.status,paymentStatus:before.paymentStatus||""});
+        return json({item:before,staffLineStatus:await notifyUniformReview(schoolId,before)});
+      }
       if(data.action==="SEND_PAYMENT_LINE"){
         if(access.role!=="admin")return err("Admin only",403);
         if(!uniformPaymentLineEligible(before))return err("目前不是待家長匯款的團服申請，無須補送繳款通知",409);

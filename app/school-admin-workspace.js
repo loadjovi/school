@@ -48,7 +48,16 @@
    ...(state.me?.capabilities?.financeVerifier===true?[['family',api('/api/uniform-events/family-registration')]]:[]),
    ['attendance',api('/api/daily-followup?date='+encodeURIComponent(date))]
   ];
-  const results=await Promise.allSettled(sources.map(([,request])=>request));
+  const results=await Promise.allSettled(sources.map(async([name,request])=>{
+   const value=await request;
+   if(state.me?.role==='admin'&&taskScopeKey()===key){
+    if(name==='uniform')summary.uniform=Array.isArray(value?.items)?value.items:null;
+    if(name==='family')summary.family=Array.isArray(value?.items)?value.items:null;
+    if(name==='attendance')summary.attendance=value?.date===date?value:null;
+    organize();
+   }
+   return value;
+  }));
   if(state.me?.role!=='admin'||taskScopeKey()!==key){summary.loading=false;return}
   const values=Object.fromEntries(sources.map(([name],index)=>[name,results[index].status==='fulfilled'?results[index].value:null]));
   summary.uniform=Array.isArray(values.uniform?.items)?values.uniform.items:null;
@@ -69,6 +78,8 @@
   for(const [kind,label,key] of [['regularUniform','團 T 申請待審','tshirt'],['competitionUniform','比賽服申請待審','competition']]){
    const count=summary.uniform?.filter(x=>x.kind===kind&&x.status==='PENDING').length||0;if(count)rows.push([key,label,count,'筆']);
   }
+  const competitionPayment=summary.uniform?.filter(x=>x.kind==='competitionUniform'&&x.acquisition==='PURCHASE'&&x.status==='APPROVED'&&['','AWAITING_TRANSFER'].includes(String(x.paymentStatus||''))&&Number.isSafeInteger(x.amount)&&x.amount>0).length||0;
+  if(competitionPayment)rows.push(['competitionPayment','比賽服買斷｜待家長匯款',competitionPayment,'筆']);
   if(state.me?.capabilities?.financeVerifier===true&&summary.uniform!==null&&summary.family!==null){
    const count=(summary.uniform?.filter(x=>!['CANCELLED','FULFILLED'].includes(x.status)&&['REPORTED_UNVERIFIED','ADJUSTMENT_REQUIRED','SUPPLEMENT_REPORTED','REFUND_REQUESTED'].includes(x.paymentStatus)).length||0)+(summary.family?.filter(x=>x.registrationStatus==='REGISTERED'&&['REPORTED_UNVERIFIED','ADJUSTMENT_REQUIRED','SUPPLEMENT_REPORTED','REFUND_REQUESTED'].includes(x.paymentStatus)).length||0);
    if(count)rows.push(['finance','匯款待核帳',count,'筆']);
@@ -372,7 +383,7 @@
      return;
     }
     if(b.dataset.adminTodo==='parents'){await window.openSchoolAdminWorkspace('accounts');state.adminAccountWorkspaceTask='pending';organize();requestAnimationFrame(()=>document.querySelector('.aw-account-work-heading')?.scrollIntoView({block:'start',behavior:'smooth'}));return}
-    const task={tshirt:'tshirt',competition:'competition',finance:'finance'}[b.dataset.adminTodo];if(task){await window.openSchoolAdminWorkspace('uniformAdmin');const frame=document.getElementById('awUniformFrame');if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261122-frame-navigation&task='+encodeURIComponent(task)}return;
+    const task={tshirt:'tshirt',competition:'competition',competitionPayment:'competition',finance:'finance'}[b.dataset.adminTodo];if(task){await window.openSchoolAdminWorkspace('uniformAdmin');const frame=document.getElementById('awUniformFrame');if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261122-frame-navigation&task='+encodeURIComponent(task)}return;
    }
    const task=guideTasks[b.dataset.adminGuide];if(task){
     try{localStorage.setItem(guideKey(),'done')}catch{}const intro=document.querySelector('.aw-onboarding');if(intro)intro.open=false;

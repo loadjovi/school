@@ -476,7 +476,8 @@ function table(id,rows,columns,actions=false){
    const line=r.paymentLineNotification||{status:"not_sent"};
    const payableLine=payable&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&["","AWAITING_TRANSFER"].includes(String(r.paymentStatus||""))&&Number.isSafeInteger(r.amount)&&r.amount>0;
    const lineNotice=payableLine?"<div class='payment-line-record' role='status'><strong>"+esc(uniformPaymentLineSummary(line))+"</strong>"+(line.acceptedAt?"<p>"+(line.status==="email_sent"?"Email ":"LINE ")+"受理時間："+esc(time(line.acceptedAt))+"（台灣時間）</p>":"")+(!["accepted","email_sent","unconfirmed","target_changed"].includes(line.status)&&line.retryAllowed!==false?"<button type='button' data-payment-line='"+i+"'>補送繳款 LINE 通知</button>":"")+"</div>":"";
-   controls="<td data-label='狀態管理'>"+directIssue+receive+(r.status==="APPROVED"&&!mayCollect?"<p class='hint'>"+(r.kind==="團 T"?"核帳後有庫存可直接發放；庫存不足才列入採購。":"財務確認入帳後會自動列入採購需求。")+"</p>":"")+progress+procurementAdjust+amount+lineNotice+notification+remind+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
+   const staffNotice=r.parentEmail&&(r.status==="PENDING"||r.kind==="A 團比賽服"&&r.acquisition==="PURCHASE"&&r.status==="APPROVED"&&payableLine)?"<button type='button' class='secondary' data-staff-notice='"+i+"'>補送幹部通知</button>":"";
+   controls="<td data-label='狀態管理'>"+directIssue+receive+(r.status==="APPROVED"&&!mayCollect?"<p class='hint'>"+(r.kind==="團 T"?"核帳後有庫存可直接發放；庫存不足才列入採購。":"財務確認入帳後會自動列入採購需求。")+"</p>":"")+progress+procurementAdjust+amount+staffNotice+lineNotice+notification+remind+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
   }
   const feedback=actions&&requestUpdateFeedback.get(r.id);
@@ -1117,6 +1118,18 @@ el("requests").addEventListener("click",async e=>{
   catch(error){issueErrors.set(row.id,"開放領取未完成："+error.message)}finally{pendingRequestIds.delete(row.id);renderModuleRequests()}return;
  }
 
+ const staffButton=e.target.closest("button[data-staff-notice]");
+ if(staffButton){
+  const row=visibleModuleRequests[Number(staffButton.dataset.staffNotice)];if(!row||pendingRequestIds.has(row.id))return;
+  if(!confirm("補送這筆申請的幹部通知？申請、金額及付款進度不會改變。"))return;
+  pendingRequestIds.add(row.id);showRequestUpdateFeedback(row,"正在補送幹部通知…");
+  try{
+   const result=await api("uniform-events/requests",{method:"PATCH",body:JSON.stringify({action:"SEND_STAFF_NOTICE",id:row.id,etag:row.etag})});
+   const states={sent:"幹部 LINE 通知已受理（實際收件待確認）",email_sent:"LINE 未受理，已改寄 Email 知會幹部",mixed_sent:"幹部通知已受理（LINE／Email 備援）",unconfirmed:"通知結果待確認，請先核對 LINE 訊息",email_missing:"LINE 未受理，尚無可收信的幹部 Email",email_not_configured:"LINE 未受理，Email 備援尚未設定"};
+   showRequestUpdateFeedback(row,states[result.staffLineStatus]||"幹部通知尚未受理，請確認通知設定後再試",{error:!["sent","email_sent","mixed_sent"].includes(result.staffLineStatus)});
+  }catch(error){showRequestUpdateFeedback(row,"補送未完成："+error.message,{error:true})}
+  finally{pendingRequestIds.delete(row.id);renderModuleRequests()}return;
+ }
  const lineButton=e.target.closest("button[data-payment-line]");
  if(lineButton){
   const row=visibleModuleRequests[Number(lineButton.dataset.paymentLine)];if(!row||pendingRequestIds.has(row.id))return;

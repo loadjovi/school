@@ -74,7 +74,7 @@ jobs:
           node --test tests/line-notification-center.test.mjs tests/line-notification-selector.test.mjs
           node --test tests/tshirt-procurement-plan.test.mjs tests/tshirt-cadre-application.test.mjs tests/tshirt-procurement-admin.test.mjs tests/tshirt-stock-count.test.mjs tests/tshirt-opened-stock.test.mjs tests/tshirt-master-orders.test.mjs api/test/tshirtStaffDemand.test.mjs api/test/tshirtPurchaseOrderRules.test.mjs
           node --test tests/volunteer-loan-size-correction.test.mjs tests/volunteer-loan-return-stock.test.mjs
-          node --test tests/tshirt-receiving-workflow.test.mjs tests/tshirt-available-stock.test.mjs tests/uniform-request-approval.test.mjs api/test/uniformRequestApproval.test.mjs tests/uniform-payment-line.test.mjs
+          node --test tests/tshirt-receiving-workflow.test.mjs tests/tshirt-available-stock.test.mjs tests/uniform-request-approval.test.mjs tests/competition-application-notice.test.mjs api/test/uniformRequestApproval.test.mjs tests/uniform-payment-line.test.mjs
           node --test tests/school-absence-followup.test.mjs
           node --test tests/parent-uniform-payment-notice.test.mjs tests/parent-uniform-simple.test.mjs tests/payment-email-notifications.test.mjs tests/finance-payment-notifications.test.mjs
           node --test api/test/teacherParentReviews.test.mjs api/test/teacherAccountType.test.mjs

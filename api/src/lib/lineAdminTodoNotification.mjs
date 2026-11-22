@@ -36,10 +36,19 @@ const uniformNotices = new Map([
   ["competitionUniform", {label:"A 團比賽服", pending:"新增 A 團比賽服申請待審。"}]
 ]);
 
-export async function notifyUniformReview(schoolId, request) {
+export function uniformReviewNotice(request) {
   const notice = uniformNotices.get(request.kind);
-  if (!notice || request.status !== "PENDING") return;
-  return notifyAdminTodo(schoolId,{id:"uniform:"+request.id,text:notice.pending,groupRetryKey:request.id});
+  if (!notice) return "";
+  if (request.status === "PENDING") return notice.pending;
+  if (request.kind === "competitionUniform" && request.acquisition === "PURCHASE" && request.status === "APPROVED" && ["", "AWAITING_TRANSFER"].includes(String(request.paymentStatus||"")) && Number.isSafeInteger(request.amount) && request.amount > 0)
+    return "新增 A 團比賽服自費買斷申請，待家長匯款。匯款回報後，再由財務核帳。";
+  return "";
+}
+
+export async function notifyUniformReview(schoolId, request) {
+  const text = uniformReviewNotice(request);
+  if (!text) return;
+  return notifyAdminTodo(schoolId,{id:"uniform:"+request.id,text,groupRetryKey:request.id});
 }
 
 export async function notifyAdminTodo(schoolId, {id, text, groupRetryKey}) {
@@ -48,16 +57,19 @@ export async function notifyAdminTodo(schoolId, {id, text, groupRetryKey}) {
 
   if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()){
     try{
-      const [target,channel,admins]=await Promise.all([getLineNotificationTarget(schoolId),resolveTenantLineChannel(schoolId),listTenantAdmins(schoolId,"active")]);
-      const recipients=admins.filter(admin=>admin.role==="schoolAdmin"&&admin.status==="active").map(admin=>admin.partitionKey||admin.email).filter(Boolean);
+      const [target,channel]=await Promise.all([getLineNotificationTarget(schoolId),resolveTenantLineChannel(schoolId)]);
       const message="【LAB】後台待辦通知\n"+text+"\n請至學校後台 → 待辦事項查看。";
-      let groupAccepted=false;
       if(immediateModes.has(target.mode)&&target.targetType==="group"&&channel.loginConfigured&&lineTargetMatchesChannel(target,channel)&&target.botUserId){
-        try{await pushLineMessage(target.targetId,message,{accessToken:channel.accessToken,retryKey:groupRetryKey||workflowLineRetryKey(schoolId,id,target.targetId)});groupAccepted=true}catch{}
+        const group=await deliverLabNotice({schoolId,eventId:"admin-todo:"+id,recipients:["line-group:"+target.targetId],subject:"後台待辦通知",text:message,lineSender:async()=>{
+          await pushLineMessage(target.targetId,message,{accessToken:channel.accessToken,retryKey:workflowLineRetryKey(schoolId,id,target.targetId)});return "accepted";
+        }});
+        if(group.lineAcceptedCount>0)return "sent";
+        if(group.status==="unconfirmed")return "unconfirmed";
       }
+      const admins=await listTenantAdmins(schoolId,"active");
+      const recipients=admins.filter(admin=>admin.role==="schoolAdmin"&&admin.status==="active").map(admin=>admin.partitionKey||admin.email).filter(Boolean);
       const result=await deliverLabNotice({schoolId,eventId:"admin-todo:"+id,recipients,subject:"後台待辦通知",text:message,lineSender:async email=>{
-        if(groupAccepted)return "accepted";
-        if(!channel.loginConfigured||!immediateModes.has(target.mode))return "disabled";
+        if(target.targetType==="group"||!channel.loginConfigured||!immediateModes.has(target.mode))return "disabled";
         const account=await getTenantLineRecipient(schoolId,email,channel.botUserId);if(!account)return "not_bound";
         await pushLineMessage(account.lineUserId,message,{accessToken:channel.accessToken,retryKey:workflowLineRetryKey(schoolId,id,account.lineUserId)});return "accepted";
       }});
