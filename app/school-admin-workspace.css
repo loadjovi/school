@@ -1,5 +1,5 @@
 /* School admin only: one navigation language on desktop and mobile. */
-.desktop-shell[data-role="admin"]{--primary:var(--green,#395cac);--aw-ink:#243652;--aw-muted:#607087;--aw-line:#dce3ee;--aw-bg:#f5f7fb}
+.desktop-shell[data-role="admin"]{--primary:var(--green,#395cac);--aw-ink:#243e34;--aw-muted:#60746a;--aw-line:#dbe6df;--aw-bg:#f4f8f5}
 .desktop-shell[data-role="admin"] .main{background:var(--aw-bg);min-width:0}
 .desktop-shell[data-role="admin"] .card{border:1px solid var(--aw-line);border-radius:16px;box-shadow:none;padding:20px;margin-bottom:16px;overflow-wrap:anywhere}
 .desktop-shell[data-role="admin"] h2{font-size:20px;line-height:1.4;margin-top:0}
@@ -220,3 +220,72 @@
 #awSemesterScoresFrame{display:block;width:100%;min-width:0;height:1100px;border:0;background:transparent}
 @media(max-width:899px){.aw-learning-workspace{margin-bottom:24px}#awSemesterScoresFrame{max-width:100%}}
 @media(max-width:600px){.aw-learning-switcher{padding:15px}.aw-learning-switcher>p{font-size:13px}.aw-learning-tabs{grid-template-columns:1fr;gap:8px}.aw-learning-tabs>button{min-height:78px;padding:11px!important}.aw-learning-tabs b{font-size:14px}}
+
+/* Home jobs use one compact card language, including finance and LINE. */
+.desktop-shell[data-role="admin"] .aw-home{--aw-job-tint:#edf5f1;--aw-job-border:#d5e3db}
+.aw-home-section{min-width:0;margin:0 0 24px}
+.aw-home-section>h2{margin:0 0 12px!important;font-size:18px!important;color:var(--aw-ink)}
+.aw-home .aw-shortcuts{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:stretch}
+.aw-home .aw-shortcuts>button,.aw-home .aw-job-link{display:flex;align-items:center;flex-wrap:nowrap;gap:12px;min-width:0;width:100%;min-height:94px;height:100%;padding:16px!important;margin:0!important;border:1px solid var(--aw-job-border);border-radius:14px;background:#fff;color:var(--aw-ink);text-align:left;text-decoration:none;box-shadow:none;cursor:pointer}
+.aw-home .aw-shortcuts>button:hover,.aw-home .aw-job-link:hover{border-color:var(--green2);background:#f3f8f5}
+.aw-home :is(.aw-shortcuts>button,.aw-job-link):focus-visible{outline:3px solid var(--green2);outline-offset:3px;background:#f3f8f5}
+.aw-home .aw-shortcuts .aw-job-icon{display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;min-width:42px;border-radius:12px;background:var(--aw-job-tint);font-size:23px;line-height:1;margin:0;order:0}
+.aw-home .aw-shortcuts .aw-job-copy{display:block;flex:1 1 auto;min-width:0;margin:0;order:0}
+.aw-home .aw-shortcuts .aw-job-copy b{display:block;font-size:17px;line-height:1.45;color:var(--aw-ink)}
+.aw-home .aw-shortcuts .aw-job-copy small{display:block;margin:4px 0 0;font-size:14px;font-weight:400;line-height:1.5;color:var(--aw-muted)}
+.aw-home .aw-home-service{display:block;min-width:0;margin:0!important;padding:0!important;border:0;border-radius:0;background:transparent;box-shadow:none}
+.aw-home .aw-onboarding{margin:0;padding:12px 16px;border-color:var(--aw-job-border);background:#f8fbf9}
+.aw-home .aw-onboarding summary{min-height:44px;padding:9px 0;font-size:16px;line-height:1.6;color:var(--green)}
+.aw-home .aw-onboarding p{margin:8px 0 12px;font-size:14px}
+.aw-home .aw-guide-choices button{min-height:48px;padding:12px;background:#fff;font-size:15px}
+.aw-home [data-admin-guide-skip]{min-height:44px;font-size:14px}
+.aw-todo-heading{min-width:0}
+.aw-todo-heading>small{display:block;margin-top:4px;font-size:14px;line-height:1.5;color:var(--aw-muted)}
+.aw-todos{padding:18px;border-color:#d5e3db}
+.aw-todos [data-admin-todo-reload]{min-height:44px;padding:8px 12px;font-size:14px}
+.aw-todos .aw-todo{min-height:58px;padding:13px 14px;border-color:#dce5df;background:#f7faf8;font-size:16px;line-height:1.5}
+.aw-todos .aw-todo:focus-visible{outline:3px solid var(--green2);outline-offset:3px}
+.aw-todos .aw-todo>span:first-child{min-width:0}
+.aw-todos .aw-todo b{flex-shrink:0;font-size:16px;white-space:nowrap}
+.aw-waiting{margin-top:16px;padding-top:14px;border-top:1px solid var(--aw-line)}
+.aw-waiting h3{margin:0 0 8px;color:var(--aw-muted);font-size:14px;font-weight:600;line-height:1.5}
+.aw-todos .aw-todo-waiting{background:#fff;border-color:var(--aw-line)}
+.aw-todos .aw-todo-waiting b{color:var(--aw-muted)}
+.aw-heading .aw-workspace-back{min-height:44px;padding:9px 14px;font-size:14px;line-height:1.5}
+.aw-more .aw-choice-list>a{display:block;width:100%;min-height:52px;padding:16px;border:1px solid var(--aw-line);border-radius:10px;background:#fff;color:var(--aw-ink);font-size:15px;line-height:1.5;text-decoration:none}
+.aw-more .aw-choice-list>a:focus-visible{outline:3px solid var(--green2);outline-offset:3px}
+@media(max-width:899px){
+ .desktop-shell[data-role="admin"]{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+ .desktop-shell[data-role="admin"] .nav.aw-bottom{left:0;right:0;bottom:0;transform:none;width:100%;max-width:none;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:7px 10px max(9px,env(safe-area-inset-bottom,0px));background:#fff;border-top:1px solid var(--aw-line);box-shadow:0 -3px 16px #17352b08}
+ .desktop-shell[data-role="admin"] .nav.aw-bottom button{min-height:54px;padding:9px 4px;font-size:14px;line-height:1.4}
+ .desktop-shell[data-role="admin"] .nav.aw-bottom button:focus-visible{outline:3px solid var(--green2);outline-offset:-3px}
+ .desktop-shell[data-role="admin"] .aw-heading{align-items:center;margin-bottom:18px}
+ .desktop-shell[data-role="admin"] .aw-heading>div{flex-basis:160px}
+ .desktop-shell[data-role="admin"] .aw-heading .aw-workspace-back{flex:0 0 auto}
+}
+@media(max-width:600px){
+ .aw-home-section{margin-bottom:22px}
+ .aw-home .aw-shortcuts{gap:10px}
+ .aw-home .aw-shortcuts>button,.aw-home .aw-job-link{min-height:92px;padding:14px!important}
+ .aw-home .aw-shortcuts .aw-job-icon{flex-basis:38px;min-width:38px;width:38px;height:38px;font-size:21px;border-radius:10px}
+ .aw-home .aw-shortcuts .aw-job-copy b{font-size:16px}
+ .aw-home .aw-shortcuts .aw-job-copy small{font-size:14px}
+ .aw-todos{padding:16px}
+}
+@media(max-width:480px){
+ .aw-home .aw-shortcuts{grid-template-columns:minmax(0,1fr)}
+ .aw-home .aw-shortcuts>button,.aw-home .aw-job-link{min-height:78px;gap:12px}
+ .aw-home .aw-shortcuts .aw-job-copy{flex-basis:auto;order:0}
+ .aw-home .aw-onboarding{padding:10px 14px}
+ .aw-todos .section-title{align-items:flex-start;gap:8px}
+ .aw-todo-heading{flex:1 1 150px}
+ .aw-todos [data-admin-todo-reload]{flex:0 0 auto}
+ .aw-todos .aw-todo{gap:8px;padding:12px}
+ .aw-todos .aw-todo>span:last-child{display:none}
+}
+
+/* Keep bootstrap independent from legacy panels until the workspace is ready. */
+.admin-boot-screen{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:24px;background:#f2f7f4}
+.admin-boot-screen>.card{width:100%;max-width:440px;margin:0;padding:28px;border:1px solid #d5e3db;border-radius:18px;box-shadow:none}
+.admin-boot-screen h2{margin:0 0 12px;font-size:22px;line-height:1.4}
+.admin-boot-screen .notice{font-size:16px;line-height:1.7}

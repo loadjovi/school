@@ -2,26 +2,38 @@
   state.parentLinks=state.parentLinks||[];
   state.parentBindingView=state.parentBindingView||{detail:false,query:"",group:"all",grade:"all",binding:"unbound"};
 
-  async function loadParentLinks(){
-    if(state.me?.role!=="admin")return;
-    state.studentLineLoaded=false;
-    try{
-      const d=await api("/api/student-parent-links?includeLineStatus=1");
-      state.parentLinks=d.items||[];
-      const byStudent=new Map();
-      for(const x of state.parentLinks){
-        const id=String(x.studentId||"");
-        if(!id)continue;
-        if(!byStudent.has(id))byStudent.set(id,[]);
-        byStudent.get(id).push(x);
-      }
-      for(const s of state.master||[])s.parents=byStudent.get(String(s.studentId))||[];
-      state.studentLineLoaded=true;
-    }catch(e){
-      console.warn("load parent Gmail links failed",e);
-      state.parentLinks=[];
-      for(const s of state.master||[])s.parents=[];
+  const linksScope=()=>typeof apiReadScope==="function"?apiReadScope():JSON.stringify([state.token,state.me?.role,state.me?.schoolId,state.me?.email]);
+  function applyParentLinks(){
+    if(state.me?.role!=="admin"||!state.studentLineLoaded||state.parentLinksScope!==linksScope())return;
+    const byStudent=new Map();
+    for(const link of state.parentLinks){
+      const id=String(link.studentId||"");if(!id)continue;
+      if(!byStudent.has(id))byStudent.set(id,[]);byStudent.get(id).push(link);
     }
+    for(const student of state.master||[])student.parents=byStudent.get(String(student.studentId))||[];
+  }
+  window.applyAdminParentLinks=applyParentLinks;
+  let linksRequest=null;
+  async function loadParentLinks(){
+    if(state.me?.role!=="admin")return false;
+    const scope=linksScope();
+    if(linksRequest?.scope===scope)return linksRequest.promise;
+    state.studentLineLoaded=false;
+    const pending={scope,promise:null};linksRequest=pending;
+    pending.promise=(async()=>{
+      try{
+        const data=await api("/api/student-parent-links?includeLineStatus=1");
+        if(linksScope()!==scope||state.me?.role!=="admin")return false;
+        state.parentLinks=data.items||[];state.parentLinksScope=scope;state.studentLineLoaded=true;applyParentLinks();return true;
+      }catch(error){
+        if(linksScope()===scope&&state.me?.role==="admin"){
+          console.warn("load parent Gmail links failed",error);state.parentLinks=[];
+          for(const student of state.master||[])student.parents=[];
+        }
+        return false;
+      }finally{if(linksRequest===pending)linksRequest=null}
+    })();
+    return pending.promise;
   }
 
   const originalLoadAdmin=loadAdmin;
@@ -148,6 +160,11 @@
   }
 
   const originalRender=render;
-  render=function(){const r=originalRender();if(state.me?.role==="admin"&&state.page==="admin")setTimeout(mountBindingStats,0);return r};
-  if(state.me?.role==="admin")loadParentLinks().then(()=>render()).catch(()=>{});
+  render=function(){const r=originalRender();if(state.me?.role==="admin"&&state.page==="admin"&&!window.__roleModuleBootstrap)setTimeout(mountBindingStats,0);return r};
+  if(state.me?.role==="admin")loadParentLinks().then(loaded=>{
+    if(!loaded||window.__roleModuleBootstrap)return;
+    const panel=document.getElementById("parentBindingStats");
+    if(!panel?.contains(document.activeElement))mountBindingStats();
+    window.refreshSchoolAdminWorkspaceView?.();
+  });
 })();

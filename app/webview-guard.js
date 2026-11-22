@@ -108,9 +108,9 @@
       "/roster-support.js",
       "/student-number-support.js?v=20261121-line-first-notice-labels",
       "/student-change-admin.js?v=20261102-student-workflow",
-      "/parent-link-admin.js?v=20261115-line-coverage-summary-parent-identity",
+      "/parent-link-admin.js?v=20261122-admin-quick-workspace",
       "/teacher-settings.js?v=20261002-teacher-types",
-      "/teacher-admin.js?v=20261121-line-first-notice-labels",
+      "/teacher-admin.js?v=20261122-admin-quick-workspace",
       "/batch-upgrade.js?v=20261102-student-workflow",
       "/roster-import.js?v=20261102-student-workflow",
       "/attendance-support.js?v=20260928-2148",
@@ -170,46 +170,55 @@
     }
   }
   function roleScriptList(){
-    return [...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261122-activity-date-bounds","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
+    return [...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261122-admin-quick-workspace","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
   }
   window.preloadRoleModules=()=>{
-    if(typeof state!=="undefined"&&state.me?.role==="parent")preloadScripts(roleScriptList());
+    if(typeof state!=="undefined"&&["parent","admin"].includes(state.me?.role))preloadScripts(roleScriptList());
   };
   function teacherWarmup(){
     const role=String(state?.me?.role||""),cap=state?.me?.capabilities||{};
     const isTeacher=["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings;
     if(!isTeacher||typeof api!=="function")return Promise.resolve();
-    const date=new Date().toLocaleDateString("sv-SE"),month=date.slice(0,7);
-    const setup=api("/api/teacher-profile").then(v=>{state.teacherSetup=v}).catch(()=>{});
+    const scope=roleScope(),date=new Date().toLocaleDateString("sv-SE"),month=date.slice(0,7);
+    const setup=api("/api/teacher-profile").then(v=>{if(roleScope()===scope)state.teacherSetup=v}).catch(()=>{});
     const status=Promise.all([
       api("/api/attendance-report?month="+encodeURIComponent(month)),
       api("/api/practice-progress?month="+encodeURIComponent(month))
     ]).then(([att,practice])=>{
-      state.teacherTodayStatus=att;state.teacherAttention=practice;state.teacherTodayStatusDate=date;
+      if(roleScope()===scope){state.teacherTodayStatus=att;state.teacherAttention=practice;state.teacherTodayStatusDate=date}
     }).catch(()=>{});
     return Promise.allSettled([setup,status]);
   }
-  let roleModuleTask=null;
+  const roleScope=()=>JSON.stringify([state.me?.identityId||state.me?.email||"",state.me?.role||"",state.me?.schoolId||"",state.token||""]);
+  let roleModuleTask=null,adminInitialDataFailed=false;
   function loadRoleModules(){
     if(roleModuleTask)return roleModuleTask;
     if(typeof state==="undefined"||!state.me||window.__roleModulesReady||window.__roleModuleError)return Promise.resolve();
-    const list=roleScriptList();
+    const list=roleScriptList(),scope=roleScope();
+    const adminData=state.me.role==="admin"?window.__adminInitialDataTask:null;
     preloadScripts(list);
     window.__roleModuleBootstrap=true;
     document.documentElement.classList.add("role-modules-loading");
     roleModuleTask=(async()=>{
       try{
-        await Promise.all([loadSeries(list),teacherWarmup()]);
-        if(state.me?.role==="parent"&&(window.parentHomeSummaryReady!==true||typeof window.privateLessonParentPanels!=="function"))throw new Error("家長功能初始化未完成");
-        window.__roleModulesReady=true;
-        window.__roleLoaderActive=false;
+        await Promise.all([loadSeries(list),teacherWarmup(),adminData?Promise.resolve(adminData).catch(error=>{if(roleScope()===scope)adminInitialDataFailed=true;throw error}):Promise.resolve()]);
+        if(roleScope()===scope){
+          if(state.me?.role==="parent"&&(window.parentHomeSummaryReady!==true||typeof window.privateLessonParentPanels!=="function"))throw new Error("家長功能初始化未完成");
+          window.__roleModulesReady=true;
+          window.__roleLoaderActive=false;
+        }
       }catch(error){
-        window.__roleModuleError=error.message||"功能載入失敗";
-        console.warn("Role modules could not be prepared",error);
+        if(roleScope()===scope){window.__roleModuleError=error.message||"功能載入失敗";console.warn("Role modules could not be prepared",error)}
       }finally{
         window.__roleModuleBootstrap=false;
         document.documentElement.classList.remove("role-modules-loading");
         roleModuleTask=null;
+      }
+      if(roleScope()!==scope){
+        window.__roleModulesReady=false;window.__roleLoaderActive=true;window.__roleModuleError="";
+        if(state.me)loadRoleModules();
+        else if(document.getElementById("app")?.innerHTML.includes("data-role-boot")&&typeof renderLogin==="function")renderLogin("登入已失效，請重新登入");
+        return;
       }
       try{render()}catch(error){console.warn("Role page could not be rendered",error)}
       if(window.__roleModulesReady)await openStaffMenuEntry();
@@ -221,6 +230,10 @@
   window.ensureRoleModules=loadRoleModules;
   window.retryRoleModules=()=>{
     window.__roleModuleError="";
+    if(state.me?.role==="admin"&&adminInitialDataFailed&&typeof loadAdmin==="function"){
+      adminInitialDataFailed=false;
+      window.__adminInitialDataTask=loadAdmin();
+    }
     const task=loadRoleModules();
     try{render()}catch{}
     return task;
@@ -228,7 +241,7 @@
   window.resumeLineStaffEntry=()=>{if(sessionStorage.getItem(staffEntryKey))loadRoleModules()};
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity-school-admin-teacher-binding-20261119-home-priorities-notification-center-parent-login-ready-parent-login-fast-practice-goal-progress-20261122");
+    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity-school-admin-teacher-binding-20261119-home-priorities-notification-center-parent-login-ready-parent-login-fast-practice-goal-progress-20261122-admin-quick-workspace");
   }
   function installIOSRedirectMode(){let tries=0;const timer=setInterval(()=>{tries++;if(window.google?.accounts?.id?.initialize){clearInterval(timer);const nativeInitialize=window.google.accounts.id.initialize.bind(window.google.accounts.id);window.google.accounts.id.initialize=(config={})=>{const {callback,...rest}=config;return nativeInitialize({...rest,ux_mode:"redirect",login_uri:`${location.origin}/api/google-login`})};loadApp()}else if(tries>120){clearInterval(timer);loadApp()}},50)}
   document.addEventListener("click",async e=>{const btn=e.target.closest?.(".logout");if(!btn)return;e.preventDefault();e.stopImmediatePropagation();await Promise.allSettled([fetch("/api/google-logout",{method:"POST"}),fetch("/api/line/session/logout",{method:"POST"})]);sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");location.href="/"},true);

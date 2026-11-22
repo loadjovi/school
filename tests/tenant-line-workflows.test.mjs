@@ -377,7 +377,7 @@ test("parent account tools are collapsed and can still sync with the active scho
   const {tenantServicesEntry, syncOwnLineMenu} = runInNewContext(
     file.slice(file.indexOf("async function syncOwnLineMenu("), file.indexOf("async function renderLogin(")) +
     ";({tenantServicesEntry,syncOwnLineMenu})", {
-      state, api: async (url, options) => {calls.push({url, options});return {audience: "parent"};}
+      state, window: {}, api: async (url, options) => {calls.push({url, options});return {audience: "parent"};}
     }
   );
   assert.match(tenantServicesEntry(), /<details class="card" id="parentAccountSettings">/);
@@ -398,12 +398,12 @@ test("parent account tools are collapsed and can still sync with the active scho
   assert.doesNotMatch(tenantServicesEntry(), /LINE 通知與家長服務/);
   state.page = "admin";
   state.me.capabilities.lineRoleMenus = {parent: true, staff: false};
-  assert.match(tenantServicesEntry(), /收費專案與匯款核帳/);
+  assert.match(tenantServicesEntry(), /收費與核帳/);
   assert.match(tenantServicesEntry(), /LINE 通知中心/);
   assert.match(tenantServicesEntry(), /line-announcement.html/);
   assert.match(tenantServicesEntry(), /活動志工 LINE 群組/);
   state.me.capabilities.feeCollections = false;
-  assert.doesNotMatch(tenantServicesEntry(), /收費專案與匯款核帳/);
+  assert.doesNotMatch(tenantServicesEntry(), /收費與核帳/);
   state.teacherAdminOpen = true;
   assert.equal(tenantServicesEntry(), "");
 });

@@ -55,11 +55,37 @@
     document.getElementById("teacherLoginAudit")?.scrollIntoView({block:"start",behavior:"smooth"});
   };
 
+  const directoryScope=()=>typeof apiReadScope==="function"?apiReadScope():JSON.stringify([state.token,state.me?.role,state.me?.schoolId,state.me?.email]);
+  let directoryRequest=null;
+  async function loadTeacherDirectory(){
+    if(state.me?.role!=="admin")return false;
+    const scope=directoryScope();
+    if(directoryRequest?.scope===scope)return directoryRequest.promise;
+    state.teacherDirectoryLoading=true;state.teacherDirectoryError="";
+    if(state.teacherDirectoryScope!==scope)state.teacherDirectoryLoaded=false;
+    const pending={scope,promise:null};directoryRequest=pending;
+    pending.promise=(async()=>{
+      try{
+        const data=await api("/api/teacher-directory");
+        if(directoryScope()!==scope||state.me?.role!=="admin")return false;
+        state.teachers=data.items||[];state.teacherStudents=data.students||[];state.teacherDirectoryScope=scope;state.teacherDirectoryLoaded=true;
+        return true;
+      }catch(error){
+        if(directoryScope()===scope&&state.me?.role==="admin"){
+          console.warn("teacher directory load failed",error);
+          state.teacherDirectoryError=error.message||"老師名單暫時無法讀取";state.teacherDirectoryLoaded=false;
+        }
+        return false;
+      }finally{
+        if(directoryScope()===scope)state.teacherDirectoryLoading=false;
+        if(directoryRequest===pending)directoryRequest=null;
+      }
+    })();
+    return pending.promise;
+  }
+  window.loadTeacherAdminDirectory=loadTeacherDirectory;
   const baseLoadAdmin=loadAdmin;
-  loadAdmin=async function(){
-    await baseLoadAdmin();
-    try{const d=await api("/api/teacher-directory");state.teachers=d.items||[];state.teacherStudents=d.students||[]}catch(e){console.warn("teacher directory load failed",e);state.teachers=[];state.teacherStudents=[]}
-  };
+  loadAdmin=async function(){await Promise.all([baseLoadAdmin(),loadTeacherDirectory()])};
 
   function summary(t){
     const parts=[];
@@ -147,7 +173,14 @@
   };
 
   const baseRender=render;
-  render=function(){const result=baseRender();if(state.me?.role==="admin"&&state.page==="admin")setTimeout(mountLoginAudit,0);return result};
+  render=function(){const result=baseRender();if(state.me?.role==="admin"&&state.page==="admin"&&!window.__roleModuleBootstrap)setTimeout(mountLoginAudit,0);return result};
 
-  if(state.me?.role==="admin"){loadAdmin().then(()=>render()).catch(()=>{})}
+  // The verified login already loads roster and pending registrations. This
+  // module only needs the directory; re-running the whole loader delays and
+  // redraws the home before the remaining role modules have initialized.
+  if(state.me?.role==="admin")loadTeacherDirectory().then(loaded=>{
+    if(!loaded||window.__roleModuleBootstrap)return;
+    if(typeof window.refreshSchoolAdminWorkspaceView==="function")window.refreshSchoolAdminWorkspaceView();
+    else render();
+  });
 })();

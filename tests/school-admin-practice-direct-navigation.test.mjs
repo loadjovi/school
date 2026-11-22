@@ -10,7 +10,7 @@ const index = readFileSync(new URL('../app/index.html', import.meta.url), 'utf8'
 const guard = readFileSync(new URL('../app/webview-guard.js', import.meta.url), 'utf8');
 
 test('school homepage combines semester grades and monthly practice in one shortcut', () => {
-  assert.match(workspace, /\['grades','成績與練習','學期 20 分總覽、每月自主練習明細與 CSV'\]/);
+  assert.match(workspace, /\['grades','成績與練習','查看成績與自主練習'\]/);
   assert.doesNotMatch(workspace, /\['practiceProgress','自主練習月報'/);
 });
 
@@ -38,10 +38,10 @@ test('legacy admin monthly-report route opens the integrated practice tab', () =
 test('learning workspace is mobile friendly and its assets are cache-busted', () => {
   assert.match(css, /\.aw-learning-tabs\{display:grid/);
   assert.match(css, /@media\(max-width:600px\)[\s\S]*?\.aw-learning-tabs\{grid-template-columns:1fr/);
-  assert.match(index, /school-admin-workspace\.css\?v=20261102-learning-workspace/);
+  assert.match(index, /school-admin-workspace\.css\?v=\d{8}-[a-z0-9-]+/);
   assert.match(index, /styles\.css\?v=20261104-practice-filter-anchor/);
   assert.match(index, /webview-guard\.js\?v=\d{8}-[a-z0-9-]+"/);
-  assert.match(guard, /practice-progress\.js\?v=20261104-practice-filter-anchor/);
+  assert.match(guard, /practice-progress\.js\?v=\d{8}-[a-z0-9-]+/);
   assert.match(guard, /desktop-ui\.js\?v=20261102-learning-workspace/);
   assert.match(guard, /school-admin-workspace\.js\?v=\d{8}-[a-z0-9-]+"/);
 });
