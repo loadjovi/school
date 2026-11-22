@@ -5,23 +5,36 @@ import {runInNewContext} from 'node:vm';
 
 const read=name=>readFileSync(new URL('../app/'+name,import.meta.url),'utf8');
 const source=read('uniform-event-admin.js');
-function modeHarness(search){
+function modeHarness(search,code=read('uniform-finance-workspace.js')){
  const nodes=[],byId=new Map();let ready;
  class Node{
-  constructor(tag='section'){this.tag=tag;this.children=[];this.dataset={};this.hidden=false;this.attrs={};this.listeners={};nodes.push(this)}
+  constructor(tag='section'){this.tag=tag;this.children=[];this.dataset={};this.hidden=false;this.attrs={};this.listeners={};this.parentNode=null;nodes.push(this)}
   set id(value){this._id=value;byId.set(value,this)}get id(){return this._id}
-  append(...items){this.children.push(...items)}prepend(...items){this.children.unshift(...items)}
+  get isConnected(){return this.tag==='document'||this.parentNode?.isConnected===true}
+  move(items,prepend=false){for(const item of items){if(item.parentNode)item.parentNode.children.splice(item.parentNode.children.indexOf(item),1);item.parentNode=this}if(prepend)this.children.unshift(...items);else this.children.push(...items)}
+  append(...items){this.move(items)}prepend(...items){this.move(items,true)}
   setAttribute(k,v){this.attrs[k]=v}removeAttribute(k){delete this.attrs[k]}
   addEventListener(k,fn){this.listeners[k]=fn}
  }
  for(const id of ['protectedAdminArea','inlineFinanceReview','uniformFinanceSettings','uniformFinanceKindWrap','uniformFinanceKind','uniformPriceSettings','uniformPriceForm']){const n=new Node();n.id=id}
+ const root=new Node('document'),area=byId.get('protectedAdminArea'),prices=byId.get('uniformFinanceSettings');
+ root.append(area);area.append(byId.get('inlineFinanceReview'),prices);
+ prices.append(byId.get('uniformFinanceKindWrap'),byId.get('uniformPriceSettings'));
+ byId.get('uniformFinanceKindWrap').append(byId.get('uniformFinanceKind'));
+ byId.get('uniformPriceSettings').append(byId.get('uniformPriceForm'));
  byId.get('uniformPriceForm').elements={kind:{value:'regularUniform'}};
- const accounts=new Node();accounts.attrs['data-admin-view']='accounts';
- const document={documentElement:{classList:{add(){}}},createElement:tag=>new Node(tag),getElementById:id=>byId.get(id),addEventListener:(_name,fn)=>{ready=fn},querySelector:selector=>selector.includes('data-admin-view')?accounts:null,querySelectorAll:selector=>nodes.filter(n=>selector.includes('data-finance-panel')?n.dataset.financePanel:n.dataset.financeTab)};
+ const accounts=new Node();accounts.attrs['data-admin-view']='accounts';area.append(accounts);
+ const document={documentElement:{classList:{add(){}}},createElement:tag=>new Node(tag),getElementById:id=>byId.get(id)?.isConnected?byId.get(id):null,addEventListener:(_name,fn)=>{ready=fn},querySelector:selector=>selector.includes('data-admin-view')&&accounts.isConnected?accounts:null,querySelectorAll:selector=>nodes.filter(n=>n.isConnected&&(selector.includes('data-finance-panel')?n.dataset.financePanel:n.dataset.financeTab))};
  const window={dispatchEvent(){}};
- runInNewContext(read('uniform-finance-workspace.js'),{window,document,location:{search},URLSearchParams,Event:class{}});ready();
- return {state:window.uniformFinanceWorkspace,byId,nodes};
+ runInNewContext(code,{window,document,location:{search},URLSearchParams,Event:class{}});ready();
+ return {state:window.uniformFinanceWorkspace,byId,nodes,document};
 }
+test('moving finance panels keeps their controls connected and releases startup readiness',async()=>{
+ const h=modeHarness('?workspace=finance');await h.state.ready;
+ for(const id of ['financeWorkspaceShell','uniformFinanceKindWrap','uniformFinanceKind','uniformPriceSettings','uniformPriceForm'])assert.ok(h.document.getElementById(id),id+' must remain reachable from the document');
+ assert.equal(h.state.activate({role:'admin',capabilities:{financeVerifier:true}}),true);
+ assert.equal(h.document.getElementById('financeWorkspaceShell').hidden,false);
+});
 test('finance workspace denies ordinary administrators and parent roles before exposing panels',()=>{
  const h=modeHarness('?workspace=finance');
  for(const me of [{role:'admin',capabilities:{}},{role:'parent',capabilities:{financeVerifier:true}}]){

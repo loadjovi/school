@@ -22,6 +22,7 @@
   document.title='財務核帳';
   const heading=document.querySelector('body>h1');if(heading){heading.textContent='財務核帳';if(heading.nextElementSibling)heading.nextElementSibling.textContent='核對匯款、處理補退款，管理收款設定與通知。'}
   const area=document.getElementById('protectedAdminArea'),shell=document.createElement('div');shell.id='financeWorkspaceShell';shell.hidden=true;
+  area.prepend(shell);
   const nav=document.createElement('nav');nav.className='finance-tabs';nav.setAttribute('aria-label','財務工作');
   for(const [key,label] of Object.entries(tabs)){const b=document.createElement('button');b.type='button';b.dataset.financeTab=key;b.textContent=label;b.setAttribute('aria-selected','false');b.addEventListener('click',()=>state.select(key));nav.append(b)}
   const refresh=document.createElement("button");refresh.type="button";refresh.id="financeWorkspaceReload";refresh.textContent="更新資料";refresh.addEventListener("click",()=>{if(state.authorized)window.dispatchEvent(new Event("uniformFinanceReload"))});shell.append(refresh,nav);
@@ -30,6 +31,6 @@
   const prices=document.getElementById('uniformFinanceSettings');prices.dataset.financePanel='prices';shell.append(prices);document.getElementById('uniformFinanceKindWrap').hidden=false;document.getElementById('uniformPriceSettings').open=true;
   document.getElementById('uniformFinanceKind').addEventListener('change',event=>{document.getElementById('uniformPriceForm').elements.kind.value=event.target.value;window.dispatchEvent(new Event('uniformPriceKindChanged'))});
   for(const [id,key] of [['financeActivitiesPanel','activity-fees'],['financeNotificationsPanel','notifications']]){const section=document.createElement('section');section.id=id;section.dataset.financePanel=key;section.hidden=true;shell.append(section)}
-  area.prepend(shell);resolveReady();
+  resolveReady();
  });
 })();
