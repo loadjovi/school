@@ -5,7 +5,7 @@ import {runInNewContext} from "node:vm";
 import * as model from "../app/tshirt-procurement-plan.mjs";
 function harness(failure="",{holdRequests=false}={}){
  const nodes=new Map(),node=id=>{
-  if(!nodes.has(id))nodes.set(id,{id,value:"",hidden:false,disabled:false,options:[],children:[],handlers:{},dataset:{},setAttribute(){},addEventListener(k,fn){this.handlers[k]=fn},replaceChildren(...children){this.options=children;this.children=children;this.innerHTML=""},add(option){this.options.push(option)},append(...children){this.children.push(...children)}});
+  if(!nodes.has(id))nodes.set(id,{id,value:"",hidden:false,disabled:false,options:[],children:[],handlers:{},dataset:{},scrollIntoView(){this.scrolled=true;this.scrollCalls=(this.scrollCalls||0)+1},setAttribute(){},addEventListener(k,fn){this.handlers[k]=fn},replaceChildren(...children){this.options=children;this.children=children;this.innerHTML=""},add(option){this.options.push(option)},append(...children){this.children.push(...children)}});
   return nodes.get(id);
  };
  const posts=[];let csv="",getCount=0,releaseRequests,heldSignal;const held=new Promise(resolve=>{heldSignal=resolve});
@@ -15,7 +15,7 @@ function harness(failure="",{holdRequests=false}={}){
  const source=readFileSync(new URL("../app/tshirt-procurement-admin.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"");
  runInNewContext(source+"\nthis.ui={load,draw};",scope);
  node("tshirtPlanYear").value=115;node("tshirtPlanSemester").value=1;
- return {node,bodies,posts,load:scope.ui.load,csv:()=>csv,getCount:()=>getCount,held,releaseRequests:()=>releaseRequests()};
+ return {node,bodies,posts,setFailure:value=>{failure=value},filter:key=>node("tshirtPlanMetrics").handlers.click({target:{closest:()=>({dataset:{planFilter:key}})}}),load:scope.ui.load,csv:()=>csv,getCount:()=>getCount,held,releaseRequests:()=>releaseRequests()};
 }
 test("procurement view loads all authoritative sources and exports exactly the visible plan",async()=>{
  const h=harness();await h.load();assert.equal(h.getCount(),8);assert.equal(h.node("exportTshirtPlan").disabled,false);assert.match(h.node("tshirtPlanMetrics").innerHTML,/學生首次公費/);assert.match(h.node("tshirtPlanOrderTotal").textContent,/規劃採購 1 件/);
@@ -85,4 +85,41 @@ test("saved orders expose one whole-order receipt and an explicit opt-in for pre
  const form=nodes.find(x=>x.className==="tshirt-order-receive");assert.ok(form);const children=descendants(form),date=children.find(x=>x.type==="date"),note=children.find(x=>x.tagName==="TEXTAREA");note.value="十件外觀與尺碼無誤";form.handlers.input();
  await h.load();const restored=descendants(h.node("tshirtPurchaseOrders")).find(x=>x.className==="tshirt-order-receive");assert.equal(descendants(restored).find(x=>x.tagName==="TEXTAREA").value,note.value);
  await restored.handlers.submit({preventDefault(){}});assert.equal(h.posts.length,1);assert.equal(h.posts[0].action,"RECEIVE");assert.equal(h.posts[0].id,"po");assert.equal(h.posts[0].etag,"po-etag");assert.equal(h.posts[0].receivedDate,date.value);assert.equal(h.posts[0].note,note.value);
+});
+
+
+function metricFixture(){
+ const h=harness(),student=(studentId,studentName,groupName="C")=>({studentId,studentName,groupName,status:"active"});
+ h.bodies["student-master"].items=[student("111001","首次甲"),student("111002","加購同學","A"),student("111003","已交付乙")];
+ h.bodies["uniform-events/tshirt-historical-size"].items=[{studentId:"111001",historicalIssued:false,size:"10"},{studentId:"111002",historicalIssued:true,size:"S"},{studentId:"111003",historicalIssued:false,size:"M",schoolIssuedSize:"M",schoolIssuedAt:"2026-11-20T00:00:00Z"}];
+ const request=(id,size,quantity,extra={})=>({id,etag:"request-"+id,kind:"regularUniform",studentId:"111002",size,quantity,status:"APPROVED",paymentStatus:"VERIFIED",createdAt:"2026-11-21T00:00:00Z",...extra});
+ h.bodies["uniform-events/requests"].items=[request("paid","XS",2),request("ordered","L",1,{status:"ORDERED",procurementQuantity:1,procurementBreakdown:[{size:"L",quantity:1}]}),request("unpaid","S",1,{paymentStatus:"AWAITING_TRANSFER"})];
+ h.bodies["uniform-events/parent-loans?view=procurement"].items=[{id:"cadre",etag:"c1",parentEmail:"cadre@example.test",parentName:"幹部丙",studentId:"111002",category:"CADRE_FIRST",size:"XL",quantity:1,schoolYear:115,semester:1,status:"APPROVED",paymentStatus:"NOT_REQUIRED"},{id:"volunteer",etag:"v1",parentEmail:"volunteer@example.test",parentName:"志工丁",studentId:"111002",category:"VOLUNTEER_EXTRA",size:"2L",quantity:3,schoolYear:115,semester:1,status:"APPROVED",paymentStatus:"VERIFIED"}];
+ return h;
+}
+test("each category and covered metric reveals exactly its own rows and quantity, with one clear route back to all details",async()=>{
+ const h=metricFixture();await h.load();
+ for(const [filter,pieces,rows,included,excluded] of [["first",2,2,/首次甲.*已交付乙/,/加購同學|幹部丙|志工丁/],["extra",4,3,/加購同學/,/首次甲|已交付乙|幹部丙|志工丁/],["staff",4,2,/幹部丙.*志工丁/,/首次甲|已交付乙|加購同學/],["covered",2,2,/已交付乙.*加購同學/,/首次甲|幹部丙|志工丁/],["total",10,7,/首次甲.*志工丁/,/does-not-exist/]]){
+  h.filter(filter);const body=h.node("tshirtPlanDetailRows").innerHTML;
+  assert.equal((body.match(/<tr>/g)||[]).length,rows);assert.match(body,included);assert.doesNotMatch(body,excluded);assert.match(h.node("tshirtPlanDetailCount").textContent,new RegExp(pieces+" 件"));
+  assert.equal(h.node("tshirtPlanDetails").open,true);assert.equal(h.node("tshirtPlanDetails").scrolled,true);assert.equal(h.node("tshirtPlanClearFilter").hidden,false);assert.match(h.node("tshirtPlanMetrics").innerHTML,new RegExp('data-plan-filter="'+filter+'" aria-pressed="true"'));
+ }
+ h.node("tshirtPlanClearFilter").handlers.click();assert.equal((h.node("tshirtPlanDetailRows").innerHTML.match(/<tr>/g)||[]).length,7);assert.equal(h.node("tshirtPlanClearFilter").hidden,true);assert.equal(h.posts.length,0);assert.equal(h.getCount(),8);
+});
+test("pending procurement reveals net shortages by size, keeps unpaid pieces out, and handles zero or unknown stock explicitly",async()=>{
+ const h=metricFixture();await h.load();h.filter("need");assert.equal(h.node("tshirtPlanPeopleTable").hidden,true);assert.equal(h.node("tshirtPlanNeedTable").hidden,false);assert.match(h.node("tshirtPlanDetailCount").textContent,/7 件/);
+ let body=h.node("tshirtPlanNeedRows").innerHTML;for(const size of ["10","XS","XL","2L"])assert.ok(body.includes('<th scope="row">'+size+'</th>'));assert.ok(!body.includes('<th scope="row">S</th>'));assert.ok(!body.includes('<th scope="row">L</th>'));
+ for(const row of h.bodies["uniform-events/inventory"].items)row.onHand=20;await h.load();assert.match(h.node("tshirtPlanDetailCount").textContent,/0 件/);assert.match(h.node("tshirtPlanNeedRows").innerHTML,/目前無需新增採購/);assert.match(h.node("tshirtPlanFilterSummary").textContent,/無須新增採購/);
+ h.bodies["uniform-events/inventory"].items=h.bodies["uniform-events/inventory"].items.filter(row=>row.key!=="regular:10");await h.load();assert.match(h.node("tshirtPlanDetailCount").textContent,/待盤點/);assert.match(h.node("tshirtPlanNeedRows").innerHTML,/10.*待盤點/);
+});
+test("empty metric results are explicit and a refresh retains the filter without jumping the page",async()=>{
+ const h=harness();await h.load();h.filter("staff");assert.match(h.node("tshirtPlanDetailCount").textContent,/0 件/);assert.match(h.node("tshirtPlanDetailRows").innerHTML,/目前沒有符合此篩選的需求/);
+ const before=h.node("tshirtPlanDetails").scrollCalls;await h.load();assert.equal(h.node("tshirtPlanDetails").scrollCalls,before);assert.match(h.node("tshirtPlanDetailCount").textContent,/幹部／志工需求/);
+ h.node("tshirtPlanSemester").value=2;h.node("tshirtPlanSemester").handlers.change();assert.equal(h.node("tshirtPlanClearFilter").hidden,true);assert.doesNotMatch(h.node("tshirtPlanDetailCount").textContent,/幹部／志工需求/);
+ h.filter("first");h.setFailure("uniform-events/inventory");await h.load();assert.equal(h.node("tshirtPlanDetailRows").innerHTML,"");assert.equal(h.node("tshirtPlanNeedRows").innerHTML,"");assert.equal(h.node("tshirtPlanClearFilter").hidden,true);assert.match(h.node("tshirtPlanFilterSummary").textContent,/讀取失敗/);
+});
+test("view filters do not change the authoritative export or the quantities submitted for the whole purchase order",async()=>{
+ const h=metricFixture();await h.load();h.node("tshirtPlanSizeRows").handlers.change({target:{dataset:{planExtra:"M"},value:"3",setCustomValidity(){}}});assert.match(h.node("tshirtPlanOrderTotal").textContent,/規劃採購 10 件/);
+ h.filter("first");h.node("exportTshirtPlan").handlers.click();for(const name of ["首次甲","已交付乙","加購同學","幹部丙","志工丁"])assert.ok(h.csv().includes(name));
+ await h.node("confirmTshirtPurchaseOrder").handlers.click();assert.equal(h.posts.length,1);assert.equal(h.posts[0].action,"CREATE");assert.equal(h.posts[0].items.reduce((sum,x)=>sum+x.quantity,0),10);assert.ok(h.posts[0].items.some(x=>x.size==="2L"&&x.quantity===3));
 });
