@@ -96,7 +96,7 @@ async function handleLineWebhook(request,schoolId,legacyRoute){
         const groupId=event.source?.type==="group"?String(event.source.groupId||""):"";
         if(!groupId){await replyLineMessage(replyToken,"請在要接收通知的 LINE 群組內輸入綁定指令。",options);continue}
         const requestRow=await findLineBindingRequest(schoolId,lineBindingCodeHash(code,secret),botUserId,channel.acceptsLegacy);
-        if(!requestRow){await replyLineMessage(replyToken,"綁定碼不正確或已逾時，請回到平台「更多 → 平台設定」重新產生。",options);continue}
+        if(!requestRow){await replyLineMessage(replyToken,"綁定碼不正確或已逾時，請回到平台「LINE 通知中心 → 群組與通知設定」重新產生。",options);continue}
         const absence=requestRow.purpose==="absence";
         const group=await getLineGroupSummary(groupId,options),label=String(group?.groupName||(absence?"學生缺席通知群組":"LINE 幹部群組"));
         const saved=await bindLineNotificationTarget({schoolId,targetId:groupId,targetType:"group",targetLabel:label,requestRow,botUserId});

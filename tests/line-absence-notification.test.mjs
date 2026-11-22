@@ -48,7 +48,7 @@ test("training attendance compares the previous saved status before sending",()=
 });
 
 test("webhook and settings keep the absence group independent from the general to-do group",()=>{
-  const settings=read("api/src/lib/settings.js"),webhook=read("api/src/functions/lineWebhook.js"),ui=read("app/admin-operations.js");
+  const settings=read("api/src/lib/settings.js"),webhook=read("api/src/functions/lineWebhook.js"),ui=read("app/line-notification-settings.js");
   assert.match(settings,/lineAbsenceTargetId/);
   assert.match(settings,/lineAbsenceBindingCodeHash/);
   assert.match(settings,/purpose==="absence"/);
@@ -57,6 +57,6 @@ test("webhook and settings keep the absence group independent from the general t
   assert.match(webhook,/unbind_absence/);
   assert.match(webhook,/requestRow\.purpose/);
   assert.match(ui,/學生缺席即時通知群組/);
-  assert.match(ui,/產生缺席群組綁定碼/);
-  assert.match(ui,/包含分部課、合奏課、綜合課與訓練／加練/);
+  assert.match(ui,/create_absence_binding_code/);
+  assert.match(ui,/分部課、合奏課、綜合課與訓練／加練/);
 });

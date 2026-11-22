@@ -184,6 +184,7 @@
   if(href){
    let source;try{source=new URL(href,location.origin)}catch{return null}
    if(source.origin!==location.origin||source.pathname!==config.path)return null;
+   if(service==='line'&&source.searchParams.has('tab')){const tab=source.searchParams.get('tab');if(!['send','settings'].includes(tab))return null;query.set('tab',tab);}
    if(service==='finance'){
     if(source.searchParams.get('workspace')!=='finance')return null;
     const task=source.searchParams.get('task');if(task&&!['finance','accounts','notifications','activity-fees'].includes(task))return null;if(task)query.set('task',task);
@@ -288,7 +289,7 @@
   const ops=document.getElementById('adminOperations');
   if(ops)for(const child of ops.children){
    const operationTitle=child.querySelector('h2')?.textContent||'';
-   const isSettings=operationTitle.includes('通知設定')||operationTitle.includes('LINE 後台待辦通知');
+   const isSettings=operationTitle.includes('通知設定');
    setGroup(child,isSettings?'settings':'attendance');
   }
   const content=main.querySelector('.desktop-content')||main;

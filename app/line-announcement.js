@@ -1,4 +1,6 @@
+import {createLineNotificationSettings} from "./line-notification-settings.js?v=20261123-notification-settings";
 const $=id=>document.getElementById(id),form=$("announcement"),status=$("result"),preview=$("preview"),send=$("send");
+let centerAdminReady=false,centerTab="send";
 let confirmed=null,revision=0,activities=[],schoolGroups=[],optionsLoaded=false,loadingVersion=0,busy=false;
 const mode=()=>form.querySelector('[name="audience"]:checked')?.value||"members";
 const selectedActivity=()=>activities.find(x=>x.key===$("activityKey").value);
@@ -47,6 +49,32 @@ async function request(body){
     ...(body?{body:JSON.stringify(body)}:{})});
   const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"LINE 通知中心暫時不可用");return data;
 }
+async function centerApi(path,options={}){
+  const token=sessionStorage.getItem("google_id_token"),school=sessionStorage.getItem("school_context_id"),role=sessionStorage.getItem("role_context");
+  const response=await fetch(path,{...options,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(school?{"X-School-Id":school}:{}),...(role?{"X-Role-Context":role}:{}),...(options.headers||{})}});
+  const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"LINE 設定暫時無法讀取");return data;
+}
+const groupSettings=createLineNotificationSettings({host:$("lineSettingsPanel"),api:centerApi,onChanged:async()=>{revision++;clearPreview();await loadOptions()}});
+async function selectCenterTab(tab){
+  if(!centerAdminReady||groupSettings.isBusy())return;
+  centerTab=tab==="settings"?"settings":"send";
+  $("lineSendPanel").hidden=centerTab!=="send";$("lineSettingsPanel").hidden=centerTab!=="settings";
+  for(const button of document.querySelectorAll("[data-line-center-tab]"))button.setAttribute("aria-selected",String(button.dataset.lineCenterTab===centerTab));
+  groupSettings.setActive(centerTab==="settings");
+  if(centerTab==="settings")await groupSettings.load();
+}
+async function initializeCenter(){
+  const options=loadOptions().catch(error=>{status.textContent=error.message});
+  try{
+    const me=await centerApi("/api/me");if(me.role!=="admin")throw Error("僅限本校管理員使用群組與通知設定");
+    centerAdminReady=true;$("lineSettingsTab").disabled=false;
+    if(new URLSearchParams(location.search).get("tab")==="settings")await selectCenterTab("settings");
+  }catch(error){$("lineSettingsAuthStatus").textContent=error.message;status.textContent=error.message}
+  await options;
+}
+$("lineSendTab").addEventListener("click",()=>selectCenterTab("send"));
+$("lineSettingsTab").addEventListener("click",()=>selectCenterTab("settings"));
+window.addEventListener("pagehide",()=>groupSettings.setActive(false));
 function clearPreview(){confirmed=null;$("recipientPreview").hidden=true;$("deliveryReport").hidden=true;status.textContent=""}
 function drawRecipients(host,items){
   host.replaceChildren();
@@ -167,4 +195,4 @@ $("unbindGroup").addEventListener("click",async()=>{
   catch(error){status.textContent=error.message}
   finally{setBusy(false)}
 });
-try{await loadOptions()}catch(error){status.textContent=error.message}
+await initializeCenter();

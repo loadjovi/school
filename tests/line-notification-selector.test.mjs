@@ -8,16 +8,17 @@ const html=read("app/line-announcement.html"),source=read("app/line-announcement
 
 // Run the complete page controller; only browser elements and HTTP are replaced.
 class Element{
- constructor(tag="div"){this.tagName=tag.toUpperCase();this.value="";this.name="";this.checked=false;this.disabled=false;this.hidden=false;this.children=[];this.handlers={};this.textContent="";this.elements={};this.style={}}
+ constructor(tag="div"){this.tagName=tag.toUpperCase();this.value="";this.name="";this.checked=false;this.disabled=false;this.hidden=false;this.children=[];this.handlers={};this.textContent="";this.elements={};this.style={};this.dataset={};this.attributes={}}
  append(...children){this.children.push(...children)}
  replaceChildren(...children){this.children=[...children]}
  addEventListener(type,handler){this.handlers[type]=handler}
+ setAttribute(name,value){this.attributes[name]=value}
 }
 const attrs=tag=>Object.fromEntries([...tag.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map(([,key,value])=>[key,value??true]));
 async function page({recipients=[],recipientResults=[],accepted=1,failed=0,history=[],search=""}={}){
  const elements={},inputs=[],calls=[];
  for(const tag of html.matchAll(/<([a-z]+)\b([^>]*\bid="[^"]+"[^>]*)>/g)){
-  const a=attrs(tag[2]),element=new Element(tag[1]);Object.assign(element,{id:a.id,hidden:!!a.hidden,disabled:!!a.disabled,value:a.value||"",name:a.name||""});elements[a.id]=element;
+  const a=attrs(tag[2]),element=new Element(tag[1]);Object.assign(element,{id:a.id,hidden:!!a.hidden,disabled:!!a.disabled,value:a.value||"",name:a.name||""});if(a["data-line-center-tab"])element.dataset.lineCenterTab=a["data-line-center-tab"];elements[a.id]=element;
  }
  for(const tag of html.matchAll(/<input\b([^>]+)>/g)){
   const a=attrs(tag[1]),input=a.id?elements[a.id]:new Element("input");
@@ -33,11 +34,11 @@ async function page({recipients=[],recipientResults=[],accepted=1,failed=0,histo
  form.elements.includeStaff=inputs.find(input=>input.name==="includeStaff");
  const schoolGroups=[{key:"school:teachers",title:"學校群組",bound:true,groupName:"學校老師群",source:"settings",sourceLabel:"平台學生缺席通知群組"},{key:"school:cadres",title:"幹部群組",bound:true,groupName:"後援幹部群",source:"settings",sourceLabel:"平台後台待辦群組"},{key:"school:finance",title:"財務幹部群組",bound:true,groupName:"財務群",source:"center"}];
  const options={schoolGroups,groups:["A","B","新測試團"],schoolName:"測試學校",history,activities:[{key:"fieldTrip:one",title:"交流活動",bound:true,groupName:"交流志工"}]};
- const context={document:{getElementById:id=>elements[id],createElement:tag=>new Element(tag)},sessionStorage:{getItem:()=>""},URLSearchParams,location:{search},console,crypto:{randomUUID:()=>"12345678-1234-1234-1234-123456789abc"},
+ const context={document:{getElementById:id=>elements[id],createElement:tag=>new Element(tag),querySelectorAll:selector=>selector==="[data-line-center-tab]"?[elements.lineSendTab,elements.lineSettingsTab]:[]},window:{addEventListener(){}},createLineNotificationSettings:()=>({load:async()=>{},setActive(){},destroy(){},isBusy:()=>false}),sessionStorage:{getItem:()=>""},URLSearchParams,location:{search},console,crypto:{randomUUID:()=>"12345678-1234-1234-1234-123456789abc"},
   Option:class extends Element{constructor(text,value){super("option");this.textContent=text;this.value=value}},confirm:()=>true,
-  fetch:async(url,init)=>{const body=init.body&&JSON.parse(init.body);if(body)calls.push(body);return {ok:true,json:async()=>!body?options:body.action==="school-binding-code"?{code:"AABBCCDD11223344",expiresAt:"2026-12-01T00:00:00Z",groupTitle:"幹部群組"}:body.action==="send"?{accepted,failed,recipientResults,...(body.audience==="schoolGroups"?{deliveryMode:"group",groupAccepted:accepted,groupFailed:failed}:{})}:{...(body.audience==="schoolGroups"?{groupDeliverable:body.schoolGroupKeys.length,deliveryMode:"group"}:{}),preview:"preview-hash",targetLabel:"確認的收件範圍",matched:2,deliverable:recipients.length||1,unbound:1,recipients}}}
+  fetch:async(url,init)=>{if(url==="/api/me")return {ok:true,json:async()=>({role:"admin",schoolId:"school-a"})};const body=init.body&&JSON.parse(init.body);if(body)calls.push(body);return {ok:true,json:async()=>!body?options:body.action==="school-binding-code"?{code:"AABBCCDD11223344",expiresAt:"2026-12-01T00:00:00Z",groupTitle:"幹部群組"}:body.action==="send"?{accepted,failed,recipientResults,...(body.audience==="schoolGroups"?{deliveryMode:"group",groupAccepted:accepted,groupFailed:failed}:{})}:{...(body.audience==="schoolGroups"?{groupDeliverable:body.schoolGroupKeys.length,deliveryMode:"group"}:{}),preview:"preview-hash",targetLabel:"確認的收件範圍",matched:2,deliverable:recipients.length||1,unbound:1,recipients}}}
  };
- await runInNewContext("(async()=>{"+source+"})()",context);
+ await runInNewContext("(async()=>{"+source.replace(/^import .*;\r?\n/gm,"")+"})()",context);
  const input=(name,value)=>candidates().find(input=>input.name===name&&(value===undefined||input.value===value));
  const choose=(name,value,checked=true)=>{
   const target=input(name,value);assert.ok(target,"missing input "+name+" "+value);

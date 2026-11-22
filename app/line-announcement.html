@@ -7,6 +7,7 @@
   <title>LINE 通知中心</title>
   <style>
     *{box-sizing:border-box}body{margin:0;background:#f4f7f5;color:#17372b;font:16px/1.6 system-ui,-apple-system,"Noto Sans TC",sans-serif}header{background:#234f3f;color:white;padding:20px max(18px,calc((100% - 920px)/2));font-weight:800;font-size:20px}main{max-width:920px;margin:auto;padding:20px 16px 70px}a{color:#245c48}h1{font-size:27px;margin:0 0 8px}h2{font-size:21px;margin:0 0 10px}.card{background:white;padding:20px;border:1px solid #d5e2da;border-radius:16px;margin:16px 0}.muted{color:#586e64}.notice{background:#edf6f1;padding:12px;border-radius:10px;margin:10px 0;overflow-wrap:anywhere}fieldset{border:1px solid #b8ccc1;border-radius:12px;margin:18px 0;padding:14px;min-width:0}legend{font-weight:800}label.choice{display:inline-flex;align-items:center;gap:7px;padding:9px 14px 9px 0}input[type=checkbox],input[type=radio]{width:20px;height:20px;margin:0}button,textarea,select{font:inherit}button,.button{border:0;border-radius:9px;background:#245c48;color:white;padding:11px 15px;min-height:44px;font-weight:750;cursor:pointer}.secondary{background:white;color:#245c48;border:1px solid #245c48}button:disabled{opacity:.5;cursor:not-allowed}.actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}textarea,select{width:100%;border:1px solid #9fb5a9;border-radius:9px;padding:12px;background:white;color:#17372b}textarea{min-height:150px;resize:vertical}#bindingCommand{min-height:70px;font-family:monospace}.preview-box{border:2px solid #42846b}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:12px 0}.history-item{padding:14px 0;border-top:1px solid #d5e2da}.history-item p{white-space:pre-wrap;overflow-wrap:anywhere}.history-item small{display:block}.account-link{font-size:15px;display:inline-block;margin-top:10px}[hidden]{display:none!important}@media(max-width:600px){.card{padding:16px}h1{font-size:24px}.actions button{flex:1 1 150px}}
+      .line-center-tabs{display:flex;gap:8px;margin:18px 0}.line-center-tabs button{flex:1;background:#e9efed;color:#245c48;border:1px solid #c8d9cf}.line-center-tabs button[aria-selected="true"]{background:#245c48;color:#fff}.line-center-tabs button:focus-visible{outline:3px solid #c69526;outline-offset:2px}.line-settings-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}.line-settings-group{min-width:0;border:1px solid #d5e2da;border-radius:12px;padding:16px}.line-settings-group h3{margin:0}.line-settings-group small{display:block}.line-settings-group code{font-size:1.2em;user-select:all;overflow-wrap:anywhere}.line-settings-connection{margin-top:20px}.line-settings-group .actions button{flex:1 1 120px}@media(max-width:650px){.line-settings-groups{grid-template-columns:minmax(0,1fr)}.line-center-tabs button{padding:10px 6px;font-size:15px}}
   </style>
   <link rel="stylesheet" href="/school-service-frame.css?v=20261123-service-return">
   <script src="/school-service-frame.js?v=20261123-service-return" defer></script>
@@ -17,6 +18,8 @@
     <a id="backLink" href="/">← 返回學校後台</a>
     <p id="activityReturnHint" class="muted" hidden>從活動設定進入；發送後可返回原活動繼續編輯。</p>
     <section class="card"><h1>📣 LINE 通知中心</h1><p>通知家長、老師、學校幹部，或活動志工群組。</p><a class="account-link" href="/line-account.html" target="_top">管理我自己的 LINE 綁定</a></section>
+    <nav class="line-center-tabs" aria-label="LINE 通知功能"><button type="button" id="lineSendTab" data-line-center-tab="send" aria-controls="lineSendPanel" aria-selected="true">發送通知</button><button type="button" id="lineSettingsTab" data-line-center-tab="settings" aria-controls="lineSettingsPanel" aria-selected="false" disabled>群組與通知設定</button></nav>
+    <div id="lineSendPanel">
     <form class="card" id="announcement">
       <fieldset><legend>1．選擇通知對象</legend>
         <label class="choice"><input type="radio" name="audience" value="members" checked>家長／老師</label>
@@ -54,7 +57,9 @@
       <p><a id="returnActivityAfterSend" class="button secondary" hidden>← 返回原活動</a></p>
     </form>
     <details class="card"><summary><b>最近發送紀錄</b></summary><div id="history">正在讀取…</div></details>
+    </div>
+    <section class="card" id="lineSettingsPanel" hidden aria-labelledby="lineSettingsTab"><p id="lineSettingsAuthStatus" role="status">正在驗證管理員身分…</p></section>
   </main>
-  <script type="module" src="/line-announcement.js?v=20261122-simple-group-routing"></script>
+  <script type="module" src="/line-announcement.js?v=20261123-notification-settings"></script>
 </body>
 </html>

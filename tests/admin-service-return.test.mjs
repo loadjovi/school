@@ -116,3 +116,11 @@ test("finance entry links in operations move to the dedicated frame while retain
  h.uniformClick()(event);assert.equal(event.prevented,true);await new Promise(resolve=>setImmediate(resolve));
  assert.equal(h.opens.at(-1),"financeAdmin");assert.equal(new URL(h.finance.item.src).searchParams.get("task"),"accounts");assert.equal(h.uniform.assignments.length,0);
 });
+
+test("LINE settings deep links stay in the existing school workspace and reject unsupported tabs",async()=>{
+ const h=harness();assert.equal(await h.window.openSchoolAdminService("line","/line-announcement.html?tab=settings"),true);
+ assert.equal(new URL(h.line.item.src,origin).searchParams.get("tab"),"settings");
+ const assignments=h.line.assignments.length;
+ assert.equal(await h.window.openSchoolAdminService("line","/line-announcement.html?tab=unknown"),false);
+ assert.equal(h.line.assignments.length,assignments);
+});
