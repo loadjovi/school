@@ -289,3 +289,9 @@
 .admin-boot-screen>.card{width:100%;max-width:440px;margin:0;padding:28px;border:1px solid #d5e3db;border-radius:18px;box-shadow:none}
 .admin-boot-screen h2{margin:0 0 12px;font-size:22px;line-height:1.4}
 .admin-boot-screen .notice{font-size:16px;line-height:1.7}
+
+/* Standalone services retain the current school workspace and its loaded data. */
+.aw-service{min-width:0;max-width:100%;padding-bottom:24px}
+.aw-service>iframe{display:block;width:100%;min-width:0;height:1100px;border:0;background:transparent}
+.aw-service>iframe[data-service-loading="true"]{visibility:hidden}
+.aw-service>[data-service-loading]{margin:0 0 10px}

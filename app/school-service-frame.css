@@ -1,0 +1,9 @@
+/* Only a verified child frame gets this class; direct links keep their shell. */
+html.school-service-embedded,html.school-service-embedded body{min-height:0!important;height:auto!important;max-width:none!important;margin:0!important;padding:0!important;background:transparent!important;overflow-x:hidden}
+html.school-service-embedded body>header,html.school-service-embedded #functional-uat-banner{display:none!important}
+html.school-service-embedded main{width:100%;max-width:none;margin:0;padding:0 0 22px}
+html.school-service-embedded #feePlatformBack,html.school-service-embedded:not(.school-service-activity-return) #backLink{display:none!important}
+html.school-service-embedded[data-workspace-service="line"] main>section.card:first-of-type h1{display:none}
+html.school-service-embedded .card:first-of-type{margin-top:0}
+html.school-service-embedded :is(input,select,textarea,button){max-width:100%}
+@media(max-width:600px){html.school-service-embedded .card{padding:16px}html.school-service-embedded main{padding-bottom:18px}}
