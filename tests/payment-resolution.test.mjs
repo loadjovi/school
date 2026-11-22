@@ -25,7 +25,7 @@ function harness(){
  }};
  const tableNames={uniform:"TenantUniformEventRequest",family:"TenantFamilyEventRegistration",staff:"TenantTshirtStaffDemand"};
  const api=runInNewContext(strip(read("api/src/lib/paymentResolution.js"))+";({applyPaymentResolution,listPaymentResolutions,receivePaymentRefundRequest})",{
-  ...rules,paymentResolutionEnabled:()=>enabled,createHash,randomUUID,URL,process:{env:{STORAGE_CONNECTION_STRING:"test-storage"}},TableClient:{fromConnectionString:(_c,name)=>db(name)},
+  ...rules,safeAllocateTshirtAvailableStock:async()=>({status:"procurement_required"}),paymentResolutionEnabled:()=>enabled,createHash,randomUUID,URL,process:{env:{STORAGE_CONNECTION_STRING:"test-storage"}},TableClient:{fromConnectionString:(_c,name)=>db(name)},
   ensureStudentAccess:(access,id)=>access.role==="admin"||access.students?.includes(String(id)),getStudentAliasInfo:async id=>({canonicalStudentId:id}),getStudentMaster:async id=>({studentName:"學生 "+id}),
   getMappedStudentsByEmail:async email=>email===owner?[{studentId:"990101"}]:[],familyPaymentInfo,financeRecipients,
   listTenantAdmins:async()=>[{role:"schoolAdmin",status:"active",email:finance.email},{role:"schoolAdmin",status:"active",email:"ordinary@example.test"}],financeAssignments:async()=>[{email:finance.email,status:"active"}],

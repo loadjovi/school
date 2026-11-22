@@ -3,7 +3,7 @@ import {createTshirtStockCounter} from "./tshirt-stock-count.js?v=20261122-opene
 import {createTshirtStockDetails} from "./tshirt-stock-details.js?v=20261122-opened-count-state";
 const el=id=>document.getElementById(id);
 const uniformRequestFlowHint=el("uniformRequestsHeading")?.nextElementSibling;
-if(uniformRequestFlowHint)uniformRequestFlowHint.textContent="團 T 核帳後到「採購總表」統一下單與驗收，再確認實際發放；現有庫存可直接開放領取。比賽服依個別申請處理。";
+if(uniformRequestFlowHint)uniformRequestFlowHint.textContent="團 T 核帳後，有同尺寸庫存就直接確認實際發放；庫存不足才到「採購總表」統一下單與驗收。比賽服依個別申請處理。";
 let adminAuthenticated=false,hasFinanceAccess=false;
 function setAuthGate(reason=""){
  adminAuthenticated=!reason;
@@ -211,7 +211,7 @@ function renderModuleRequests(options={}){
   const actionable=rows.filter(x=>["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(x.status));
   el("competitionProcurementSummary").textContent="申請共 "+rows.length+" 筆；公費已核准待採購 "+publicReady+" 筆、買斷待匯款 "+transfer+" 筆、買斷待核帳 "+reconcile+" 筆、買斷已入帳並列入採購 "+buyoutReady+" 筆、已採購待到貨 "+(counts.ORDERED||0)+" 筆、已到貨 "+(counts.ARRIVED||0)+" 筆。尚在處理 "+actionable.length+" 筆；公費核准或買斷確認入帳後，系統自動列入採購需求。";
  }
- table("requests",displayRows.map(x=>({...x,processing:pendingRequestIds.has(x.id),received:receivedRequestIds.has(x.id),studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",acquisitionLabel:x.kind==="competitionUniform"?({PUBLIC:"公費配發",PURCHASE:"自費買斷",RENTAL:"租借",PENDING:"取得方式待核對"})[x.acquisition]||"待核對":"自費加購",statusLabel:pendingRequestIds.has(x.id)?"更新處理中…":x.status==="APPROVED"&&approvedStage(x)==="transfer"?"已核准｜待家長匯款":x.status==="APPROVED"&&approvedStage(x)==="reconcile"?"家長已回報匯款｜待財務核帳":["ARRIVED","READY_FOR_PICKUP"].includes(x.status)&&!receivedRequestIds.has(x.id)?"待補登入庫｜暫不可發放":x.status==="READY_FOR_PICKUP"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"待財務核帳｜暫不可領取":({PENDING:"待審核",APPROVED:x.acquisition==="PUBLIC"?"公費已核准｜已列入採購需求":x.kind==="competitionUniform"?"買斷已入帳｜已列入採購需求":"已入帳｜已列入採購需求",ORDERED:"已採購｜待到貨",ARRIVED:"已到貨｜待安排領取",READY_FOR_PICKUP:"可以領取",FULFILLED:"已領取",CANCELLED:"已取消"})[x.status]||x.status,procurementLabel:["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(x.status)?((x.procurementQuantity??x.quantity??1)+" 件"+(x.kind==="regularUniform"?"｜"+(Array.isArray(x.procurementBreakdown)?x.procurementBreakdown.map(p=>p.size+" "+p.quantity).join("、"):(x.procurementQuantity??x.quantity)>x.quantity?"尺碼未分配":x.size+" "+x.quantity):"")):"—",issueDetail:x.status==="FULFILLED"?`${x.receivedBy||"領取人待核對"}｜${x.issuedAt?new Date(x.issuedAt).toLocaleDateString("zh-TW"):"日期待核對"}`:"—"})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["acquisitionLabel","取得方式"],["size","尺寸"],["quantity","家長申請"],["procurementLabel","向廠商採購"],["statusLabel","狀態"],["issueDetail","實際領取"],["createdAt","建立時間"]],true);
+ table("requests",displayRows.map(x=>({...x,processing:pendingRequestIds.has(x.id),received:receivedRequestIds.has(x.id)||x.stockSource==="existing_stock"&&Boolean(x.stockReceivedAt),studentName:uniformStudentNames.get(String(x.studentId))||"姓名待核對",kind:/competition/i.test(String(x.kind||x.type||""))?"A 團比賽服":"團 T",acquisitionLabel:x.kind==="competitionUniform"?({PUBLIC:"公費配發",PURCHASE:"自費買斷",RENTAL:"租借",PENDING:"取得方式待核對"})[x.acquisition]||"待核對":"自費加購",statusLabel:pendingRequestIds.has(x.id)?"更新處理中…":x.status==="APPROVED"&&approvedStage(x)==="transfer"?"已核准｜待家長匯款":x.status==="APPROVED"&&approvedStage(x)==="reconcile"?"家長已回報匯款｜待財務核帳":["ARRIVED","READY_FOR_PICKUP"].includes(x.status)&&!receivedRequestIds.has(x.id)&&x.stockSource!=="existing_stock"?"待補登入庫｜暫不可發放":x.status==="READY_FOR_PICKUP"&&x.acquisition!=="PUBLIC"&&x.paymentStatus!=="VERIFIED"?"待財務核帳｜暫不可領取":({PENDING:"待審核",APPROVED:x.acquisition==="PUBLIC"?"公費已核准｜已列入採購需求":x.kind==="competitionUniform"?"買斷已入帳｜已列入採購需求":"已入帳｜已列入採購需求",ORDERED:"已採購｜待到貨",ARRIVED:"已到貨｜待安排領取",READY_FOR_PICKUP:"可以領取",FULFILLED:"已領取",CANCELLED:"已取消"})[x.status]||x.status,procurementLabel:x.stockSource==="existing_stock"?"現有庫存｜"+x.size+" "+x.quantity+" 件":["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(x.status)?((x.procurementQuantity??x.quantity??1)+" 件"+(x.kind==="regularUniform"?"｜"+(Array.isArray(x.procurementBreakdown)?x.procurementBreakdown.map(p=>p.size+" "+p.quantity).join("、"):(x.procurementQuantity??x.quantity)>x.quantity?"尺碼未分配":x.size+" "+x.quantity):"")):"—",issueDetail:x.status==="FULFILLED"?`${x.receivedBy||"領取人待核對"}｜${x.issuedAt?new Date(x.issuedAt).toLocaleDateString("zh-TW"):"日期待核對"}`:"—"})),[["studentName","學生姓名"],["studentId","學生ID"],["kind","項目"],["acquisitionLabel","取得方式"],["size","尺寸"],["quantity","家長申請"],["procurementLabel","供應來源／採購"],["statusLabel","狀態"],["issueDetail","實際領取"],["createdAt","建立時間"]],true);
 }
 
 function renderModuleStock(){
@@ -476,7 +476,7 @@ function table(id,rows,columns,actions=false){
    const line=r.paymentLineNotification||{status:"not_sent"};
    const payableLine=payable&&["APPROVED","ORDERED","ARRIVED","READY_FOR_PICKUP"].includes(r.status)&&["","AWAITING_TRANSFER"].includes(String(r.paymentStatus||""))&&Number.isSafeInteger(r.amount)&&r.amount>0;
    const lineNotice=payableLine?"<div class='payment-line-record' role='status'><strong>"+esc(uniformPaymentLineSummary(line))+"</strong>"+(line.acceptedAt?"<p>"+(line.status==="email_sent"?"Email ":"LINE ")+"受理時間："+esc(time(line.acceptedAt))+"（台灣時間）</p>":"")+(!["accepted","email_sent","unconfirmed","target_changed"].includes(line.status)&&line.retryAllowed!==false?"<button type='button' data-payment-line='"+i+"'>補送繳款 LINE 通知</button>":"")+"</div>":"";
-   controls="<td data-label='狀態管理'>"+directIssue+receive+(r.status==="APPROVED"&&!mayCollect?"<p class='hint'>財務確認入帳後會自動列入採購需求。</p>":"")+progress+procurementAdjust+amount+lineNotice+notification+remind+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
+   controls="<td data-label='狀態管理'>"+directIssue+receive+(r.status==="APPROVED"&&!mayCollect?"<p class='hint'>"+(r.kind==="團 T"?"核帳後有庫存可直接發放；庫存不足才列入採購。":"財務確認入帳後會自動列入採購需求。")+"</p>":"")+progress+procurementAdjust+amount+lineNotice+notification+remind+(issueErrors.has(r.id)?"<p class='warn' role='alert'>"+esc(issueErrors.get(r.id))+"</p>":"")+"</td>";
    }
   }
   const feedback=actions&&requestUpdateFeedback.get(r.id);
@@ -641,6 +641,24 @@ async function load(){
      if(section.path.includes("inventory")){el("stock").textContent="庫存資料讀取失敗，請檢查 API";tshirtStockDetails.fail(result.reason.message);window.dispatchEvent(new CustomEvent("uniformInventoryLoadFailed",{detail:{message:result.reason.message}}))}
    }
  });
+ // Reconcile older paid requests after stock changes, using an explicit mutation.
+ // The server reserves inventory and checks procurement claims before opening pickup.
+ if(results[2].status==="fulfilled"&&results[3].status==="fulfilled"&&results[4].status==="fulfilled"){
+  const ids=cachedRequests.filter(row=>{
+   const stock=cachedStock.find(item=>item.key==="regular:"+row.size),available=stock&&stock.onHand-(stock.reserved||0)-(stock.unavailable||0);
+   return row.kind==="regularUniform"&&row.status==="APPROVED"&&row.paymentStatus==="VERIFIED"&&!row.purchaseOrderId&&(receivedRequestIds.has(row.id)||Number.isSafeInteger(row.quantity)&&available>=row.quantity);
+  }).sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt))).slice(0,20).map(row=>row.id);
+  if(ids.length)try{
+   const result=await api("uniform-events/available-stock",{method:"POST",body:JSON.stringify({ids})});
+   if(result.results?.some(item=>["ready","pending","sync_pending"].includes(item.status))){
+    const [requests,receipts,inventory]=await Promise.all([api("uniform-events/requests"),api("uniform-events/receiving"),api("uniform-events/inventory")]);
+    cachedRequests=requests.items||[];receivedRequestIds=new Set((receipts.items||[]).map(item=>String(item.requestId)));cachedStock=inventory.items||[];cachedStockDetails=inventory;window.uniformInventoryItems=cachedStock;
+    for(const item of result.results)if(["pending","sync_pending","receipt_requires_review"].includes(item.status))issueErrors.set(item.id,"現有庫存分配待同步，請稍後重新整理核對。");else if(item.status==="ready")issueErrors.delete(item.id);
+    renderUniformRequestAlerts();if(["regularUniform","competitionUniform"].includes(activeAdminTab)){renderModuleRequests();renderModuleStock()}
+    window.dispatchEvent(new CustomEvent("uniformRequestsLoaded"));window.dispatchEvent(new CustomEvent("uniformInventoryLoaded",{detail:{items:cachedStock}}));
+   }
+  }catch(error){el("requestsStatus").textContent="申請已載入，現有庫存分配尚未確認："+error.message}
+ }
  if(hasFinanceAccess){
   if(results[0].status==="fulfilled"&&results[2].status==="fulfilled")await refreshFinancePending();
   else el("inlineFinanceReview").querySelector("summary").textContent="💰 財務核帳｜待辦讀取失敗，請重新整理";

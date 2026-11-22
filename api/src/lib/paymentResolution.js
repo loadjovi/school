@@ -10,6 +10,7 @@ import {pushLineMessage} from "./lineMessaging.mjs";
 import {deliverLabNotice,labNoticeLineResult,labNoticeUrl} from "./labNoticeDelivery.mjs";
 import {familyPaymentInfo} from "./paymentNoticeRules.mjs";
 import {changePaymentResolution,ownsResolution,resolutionPayer,resolutionExpected,paymentResolutionEnabled,PaymentResolutionError} from "./paymentResolutionRules.mjs";
+import {safeAllocateTshirtAvailableStock} from "./tshirtAvailableStock.js";
 
 const tables={uniform:"TenantUniformEventRequest",family:"TenantFamilyEventRegistration",staff:"TenantTshirtStaffDemand"};
 const clients=new Map();
@@ -86,7 +87,8 @@ export async function applyPaymentResolution(school,access,input){
  const event=next.paymentResolutionEvents.at(-1);let auditSaved=true,notification;
  try{await (await table("TenantUniformEventAudit")).createEntity({partitionKey:school,rowKey:event.id,action:"payment-resolution."+event.action,subjectId:sourceType+":"+id,actor:access.email,at:event.at,details:JSON.stringify(event)})}catch{auditSaved=false}
  try{notification=await notifyResolution(school,sourceType,{...next,id},event)}catch{notification={status:"failed"}}
- return {item:await paymentResolutionView(school,access,sourceType,{...next,id}),notification,auditSaved};
+ const stockAllocation=sourceType==="uniform"&&next.kind==="regularUniform"&&next.paymentStatus==="VERIFIED"?await safeAllocateTshirtAvailableStock(school,id,{actor:access.email}):undefined;
+ return {item:await paymentResolutionView(school,access,sourceType,stockAllocation?.item||{...next,id}),notification,auditSaved,stockAllocation};
 }
 export async function receivePaymentRefundRequest(channel,userId,text){
  if(!/^#申請退費(?:\s|$)/u.test(text))return null;

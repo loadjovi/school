@@ -3,6 +3,7 @@ import {paymentOnHold} from "../lib/paymentResolutionRules.mjs";
 import {safePaymentNotifications} from "../lib/paymentNotifications.js";
 import {notifyFinanceTransfer,retryFinanceTransfer} from "../lib/lineAdminTodoNotification.mjs";
 import {notifyTenantPaymentVerified} from "../lib/tenantLineFeeNotice.js";
+import {safeAllocateTshirtAvailableStock} from "../lib/tshirtAvailableStock.js";
 import {app} from "@azure/functions";
 import {TableClient} from "@azure/data-tables";
 import {randomUUID} from "node:crypto";
@@ -36,11 +37,12 @@ app.http("uniformTransferReport",{methods:["POST","PATCH"],authLevel:"anonymous"
    await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"uniform.transfer.verify",subjectId:b.requestId,actor:String(access.email||"finance"),at:stamp,details:JSON.stringify({amount:old.amount,bankPostedAt:b.bankPostedAt,report:old.transferReport,note:next.verificationNote})});
    try{await t.updateEntity({partitionKey:schoolId,rowKey:b.requestId,payload:JSON.stringify(next),updatedAt:stamp},"Replace",{etag:row.etag})}
    catch(e){if(e.statusCode===412)return fail("Order changed; refresh",409);throw e}
+   const stockAllocation=next.kind==="regularUniform"?await safeAllocateTshirtAvailableStock(schoolId,b.requestId,{actor:access.email,schoolName:ctx.tenant?.systemName||ctx.tenant?.schoolName}):undefined;
    const lineNotification=await notifyTenantPaymentVerified(schoolId,{
      kind:old.kind,id:b.requestId,at:stamp,
-     parentEmail:old.parentEmail||old.paymentHistory?.at(-1)?.lineRecipient,requestStatus:next.status
+     parentEmail:old.parentEmail||old.paymentHistory?.at(-1)?.lineRecipient,requestStatus:stockAllocation?.item?.status||next.status
    });
-   return json({paymentStatus:next.paymentStatus,verifiedAt:stamp,verifiedBy:access.email,lineNotification});
+   return json({paymentStatus:next.paymentStatus,verifiedAt:stamp,verifiedBy:access.email,lineNotification,stockAllocation});
   }
   if(old.paymentStatus==="VERIFIED")return fail("Already verified",409);
   if(old.paymentStatus==="REPORTED_UNVERIFIED")return fail("Transfer already reported",409);
