@@ -82,6 +82,7 @@ test("saved orders expose one whole-order receipt and an explicit opt-in for pre
  h.bodies["uniform-events/tshirt-purchase-orders"].items=[{id:"po",etag:"po-etag",orderNumber:"T-EXISTING",schoolYear:115,semester:1,status:"ORDERED",createdAt:"2026-11-21T00:00:00Z",totalQuantity:10,items:[{size:"S",quantity:10}],links:[]}];
  await h.load();const descendants=node=>(node.children||[]).flatMap(child=>[child,...descendants(child)]),nodes=descendants(h.node("tshirtPurchaseOrders"));
  const check=nodes.find(x=>x.type==="checkbox");assert.equal(check.checked,false);
- const form=nodes.find(x=>x.className==="tshirt-order-receive");assert.ok(form);const children=descendants(form),date=children.find(x=>x.type==="date"),note=children.find(x=>x.tagName==="TEXTAREA");note.value="十件外觀與尺碼無誤";
- await form.handlers.submit({preventDefault(){}});assert.equal(h.posts.length,1);assert.equal(h.posts[0].action,"RECEIVE");assert.equal(h.posts[0].id,"po");assert.equal(h.posts[0].etag,"po-etag");assert.equal(h.posts[0].receivedDate,date.value);assert.equal(h.posts[0].note,note.value);
+ const form=nodes.find(x=>x.className==="tshirt-order-receive");assert.ok(form);const children=descendants(form),date=children.find(x=>x.type==="date"),note=children.find(x=>x.tagName==="TEXTAREA");note.value="十件外觀與尺碼無誤";form.handlers.input();
+ await h.load();const restored=descendants(h.node("tshirtPurchaseOrders")).find(x=>x.className==="tshirt-order-receive");assert.equal(descendants(restored).find(x=>x.tagName==="TEXTAREA").value,note.value);
+ await restored.handlers.submit({preventDefault(){}});assert.equal(h.posts.length,1);assert.equal(h.posts[0].action,"RECEIVE");assert.equal(h.posts[0].id,"po");assert.equal(h.posts[0].etag,"po-etag");assert.equal(h.posts[0].receivedDate,date.value);assert.equal(h.posts[0].note,note.value);
 });

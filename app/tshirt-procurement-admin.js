@@ -18,7 +18,7 @@ function downloadOrder(order){
  a.href=url;a.download=`${order.orderNumber}_廠商訂購表.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 const orderLabels={ORDERED:"待到貨",RECEIVING:"驗收待完成",RECEIVED:"已整單到貨／入庫",CANCELLED:"已取消"};
-const openOrders=new Set(),pendingOrderIds=new Set();
+const openOrders=new Set(),pendingOrderIds=new Set(),orderReceiptDrafts=new Map();
 let creatingOrder=false;
 function orderFeedback(result){return result.syncPending?"採購單已儲存，部分需求或通知待同步，請按「重新同步需求／通知」。":"採購單、需求與庫存已同步。"}
 async function orderAction(order,payload,button,message){
@@ -26,7 +26,7 @@ async function orderAction(order,payload,button,message){
  button.disabled=true;message.textContent="處理中，請稍候…";
  try{
   const result=await call("uniform-events/tshirt-purchase-orders",{method:"POST",body:JSON.stringify({id:order.id,etag:order.etag,...payload})});
-  $("tshirtPurchaseOrderFeedback").textContent=orderFeedback(result);window.dispatchEvent(new CustomEvent("tshirtPurchaseOrdersChanged"));await load();
+  $("tshirtPurchaseOrderFeedback").textContent=orderFeedback(result);if(["RECEIVE","CANCEL"].includes(payload.action))orderReceiptDrafts.delete(order.id);window.dispatchEvent(new CustomEvent("tshirtPurchaseOrdersChanged"));await load();
  }catch(error){message.textContent="結果待確認："+error.message+"。請重新讀取同張採購單核對，不需另建新單。";button.disabled=false}finally{pendingOrderIds.delete(order.id)}
 }
 function drawOrders(){
@@ -51,7 +51,8 @@ function drawOrders(){
   }
   if(["ORDERED","RECEIVING"].includes(order.status)){
    const form=document.createElement("form"),date=document.createElement("input"),note=document.createElement("textarea"),save=document.createElement("button");form.className="tshirt-order-receive";
-   date.type="date";date.required=true;date.value=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());note.required=true;note.maxLength=300;note.rows=2;
+   const draft=orderReceiptDrafts.get(order.id);date.type="date";date.required=true;date.value=draft?.date||new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());note.required=true;note.maxLength=300;note.rows=2;note.value=draft?.note||"";
+   const saveDraft=()=>{openOrders.add(order.id);orderReceiptDrafts.set(order.id,{date:date.value,note:note.value})};form.addEventListener("input",saveDraft);form.addEventListener("change",saveDraft);
    for(const [name,input] of [["整單到貨日期",date],["驗收備註",note]]){const label=document.createElement("label");label.textContent=name;label.append(input);form.append(label)}
    save.type="submit";save.textContent="確認整單到貨並入庫";form.append(save);
    form.addEventListener("submit",async e=>{e.preventDefault();if(!date.value||!note.value.trim())return;if(!confirm(`確認 ${order.orderNumber} 全部 ${order.totalQuantity} 件已到貨？將統一入庫、開放已整合家長領取並通知；先前已入庫的件數不重複增加。`))return;for(const control of [date,note,save])control.disabled=true;await orderAction(order,{action:"RECEIVE",receivedDate:date.value,note:note.value.trim()},save,message);for(const control of [date,note,save])control.disabled=false});card.append(form);

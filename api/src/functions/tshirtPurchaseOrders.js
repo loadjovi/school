@@ -150,8 +150,9 @@ app.http("tshirtPurchaseOrders",{methods:["GET","POST"],authLevel:"anonymous",ro
  try{
   const clients=await tables(),schoolId=ctx.schoolId;
   if(request.method==="GET"){
-   const items=[];
-   for await(const row of clients.orders.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}}))if(idPattern.test(row.rowKey))items.push(view(row,await get(clients.inventory,schoolId,"po-received:"+row.rowKey)));
+   const items=[],receipts=new Map(),partition=schoolId.replaceAll("'","''");
+   for await(const row of clients.inventory.listEntities({queryOptions:{filter:`PartitionKey eq '${partition}' and RowKey ge 'po-received:' and RowKey lt 'po-received;'`}}))if(String(row.rowKey).startsWith("po-received:"))receipts.set(row.rowKey.slice(12),row);
+   for await(const row of clients.orders.listEntities({queryOptions:{filter:`PartitionKey eq '${partition}'`}}))if(idPattern.test(row.rowKey))items.push(view(row,receipts.get(row.rowKey)));
    return json({items:items.sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,100)});
   }
   const input=await request.json(),action=clean(input?.action,30),actor=clean(ctx.access.email,200),now=new Date().toISOString(),id=clean(action==="CREATE"?input.requestKey:input.id,40).toLowerCase();
