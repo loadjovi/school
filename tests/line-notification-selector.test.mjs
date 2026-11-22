@@ -31,10 +31,11 @@ async function page({recipients=[],recipientResults=[],accepted=1,failed=0,histo
  };
  form.querySelector=selector=>form.querySelectorAll(selector)[0]||null;
  form.elements.includeStaff=inputs.find(input=>input.name==="includeStaff");
- const options={groups:["A","B","新測試團"],schoolName:"測試學校",history,activities:[{key:"fieldTrip:one",title:"交流活動",bound:true,groupName:"交流志工"}]};
+ const schoolGroups=[{key:"school:teachers",title:"學校群組",bound:true,groupName:"學校老師群",source:"settings",sourceLabel:"平台學生缺席通知群組"},{key:"school:cadres",title:"幹部群組",bound:true,groupName:"後援幹部群",source:"settings",sourceLabel:"平台後台待辦群組"},{key:"school:finance",title:"財務幹部群組",bound:true,groupName:"財務群",source:"center"}];
+ const options={schoolGroups,groups:["A","B","新測試團"],schoolName:"測試學校",history,activities:[{key:"fieldTrip:one",title:"交流活動",bound:true,groupName:"交流志工"}]};
  const context={document:{getElementById:id=>elements[id],createElement:tag=>new Element(tag)},sessionStorage:{getItem:()=>""},URLSearchParams,location:{search},console,crypto:{randomUUID:()=>"12345678-1234-1234-1234-123456789abc"},
   Option:class extends Element{constructor(text,value){super("option");this.textContent=text;this.value=value}},confirm:()=>true,
-  fetch:async(url,init)=>{const body=init.body&&JSON.parse(init.body);if(body)calls.push(body);return {ok:true,json:async()=>!body?options:body.action==="send"?{accepted,failed,recipientResults}:{preview:"preview-hash",targetLabel:"確認的收件範圍",matched:2,deliverable:recipients.length||1,unbound:1,recipients}}}
+  fetch:async(url,init)=>{const body=init.body&&JSON.parse(init.body);if(body)calls.push(body);return {ok:true,json:async()=>!body?options:body.action==="school-binding-code"?{code:"AABBCCDD11223344",expiresAt:"2026-12-01T00:00:00Z",groupTitle:"幹部群組"}:body.action==="send"?{accepted,failed,recipientResults,...(body.audience==="schoolGroups"?{deliveryMode:"group",groupAccepted:accepted,groupFailed:failed}:{})}:{...(body.audience==="schoolGroups"?{groupDeliverable:body.schoolGroupKeys.length,deliveryMode:"group"}:{}),preview:"preview-hash",targetLabel:"確認的收件範圍",matched:2,deliverable:recipients.length||1,unbound:1,recipients}}}
  };
  await runInNewContext("(async()=>{"+source+"})()",context);
  const input=(name,value)=>candidates().find(input=>input.name===name&&(value===undefined||input.value===value));
@@ -60,21 +61,22 @@ test("dynamic multi-team members can add finance recipients explicitly, and edit
  const p=await page();p.choose("groupScope","selected");p.choose("group","A");p.choose("group","新測試團");p.choose("role","teacher");
  p.choose("includeStaff");p.choose("staffScope","finance");
  assert.equal(p.elements.staffPanel.hidden,false);assert.equal(p.elements.teams.hidden,false);
- assert.equal(p.elements.audienceSummary.textContent,"本次通知：A 團、新測試團的家長與老師；另通知本校財務幹部");
- p.elements.message.value="跨團通知";await p.submit();assert.deepEqual(p.calls[0].roles,["parent","teacher","finance"]);
+ assert.equal(p.elements.audienceSummary.textContent,"本次通知：A 團、新測試團的家長與老師；另通知財務幹部群組「財務群」");
+ p.elements.message.value="跨團通知";await p.submit();assert.deepEqual(p.calls[0].roles,["parent","teacher"]);assert.deepEqual(p.calls[0].schoolGroupKeys,["school:finance"]);
  assert.deepEqual(p.calls[0].groups,["A","新測試團"]);assert.equal(p.calls[0].allSchool,false);
  p.choose("staffScope","all");assert.equal(p.elements.recipientPreview.hidden,true);await p.send();assert.equal(p.calls.length,1);
 });
 
-test("staff-only mode cannot carry previously checked parents, teachers, teams or activities into the payload",async()=>{
+test("school-group mode excludes retained member roles, teams and activities and can select both existing groups",async()=>{
  const p=await page();p.choose("role","teacher");p.choose("groupScope","selected");p.choose("group","A");p.choose("includeStaff");
- p.elements.activityKey.value="fieldTrip:one";p.choose("audience","staff");p.choose("staffScope","finance");
+ p.elements.activityKey.value="fieldTrip:one";p.choose("audience","schoolGroups");p.choose("schoolGroup","school:teachers");
  assert.equal(p.elements.memberPanel.hidden,true);assert.equal(p.elements.memberPanel.disabled,true);assert.equal(p.elements.includeStaffOption.hidden,true);
- assert.equal(p.elements.staffPanel.hidden,false);assert.equal(p.elements.activityKey.required,false);
- assert.equal(p.elements.messageLabel.textContent,"2．輸入訊息");assert.equal(p.elements.audienceSummary.textContent,"本次通知：本校財務幹部");
- p.elements.message.value="財務核對";await p.submit();assert.deepEqual(p.calls[0].roles,["finance"]);assert.deepEqual(p.calls[0].groups,[]);
- assert.equal(p.calls[0].audience,"members");assert.equal(p.calls[0].allSchool,true);assert.equal(p.calls[0].activityKey,"");
- p.choose("staffScope","all");await p.submit();assert.deepEqual(p.calls[1].roles,["staff"]);
+ assert.equal(p.elements.staffPanel.hidden,true);assert.equal(p.elements.schoolGroupPanel.hidden,false);assert.equal(p.elements.activityKey.required,false);
+ assert.equal(p.elements.messageLabel.textContent,"3．輸入訊息");assert.match(p.elements.audienceSummary.textContent,/學校老師群.*後援幹部群/);
+ assert.match(p.elements.schoolCadresStatus.textContent,/沿用平台後台待辦群組/);assert.equal(p.elements.unbindSchoolGroup.hidden,true);
+ p.elements.message.value="群組公告";await p.submit();assert.deepEqual(p.calls[0].roles,[]);assert.deepEqual(p.calls[0].groups,[]);
+ assert.equal(p.calls[0].audience,"schoolGroups");assert.deepEqual(p.calls[0].schoolGroupKeys,["school:teachers","school:cadres"]);assert.equal(p.calls[0].activityKey,"");
+ assert.match(p.elements.deliveryHint.textContent,/多人群組/);assert.doesNotMatch(p.elements.deliveryHint.textContent,/個人/);
 });
 
 test("activity-group mode sends only to the selected bound group, and switching back restores member scope",async()=>{
@@ -84,7 +86,7 @@ test("activity-group mode sends only to the selected bound group, and switching 
  assert.equal(p.elements.activityKey.required,true);assert.equal(p.elements.audienceSummary.textContent,"本次通知：交流活動的「交流志工」群組");
  p.elements.message.value="志工集合";await p.submit();assert.equal(p.calls[0].audience,"activityGroup");assert.deepEqual(p.calls[0].roles,[]);
  assert.deepEqual(p.calls[0].groups,[]);assert.equal(p.calls[0].activityKey,"fieldTrip:one");
- p.choose("audience","members");assert.equal(p.elements.audienceSummary.textContent,"本次通知：新測試團的家長；另通知本校全體幹部（含財務幹部）");
+ p.choose("audience","members");assert.equal(p.elements.audienceSummary.textContent,"本次通知：新測試團的家長；另通知幹部群組「後援幹部群」");
  assert.equal(p.elements.activityPanel.disabled,true);assert.equal(p.elements.staffPanel.disabled,false);
 });
 
@@ -99,7 +101,7 @@ const recipientNames=[{reference:"a123456789ab",name:"Roy"},{reference:"b1234567
 const content=element=>element.textContent+element.children.map(child=>typeof child==="string"?child:content(child)).join("");
 test("preview lists individual bound accounts without claiming they can receive or have received a message",async()=>{
  const p=await page({recipients:recipientNames});p.elements.message.value="公告";await p.submit();
- assert.match(p.elements.previewCounts.textContent,/已綁定 2 個 LINE/);assert.doesNotMatch(p.elements.previewCounts.textContent,/可通知|已送達/);
+ assert.match(p.elements.previewCounts.textContent,/已綁定 2 個 LINE 帳號/);assert.doesNotMatch(p.elements.previewCounts.textContent,/可通知|已送達/);
  assert.match(content(p.elements.previewRecipients),/Roy.*尚未發送.*Eileen.*尚未發送/);assert.equal(p.elements.deliveryReport.hidden,true);
 });
 
@@ -127,4 +129,15 @@ test("activity return links survive preview, send and notification-history refre
  p.elements.message.value="通知測試";await p.submit();await p.send();
  assert.equal(p.elements.backLink.href,before);assert.equal(p.elements.returnActivityAfterSend.href,before);
  assert.equal(p.calls.filter(call=>call.action==="send").length,1);
+});
+test("group previews and partial results count groups and identify the named group without personal-recipient wording",async()=>{
+ const recipientResults=[{reference:"a123456789ab",name:"後援幹部群",kind:"group",status:"accepted"},{reference:"b123456789ab",name:"學校老師群",kind:"group",status:"failed"}];
+ const p=await page({accepted:1,failed:1,recipientResults});p.choose("audience","schoolGroups");p.choose("schoolGroup","school:teachers");p.elements.message.value="兩個群組的公告";await p.submit();
+ assert.match(p.elements.previewCounts.textContent,/2 個 LINE 群組/);assert.doesNotMatch(p.elements.previewCounts.textContent,/個帳號|個人/);await p.send();assert.match(p.elements.result.textContent,/API 已受理 1 個群組.*失敗 1 個群組/);
+ assert.match(content(p.elements.deliveryRecipients),/群組｜後援幹部群.*API 已受理.*群組｜學校老師群.*發送失敗/);assert.deepEqual(p.calls.filter(x=>x.action==="send")[0].roles,[]);
+});
+test("school-group code generation identifies the selected purpose and incomplete selections cannot preview",async()=>{
+ const p=await page();p.choose("audience","schoolGroups");p.choose("schoolGroup","school:cadres",false);p.elements.message.value="公告";await p.submit();assert.equal(p.calls.length,0);assert.match(p.elements.result.textContent,/至少勾選一個學校 LINE 群組/);
+ await p.elements.createSchoolGroupCode.handlers.click();assert.equal(p.calls[0].action,"school-binding-code");assert.equal(p.calls[0].schoolGroupKey,"school:cadres");assert.equal(p.elements.schoolBindingCommand.value,"#綁定學校通知 AABBCCDD11223344");assert.equal(p.elements.schoolBindingInstructions.hidden,false);
+ assert.equal(p.calls.filter(x=>x.action==="send").length,0);
 });
