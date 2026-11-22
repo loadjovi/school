@@ -105,6 +105,7 @@ test("opened inventory lists only recorded sizes and arrival history is visible 
  const table=descendants(h.host).find(x=>x.tag==="table"),body=table.children.find(x=>x.tag==="tbody");assert.equal(body.children.length,1);assert.match(content(table),/M2 件1 件/);assert.doesNotMatch(content(table),/XS|5L/);
  assert.match(content(h.host),/新團 T 在庫 3 件.*已拆封在庫 2 件.*借出／送洗 1 件/);assert.match(content(h.host),/到貨入庫.*S × 1、M × 1、XS × 1/);
  descendants(h.host).find(x=>x.tag==="button"&&x.textContent==="查看借用／歸還紀錄").handlers.click();assert.equal(h.loans(),1);
+ h.widget.render({items:[],openedItems:[{size:"L",onHand:0,borrowed:1,etag:null}],movements:[]});assert.match(content(h.host),/1 個尺寸待盤點/);assert.match(content(descendants(h.host).find(x=>x.tag==="table")),/L待盤點1 件/);
 });
 test("opened entry submits one version-checked transfer and repeat clicks cannot duplicate it",async()=>{
  const h=ui({items:[{key:"regular:M",onHand:3,etag:"new-v1"}],openedItems:[{size:"M",onHand:1,borrowed:0,etag:"opened-v1"}],movements:[]});let release;h.hold(new Promise(resolve=>{release=resolve}));h.edit("size","M");h.edit("quantity","2");

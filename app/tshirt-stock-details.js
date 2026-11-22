@@ -33,9 +33,9 @@ export function createTshirtStockDetails({host,api,onReload,onLoans}){
  function table(headers,rows){const grid=node("table"),head=node("thead"),tr=node("tr"),body=node("tbody");for(const header of headers)tr.append(node("th",header));head.append(tr);grid.append(head,body);for(const row of rows){const line=node("tr");for(const value of row)line.append(node("td",String(value)));body.append(line)}return grid}
  function render(data){
   state={items:data.items||[],openedItems:data.openedItems||[],movements:data.movements||[]};if(!root)init();else if(!host.contains(root))host.replaceChildren(root);host.hidden=false;
-  const total=state.items.filter(x=>x.key.startsWith("regular:")).reduce((sum,x)=>sum+x.onHand,0),inStock=state.openedItems.reduce((sum,x)=>sum+x.onHand,0),borrowed=state.openedItems.reduce((sum,x)=>sum+x.borrowed,0);
-  summary.textContent="新團 T 在庫 "+total+" 件｜已拆封在庫 "+inStock+" 件｜借出／送洗 "+borrowed+" 件";
-  opened.replaceChildren(state.openedItems.length?table(["尺寸","已拆封在庫","借出／送洗"],state.openedItems.map(x=>[x.size,x.onHand+" 件",x.borrowed+" 件"])):node("p","目前尚無已拆封團 T 庫存或志工借用紀錄。"));
+  const total=state.items.filter(x=>x.key.startsWith("regular:")).reduce((sum,x)=>sum+x.onHand,0),inStock=state.openedItems.reduce((sum,x)=>sum+x.onHand,0),borrowed=state.openedItems.reduce((sum,x)=>sum+x.borrowed,0),uncounted=state.openedItems.filter(x=>x.etag===null).length;
+  summary.textContent="新團 T 在庫 "+total+" 件｜已拆封在庫 "+inStock+" 件"+(uncounted?"（另 "+uncounted+" 個尺寸待盤點）":"")+"｜借出／送洗 "+borrowed+" 件";
+  opened.replaceChildren(state.openedItems.length?table(["尺寸","已拆封在庫","借出／送洗"],state.openedItems.map(x=>[x.size,x.etag===null?"待盤點":x.onHand+" 件",x.borrowed+" 件"])):node("p","目前尚無已拆封團 T 庫存或志工借用紀錄。"));
   history.replaceChildren(state.movements.length?table(["時間／異動","尺寸／件數","備註"],state.movements.map(x=>[new Date(x.at).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"})+"｜"+x.action,x.sizes+(x.quantity===null?"":"（"+(x.quantity>0?"+":"")+x.quantity+" 件）"),x.note||"—"])):node("p","目前尚無庫存異動紀錄。"));
  }
  return {render,fail:error=>host.replaceChildren(node("p","已拆封庫存與異動紀錄讀取失敗："+error))};
