@@ -41,6 +41,7 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         self.assertFalse((self.lab/"api/src/functions/lineUatFeeFixture.js").exists())
         self.assertIn("const buildEnablesDemoFees = false;",(self.lab/"api/src/lib/lineTenantConfig.js").read_text())
         self.assertNotIn("data-line-uat-fees",(self.lab/"app/fee-collections.html").read_text())
+        self.assertNotIn("data-line-uat-fees",(self.lab/"app/index.html").read_text())
     def test_payment_resolution_is_only_enabled_in_named_line_lab(self):
         path="api/src/lib/paymentResolutionRules.mjs"
         self.assertIn("const buildEnablesPaymentResolution = false;",(ROOT/path).read_text())
@@ -60,6 +61,7 @@ class FunctionalUATIsolationTests(unittest.TestCase):
             output=Path(work)/"release"
             module.prepare(output,line_uat=True)
             self.assertIn(marker,(output/filename).read_text(encoding="utf-8"))
+            self.assertIn("data-line-uat-fees",(output/"app/index.html").read_text(encoding="utf-8"))
     def test_all_html_pages_labeled_nonproduction(self):
         count=0
         for file in (self.lab/"app").rglob("*.html"):

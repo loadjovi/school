@@ -213,6 +213,7 @@ def prepare(output: Path, *, line_uat: bool = False) -> None:
         config.write_text(current.replace(marker,"const buildEnablesDemoFees = true;"),encoding="utf-8")
         shutil.copyfile(ROOT/"scripts"/"line-uat-fee-fixture.js",fn_dir/"lineUatFeeFixture.js")
         for filename,attribute in (
+            ("index.html","data-line-uat-fees"),
             ("fee-collections.html","data-line-uat-fees"),
             ("uniform-event-admin.html","data-line-uat-finance-retry"),
         ):
