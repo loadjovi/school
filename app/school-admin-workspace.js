@@ -180,7 +180,7 @@
   if(state.me?.role!=='admin')return;
   await window.openSchoolAdminWorkspace('uniformAdmin');
   const frame=document.getElementById('awUniformFrame');
-  if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261122-frame-navigation&task=activity';
+  if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261122-activity-date-bounds&task=activity';
  };
  function bindUniformFrameNavigation(frame){
   if(!frame||frame.dataset.workspaceNavigationBound)return;
@@ -284,7 +284,7 @@
   if(activityEntry&&uniformFrame){
    const query=new URLSearchParams({embedded:'school',task:'activity',activity:activityEntry,activitySchool:state.me.schoolId});
    uniformFrame.src='/uniform-event-admin.html?'+query;activityEntryHandled=true;
-  }else if(group==='uniformAdmin'&&uniformFrame&&uniformFrame.getAttribute('src')==='about:blank')uniformFrame.src='/uniform-event-admin.html?embedded=school&v=20261122-frame-navigation';
+  }else if(group==='uniformAdmin'&&uniformFrame&&uniformFrame.getAttribute('src')==='about:blank')uniformFrame.src='/uniform-event-admin.html?embedded=school&v=20261122-activity-date-bounds';
   const learningTask=['overview','practice'].includes(state.adminLearningWorkspaceTask)?state.adminLearningWorkspaceTask:'overview';
   const learningOverview=root.querySelector('.aw-learning-overview'),learningPractice=root.querySelector('.aw-learning-practice');
   learningOverview.hidden=group!=='grades'||learningTask!=='overview';learningPractice.hidden=group!=='grades'||learningTask!=='practice';
@@ -383,14 +383,14 @@
      return;
     }
     if(b.dataset.adminTodo==='parents'){await window.openSchoolAdminWorkspace('accounts');state.adminAccountWorkspaceTask='pending';organize();requestAnimationFrame(()=>document.querySelector('.aw-account-work-heading')?.scrollIntoView({block:'start',behavior:'smooth'}));return}
-    const task={tshirt:'tshirt',competition:'competition',competitionPayment:'competition',finance:'finance'}[b.dataset.adminTodo];if(task){await window.openSchoolAdminWorkspace('uniformAdmin');const frame=document.getElementById('awUniformFrame');if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261122-frame-navigation&task='+encodeURIComponent(task)}return;
+    const task={tshirt:'tshirt',competition:'competition',competitionPayment:'competition',finance:'finance'}[b.dataset.adminTodo];if(task){await window.openSchoolAdminWorkspace('uniformAdmin');const frame=document.getElementById('awUniformFrame');if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261122-activity-date-bounds&task='+encodeURIComponent(task)}return;
    }
    const task=guideTasks[b.dataset.adminGuide];if(task){
     try{localStorage.setItem(guideKey(),'done')}catch{}const intro=document.querySelector('.aw-onboarding');if(intro)intro.open=false;
     state.adminGuideTask=b.dataset.adminGuide;
     if(groups[task[1]])await window.openSchoolAdminWorkspace(task[1]);
-    else if(task[1]==='uniformAdmin'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&v=20261122-frame-navigation&task=guideUniform'}
-    else if(task[1]==='activitySettings'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&v=20261122-frame-navigation&task=activity'}
+    else if(task[1]==='uniformAdmin'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&v=20261122-activity-date-bounds&task=guideUniform'}
+    else if(task[1]==='activitySettings'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&v=20261122-activity-date-bounds&task=activity'}
     else await window.desktopNavigate(task[1]);
     if(b.dataset.adminGuide==='parents')state.adminAccountWorkspaceTask='pending';organize();
    }

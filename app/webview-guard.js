@@ -170,7 +170,7 @@
     }
   }
   function roleScriptList(){
-    return [...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261122-competition-buyout-notice","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
+    return [...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261122-activity-date-bounds","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
   }
   window.preloadRoleModules=()=>{
     if(typeof state!=="undefined"&&state.me?.role==="parent")preloadScripts(roleScriptList());

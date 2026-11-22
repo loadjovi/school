@@ -175,7 +175,7 @@ html.school-embedded{background:transparent}html.school-embedded body{max-width:
 </fieldset>
 <fieldset class="activity-config-group ">
 <legend>② 家長報名期間</legend>
-<p class="group-hint">僅在報名開始至結束期間接受家長申請。</p>
+<p class="group-hint">僅在報名期間接受家長申請；結束時間不得早於開始時間。</p>
 <div class="activity-config-grid">
 <label>報名開始<input name="openAt" type="datetime-local">
 </label>
@@ -518,11 +518,17 @@ html.school-embedded{background:transparent}html.school-embedded body{max-width:
  const hint=document.getElementById("activityDateModeHint"),originalStart=form.elements.startAt,originalEnd=form.elements.endAt;
  const calendarMode=document.getElementById("calendarDateMode"),calendarEndWrap=document.getElementById("calendarEndDateWrap"),calendarHint=document.getElementById("calendarDateModeHint");
  const calendarDate=form.elements.eventDate,calendarEnd=form.elements.endDate;
+ const registrationStart=form.elements.openAt,registrationEnd=form.elements.closeAt;
  const range=document.createElement("div");range.id="fieldTripDateRange";range.style.cssText="grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px";
- range.innerHTML='<label>開始日期<input id="fieldTripStartDate" type="date"></label><label>結束日期<input id="fieldTripEndDate" type="date"></label>';
+ range.innerHTML='<label>開始日期<input id="fieldTripStartDate" type="date"></label><label>結束日期<input id="fieldTripEndDate" type="date"></label><p class="group-hint" style="grid-column:1/-1;margin:0">結束日期只能選開始日期當天或之後。</p>';
  endWrap.insertAdjacentElement("afterend",range);
  const rangeStart=document.getElementById("fieldTripStartDate"),rangeEnd=document.getElementById("fieldTripEndDate");
  const trip=()=>module.value==="fieldTrip",dinner=()=>module.value==="yearEndDinner",calendar=()=>module.value==="calendarActivity",scheduled=()=>trip()||dinner();
+ function refreshRangeBounds(){
+  rangeEnd.min=trip()&&mode.value==="multi"?rangeStart.value:"";
+  originalEnd.min=scheduled()?originalStart.value:"";
+  registrationEnd.min=scheduled()?registrationStart.value:"";
+ }
  function refreshCalendar(){
   const active=calendar(),multi=calendarMode.value==="multi";
   calendarMode.disabled=!active;calendarEndWrap.hidden=!active||!multi;
@@ -530,7 +536,7 @@ html.school-embedded{background:transparent}html.school-embedded body{max-width:
   document.getElementById("calendarDateLabel").textContent=multi?"開始日期":"活動日期";
   calendarHint.textContent=multi?"結束日期須晚於開始日期。":"單日只需填活動日期。";
   const first=new Date(calendarDate.value+"T00:00:00Z");
-  if(multi&&Number.isFinite(first.getTime())){first.setUTCDate(first.getUTCDate()+1);calendarEnd.min=first.toISOString().slice(0,10)}else calendarEnd.min="";
+  if(active&&multi&&Number.isFinite(first.getTime())){first.setUTCDate(first.getUTCDate()+1);calendarEnd.min=first.toISOString().slice(0,10)}else calendarEnd.min="";
  }
  function syncValues(){
   if(!scheduled())return;
@@ -541,6 +547,7 @@ html.school-embedded{background:transparent}html.school-embedded body{max-width:
    originalStart.value=date.value?date.value+"T"+(start.value||"00:00"):"";
    originalEnd.value=date.value?date.value+"T"+(end.value||"00:00"):"";
   }
+  refreshRangeBounds();
  }
  function refresh(){
   if(dinner())mode.value="single";
@@ -549,10 +556,12 @@ html.school-embedded{background:transparent}html.school-embedded body{max-width:
   single.hidden=!one;start.closest("label").hidden=dateOnly;end.closest("label").hidden=dateOnly;
   range.hidden=!dateOnly||one;startWrap.hidden=dateOnly||one;endWrap.hidden=dateOnly||one;
   hint.textContent=dateOnly?one?"單日活動：只需選擇活動日期。":"跨日活動：請設定開始與結束日期。":one?"單日活動：設定日期與開始、結束時間。":"跨日活動：請分別設定開始與結束日期時間。";
+  refreshRangeBounds();
  }
  function fromStored(){
   if(calendar())calendarMode.value=calendarEnd.value&&calendarEnd.value!==calendarDate.value?"multi":"single";
   refreshCalendar();
+  refreshRangeBounds();
   if(!scheduled()){mode.disabled=true;return}
   const a=originalStart.value,b=originalEnd.value;
   date.value=a.slice(0,10);rangeStart.value=a.slice(0,10);rangeEnd.value=b.slice(0,10);
@@ -572,6 +581,8 @@ html.school-embedded{background:transparent}html.school-embedded body{max-width:
  calendarMode.addEventListener("change",()=>{if(!calendar())return;if(calendarMode.value==="single")calendarEnd.value="";refreshCalendar()});
  for(const event of ["input","change"])calendarDate.addEventListener(event,refreshCalendar);
  for(const input of [date,start,end,rangeStart,rangeEnd])for(const event of ["input","change"])input.addEventListener(event,syncValues);
+ for(const input of [originalStart,registrationStart])for(const event of ["input","change"])input.addEventListener(event,refreshRangeBounds);
+ for(const input of [rangeEnd,originalEnd,registrationEnd])input.addEventListener("focus",refreshRangeBounds);
  module.addEventListener("change",()=>queueMicrotask(fromStored));activity.addEventListener("change",()=>queueMicrotask(fromStored));window.addEventListener("activityDatesLoaded",fromStored);
  form.addEventListener("submit",e=>{
   if(calendar()){
@@ -581,6 +592,7 @@ html.school-embedded{background:transparent}html.school-embedded body{max-width:
   }
   if(!scheduled())return;
   syncValues();
+  if(registrationStart.value&&registrationEnd.value&&registrationEnd.value<registrationStart.value){e.preventDefault();e.stopImmediatePropagation();alert("報名結束時間不得早於報名開始時間。");return}
   if(mode.value==="single"&&!trip()&&date.value&&start.value&&end.value&&end.value<=start.value){e.preventDefault();e.stopImmediatePropagation();alert("單日活動的結束時間必須晚於開始時間；跨午夜活動請選擇跨日。");return}
   if(trip()&&(!originalStart.value||!originalEnd.value||originalEnd.value<originalStart.value)){e.preventDefault();e.stopImmediatePropagation();alert("請設定有效的活動日期；跨日活動的結束日期不能早於開始日期。")}
  },true);
