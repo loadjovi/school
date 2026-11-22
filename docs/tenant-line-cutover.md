@@ -9,7 +9,7 @@
 | 設定前綴 | 逐校設定項 |
 |---|---|
 | `LINE_<SCHOOL_ID>_` | `CHANNEL_SECRET`、`CHANNEL_ACCESS_TOKEN`、`LOGIN_CHANNEL_ID`、`LOGIN_CHANNEL_SECRET`、`APP_ORIGIN`、`PARENT_RICH_MENU_ID`、`STAFF_RICH_MENU_ID` |
-| `LINE_<SCHOOL_ID>_` | `FEE_COLLECTIONS_ENABLED=true` 開放收費專案。`PAYMENT_NOTIFICATIONS_ENABLED=true` 開放 LINE 核帳私訊。 |
+| `LINE_<SCHOOL_ID>_` | `PAYMENT_NOTIFICATIONS_ENABLED=true` 開放 LINE 核帳私訊。LAB 獨立收費專案 DEMO 已移除；日常核帳使用團服與活動原流程。 |
 | `ACS_EMAIL_<SCHOOL_ID>_` | `CONNECTION_STRING`、`SENDER` 選擇寄件服務與地址。`APP_URL` 可指定學校登入入口。`ENABLED=false` 停用此校對外郵件。 |
 
 - 每校使用自己的 LINE 官方帳號。同一校的 Messaging API 與 LINE Login Channel 放在同一個 LINE Provider，並在 LINE Login 連結該校官方帳號。

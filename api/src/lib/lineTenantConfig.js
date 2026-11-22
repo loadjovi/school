@@ -4,7 +4,8 @@ import {defaultTenantId, getTenantDirectory, tenantSchoolPartition} from "./stor
 import {lineApi} from "./lineMessaging.mjs";
 
 const partitionKey = "line";
-const buildEnablesDemoFees = false;
+const buildEnablesLabPaymentNotifications = false;
+const buildDisablesLabFeeProjects = false;
 const schoolRow = schoolId => `school-${schoolId}`;
 const fingerprint = value => createHash("sha256").update(value).digest("hex");
 
@@ -31,12 +32,12 @@ function httpsOrigin(value) {
   } catch { return ""; }
 }
 
-function labDemoFeesEnabled(schoolId) {
-  return buildEnablesDemoFees && process.env.LAB_ENVIRONMENT === "functional-uat" && schoolId === defaultTenantId();
+function labPaymentNotificationsEnabled(schoolId) {
+  return buildEnablesLabPaymentNotifications && process.env.LAB_ENVIRONMENT === "functional-uat" && schoolId === defaultTenantId();
 }
 
 export function tenantFeeEnabled(schoolId) {
-  if (labDemoFeesEnabled(schoolId)) return true;
+  if (buildDisablesLabFeeProjects && process.env.LAB_ENVIRONMENT === "functional-uat") return false;
   const prefix = "LINE_" + tenantSchoolPartition(schoolId).replaceAll("-", "_").toUpperCase();
   return process.env[prefix + "_FEE_COLLECTIONS_ENABLED"] === "true";
 }
@@ -48,7 +49,7 @@ function credentials(schoolId, legacy = false) {
   const appOrigin = httpsOrigin(setting("APP_ORIGIN"));
   const paymentNotifications = setting("PAYMENT_NOTIFICATIONS_ENABLED");
   const isolatedPaymentFlow = paymentNotifications === "true" ||
-    (!paymentNotifications && !legacy && labDemoFeesEnabled(schoolId));
+    (!paymentNotifications && !legacy && labPaymentNotificationsEnabled(schoolId));
   const loginFingerprint = !legacy && /^\d{6,20}$/.test(loginId) && loginSecret && appOrigin
     ? fingerprint(JSON.stringify([loginId, loginSecret, appOrigin])) : "";
   return {

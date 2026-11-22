@@ -255,8 +255,7 @@ async function syncOwnLineMenu(button){
 function tenantServicesEntry(){
   const me=state.me, options=me?.capabilities||{};
   if(!["admin","parent","unassigned"].includes(me?.role)||!["home","admin","uniformEvents"].includes(state.page))return "";
-  const demoFees=typeof document!=="undefined"&&document.documentElement?.hasAttribute?.("data-line-uat-fees")===true;
-  const billing=options.feeCollections&&me.role!=="unassigned"&&!demoFees;
+  const billing=options.feeCollections&&me.role!=="unassigned";
   if(me.role==="admin"){
     if(state.page!=="admin"||state.teacherAdminOpen||window.__roleLoaderActive&&window.__roleModulesReady!==true)return "";
     const fees=billing?`<section class="aw-home-service" data-admin-service="fees" data-admin-group="home" aria-labelledby="schoolFeeServicesTitle"><a class="aw-job-link" href="/fee-collections.html"><span class="aw-job-icon" aria-hidden="true">💰</span><span class="aw-job-copy"><b id="schoolFeeServicesTitle">收費與核帳</b><small>${options.financeVerifier===true?'核對匯款、處理補款與退費':'管理收費專案、查看繳費進度'}</small></span></a></section>`:"";

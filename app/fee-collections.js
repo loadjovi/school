@@ -1,6 +1,5 @@
 import "./payment-resolution.js?v=20261122-single-parent-message";
 const accountOnly=document.documentElement.hasAttribute("data-line-account");
-const demoFeePage=!accountOnly&&document.documentElement.hasAttribute("data-line-uat-fees");
 const legacyLineEntry=!accountOnly&&(location.hash==="#lineBinding"||new URLSearchParams(location.search).has("line_link")||new URLSearchParams(location.search).has("line_error"));
 if(legacyLineEntry)location.replace("/line-account.html"+location.search+"#lineBinding");
 const $=id=>document.getElementById(id);
@@ -9,19 +8,6 @@ const money=value=>Number.isSafeInteger(Number(value))?`NT$ ${Number(value).toLo
 const dateTime=value=>value?new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"}):"—";
 const projectLabels={TEAM_T:"團 T",YEAR_END_DINNER:"期末聚餐"},projectStatuses={DRAFT:"草稿",OPEN:"開放繳費",CLOSED:"已結束"},paymentStatuses={ADJUSTMENT_REQUIRED:"待補差額，流程暫停",SUPPLEMENT_REPORTED:"已補款，待核帳",REFUND_REQUESTED:"待財務退款",REFUNDED:"已退款作廢",AWAITING_TRANSFER:"待匯款",REPORTED_UNVERIFIED:"已回報，待核帳",VERIFIED:"已確認入帳",NOT_REQUIRED:"無須繳費",SOURCE_MISSING:"來源資料遺失"};
 const state={me:null,projects:[],templates:[],activities:[],line:null,busy:false};
-
-function renderFeePageIdentity(){
-  if(demoFeePage){
-    document.title="LAB 收費專案驗證（DEMO）";
-    $("roleTitle").textContent="LAB 收費專案驗證（DEMO）";
-    $("roleIntro").textContent="測試用收費專案；實際團服／活動核帳請使用原財務流程。";
-  }else if(state.me){
-    $("roleTitle").textContent=accountOnly?"LINE 通知設定":state.me.role==="admin"?"收費專案與匯款核帳":"繳費與核帳紀錄";
-    $("roleIntro").textContent=state.me.schoolName||"";
-  }
-  const financeLink=$("originalFinanceLink");
-  if(financeLink)financeLink.hidden=!(demoFeePage&&state.me?.role==="admin"&&state.me.capabilities?.financeVerifier===true);
-}
 
 function headers(){
   const token=sessionStorage.getItem("google_id_token")||"",school=sessionStorage.getItem("school_context_id")||"",role=sessionStorage.getItem("role_context")||"";
@@ -86,9 +72,7 @@ async function showGoogleLink(){
 function renderAdminCreate(){
   if(state.me?.role!=="admin"){$("adminCreate").innerHTML="";return}
   const accounts=state.templates.filter(item=>item.active===true),activities=state.activities;
-  const fixtureButton=demoFeePage&&state.me.capabilities?.financeVerifier
-    ? '<button type="button" class="secondary" data-action="seed-demo-fee">建立 DEMO 收費測試資料</button>' : '';
-  $("adminCreate").innerHTML=`<div class="card"><h2>＋ 建立收費專案</h2>${fixtureButton}<div class="steps"><span>1 建立草稿</span><span>2 同步收費對象</span><span>3 財務開放繳費</span></div><form id="projectForm"><div class="row"><div><label>專案類型</label><select name="kind" id="projectKind"><option value="TEAM_T">團 T</option><option value="YEAR_END_DINNER">期末聚餐</option></select></div><div><label>專案名稱</label><input name="title" maxlength="100" placeholder="例如：115 學年度第二次團 T 加購" required></div></div><div class="row"><div><label>繳費期限</label><input name="dueDate" type="date" required></div><div><label>收款帳戶</label><select name="accountTemplateId" required><option value="">請選擇</option>${accounts.map(item=>`<option value="${esc(item.id)}">${esc(item.label)}｜${esc(item.bankName)} ${esc(item.accountNumber.slice(-4))}</option>`).join("")}</select></div></div><div id="activityField" class="hidden"><label>對應期末聚餐活動</label><select name="activityId"><option value="">請選擇活動</option>${activities.map(item=>`<option value="${esc(item.activityId)}">${esc(item.title)}</option>`).join("")}</select></div><label>家長繳費說明</label><textarea name="instructions" maxlength="1000" placeholder="例如：請於期限內完成匯款，並回填帳號末五碼。"></textarea><div class="actions"><button type="submit" ${accounts.length?"":"disabled"}>建立草稿</button></div>${accounts.length?"":`<div class="notice warn">目前沒有啟用中的收款帳戶，請先至「團服與活動 → 匯款帳戶」建立。</div>`}</form></div>`;
+  $("adminCreate").innerHTML=`<div class="card"><h2>＋ 建立收費專案</h2><div class="steps"><span>1 建立草稿</span><span>2 同步收費對象</span><span>3 財務開放繳費</span></div><form id="projectForm"><div class="row"><div><label>專案類型</label><select name="kind" id="projectKind"><option value="TEAM_T">團 T</option><option value="YEAR_END_DINNER">期末聚餐</option></select></div><div><label>專案名稱</label><input name="title" maxlength="100" placeholder="例如：115 學年度第二次團 T 加購" required></div></div><div class="row"><div><label>繳費期限</label><input name="dueDate" type="date" required></div><div><label>收款帳戶</label><select name="accountTemplateId" required><option value="">請選擇</option>${accounts.map(item=>`<option value="${esc(item.id)}">${esc(item.label)}｜${esc(item.bankName)} ${esc(item.accountNumber.slice(-4))}</option>`).join("")}</select></div></div><div id="activityField" class="hidden"><label>對應期末聚餐活動</label><select name="activityId"><option value="">請選擇活動</option>${activities.map(item=>`<option value="${esc(item.activityId)}">${esc(item.title)}</option>`).join("")}</select></div><label>家長繳費說明</label><textarea name="instructions" maxlength="1000" placeholder="例如：請於期限內完成匯款，並回填帳號末五碼。"></textarea><div class="actions"><button type="submit" ${accounts.length?"":"disabled"}>建立草稿</button></div>${accounts.length?"":`<div class="notice warn">目前沒有啟用中的收款帳戶，請先至「團服與活動 → 匯款帳戶」建立。</div>`}</form></div>`;
   const kind=$("projectKind"),toggle=()=>{$("activityField").classList.toggle("hidden",kind.value!=="YEAR_END_DINNER")};kind.addEventListener("change",toggle);toggle();
   $("projectForm").addEventListener("submit",createProject);
 }
@@ -182,13 +166,13 @@ async function requestCorrection(event){
 
 async function loadProjects(){const data=await api("fee-collections/projects");state.projects=data.items||[];state.activities=data.dinnerActivities||state.activities;renderProjects()}
 async function load(){
-  renderFeePageIdentity();
   try{
     state.me=await api("me");
     if(!["admin","parent","unassigned","teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me.role))throw new Error("請切換至此校已授權的身分。");
     $("siteName").textContent=state.me.systemName||state.me.schoolName||"學校平台";
+    $("roleTitle").textContent=accountOnly?"LINE 通知設定":state.me.role==="admin"?"收費專案與匯款核帳":"繳費與核帳紀錄";
+    $("roleIntro").textContent=state.me.schoolName||"";
     const billing=!accountOnly&&state.me.capabilities?.feeCollections===true&&state.me.role!=="unassigned";
-    renderFeePageIdentity();
     const [line,templates,projects]=await Promise.all([
       accountOnly&&state.me.capabilities?.lineAccount===true?api("line/school-account"):null,
       billing&&state.me.role==="admin"?api("uniform-events/payment-account-templates"):null,
@@ -218,11 +202,6 @@ document.addEventListener("click",async event=>{
   if(action==="reopen")return mutateProject(target.dataset.id,"REOPEN");
   target.disabled=true;
   try{
-    if(action==="seed-demo-fee"){
-      await api("sop-lab/line-uat-fee-fixture",{method:"POST"});
-      await load();
-      showStatus("已準備 DEMO 虛構收款帳戶及期末聚餐報名。請勿實際匯款。");
-    }
     if(action==="link-line"){
       const {url}=await api("line/tenant-login/"+encodeURIComponent(state.me.schoolId)+"/start",{
         method:"POST",body:JSON.stringify({mode:"link"})

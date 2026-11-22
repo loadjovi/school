@@ -83,7 +83,7 @@ test("a transfer reported or amount changed during notification setup prevents a
 });
 test("LAB approval notices follow the isolated school's payment flag and honor an explicit disable",()=>{
  const env={LAB_ENVIRONMENT:"functional-uat"},school="school-a";
- const raw=read("lineTenantConfig.js").replace('const buildEnablesDemoFees = false;','const buildEnablesDemoFees = true;').replace(/^import .*;\n/gm,"").replace(/^export /gm,"");
+ const raw=read("lineTenantConfig.js").replace('const buildEnablesLabPaymentNotifications = false;','const buildEnablesLabPaymentNotifications = true;').replace(/^import .*;\n/gm,"").replace(/^export /gm,"");
  const credentials=runInNewContext(raw+';credentials',{process:{env},URL,defaultTenantId:()=>school,tenantSchoolPartition:value=>value,createHash});
  assert.equal(credentials(school).paymentRequestLineEnabled,true);assert.equal(credentials("school-b").paymentRequestLineEnabled,false);
  env.LINE_SCHOOL_A_PAYMENT_NOTIFICATIONS_ENABLED="false";assert.equal(credentials(school).paymentRequestLineEnabled,false);

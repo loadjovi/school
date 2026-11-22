@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 const source=readFileSync(new URL("../app/school-admin-workspace.js",import.meta.url),"utf8"),origin="https://school.example.invalid";
-function harness({capabilities={lineAccount:true,feeCollections:true},sessionSchool="school-a",demo=false}={}){
+function harness({capabilities={lineAccount:true,feeCollections:true},sessionSchool="school-a"}={}){
  const workspaceServices=runInNewContext(source.slice(source.indexOf(" const workspaceServices="),source.indexOf(" const accountTasks="))+";workspaceServices",{});
  const opens=[],errors=[],indicators={},frames={},rootClicks=[],messages=[],session=new Map(sessionSchool?[["school_context_id",sessionSchool]]:[]);
  const state={page:"admin",adminWorkspaceSection:"home",me:{role:"admin",email:"admin@example.test",schoolId:"school-a",capabilities},master:[{studentId:"one"}],registrations:[{id:"pending"}]};
@@ -14,7 +14,7 @@ function harness({capabilities={lineAccount:true,feeCollections:true},sessionSch
  }
  const line=frame("awLineServiceFrame","about:blank"),fees=frame("awFeesServiceFrame","about:blank"),uniform=frame("awUniformFrame","/uniform-event-admin.html?embedded=school");
  let uniformClick;uniform.item.contentDocument={getElementById:id=>({value:id==="configModule"?"calendarActivity":"competition"}),addEventListener(type,handler){if(type==="click")uniformClick=handler}};
- const document={documentElement:{hasAttribute:name=>demo&&name==='data-line-uat-fees'},getElementById:id=>frames[id],querySelector:selector=>{const key=selector.includes('"line"')?"line":"fees";return indicators[key]||=( {hidden:true})},addEventListener(type,handler){if(type==="click")rootClicks.push(handler)}};
+ const document={getElementById:id=>frames[id],querySelector:selector=>{const key=selector.includes('"line"')?"line":"fees";return indicators[key]||=( {hidden:true})},addEventListener(type,handler){if(type==="click")rootClicks.push(handler)}};
  const scopeKey=()=>state.me.email+"|"+state.me.schoolId;
  const window={openSchoolAdminWorkspace:async group=>{opens.push(group);state.adminWorkspaceSection=group},addEventListener(type,handler){if(type==="message")messages.push(handler)}};
  const context={window,document,state,workspaceServices,scopeKey,sessionStorage:{getItem:key=>session.get(key)||"",setItem:(key,value)=>session.set(key,value)},URL,URLSearchParams,location:{origin},toast:value=>errors.push(value),api(){throw Error("return must not initialize APIs")},render(){throw Error("return must not rebuild app")},go(){throw Error("return must not reload app")}};
@@ -56,9 +56,8 @@ test("service routes preserve feature gates, the verified school and safe destin
  const implicit=harness({sessionSchool:""});assert.equal(await implicit.window.openSchoolAdminService("line"),true);assert.equal(implicit.session.get("school_context_id"),"school-a");
  const mismatched=harness({sessionSchool:"other-school"});assert.equal(await mismatched.window.openSchoolAdminService("line"),false);assert.equal(mismatched.line.assignments.length,0);
 });
-test("the explicit DEMO project tool is limited to LAB finance verifiers and still returns without reloading",async()=>{
- const denied=harness({demo:true});assert.equal(await denied.window.openSchoolAdminService('fees'),false);assert.equal(denied.fees.assignments.length,0);
- const finance=harness({demo:true,capabilities:{feeCollections:true,financeVerifier:true}});assert.equal(await finance.window.openSchoolAdminService('fees'),true);finance.message('fees',{type:'school-service-return'});assert.equal(finance.opens.at(-1),'home');assert.equal(finance.fees.assignments.length,1);
+test("a disabled fee project cannot be reopened by a finance verifier",async()=>{
+ const h=harness({capabilities:{feeCollections:false,financeVerifier:true}});assert.equal(await h.window.openSchoolAdminService('fees'),false);assert.equal(h.fees.assignments.length,0);assert.equal(h.opens.length,0);
 });
 test("only the active service from the same origin, frame, identity and school can return or resize",async()=>{
  const h=harness();await h.window.openSchoolAdminService("line");

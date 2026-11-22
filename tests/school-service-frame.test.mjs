@@ -82,6 +82,6 @@ test('both HTML pages load the scoped bridge while preserving their business mod
  const line=read('app/line-announcement.html'),fees=read('app/fee-collections.html'),css=read('app/school-service-frame.css');
  for(const html of [line,fees]){assert.match(html,/school-service-frame\.js\?v=20261123-service-return" defer/);assert.match(html,/school-service-frame\.css\?v=20261123-service-return/)}
  assert.match(line,/id="backLink" href="\/"/);assert.match(fees,/id="feePlatformBack" class="back" href="\/"/);
- assert.match(line,/type="module" src="\/line-announcement\.js\?v=20261122-simple-group-routing/);assert.match(fees,/type="module" src="\/fee-collections\.js\?v=20261122-single-parent-message/);
+ assert.match(line,/type="module" src="\/line-announcement\.js\?v=20261122-simple-group-routing/);assert.match(fees,/type="module" src="\/fee-collections\.js\?v=\d{8}-[a-z0-9-]+/);
  assert.match(css,/html\.school-service-embedded body>header/);assert.match(css,/#functional-uat-banner/);assert.doesNotMatch(css,/#roleTitle/);
 });

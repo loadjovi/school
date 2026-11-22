@@ -158,7 +158,7 @@ test("the named LINE UAT enables Sacred Heart finance transfer and parent confir
   const config = source.replace(/^import .+;$/gm,"").replace(/^export /gm,"");
   const env = {LAB_ENVIRONMENT:"functional-uat"};
   const get = (builtForLineUat) => runInNewContext(
-    config.replace("const buildEnablesDemoFees = false;", "const buildEnablesDemoFees = " + builtForLineUat + ";") + ";credentials",
+    config.replace("const buildEnablesLabPaymentNotifications = false;", "const buildEnablesLabPaymentNotifications = " + builtForLineUat + ";") + ";credentials",
     {process:{env},defaultTenantId,URL}
   );
   const namedLab = get(true), defaultLab = get(false);

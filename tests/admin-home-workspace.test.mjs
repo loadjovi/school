@@ -7,10 +7,10 @@ function jobs(capabilities={}){
  const start=source.indexOf(" const shortcuts="),end=source.indexOf(" const guideTasks=",start);
  return runInNewContext(source.slice(start,end)+";homeJobs",{state:{me:{capabilities}}});
 }
-function services(capabilities={},extra={},demo=false){
+function services(capabilities={},extra={}){
  const state={me:{role:"admin",capabilities},page:"admin",...extra};
  const start=app.indexOf("function tenantServicesEntry()"),end=app.indexOf("async function renderLogin(",start);
- const context={state,window:{},api(){},document:{documentElement:{hasAttribute:name=>demo&&name==='data-line-uat-fees'}},sessionStorage:{}};
+ const context={state,window:{},api(){},document:{},sessionStorage:{}};
  const render=runInNewContext(app.slice(start,end)+";tenantServicesEntry",context);
  return {render,state,window:context.window};
 }
@@ -34,12 +34,11 @@ test("no admin service is exposed during role bootstrap, on another admin page o
  const h=services({feeCollections:true,lineAccount:true});h.window.__roleLoaderActive=true;assert.equal(h.render(),"");h.window.__roleModulesReady=true;assert.match(h.render(),/aw-job-link/);
  h.state.page="students";assert.equal(h.render(),"");h.state.page="admin";h.state.teacherAdminOpen=true;assert.equal(h.render(),"");
 });
-test("LAB fee projects are removed from ordinary admin and parent entry points, while LINE remains available",()=>{
- const cap={feeCollections:true,lineAccount:true,financeVerifier:true},admin=services(cap,{},true);
+test("disabled fee projects do not produce admin or parent navigation entries while LINE remains available",()=>{
+ const cap={feeCollections:false,lineAccount:true,financeVerifier:true},admin=services(cap);
  assert.doesNotMatch(admin.render(),/data-admin-service="fees"|收費與核帳/);assert.match(admin.render(),/data-admin-service="line"/);
- const parent=services(cap,{me:{role:"parent",capabilities:cap},page:"home"},true);
+ const parent=services(cap,{me:{role:"parent",capabilities:cap},page:"home"});
  assert.doesNotMatch(parent.render(),/fee-collections.html/);assert.match(parent.render(),/line-account.html/);
- assert.match(services(cap).render(),/data-admin-service="fees"/,'explicitly enabled non-DEMO schools retain their existing project module');
 });
 test("the real finance shortcut is shown only to finance verifiers and uses the original application review flow",async()=>{
  assert.doesNotMatch(jobs()(true),/data-admin-todo="finance"/);
@@ -48,7 +47,7 @@ test("the real finance shortcut is shown only to finance verifiers and uses the 
  runInNewContext(source.slice(start,end),{document:{addEventListener:(_event,fn)=>{handler=fn},getElementById:()=>frame},window:{openSchoolAdminWorkspace:async group=>calls.push(group)},encodeURIComponent,toast:message=>{throw Error(message)}});
  await handler({preventDefault(){},target:{closest:()=>({dataset:{adminTodo:"finance"},hasAttribute:()=>false})}});
  assert.deepEqual(calls,["uniformAdmin"]);assert.match(frame.src,/uniform-event-admin.html\?embedded=school.*task=finance/);assert.doesNotMatch(frame.src,/fee-collections/);
- assert.match(source,/data-workspace-service-entry="fees" data-demo-fee-entry hidden>LAB 收費專案驗證（DEMO）/);
+ assert.doesNotMatch(source,/data-demo-fee-entry|LAB 收費專案驗證（DEMO）|data-workspace-service-entry/);
 });
 test("existing service nodes move once into the same common-job grid, and own LINE binding remains available in More",()=>{
  const start=source.indexOf("  const serviceHost=root.querySelector("),end=source.indexOf("  for(const [selector,visible]",start),nodes=[{dataset:{adminService:"fees"}},{dataset:{adminService:"line"}}],binding={hidden:true};let moves=0;

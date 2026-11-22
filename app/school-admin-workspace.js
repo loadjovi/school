@@ -176,8 +176,7 @@
  const inScope=()=>typeof state!=='undefined'&&state.me?.role==='admin'&&state.page==='admin'&&!state.teacherAdminOpen&&!window.__roleModuleBootstrap&&!(window.__roleLoaderActive&&window.__roleModulesReady!==true);
  function schoolServiceAllowed(service){
   const capabilities=state.me?.capabilities||{};
-  const demoFees=document.documentElement?.hasAttribute?.('data-line-uat-fees')===true;
-  return state.me?.role==='admin'&&(service==='fees'?!!capabilities.feeCollections&&(!demoFees||capabilities.financeVerifier===true):service==='line'?!!(capabilities.lineRoleMenus||capabilities.lineAccount):false);
+  return state.me?.role==='admin'&&(service==='fees'?!!capabilities.feeCollections:service==='line'?!!(capabilities.lineRoleMenus||capabilities.lineAccount):false);
  }
  function serviceEntryUrl(service,href){
   const config=workspaceServices[service];if(!config||!schoolServiceAllowed(service))return null;
@@ -325,7 +324,7 @@
    root.innerHTML=`<div class="aw-heading"><div><small>學校後台</small><h1></h1><p></p></div><button type="button" class="aw-workspace-back" data-workspace-group="home" hidden>返回工作首頁</button></div>
    <div class="aw-home"><section class="aw-home-section" aria-labelledby="awDailyTitle"><h2 id="awDailyTitle">常用工作</h2><div class="aw-shortcuts aw-primary-jobs">${homeJobs(true)}</div></section><section class="aw-home-section" aria-labelledby="awManagementTitle"><h2 id="awManagementTitle">查詢與管理</h2><div class="aw-shortcuts aw-management-jobs">${homeJobs(false)}</div></section><details class="aw-onboarding"><summary>第一次使用？查看操作引導</summary><p>選一項工作，跟著提示操作。</p><div class="aw-guide-choices">${Object.entries(guideTasks).map(([key,[label]])=>`<button type="button" data-admin-guide="${key}">${label}</button>`).join('')}</div><button type="button" data-admin-guide-skip>收合說明</button></details></div>
    <section class="aw-todos" aria-label="目前待辦"><div class="section-title"><div class="aw-todo-heading"><h2>待辦事項</h2><small>點選一項即可處理</small></div><button type="button" data-admin-todo-reload>更新</button></div><div data-todo-body></div></section>
-   <div class="aw-more"><div class="aw-choice-list"><button type="button" data-workspace-group="records">操作紀錄 ›</button><button type="button" data-workspace-group="settings">平台設定 ›</button><button type="button" data-workspace-action="help">使用說明 ›</button><button type="button" data-admin-guide-reopen>重新查看入門引導 ›</button><a href="/line-account.html" data-aw-line-binding hidden>我的 LINE 綁定</a><a href="/fee-collections.html" data-workspace-service-entry="fees" data-demo-fee-entry hidden>LAB 收費專案驗證（DEMO）</a><button type="button" data-admin-logout>登出</button></div></div>
+   <div class="aw-more"><div class="aw-choice-list"><button type="button" data-workspace-group="records">操作紀錄 ›</button><button type="button" data-workspace-group="settings">平台設定 ›</button><button type="button" data-workspace-action="help">使用說明 ›</button><button type="button" data-admin-guide-reopen>重新查看入門引導 ›</button><a href="/line-account.html" data-aw-line-binding hidden>我的 LINE 綁定</a><button type="button" data-admin-logout>登出</button></div></div>
    <section class="aw-courses aw-course-task-picker" aria-labelledby="awCourseTaskTitle"><span class="aw-attendance-kicker">課務工作入口</span><h2 id="awCourseTaskTitle">今天要處理哪一項？</h2><p>選擇工作後，只會顯示需要操作的內容。</p><div class="aw-course-boundary"><b>這裡只管理課程與訓練</b><span>演出日期、比賽當天、快閃、校際交流與聯演，請到「團服與活動 → 活動設定」。</span></div><div class="aw-course-task-grid"><button type="button" data-course-work="fixed"><span class="aw-course-task-icon">📅</span><span><b>固定課表</b><small>匯入、預覽與正式啟用</small></span><span aria-hidden="true">›</span></button><button type="button" data-course-work="exceptions"><span class="aw-course-task-icon">🛑</span><span><b>停課／復課</b><small>選課程與日期，保留異動紀錄</small></span><span aria-hidden="true">›</span></button><button type="button" data-course-work="merge"><span class="aw-course-task-icon">🎼</span><span><b>單日分部併班</b><small>老師請假時安排接課分部</small></span><span aria-hidden="true">›</span></button><button type="button" data-course-work="addEvent"><span class="aw-course-task-icon">➕</span><span><b>新增訓練課程</b><small>比賽加練、寒訓、暑訓（可多天）</small></span><span aria-hidden="true">›</span></button><button type="button" data-course-work="manageEvents"><span class="aw-course-task-icon">🗓️</span><span><b>管理訓練行事曆</b><small>點名、取消／恢復與老師工時</small></span><span aria-hidden="true">›</span></button></div></section>
    ${Object.entries(workspaceServices).map(([service,config])=>`<section class="aw-service" data-workspace-service="${service}" hidden><p class="notice" data-service-loading="${service}" role="status" hidden>正在讀取${config.title}…</p><iframe id="${config.frameId}" title="${config.title}" src="about:blank" loading="lazy" scrolling="no"></iframe></section>`).join('')}
    <section class="aw-uniform" hidden><div class="aw-uniform-frame-wrap"><iframe id="awUniformFrame" title="團服與活動管理" loading="lazy" src="about:blank"></iframe></div></section><section class="aw-learning-workspace" hidden><div class="aw-learning-switcher"><span class="aw-learning-kicker">學習資料入口</span><h2>要查看哪一種資料？</h2><p>學期總覽用來掌握 20 分完成度；月報用來追蹤自主練習天數、分鐘與逐日內容。</p><div class="aw-learning-tabs" role="tablist" aria-label="成績與練習檢視"><button type="button" role="tab" data-learning-work="overview"><span class="aw-learning-icon">📊</span><span><b>學期成績總覽</b><small>自主練習 10＋點名 5＋學習表現 5</small></span></button><button type="button" role="tab" data-learning-work="practice"><span class="aw-learning-icon">📚</span><span><b>自主練習月報</b><small>每月天數、分鐘、未達標與逐日明細</small></span></button></div></div><div class="aw-learning-overview aw-semester-scores"><div class="aw-learning-context"><b>學期 20 分總覽</b><span>適合確認全體學生分數是否完成、篩選待補資料及匯出 CSV。</span></div><iframe id="awSemesterScoresFrame" title="全體學生學期 20 分成績" loading="lazy" src="about:blank"></iframe></div><div class="aw-learning-practice" hidden></div></section><div class="aw-private-lookup" hidden></div>
@@ -349,9 +348,7 @@
   }
   const guide=document.getElementById('adminTaskGuide');if(guide){if(guide.nextElementSibling!==root)guide.after(root)}else if(main.firstElementChild!==root)main.prepend(root);
   const text=(selector,value)=>{const n=root.querySelector(selector);if(n.textContent!==String(value))n.textContent=String(value)};
-  const demoFees=document.documentElement?.hasAttribute?.('data-line-uat-fees')===true;
-  text('h1',group==='feeCollections'&&demoFees?'LAB 收費專案驗證（DEMO）':groups[group][0]);text('.aw-heading p',group==='feeCollections'&&demoFees?'測試用收費專案；日常核帳請到團服與活動。':groups[group][1]);
-  root.querySelector('[data-demo-fee-entry]').hidden=!(demoFees&&schoolServiceAllowed('fees'));
+  text('h1',groups[group][0]);text('.aw-heading p',groups[group][1]);
   root.querySelector('.aw-workspace-back').hidden=group==='home';
   const serviceHost=root.querySelector('.aw-primary-jobs');
   for(const service of main.querySelectorAll('[data-admin-service]'))if(service.parentElement!==serviceHost)serviceHost.append(service);
@@ -512,8 +509,8 @@
  });
  document.addEventListener('click',event=>{
   if(event.defaultPrevented||event.button>0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
-  const link=event.target.closest?.('[data-admin-service] a[href],[data-workspace-service-entry][href]');if(!link||link.hasAttribute('download')||link.target==='_blank')return;
-  const service=link.closest('[data-admin-service]')?.dataset.adminService||link.dataset.workspaceServiceEntry;
+  const link=event.target.closest?.('[data-admin-service] a[href]');if(!link||link.hasAttribute('download')||link.target==='_blank')return;
+  const service=link.closest('[data-admin-service]')?.dataset.adminService;
   if(!serviceEntryUrl(service,link.href))return;
   event.preventDefault();window.openSchoolAdminService(service,link.href).catch(error=>toast('功能開啟失敗：'+error.message));
  });

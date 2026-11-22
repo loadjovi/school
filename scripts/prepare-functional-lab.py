@@ -208,13 +208,11 @@ def prepare(output: Path, *, line_uat: bool = False) -> None:
         todo_notifications.write_text(current.replace(marker,"const buildEnablesLabAdminTodos = true;"),encoding="utf-8")
         config=lib/"lineTenantConfig.js"
         current=config.read_text(encoding="utf-8")
-        marker="const buildEnablesDemoFees = false;"
-        if marker not in current:raise RuntimeError("DEMO fee flag has changed")
-        config.write_text(current.replace(marker,"const buildEnablesDemoFees = true;"),encoding="utf-8")
-        shutil.copyfile(ROOT/"scripts"/"line-uat-fee-fixture.js",fn_dir/"lineUatFeeFixture.js")
+        for marker in ("const buildEnablesLabPaymentNotifications = false;", "const buildDisablesLabFeeProjects = false;"):
+            if marker not in current:raise RuntimeError("LAB payment notification or fee-project flag has changed")
+            current=current.replace(marker,marker.replace("false;","true;"))
+        config.write_text(current,encoding="utf-8")
         for filename,attribute in (
-            ("index.html","data-line-uat-fees"),
-            ("fee-collections.html","data-line-uat-fees"),
             ("uniform-event-admin.html","data-line-uat-finance-retry"),
         ):
             page=app/filename
