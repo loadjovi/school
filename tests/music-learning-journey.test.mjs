@@ -44,7 +44,7 @@ function browserModel(){
  const ctx={state,today:()=>"2026-10-31",workflow:x=>x.workflowStatus,teacherLabel:x=>x.teacherName,
    esc:x=>String(x??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[ch])),
    Date,Math};
- vm.createContext(ctx);
+ ctx.window=ctx;vm.createContext(ctx);
  vm.runInContext(code+"\nthis.result={currentWeeklyLearningGoals,weeklyGoalsParentPanel,learningJourneyParentPanel}",ctx);
  return {state,methods:ctx.result};
 }

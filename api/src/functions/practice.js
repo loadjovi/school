@@ -3,6 +3,7 @@ import { getTenantContext, ensureStudentAccess, getStudentIdAliases, json } from
 import { ensureTenantTables, table, listByStudent, tenantStudentPartition, activityStudentId } from "../lib/storage.js";
 import { groupPracticeRows, practiceDayTotals, practiceSessionKey, practiceSessionId, PRACTICE_QUALIFIED_MINUTES } from "../lib/practiceRecords.js";
 import {readWeeklyGoals,isPublishedLesson,withinGoalWindow} from "../lib/musicLearningGoals.mjs";
+import {notifyPrivatePractice} from "../lib/privatePracticeNotification.js";
 function minutesBetween(start,end){
   const [sh,sm]=String(start||"").split(":").map(Number),[eh,em]=String(end||"").split(":").map(Number);
   if([sh,sm,eh,em].some(Number.isNaN))return -1;
@@ -56,7 +57,7 @@ app.http("practice",{methods:["GET","POST","DELETE"],authLevel:"anonymous",route
   const dayRows=(await Promise.all(aliases.map(id=>listByStudent("practice",id,body.practiceDate,body.practiceDate,schoolId)))).flat();
   const existing=dayRows.find(x=>practiceSessionKey(x)===sessionKey);
   const existingDailyMinutes=practiceDayTotals(dayRows).get(body.practiceDate)||0;
-  if(existing)return json({ok:true,duplicate:true,practiceId:existing.rowKey,studentId:canonicalStudentId,minutes:existing.minutes,dailyMinutes:existingDailyMinutes,qualified:existingDailyMinutes>=PRACTICE_QUALIFIED_MINUTES});
+  if(existing)return json({ok:true,duplicate:true,practiceId:existing.rowKey,studentId:canonicalStudentId,minutes:existing.minutes,dailyMinutes:existingDailyMinutes,qualified:existingDailyMinutes>=PRACTICE_QUALIFIED_MINUTES,practiceNotification:existing.weeklyGoalLessonId?await notifyPrivatePractice(schoolId,existing):undefined});
   let linkedGoal=null;
   if(body.weeklyGoal!=null){
     const lessonId=String(body.weeklyGoal?.lessonId||"").trim(),index=Number(body.weeklyGoal?.index);
@@ -71,20 +72,23 @@ app.http("practice",{methods:["GET","POST","DELETE"],authLevel:"anonymous",route
       return json({error:"練習建議不屬於此學生，或已超過 14 天使用期間"},400);
     const goals=readWeeklyGoals(lesson.weeklyPracticeGoalsJson);
     if(!goals[index])return json({error:"老師練習建議已不存在，請重新選擇"},400);
-    linkedGoal={lessonId,lessonDate:String(lesson.eventDate),text:goals[index]};
+    if(body.weeklyGoal.text!=null&&body.weeklyGoal.text!==goals[index])return json({error:"老師已更新練習建議，請重新整理後選擇"},409);
+    linkedGoal={lessonId,lessonDate:String(lesson.eventDate),text:goals[index],index,teacher:String(lesson.teacher||"").trim().toLowerCase()};
   }
   const practiceId=practiceSessionId(schoolId,canonicalStudentId,body);
   const qualified=minutes>=PRACTICE_QUALIFIED_MINUTES;
   const dailyMinutes=existingDailyMinutes+minutes,dailyQualified=dailyMinutes>=PRACTICE_QUALIFIED_MINUTES;
   await ensureTenantTables();
-  try{
-    await table("tenantPractice").createEntity({
+  const entity={
       partitionKey:tenantStudentPartition(schoolId,canonicalStudentId),rowKey:practiceId,schoolId,studentId:canonicalStudentId,eventDate:body.practiceDate,
       startTime:body.startTime,endTime:body.endTime,minutes,qualified,
       practiceContent:String(body.practiceContent||"").slice(0,500),focus:String(body.focus||"").slice(0,100),
       weeklyGoalText:linkedGoal?.text||"",weeklyGoalLessonDate:linkedGoal?.lessonDate||"",weeklyGoalLessonId:linkedGoal?.lessonId||"",
+      weeklyGoalIndex:linkedGoal?.index??-1,weeklyGoalTeacher:linkedGoal?.teacher||"",
       confirmed:true,createdBy:a.email,createdAt:new Date().toISOString()
-    });
-  }catch(e){if(e.statusCode!==409)throw e;return json({ok:true,duplicate:true,practiceId,studentId:canonicalStudentId,minutes,dailyMinutes,qualified:dailyQualified})}
-  return json({ok:true,practiceId,studentId:canonicalStudentId,minutes,dailyMinutes,qualified:dailyQualified},201);
+    };
+  try{await table("tenantPractice").createEntity(entity)}
+  catch(e){if(e.statusCode!==409)throw e;const stored=await table("tenantPractice").getEntity(entity.partitionKey,practiceId);return json({ok:true,duplicate:true,practiceId,studentId:canonicalStudentId,minutes,dailyMinutes,qualified:dailyQualified,practiceNotification:stored.weeklyGoalLessonId?await notifyPrivatePractice(schoolId,stored):undefined})}
+  const practiceNotification=linkedGoal?await notifyPrivatePractice(schoolId,entity):undefined;
+  return json({ok:true,practiceId,studentId:canonicalStudentId,minutes,dailyMinutes,qualified:dailyQualified,practiceNotification},201);
 }});

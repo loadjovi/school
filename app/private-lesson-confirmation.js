@@ -84,6 +84,21 @@
   function weeklyGoalsFromEditor(scope){
     return [0,1,2].map(i=>document.getElementById(scope+"WeeklyGoal_"+i)?.value?.trim()||"").filter(Boolean);
   }
+  function teacherGoalPracticePanel(x){
+    if(!Array.isArray(x.weeklyPracticeGoals)||!x.weeklyPracticeGoals.some(Boolean))return "";
+    return `<details id="goalPractice_${lessonDomKey(x.lessonId)}" style="margin-top:12px;border:1px solid #dce6e2;border-radius:10px;padding:12px" ontoggle="loadPrivateGoalPractice(this,'${esc(x.studentId)}','${esc(x.lessonId)}')"><summary style="cursor:pointer;min-height:44px;align-content:center;font-weight:800">🎯 查看課後練習進度</summary><div data-goal-practice-body><p class="muted">展開後查看家長打卡紀錄。</p></div><button type="button" class="secondary" style="min-height:44px" onclick="loadPrivateGoalPractice(this.closest('details'),'${esc(x.studentId)}','${esc(x.lessonId)}',true)">更新練習進度</button></details>`;
+  }
+  window.loadPrivateGoalPractice=async function(details,studentId,lessonId,force=false){
+    if(!details?.open||details.dataset.loading||details.dataset.loaded&&!force)return;
+    const body=details.querySelector("[data-goal-practice-body]");if(!body)return;
+    const actor=String(state.me?.schoolId||"")+":"+String(state.me?.email||"");details.dataset.loading="true";body.textContent="正在讀取練習進度…";
+    try{
+      const result=await api(`/api/private-lesson-practice?studentId=${encodeURIComponent(studentId)}&lessonId=${encodeURIComponent(lessonId)}`);
+      if(details.isConnected===false||actor!==String(state.me?.schoolId||"")+":"+String(state.me?.email||""))return;
+      body.innerHTML=`<p class="muted">家長已回報 ${Number(result.totalSessions||0)} 次・${Number(result.totalMinutes||0)} 分鐘${result.lastPracticeDate?"・最近 "+esc(result.lastPracticeDate):""}</p>${(result.goals||[]).map(goal=>`<div class="item"><div><b>${esc(goal.text)}</b><small>${Number(goal.practiceCount||0)} 次・${Number(goal.minutes||0)} 分鐘${goal.lastPracticeDate?"｜最近 "+esc(goal.lastPracticeDate):""}</small></div><span class="badge ${goal.practiceCount?"ok":"warn"}">${goal.practiceCount?"有練習紀錄":"尚無紀錄"}</span></div>`).join("")}${result.records?.length?`<details><summary style="cursor:pointer;min-height:44px;align-content:center">查看每次打卡</summary>${result.records.map(row=>`<div class="item" style="display:block"><b>${esc(row.practiceDate)}｜${Number(row.minutes||0)} 分鐘</b><small>有練習：${esc(row.goalText)}</small><small>${esc(row.practiceContent||"")}</small></div>`).join("")}</details>`:""}<p class="muted">僅表示已回報練習，不代表已熟練。</p>`;details.dataset.loaded="true";
+    }catch(error){if(details.isConnected!==false&&actor===String(state.me?.schoolId||"")+":"+String(state.me?.email||""))body.textContent="讀取失敗："+error.message+"，請按更新重試。"}
+    finally{delete details.dataset.loading}
+  };
   function teacherLessonHeader(x,badge){
     const st=currentStudentMeta(x.studentId),meta=studentMetaLine(x.studentId),expanded=String(state.expandedPrivateLessonId||"")===String(x.lessonId);
     return `<div class="private-student-card-head" onclick="toggleTeacherPrivateLesson('${esc(x.lessonId)}')">
@@ -183,7 +198,7 @@
 
     if(w==="awaiting_parent"||w==="completed"){
       const k=lessonDomKey(x.lessonId);
-      action+=weeklyGoalEditor(x,"published_"+k)+`<button class="secondary" style="width:100%;margin-top:8px" onclick="savePublishedWeeklyGoals('${esc(x.studentId)}','${esc(x.lessonId)}')">💾 更新本週練習建議</button>`;
+      action+=teacherGoalPracticePanel(x)+weeklyGoalEditor(x,"published_"+k)+`<button class="secondary" style="width:100%;margin-top:8px" onclick="savePublishedWeeklyGoals('${esc(x.studentId)}','${esc(x.lessonId)}')">💾 更新本週練習建議</button>`;
     }
 
     const editBanner=expanded?`<div class="private-editing-banner">✏️ 目前操作：<b>${esc(currentStudentName(x.studentId))}</b>${studentMetaLine(x.studentId)?`｜${esc(studentMetaLine(x.studentId))}`:""}</div>`:"";
@@ -401,11 +416,26 @@
     if(!lesson)return `<section class="card"><h2>🎯 個課老師本週練習建議</h2><div class="notice">老師尚未設定本週練習建議。仍可正常自主練習、登記時間，不影響成績。</div></section>`;
     const goals=lesson.weeklyPracticeGoals.map((goal,index)=>({goal:String(goal||"").trim(),index})).filter(g=>g.goal);
     return `<section class="card" id="weeklyPracticeGoals"><h2>🎯 個課老師本週建議練什麼？</h2>
-      <div class="notice">來源：${esc(teacherLabel(lesson))}｜${esc(lesson.lessonDate)} 個課；本週可依建議練習。選擇一項後，本次打卡會記錄練習對應目標（選填，不影響練習分數）。${lesson.lessonContent?`<div style="margin-top:6px">📖 上次個課內容：${esc(lesson.lessonContent)}</div>`:""}</div>
-      ${goals.map(({goal,index})=>`<label class="check" style="margin:10px 0;padding:10px;border:1px solid #dce6e2;border-radius:10px"><input type="radio" name="weeklyGoalChoice" data-goal-lesson="${esc(lesson.lessonId)}" data-goal-index="${index}"><span>${esc(goal)}</span></label>`).join("")}
-      <label class="check" style="margin:8px 0"><input type="radio" name="weeklyGoalChoice" checked><span>這次練習其他內容（不指定老師目標）</span></label>
+      <div class="notice">${esc(teacherLabel(lesson))}｜${esc(lesson.lessonDate)}<br>點選建議，自動帶入下方內容；送出打卡後通知老師。</div>
+      ${goals.map(({goal,index})=>{const count=(state.practice||[]).filter(row=>row.weeklyGoalLessonId===lesson.lessonId&&row.weeklyGoalText===goal).length;return `<label class="check" style="margin:10px 0;padding:10px;border:1px solid #dce6e2;border-radius:10px"><input type="radio" name="weeklyGoalChoice" data-goal-lesson="${esc(lesson.lessonId)}" data-goal-index="${index}" data-goal-text="${esc(goal)}" onchange="selectWeeklyPracticeGoal(this)"><span>${esc(goal)}${count?`<small style="display:block">本月已記錄 ${count} 次</small>`:""}</span></label>`}).join("")}
+      <label class="check" style="margin:8px 0"><input type="radio" name="weeklyGoalChoice" onchange="selectWeeklyPracticeGoal(this)" checked><span>這次練習其他內容</span></label>
     </section>`;
   }
+  window.selectWeeklyPracticeGoal=function(input){
+    const content=document.getElementById("pContent"),focus=document.getElementById("pFocus"),hint=document.getElementById("practiceGoalSelection");if(!content)return;
+    const previous=content.dataset.goalLine||"",lines=String(content.value||"").split("\n");
+    const manual=previous?lines.filter(line=>line!==previous).join("\n"):String(content.value||"");
+    const goal=String(input?.dataset?.goalText||"");
+    if(goal){
+      const line="有練習："+goal;content.value=line+(manual?"\n"+manual:"");content.dataset.goalLine=line;
+      if(focus){if(!focus.dataset.goalPreviousFocus)focus.dataset.goalPreviousFocus=focus.value;if(![...focus.options].some(option=>option.value==="個課老師建議")){const option=document.createElement("option");option.value="個課老師建議";option.textContent="個課老師建議";focus.append(option)}focus.value="個課老師建議"}
+      if(hint){hint.hidden=false;hint.textContent="已對應老師建議；送出打卡後才記錄並通知老師。"}
+    }else{
+      content.value=manual;delete content.dataset.goalLine;
+      if(focus){if(focus.value==="個課老師建議")focus.value=focus.dataset.goalPreviousFocus||"音階／基本功";delete focus.dataset.goalPreviousFocus}
+      if(hint){hint.hidden=true;hint.textContent=""}
+    }
+  };
   function learningJourneyParentPanel(){
     if(state.me?.role!=="parent"||!state.student)return "";
     const lesson=currentWeeklyLearningGoals();
@@ -421,7 +451,7 @@
       <div class="muted">將個課老師建議與自主練習紀錄連起來。這是練習追蹤，不代表已達成老師評量或更動學期成績。</div>
       ${latest}${recent}</section>`;
   }
-  const basePracticePage=practicePage;practicePage=function(){return weeklyGoalsParentPanel()+basePracticePage()};
+  const basePracticePage=practicePage;practicePage=function(){return weeklyGoalsParentPanel()+basePracticePage().replace('<textarea id="pContent" rows="3"></textarea>','<textarea id="pContent" rows="3" placeholder="選擇上方建議，或填寫今天練習的內容"></textarea><p id="practiceGoalSelection" class="notice" role="status" aria-live="polite" hidden></p>')};
   const baseHome=home;home=function(){return window.privateLessonParentPanels("home")+baseHome()};
   const baseRecordPage=recordPage;recordPage=function(){const html=baseRecordPage();if(state.me?.role!=="parent")return html;const score=typeof window.parentSemesterScorePanel==="function"?window.parentSemesterScorePanel():"";return html+score+window.privateLessonParentPanels("record")+learningJourneyParentPanel()};
 
@@ -531,4 +561,17 @@
   const baseGo=go;go=async function(p){if((p==="private"&&teacherAccount())||(state.me?.role==="parent"&&["home","record"].includes(p)))await loadPrivateLessons();const result=await baseGo(p);startPrivatePoll();return result};
   if(state.me?.role==="parent"&&state.student)loadPrivateLessons().then(()=>{render();startPrivatePoll()}).catch(()=>{});
   if(teacherAccount())startPrivatePoll();
+  if(teacherAccount()&&typeof location!=="undefined"){
+    const query=new URLSearchParams(location.search),lessonId=query.get("practiceLesson"),studentId=query.get("practiceStudent");
+    if(lessonId&&studentId)(async()=>{
+      const actor=String(state.me?.schoolId||"")+":"+String(state.me?.email||"");
+      await window.ensureRoleModules?.();
+      if(!teacherAccount()||actor!==String(state.me?.schoolId||"")+":"+String(state.me?.email||""))return;
+      await go("private");
+      if(!teacherAccount()||actor!==String(state.me?.schoolId||"")+":"+String(state.me?.email||""))return;
+      const lesson=(state.privateLessons||[]).find(row=>row.lessonId===lessonId&&String(row.studentId)===studentId);if(!lesson)return;
+      state.showPrivateHistory=true;state.showPrivateParentWaiting=true;state.expandedPrivateLessonId=lessonId;render();
+      setTimeout(()=>{if(actor!==String(state.me?.schoolId||"")+":"+String(state.me?.email||""))return;const detail=document.getElementById("goalPractice_"+lessonDomKey(lessonId));if(detail){detail.open=true;window.loadPrivateGoalPractice(detail,studentId,lessonId);detail.scrollIntoView({block:"start"})}},0);
+    })().catch(error=>toast("練習進度暫時無法開啟："+error.message));
+  }
 })();

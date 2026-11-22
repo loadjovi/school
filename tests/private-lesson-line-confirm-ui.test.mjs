@@ -30,7 +30,7 @@ test("parent lesson summary keeps content and review safe, with notification met
 
 test("only the waiting parent card exposes the teacher's LINE resend action",()=>{
  const context={state:{expandedPrivateLessonId:"lesson1"},prefersLine:()=>false,workflow:x=>x.workflowStatus,workflowClass:{},workflowText:{},
-  needsLessonCatchup:()=>false,lessonDomKey:x=>x,currentStudentName:()=>"測試學生",studentMetaLine:()=>"",weeklyGoalEditor:()=>"",teacherLessonHeader:()=>"",lessonSummary:()=>"",esc};
+  needsLessonCatchup:()=>false,lessonDomKey:x=>x,currentStudentName:()=>"測試學生",studentMetaLine:()=>"",weeklyGoalEditor:()=>"",teacherGoalPracticePanel:()=>"",teacherLessonHeader:()=>"",lessonSummary:()=>"",esc};
  const row=runInNewContext(part('  function teacherLessonRow(x){','  window.toggleTeacherPrivateLesson=')+';teacherLessonRow',context);
  assert.match(row({lessonId:"lesson1",studentId:"student1",workflowStatus:"awaiting_parent"}),/重發完課 LINE 通知/);
  assert.doesNotMatch(row({lessonId:"lesson1",studentId:"student1",workflowStatus:"completed"}),/重發完課 LINE 通知/);

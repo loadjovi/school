@@ -372,6 +372,7 @@ async function savePractice(){
   const selectedGoal=document.querySelector('input[name="weeklyGoalChoice"]:checked');
   if(selectedGoal?.dataset.goalLesson){
     body.weeklyGoal={lessonId:selectedGoal.dataset.goalLesson,index:Number(selectedGoal.dataset.goalIndex)};
+    if(selectedGoal.dataset.goalText)body.weeklyGoal.text=selectedGoal.dataset.goalText;
   }
   const button=document.getElementById("savePracticeBtn");
   practiceSaving=true;
