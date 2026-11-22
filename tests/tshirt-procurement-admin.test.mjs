@@ -5,17 +5,17 @@ import {runInNewContext} from "node:vm";
 import * as model from "../app/tshirt-procurement-plan.mjs";
 function harness(failure="",{holdRequests=false}={}){
  const nodes=new Map(),node=id=>{
-  if(!nodes.has(id))nodes.set(id,{id,value:"",hidden:false,disabled:false,options:[],handlers:{},dataset:{},addEventListener(k,fn){this.handlers[k]=fn},replaceChildren(...children){this.options=children;this.innerHTML=""},add(option){this.options.push(option)},append(){}});
+  if(!nodes.has(id))nodes.set(id,{id,value:"",hidden:false,disabled:false,options:[],children:[],handlers:{},dataset:{},setAttribute(){},addEventListener(k,fn){this.handlers[k]=fn},replaceChildren(...children){this.options=children;this.children=children;this.innerHTML=""},add(option){this.options.push(option)},append(...children){this.children.push(...children)}});
   return nodes.get(id);
  };
- let csv="",getCount=0,releaseRequests,heldSignal;const held=new Promise(resolve=>{heldSignal=resolve});
+ const posts=[];let csv="",getCount=0,releaseRequests,heldSignal;const held=new Promise(resolve=>{heldSignal=resolve});
  const bodies={"student-master":{items:[{studentId:"111001",studentName:"學生甲",groupName:"C",status:"active"}]},"uniform-events/tshirt-historical-size":{items:[{studentId:"111001",historicalIssued:false,size:"10"}]},"uniform-events/requests":{items:[]},"uniform-events/inventory":{items:model.TSHIRT_PLAN_SIZES.map(size=>({key:"regular:"+size,onHand:0,reserved:0,unavailable:0}))},"uniform-events/parent-loans?view=procurement":{items:[],canVerifyFinance:false},"uniform-events/parent-loans":{items:[]},"uniform-events/tshirt-purchase-orders":{items:[]},"student-parent-links":{items:[]}};
  const window={uniformEventAuthHeaders:()=>({"X-School-Id":"school-a"}),addEventListener(){},dispatchEvent(){}};
- const scope={...model,window,CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail}},document:{getElementById:node,querySelectorAll:()=>[],querySelector:()=>null,createElement:tag=>({tagName:tag.toUpperCase(),textContent:"",className:"",type:"",disabled:false,children:[],handlers:{},append(...children){this.children.push(...children)},addEventListener(k,fn){this.handlers[k]=fn},click(){},download:"",href:""})},Option:class{constructor(text,value){this.text=text;this.value=value}},Intl,Date,AbortController,setTimeout,clearTimeout,crypto:{randomUUID:()=>"123e4567-e89b-42d3-a456-426614174000"},Blob:class{constructor(parts){this.value=parts.join("")}},URL:{createObjectURL:blob=>{csv=blob.value;return "test-blob"},revokeObjectURL(){}},fetch:async(path,options)=>{getCount++;assert.equal(options.cache,"no-store");assert.equal(options.headers["X-School-Id"],"school-a");const key=path.replace("/api/","");return {ok:key!==failure,status:key===failure?500:200,json:async()=>{if(key==="uniform-events/requests"&&holdRequests){holdRequests=false;const snapshot=structuredClone(bodies[key]);heldSignal();await new Promise(resolve=>{releaseRequests=resolve});return snapshot}return key===failure?{error:"讀取失敗"}:bodies[key]}}},console};
+ const scope={...model,window,confirm:()=>true,prompt:()=>"取消測試",CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail}},document:{getElementById:node,querySelectorAll:()=>[],querySelector:()=>null,createElement:tag=>({tagName:tag.toUpperCase(),textContent:"",className:"",type:"",disabled:false,children:[],handlers:{},setAttribute(){},append(...children){this.children.push(...children)},addEventListener(k,fn){this.handlers[k]=fn},click(){},download:"",href:""})},Option:class{constructor(text,value){this.text=text;this.value=value}},Intl,Date,AbortController,setTimeout,clearTimeout,crypto:{randomUUID:()=>"123e4567-e89b-42d3-a456-426614174000"},Blob:class{constructor(parts){this.value=parts.join("")}},URL:{createObjectURL:blob=>{csv=blob.value;return "test-blob"},revokeObjectURL(){}},fetch:async(path,options)=>{getCount++;assert.equal(options.cache,"no-store");assert.equal(options.headers["X-School-Id"],"school-a");const key=path.replace("/api/","");if(options.method==="POST"){const body=JSON.parse(options.body);posts.push(body);return {ok:true,status:200,json:async()=>({item:{id:body.requestKey||body.id,orderNumber:"T-TEST",totalQuantity:10,links:body.links||[]}})}}return {ok:key!==failure,status:key===failure?500:200,json:async()=>{if(key==="uniform-events/requests"&&holdRequests){holdRequests=false;const snapshot=structuredClone(bodies[key]);heldSignal();await new Promise(resolve=>{releaseRequests=resolve});return snapshot}return key===failure?{error:"讀取失敗"}:bodies[key]}}},console};
  const source=readFileSync(new URL("../app/tshirt-procurement-admin.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"");
  runInNewContext(source+"\nthis.ui={load,draw};",scope);
  node("tshirtPlanYear").value=115;node("tshirtPlanSemester").value=1;
- return {node,bodies,load:scope.ui.load,csv:()=>csv,getCount:()=>getCount,held,releaseRequests:()=>releaseRequests()};
+ return {node,bodies,posts,load:scope.ui.load,csv:()=>csv,getCount:()=>getCount,held,releaseRequests:()=>releaseRequests()};
 }
 test("procurement view loads all authoritative sources and exports exactly the visible plan",async()=>{
  const h=harness();await h.load();assert.equal(h.getCount(),8);assert.equal(h.node("exportTshirtPlan").disabled,false);assert.match(h.node("tshirtPlanMetrics").innerHTML,/學生首次公費/);assert.match(h.node("tshirtPlanOrderTotal").textContent,/規劃採購 1 件/);
@@ -67,4 +67,21 @@ test("a verification update during an older procurement read queues one fresh re
  order.paymentStatus="VERIFIED";await h.load();await h.load();h.releaseRequests();await first;
  assert.equal(h.getCount(),16);assert.match(h.node("tshirtPlanOrderTotal").textContent,/規劃採購 1 件/);assert.match(h.node("tshirtPlanDetailRows").innerHTML,/已入帳，已列入採購需求/);
  assert.doesNotMatch(h.node("tshirtPlanWarnings").innerHTML,/尚未列入採購/);
+});
+
+
+test("confirming a planned master order includes paid parents and no individual procurement writes",async()=>{
+ const h=harness();h.bodies["uniform-events/tshirt-historical-size"].items[0].historicalIssued=true;
+ h.bodies["uniform-events/requests"].items=[{id:"paid",etag:"request-etag",kind:"regularUniform",studentId:"111001",size:"S",quantity:1,status:"APPROVED",paymentStatus:"VERIFIED",createdAt:"2026-11-21T00:00:00Z"},{id:"unpaid",kind:"regularUniform",studentId:"111001",size:"S",quantity:1,status:"APPROVED",paymentStatus:"AWAITING_TRANSFER",createdAt:"2026-11-21T00:00:00Z"}];
+ await h.load();h.node("tshirtPlanSizeRows").handlers.change({target:{dataset:{planExtra:"S"},value:"9",setCustomValidity(){}}});
+ await h.node("confirmTshirtPurchaseOrder").handlers.click();assert.equal(h.posts.length,1);assert.equal(h.posts[0].action,"CREATE");assert.deepEqual(JSON.parse(JSON.stringify(h.posts[0].links)),[{type:"REQUEST",id:"paid",etag:"request-etag"}]);
+});
+test("saved orders expose one whole-order receipt and an explicit opt-in for previously arrived parent applications",async()=>{
+ const h=harness();h.bodies["uniform-events/tshirt-historical-size"].items[0].historicalIssued=true;
+ h.bodies["uniform-events/requests"].items=[{id:"legacy",etag:"legacy-etag",kind:"regularUniform",studentId:"111001",size:"S",quantity:1,status:"READY_FOR_PICKUP",paymentStatus:"VERIFIED",createdAt:"2026-11-21T00:00:00Z"}];
+ h.bodies["uniform-events/tshirt-purchase-orders"].items=[{id:"po",etag:"po-etag",orderNumber:"T-EXISTING",schoolYear:115,semester:1,status:"ORDERED",createdAt:"2026-11-21T00:00:00Z",totalQuantity:10,items:[{size:"S",quantity:10}],links:[]}];
+ await h.load();const descendants=node=>(node.children||[]).flatMap(child=>[child,...descendants(child)]),nodes=descendants(h.node("tshirtPurchaseOrders"));
+ const check=nodes.find(x=>x.type==="checkbox");assert.equal(check.checked,false);
+ const form=nodes.find(x=>x.className==="tshirt-order-receive");assert.ok(form);const children=descendants(form),date=children.find(x=>x.type==="date"),note=children.find(x=>x.tagName==="TEXTAREA");note.value="十件外觀與尺碼無誤";
+ await form.handlers.submit({preventDefault(){}});assert.equal(h.posts.length,1);assert.equal(h.posts[0].action,"RECEIVE");assert.equal(h.posts[0].id,"po");assert.equal(h.posts[0].etag,"po-etag");assert.equal(h.posts[0].receivedDate,date.value);assert.equal(h.posts[0].note,note.value);
 });

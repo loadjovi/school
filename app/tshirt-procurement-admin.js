@@ -1,11 +1,11 @@
 import "./payment-resolution.js?v=20261122-single-parent-message";
-import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv,tshirtPurchaseOrderCsv} from "./tshirt-procurement-plan.mjs?v=20261117-auto-procurement";
+import {TSHIRT_PLAN_SIZES,STAFF_CATEGORIES,currentTshirtTerm,buildTshirtProcurementPlan,tshirtPlanCsv,tshirtPurchaseOrderCsv,tshirtOrderCandidates} from "./tshirt-procurement-plan.mjs?v=20261122-master-orders";
 const $=id=>document.getElementById(id);
 const term=currentTshirtTerm();
 let data=null,plan=null,loading=false,reloadRequested=false,canVerifyFinance=false,links=[],extraBySize={},revision=0,canCreateOrder=false,purchaseOrderRequestKey="";
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function call(path,options={}){
- const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),20000);
+ const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),options.method==="POST"?90000:20000);
  try{
   const r=await fetch("/api/"+path,{credentials:"same-origin",cache:"no-store",...options,signal:controller.signal,headers:{"Content-Type":"application/json",...(window.uniformEventAuthHeaders?.()||{})}});
   const body=await r.json().catch(()=>({}));if(!r.ok)throw Error(body.error||"HTTP "+r.status);return body;
@@ -17,24 +17,52 @@ function downloadOrder(order){
  const csv=tshirtPurchaseOrderCsv(order),url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})),a=document.createElement("a");
  a.href=url;a.download=`${order.orderNumber}_廠商訂購表.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+const orderLabels={ORDERED:"待到貨",RECEIVING:"驗收待完成",RECEIVED:"已整單到貨／入庫",CANCELLED:"已取消"};
+const openOrders=new Set(),pendingOrderIds=new Set();
+let creatingOrder=false;
+function orderFeedback(result){return result.syncPending?"採購單已儲存，部分需求或通知待同步，請按「重新同步需求／通知」。":"採購單、需求與庫存已同步。"}
+async function orderAction(order,payload,button,message){
+ if(pendingOrderIds.has(order.id))return;pendingOrderIds.add(order.id);
+ button.disabled=true;message.textContent="處理中，請稍候…";
+ try{
+  const result=await call("uniform-events/tshirt-purchase-orders",{method:"POST",body:JSON.stringify({id:order.id,etag:order.etag,...payload})});
+  $("tshirtPurchaseOrderFeedback").textContent=orderFeedback(result);window.dispatchEvent(new CustomEvent("tshirtPurchaseOrdersChanged"));await load();
+ }catch(error){message.textContent="結果待確認："+error.message+"。請重新讀取同張採購單核對，不需另建新單。";button.disabled=false}finally{pendingOrderIds.delete(order.id)}
+}
 function drawOrders(){
  const host=$("tshirtPurchaseOrders"),orders=(data?.purchaseOrders||[]).filter(x=>Number(x.schoolYear)===plan.term.schoolYear&&Number(x.semester)===plan.term.semester);host.replaceChildren();
  if(!orders.length){host.textContent="本學期尚未建立採購單。";return}
  for(const order of orders){
-  const card=document.createElement("details");card.className="tshirt-purchase-order";
-  const summary=document.createElement("summary");summary.textContent=`${order.orderNumber}｜${order.status==="ORDERED"?"已建立／待到貨":"已取消"}｜${order.totalQuantity} 件｜${displayTime(order.createdAt)}`;card.append(summary);
+  const card=document.createElement("details");card.className="tshirt-purchase-order";card.open=openOrders.has(order.id);card.addEventListener("toggle",()=>{if(card.open)openOrders.add(order.id);else openOrders.delete(order.id)});
+  const summary=document.createElement("summary");summary.textContent=`${order.orderNumber}｜${orderLabels[order.status]||order.status}｜${order.totalQuantity} 件｜${displayTime(order.createdAt)}`;card.append(summary);
   const detail=document.createElement("p");detail.textContent=(order.items||[]).map(x=>`${x.size} × ${x.quantity}`).join("、")+(order.pendingUnknownUnits?`；另有 ${order.pendingUnknownUnits} 件待填尺寸，未列入此單`:"");card.append(detail);
-  const creator=document.createElement("p");creator.textContent=`建立人：${order.createdBy||"—"}`;card.append(creator);
+  const linked=document.createElement("p");linked.textContent=`已整合 ${(order.links||[]).length} 筆需求；其餘為首次公費或備貨庫存。`;card.append(linked);
+  if(order.links?.length){const list=document.createElement("details"),title=document.createElement("summary");title.textContent="查看本單需求";list.append(title);for(const link of order.links){const row=document.createElement("p");row.textContent=`${link.name}｜${link.type==="REQUEST"?"家長加購":"幹部／志工"}｜${link.size} × ${link.quantity}`+(link.legacyReceipt?"｜先前已入庫，僅整合紀錄":"");list.append(row)}card.append(list)}
   const exportButton=document.createElement("button");exportButton.type="button";exportButton.textContent="匯出廠商訂購表 CSV";exportButton.addEventListener("click",()=>downloadOrder(order));card.append(exportButton);
+  const message=document.createElement("p");message.setAttribute("role","status");
   if(order.status==="ORDERED"){
-   const cancel=document.createElement("button");cancel.type="button";cancel.className="secondary";cancel.textContent="取消這張採購單";cancel.addEventListener("click",async()=>{
-    const reason=prompt(`取消 ${order.orderNumber}：請填寫原因`);if(!reason?.trim())return;
-    if(!confirm(`確定取消 ${order.orderNumber}？取消後這些尺碼會重新列回尚需採購。`))return;
-    cancel.disabled=true;try{await call("uniform-events/tshirt-purchase-orders",{method:"POST",body:JSON.stringify({action:"CANCEL",id:order.id,etag:order.etag,reason:reason.trim()})});await load()}catch(error){alert("取消採購單失敗："+error.message);cancel.disabled=false}
-   });card.append(cancel);
+   const candidates=tshirtOrderCandidates(data,order,{legacy:true});
+   if(candidates.length){
+    const section=document.createElement("details"),title=document.createElement("summary"),form=document.createElement("form"),hint=document.createElement("p"),checks=[];
+    section.className="tshirt-order-link";title.textContent="整合待採購／舊申請";hint.textContent="僅勾選屬於這張採購單的需求。已到貨申請請先核對同一批貨；確認後不會重複入庫。";section.append(title,hint);
+    for(const x of candidates){const label=document.createElement("label"),check=document.createElement("input"),text=document.createElement("span");check.type="checkbox";check.checked=x.selected;text.textContent=`${x.name}｜${x.parts.map(p=>p.size+" × "+p.quantity).join("、")}`+(x.includeReceived?"｜已到貨／領取，核對後才勾選":x.status==="ORDERED"?"｜舊個別採購":"｜待採購");label.append(check,text);form.append(label);checks.push([check,x])}
+    const save=document.createElement("button");save.type="submit";save.textContent="確認納入這張採購單";form.append(save);form.addEventListener("submit",async e=>{e.preventDefault();const selected=checks.filter(([check])=>check.checked).map(([,x])=>({type:x.type,id:x.id,etag:x.etag,includeReceived:x.includeReceived}));if(!selected.length){message.textContent="請先勾選需求。";return}if(!confirm("確認這些需求屬於 "+order.orderNumber+"？先前已入庫件數將抵扣本單入庫數量。"))return;await orderAction(order,{action:"LINK",links:selected},save,message)});section.append(form);card.append(section);
+   }
+  }
+  if(["ORDERED","RECEIVING"].includes(order.status)){
+   const form=document.createElement("form"),date=document.createElement("input"),note=document.createElement("textarea"),save=document.createElement("button");form.className="tshirt-order-receive";
+   date.type="date";date.required=true;date.value=new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());note.required=true;note.maxLength=300;note.rows=2;
+   for(const [name,input] of [["整單到貨日期",date],["驗收備註",note]]){const label=document.createElement("label");label.textContent=name;label.append(input);form.append(label)}
+   save.type="submit";save.textContent="確認整單到貨並入庫";form.append(save);
+   form.addEventListener("submit",async e=>{e.preventDefault();if(!date.value||!note.value.trim())return;if(!confirm(`確認 ${order.orderNumber} 全部 ${order.totalQuantity} 件已到貨？將統一入庫、開放已整合家長領取並通知；先前已入庫的件數不重複增加。`))return;for(const control of [date,note,save])control.disabled=true;await orderAction(order,{action:"RECEIVE",receivedDate:date.value,note:note.value.trim()},save,message);for(const control of [date,note,save])control.disabled=false});card.append(form);
+  }
+  if(order.status==="RECEIVED"){const receipt=document.createElement("p");receipt.textContent=`到貨 ${order.receivedDate}｜本單 ${order.totalQuantity} 件：本次入庫 ${order.addedQuantity} 件、先前已入庫 ${order.creditedQuantity} 件。`;card.append(receipt)}
+  if(order.syncPending){const sync=document.createElement("button");sync.type="button";sync.textContent="重新同步需求／通知";sync.addEventListener("click",()=>orderAction(order,{action:"SYNC"},sync,message));card.append(sync)}
+  if(order.status==="ORDERED"&&!(order.links||[]).some(x=>x.legacyReceipt)){
+   const cancel=document.createElement("button");cancel.type="button";cancel.className="secondary";cancel.textContent="取消這張採購單";cancel.addEventListener("click",async()=>{const reason=prompt(`取消 ${order.orderNumber}：請填寫原因`);if(!reason?.trim()||!confirm("確認取消整張採購單？家長需求會回到待採購。"))return;await orderAction(order,{action:"CANCEL",reason:reason.trim()},cancel,message)});card.append(cancel);
   }
   if(order.status==="CANCELLED"&&order.cancelReason){const cancelled=document.createElement("p");cancelled.textContent=`取消原因：${order.cancelReason}`;card.append(cancelled)}
-  host.append(card);
+  card.append(message);host.append(card);
  }
 }
 function draw(){
@@ -100,7 +128,7 @@ function drawStaff(){
     form.addEventListener("submit",async e=>{e.preventDefault();if(!confirm(`確認已核對 ${x.parentName} 的實際入帳 NT$${x.amount}？`))return;await saveChange(x,{action:"VERIFY_DEMAND_PAYMENT",bankPostedDate:form.elements.date.value,paidAmount:Number(form.elements.amount.value),lastFive:form.elements.lastFive.value,note:form.elements.note.value},form.querySelector("button"))});card.append(form);
    }else{const hint=document.createElement("p");hint.textContent="請具財務權限人員展開此筆需求，核對實際入帳。";card.append(hint)}
   }
-  const next=resolutionHeld?[]:{APPROVED:x.category==="CADRE_FIRST"||x.paymentStatus==="VERIFIED"?[["ORDERED","標記已採購"],["CANCELLED","取消需求"]]:[["CANCELLED","取消需求"]],ORDERED:[["ARRIVED","標記已到貨"]],ARRIVED:[["FULFILLED","確認需求已處理完成"]]}[x.status]||[];
+  const next=resolutionHeld?[]:{APPROVED:x.purchaseOrderId?[]:[["CANCELLED","取消需求"]],ORDERED:[],ARRIVED:[["FULFILLED","確認需求已處理完成"]]}[x.status]||[];
   for(const [status,label] of next){const button=document.createElement("button");button.type="button";button.textContent=label;button.addEventListener("click",async()=>{
    const note=prompt(label+"：請填寫實際處理說明（這裡只更新需求進度；驗收、庫存與發放請依原流程另行登記）。");if(!note?.trim())return;
    await saveChange(x,{action:"UPDATE_DEMAND_STATUS",status,note:note.trim()},button);
@@ -125,16 +153,16 @@ for(const [id,supplierOnly] of [["exportTshirtPlan",false],["exportTshirtSupplie
  const a=document.createElement("a");a.href=url;a.download=`團T_${plan.term.schoolYear}_${plan.term.semester===1?"上":"下"}學期_${supplierOnly?"廠商尺碼表":"採購總表與明細"}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
 $("confirmTshirtPurchaseOrder").addEventListener("click",async()=>{
- if(!plan||!canCreateOrder)return;
+ if(!plan||!canCreateOrder||creatingOrder)return;
  const items=plan.sizes.filter(x=>Number.isSafeInteger(x.order)&&x.order>0).map(x=>({size:x.size,quantity:x.order}));
  const breakdown=items.map(x=>`${x.size} × ${x.quantity}`).join("、"),pending=plan.unknownUnits?`\n\n注意：另有 ${plan.unknownUnits} 件待填尺寸，本採購單暫不包含這些待填尺寸需求。`:"";
  if(!confirm(`確認將目前規劃轉成正式採購單？\n\n${breakdown}\n合計 ${plan.orderUnits} 件。${pending}\n\n建立後會列入「備貨待到貨」，避免重複下單。`))return;
- const button=$("confirmTshirtPurchaseOrder");button.disabled=true;$("tshirtPurchaseOrderFeedback").textContent="正在建立採購單…";
+ creatingOrder=true;const button=$("confirmTshirtPurchaseOrder");button.disabled=true;$("tshirtPurchaseOrderFeedback").textContent="正在建立採購單…";
  try{
   purchaseOrderRequestKey||=crypto.randomUUID();
-  const result=await call("uniform-events/tshirt-purchase-orders",{method:"POST",body:JSON.stringify({action:"CREATE",requestKey:purchaseOrderRequestKey,schoolYear:plan.term.schoolYear,semester:plan.term.semester,items,pendingUnknownUnits:plan.unknownUnits,acknowledgePendingSize:plan.unknownUnits>0,needUnits:plan.needUnits,extraUnits:plan.extraUnits,note:"由團 T 採購總表確認建立"})});
-  $("tshirtPurchaseOrderFeedback").textContent=`已建立 ${result.item.orderNumber}，共 ${result.item.totalQuantity} 件；可由下方匯出廠商訂購表。`;extraBySize={};purchaseOrderRequestKey="";await load();
- }catch(error){$("tshirtPurchaseOrderFeedback").textContent="建立採購單失敗："+error.message;button.disabled=false}
+  const result=await call("uniform-events/tshirt-purchase-orders",{method:"POST",body:JSON.stringify({action:"CREATE",requestKey:purchaseOrderRequestKey,schoolYear:plan.term.schoolYear,semester:plan.term.semester,items,links:tshirtOrderCandidates(data,{schoolYear:plan.term.schoolYear,semester:plan.term.semester,items}).map(x=>({type:x.type,id:x.id,etag:x.etag})),pendingUnknownUnits:plan.unknownUnits,acknowledgePendingSize:plan.unknownUnits>0,needUnits:plan.needUnits,extraUnits:plan.extraUnits,note:"由團 T 採購總表確認建立"})});
+  $("tshirtPurchaseOrderFeedback").textContent=`已建立 ${result.item.orderNumber}，共 ${result.item.totalQuantity} 件，納入 ${result.item.links?.length||0} 筆需求。${orderFeedback(result)}`;extraBySize={};purchaseOrderRequestKey="";openOrders.add(result.item.id);window.dispatchEvent(new CustomEvent("tshirtPurchaseOrdersChanged"));await load();
+ }catch(error){$("tshirtPurchaseOrderFeedback").textContent="建立採購單失敗："+error.message;button.disabled=false}finally{creatingOrder=false}
 });
 $("tshirtDemandCategory").addEventListener("change",()=>{const free=$("tshirtDemandCategory").value==="CADRE_FIRST";$("tshirtDemandQuantity").max=free?1:20;if(free)$("tshirtDemandQuantity").value=1});
 $("tshirtStaffDemandForm").addEventListener("submit",async e=>{

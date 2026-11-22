@@ -105,3 +105,13 @@ test("approval displays the actual LINE outcome independently of disabled LAB em
  assert.match(h.nodes.requests.innerHTML,/已核准，待家長匯款 NT\$ 400/);assert.match(h.nodes.requests.innerHTML,/LAB 未對外寄送 Email/);
  assert.match(h.nodes.requests.innerHTML,/原申請人尚未綁定本校 LINE/);assert.doesNotMatch(h.nodes.requests.innerHTML,/LINE 已受理|LINE 已送達/);
 });
+
+
+test("paid shirt requests point to the master procurement view while existing stock and actual issuance keep their own actions",()=>{
+ const h=harness();h.setApproved();let row=h.scope.cachedRequests[0];row.paymentStatus="VERIFIED";h.scope.renderModuleRequests();
+ assert.match(h.nodes.requests.innerHTML,/data-master-order/);assert.doesNotMatch(h.nodes.requests.innerHTML,/data-record-order/);
+ h.scope.cachedStock=[{key:"regular:S",onHand:2,reserved:0,unavailable:0}];h.scope.renderModuleRequests();assert.match(h.nodes.requests.innerHTML,/data-ready-stock/);
+ row.purchaseOrderId="po";row.purchaseOrderNumber="T-1151-EXAMPLE";row.status="ORDERED";h.scope.renderModuleRequests();
+ assert.match(h.nodes.requests.innerHTML,/T-1151-EXAMPLE/);assert.doesNotMatch(h.nodes.requests.innerHTML,/data-receive=|data-record-order=|data-cancel=|data-procurement=/);
+ row.status="READY_FOR_PICKUP";row.received=true;h.scope.renderModuleRequests();assert.match(h.nodes.requests.innerHTML,/data-issue=/);
+});

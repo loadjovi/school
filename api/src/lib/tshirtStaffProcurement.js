@@ -4,6 +4,7 @@ import {randomUUID} from "node:crypto";
 import {json} from "./auth.js";
 import {getUniformPrice} from "./uniformPricing.js";
 import {newStaffDemand,updateStaffDemand,StaffDemandError} from "./tshirtStaffDemandRules.mjs";
+import {activeTshirtClaim} from "./tshirtPurchaseOrderFlow.js";
 
 const response=(body,status=200)=>({...json(body,status),headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
 const decode=row=>({...JSON.parse(row.payload),id:row.rowKey,etag:row.etag});
@@ -30,6 +31,11 @@ export async function staffProcurement(request,ctx,{loanClient,audit,linked,data
    id=String(input.id||"");if(!/^[a-zA-Z0-9_-]{1,500}$/.test(id)||typeof input.etag!=="string")return response({error:"請重新載入需求紀錄"},400);
    try{old=await client.getEntity(schoolId,id)}catch(e){if(e.statusCode===404)return response({error:"找不到需求紀錄"},404);throw e}
    if(input.etag!==old.etag)return response({error:"需求已更新，請重新整理"},409);
+   if(input.action==="UPDATE_DEMAND_STATUS"&&input.status!=="FULFILLED"){
+    const claim=await activeTshirtClaim(schoolId,"STAFF",id);
+    if(claim)return response({error:"此需求已納入 "+claim.orderNumber+"，請至採購總表統一處理"},409);
+    if(input.status==="ORDERED"||input.status==="ARRIVED")return response({error:"請至採購總表統一下單與驗收到貨"},409);
+   }
    next=updateStaffDemand(JSON.parse(old.payload),input,{finance,actor,at});
   }
   await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"tshirt.staff."+input.action,subjectId:id,actor,at,details:JSON.stringify({parentEmail:next.parentEmail,category:next.category,size:next.size,quantity:next.quantity,from:old?decode(old).status:null,to:next.status,paymentStatus:next.paymentStatus,note:next.progressNote||next.verificationNote||next.note}).slice(0,20000)});

@@ -3,7 +3,7 @@ import {createTshirtStockCounter} from "./tshirt-stock-count.js?v=20261122-opene
 import {createTshirtStockDetails} from "./tshirt-stock-details.js?v=20261122-opened-count-state";
 const el=id=>document.getElementById(id);
 const uniformRequestFlowHint=el("uniformRequestsHeading")?.nextElementSibling;
-if(uniformRequestFlowHint)uniformRequestFlowHint.textContent="依序完成核准、財務核帳、採購與驗收入庫；選擇「新貨到校」或「使用現有庫存」確認後，系統會自動開放領取並通知家長。實際交付時再按「確認實際發放」。";
+if(uniformRequestFlowHint)uniformRequestFlowHint.textContent="團 T 核帳後到「採購總表」統一下單與驗收，再確認實際發放；現有庫存可直接開放領取。比賽服依個別申請處理。";
 let adminAuthenticated=false,hasFinanceAccess=false;
 function setAuthGate(reason=""){
  adminAuthenticated=!reason;
@@ -455,7 +455,7 @@ function table(id,rows,columns,actions=false){
    const mayCollect=!payable||r.paymentStatus==="VERIFIED";
    const queuedForPurchase=r.status==="APPROVED"&&mayCollect;
    const next={PENDING:[["APPROVED",payable?"核准，等待付款":"核准，等待採購"],["CANCELLED","取消申請"]],APPROVED:[],ORDERED:[["CANCELLED","取消申請"]],ARRIVED:[...(mayCollect&&r.received?[["READY_FOR_PICKUP","開放領取"]]:[]),["CANCELLED","取消申請"]]}[r.status]||[];
-   const procurementAdjust=r.kind==="團 T"&&r.status==="ORDERED"&&!r.received?"<button type='button' data-procurement='"+i+"'>更正採購尺碼與件數</button>":"";
+   const procurementAdjust=r.kind==="團 T"&&!r.purchaseOrderId&&r.status==="ORDERED"&&!r.received?"<button type='button' data-procurement='"+i+"'>更正採購尺碼與件數</button>":"";
    const amount=r.status==="APPROVED"&&r.acquisition!=="PUBLIC"&&!Number.isSafeInteger(r.amount)?"<button type='button' data-amount='"+i+"'>補正應繳金額</button>":"";
    const stockKey=r.kind==="A 團比賽服"?"competition:"+r.style+":"+r.size:"regular:"+r.size;
    const stock=cachedStock.find(x=>x.key===stockKey),needed=r.kind==="A 團比賽服"?1:Number(r.quantity);
@@ -463,9 +463,11 @@ function table(id,rows,columns,actions=false){
    const issue=r.status==="READY_FOR_PICKUP"&&mayCollect&&(r.received||existingStock)?"<button type='button' data-issue='"+i+"'>"+(r.received?"確認實際發放":"以現有庫存發放")+"</button>":"";
    const needsReceipt=r.status==="ORDERED"||(r.status==="ARRIVED"||r.status==="READY_FOR_PICKUP")&&!r.received;
    const directIssue=r.kind==="A 團比賽服"&&r.status==="ORDERED"&&!r.received&&mayCollect?"<button type='button' data-direct-issue='"+i+"'>驗收到貨並直接交付</button>":"";
-   const receive=needsReceipt?"<button type='button' data-receive='"+i+"'>"+(r.received?"同步已入庫狀態":r.status==="ORDERED"?r.kind==="A 團比賽服"?"到貨後入庫（暫不交付）":"驗收到貨並入庫":"補登驗收入庫")+"</button>":"";
-   const orderButton=queuedForPurchase?"<button type='button' data-record-order='"+i+"'>登記廠商已下單</button>":"";
-   const progress=["APPROVED","ORDERED"].includes(r.status)?orderButton+"<button type='button' data-cancel='"+i+"'>取消申請</button>":next.length?"<select data-index='"+i+"'><option value=''>選擇下一步</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>選擇後執行</button>"+(r.status==="ARRIVED"&&mayCollect&&r.received?"<p class='hint'>選擇「開放領取」後，家長畫面會顯示可以領取，並寄送通知信；實際交付時再按「確認實際發放」。</p>":""):issue||"<span>"+esc(r.statusLabel||r.status)+"</span>";
+   const receive=needsReceipt&&r.kind!=="團 T"?"<button type='button' data-receive='"+i+"'>"+(r.received?"同步已入庫狀態":r.status==="ORDERED"?r.kind==="A 團比賽服"?"到貨後入庫（暫不交付）":"驗收到貨並入庫":"補登驗收入庫")+"</button>":"";
+   const masterButton=r.kind==="團 T"&&["APPROVED","ORDERED","ARRIVED"].includes(r.status)?"<button type='button' data-master-order='"+i+"'>"+(r.purchaseOrderNumber?"查看整體採購單":"前往採購總表")+"</button>"+(r.purchaseOrderNumber?"<p class='hint'>採購單："+esc(r.purchaseOrderNumber)+"；到貨由整張採購單統一處理。</p>":""):"";
+   const useStock=r.kind==="團 T"&&!r.purchaseOrderId&&queuedForPurchase&&existingStock?"<button type='button' data-ready-stock='"+i+"'>使用現有庫存並開放領取</button>":"";
+   const orderButton=queuedForPurchase&&r.kind!=="團 T"?"<button type='button' data-record-order='"+i+"'>登記廠商已下單</button>":"";
+   const progress=["APPROVED","ORDERED"].includes(r.status)?masterButton+useStock+orderButton+(r.purchaseOrderId?"":"<button type='button' data-cancel='"+i+"'>取消申請</button>"):next.length?"<select data-index='"+i+"'><option value=''>選擇下一步</option>"+next.map(([value,label])=>"<option value='"+value+"'>"+label+"</option>").join("")+"</select><button type='button' data-update='"+i+"'>選擇後執行</button>"+(r.status==="ARRIVED"&&mayCollect&&r.received?"<p class='hint'>選擇「開放領取」後，家長畫面會顯示可以領取，並寄送通知信；實際交付時再按「確認實際發放」。</p>":""):issue||"<span>"+esc(r.statusLabel||r.status)+"</span>";
    const mail=window.uniformPaymentEmailStates?.[r.id];
    const labels={SENT:"已通知",NOT_SENT:"尚無寄送紀錄",PARTIAL:"部分家長已通知",FAILED:"寄送失敗",UNCONFIRMED:"寄送結果待確認",MISSING_RECIPIENT:"尚無可收信家長，請檢查綁定",NOT_REQUIRED:"目前無須催繳"};
    const time=value=>value?new Date(value).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}):"—";
@@ -1086,6 +1088,17 @@ el("requests").addEventListener("change",e=>{
  button.textContent=select.value==="APPROVED"?(publicRequest?"核准並列入採購需求":"核准並開放家長匯款"):select.value==="READY_FOR_PICKUP"?"開放領取並通知家長":select.value==="CANCELLED"?"取消申請並通知家長":select.value?"確認更新並通知家長":"選擇後執行";
 });
 el("requests").addEventListener("click",async e=>{
+ if(e.target.dataset?.masterOrder!==undefined){
+  document.querySelector('[data-tshirt-view="procurement"]')?.click();el("tshirtProcurementPanel")?.scrollIntoView({block:"start",behavior:"smooth"});return;
+ }
+ if(e.target.dataset?.readyStock!==undefined){
+  const row=visibleModuleRequests[Number(e.target.dataset.readyStock)];if(!row||row.purchaseOrderId||pendingRequestIds.has(row.id))return;
+  if(!confirm("確認使用現有庫存供應 "+row.size+" 號 "+row.quantity+" 件？將保留件數並通知家長可以領取，實際發放時才扣庫存。"))return;
+  pendingRequestIds.add(row.id);renderModuleRequests();
+  try{await api("uniform-events/receiving",{method:"POST",body:JSON.stringify({id:row.id,etag:row.etag,quantity:row.quantity,useExistingStock:true})});el("status").textContent="已保留現有庫存並開放家長領取";await load()}
+  catch(error){issueErrors.set(row.id,"開放領取未完成："+error.message)}finally{pendingRequestIds.delete(row.id);renderModuleRequests()}return;
+ }
+
  const lineButton=e.target.closest("button[data-payment-line]");
  if(lineButton){
   const row=visibleModuleRequests[Number(lineButton.dataset.paymentLine)];if(!row||pendingRequestIds.has(row.id))return;
@@ -1309,3 +1322,5 @@ setupImport("importRequests","previewRequests",["kind","studentId"]);
 setupImport("importStock","previewStock",["key","onHand"]);
 window.addEventListener("tshirtParentLoansChanged",()=>load());
 
+
+window.addEventListener("tshirtPurchaseOrdersChanged",()=>load());

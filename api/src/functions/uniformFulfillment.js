@@ -59,19 +59,21 @@ app.http("uniformFulfillment",{
     const stock=await get(inventory,schoolId,key);
     if(!stock)return failure("此尺寸尚未完成庫存盤點",409);
     const onHand=stock.onHand,reserved=stock.reserved??0,unavailable=stock.unavailable??0;
+    const ownReservation=Number(receipt?.reservedQuantity||0);
     if(!Number.isSafeInteger(onHand)||!Number.isSafeInteger(reserved)||!Number.isSafeInteger(unavailable)||
-       onHand-reserved-unavailable<quantity)return failure("可用庫存不足，請先核對實際數量",409);
+       !Number.isSafeInteger(ownReservation)||![0,quantity].includes(ownReservation)||reserved<ownReservation||
+       onHand-reserved+ownReservation-unavailable<quantity)return failure("可用庫存不足，請先核對實際數量",409);
     const issuedAt=new Date().toISOString(),issuedBy=String(ctx.access.email||"admin");
     const ledger={partitionKey:schoolId,rowKey:ledgerKey,requestId:input.id,studentId:before.studentId,
      kind:before.kind,style:before.style||"",size:before.size,quantity,issuedAt,issuedBy,
-     receivedBy:input.receivedBy.trim(),note:input.note.trim()};
+     receivedBy:input.receivedBy.trim(),note:input.note.trim(),purchaseOrderId:receipt?.purchaseOrderId||""};
     const reconciledReceipt=!receipt?{partitionKey:schoolId,rowKey:receiptKey,requestId:input.id,
      studentId:before.studentId,kind:before.kind,style:before.style||"",size:before.size,quantity,
      receivedDate:issuedAt.slice(0,10),receivedAt:issuedAt,receivedBy:issuedBy,
      note:"由既有盤點庫存發放；"+input.note.trim(),source:"existing_stock"}:null;
     try{
      await inventory.submitTransaction([
-      ["update",{partitionKey:schoolId,rowKey:key,onHand:onHand-quantity,reserved,unavailable},"Replace",{etag:stock.etag}],
+      ["update",{partitionKey:schoolId,rowKey:key,onHand:onHand-quantity,reserved:reserved-ownReservation,unavailable},"Replace",{etag:stock.etag}],
       ...(reconciledReceipt?[["create",reconciledReceipt]]:[]),
       ["create",ledger]
      ]);

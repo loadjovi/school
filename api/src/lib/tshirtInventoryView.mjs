@@ -8,7 +8,11 @@ export function tshirtInventoryView(rows,loans=[]){
   if(key.startsWith("regular:")||key.startsWith("competition:"))items.push({key,onHand:row.onHand,reserved:row.reserved,unavailable:row.unavailable,etag:row.etag});
   if(key.startsWith("regular-opened:")&&tshirtInventorySizes.includes(key.slice(15))){const value=entry(key.slice(15));value.onHand=row.onHand;value.etag=row.etag}
   if(key.startsWith("tshirt-loan:")&&row.parentEmail)ledgers.set(row.parentEmail.toLowerCase(),row);
-  if(key.startsWith("received:")&&row.kind==="regularUniform"){
+  if(key.startsWith("po-received:")){
+   let parts=[];try{parts=JSON.parse(row.breakdown||"[]")}catch{}
+   movements.push({id:key,at:row.receivedAt,action:"採購單整單到貨",sizes:parts.map(x=>x.size+" × "+x.quantity).join("、"),quantity:row.addedQuantity,note:row.orderNumber+"；"+(row.creditedQuantity?"先前已入庫 "+row.creditedQuantity+" 件，本次不重複計入。":"")+(row.note||""),actor:row.receivedBy||""});
+  }
+  if(key.startsWith("received:")&&row.kind==="regularUniform"&&row.source!=="purchase_order"){
    let parts=[];try{parts=JSON.parse(row.breakdown||"[]")}catch{}
    if(!parts.length)parts=[{size:row.size,quantity:row.procurementQuantity||row.quantity}];
    movements.push({id:key,at:row.receivedAt,action:row.source==="existing_stock"?"使用現有庫存":"到貨入庫",sizes:parts.map(x=>x.size+" × "+x.quantity).join("、"),quantity:row.source==="existing_stock"?0:row.procurementQuantity||row.quantity,note:row.note||"",actor:row.receivedBy||""});

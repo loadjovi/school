@@ -4,7 +4,7 @@ import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 const source=readFileSync(new URL("../src/functions/uniformEventRequests.js",import.meta.url),"utf8").replace(/^import .*;\n/gm,"");
 function harness({bank=true,price=400}={}){
- let access={role:"parent",email:"parent@example.invalid"},schoolId="school-a",handler,sequence=0,writes=0;
+ let claim=null;let access={role:"parent",email:"parent@example.invalid"},schoolId="school-a",handler,sequence=0,writes=0;
  const tables=new Map(),notices=[],lineNotices=[];
  const db=name=>{
   if(!tables.has(name))tables.set(name,new Map());const rows=tables.get(name);
@@ -16,7 +16,7 @@ function harness({bank=true,price=400}={}){
  };
  const setBank=(value,kind="regularUniform")=>{const name="TenantUniformPaymentAccounts";db(name);const rows=tables.get(name),key="school-a:uniform:"+kind;if(value)rows.set(key,{partitionKey:"school-a",rowKey:"uniform:"+kind,payload:'{"templateId":"bank-one"}'});else rows.delete(key)};
  setBank(bank);
- const context={app:{http:(name,config)=>{handler=config.handler}},TableClient:{fromConnectionString:(connection,name)=>db(name)},randomUUID:()=>"record-"+(++sequence),
+ const context={activeTshirtClaim:async()=>claim,app:{http:(name,config)=>{handler=config.handler}},TableClient:{fromConnectionString:(connection,name)=>db(name)},randomUUID:()=>"record-"+(++sequence),
   getTenantContext:async()=>({access,schoolId}),ensureStudentAccess:(value,id)=>id==="student-one",getStudentAliasInfo:async id=>({canonicalStudentId:id}),json:(body,status=200)=>({status,jsonBody:body}),
   getStudentMaster:async id=>id==="student-one"?{studentName:"學生甲",groupName:"A"}:null,listUserStudentMappings:async()=>[],
   sendUniformRequestStatusEmail:async()=>({status:"disabled"}),safePaymentNotifications:async(school,options)=>{notices.push({school,options});return {status:"disabled"}},paymentNotificationStatus:result=>result?.status||"not_attempted",uniformNeedsPayment:item=>item.status==="APPROVED"&&item.amount>0,
@@ -30,7 +30,7 @@ function harness({bank=true,price=400}={}){
  const create=(data={kind:"regularUniform",studentId:"student-one",size:"S",quantity:2})=>call("POST",data);
  const admin=()=>{access={role:"admin",email:"admin@example.invalid",capabilities:{financeVerifier:true}}};
  const get=async()=>{const result=await call("GET");return result.jsonBody.items[0]};
- return {call,create,admin,get,setBank,notices,lineNotices,writes:()=>writes,setAccess:value=>{access=value},setSchool:value=>{schoolId=value}};
+ return {setClaim:value=>{claim=value},call,create,admin,get,setBank,notices,lineNotices,writes:()=>writes,setAccess:value=>{access=value},setSchool:value=>{schoolId=value}};
 }
 test("a parent shirt application becomes payable after admin approval and the parent reads the same persisted state",async()=>{
  const h=harness(),created=await h.create();assert.equal(created.status,201);assert.equal(created.jsonBody.item.status,"PENDING");
@@ -88,4 +88,11 @@ test("another school, a parent and a teacher cannot approve the request",async()
  h.setSchool("school-b");assert.equal((await h.call("PATCH",input)).status,404);
  h.setSchool("school-a");h.setAccess({role:"parent",email:"parent@example.invalid"});assert.equal((await h.call("PATCH",input)).status,400);
  h.setAccess({role:"teacher",email:"teacher@example.invalid"});assert.equal((await h.call("PATCH",input)).status,403);assert.equal(h.writes(),1);
+});
+
+
+test("individual shirt procurement cannot bypass the master order or cancel a claimed parent demand",async()=>{
+ const h=harness();await h.create();h.admin();const before=await h.get();h.setClaim({orderNumber:"T-MASTER"});
+ const cancelled=await h.call("PATCH",{id:before.id,etag:before.etag,status:"CANCELLED",reason:"逐筆取消"});assert.equal(cancelled.status,409);assert.match(cancelled.jsonBody.error,/T-MASTER/);assert.equal((await h.get()).status,"PENDING");
+ h.setClaim(null);const ordered=await h.call("PATCH",{id:before.id,etag:before.etag,status:"ORDERED"});assert.equal(ordered.status,409);assert.match(ordered.jsonBody.error,/採購總表/);assert.equal((await h.get()).status,"PENDING");
 });

@@ -23,7 +23,7 @@ function harness(){
    for(const [action,row,,options] of actions){const id=pk(row.partitionKey,row.rowKey),old=staged.get(id);if(action==="create"?!!old:!old||old.etag!==options?.etag)throw error(412);staged.set(id,{...row,etag:"v"+(++version)})}
    tables.set(name,staged);
   }});
- const context={app:{http:(name,config)=>{handlers[name]=config.handler}},TableClient:{fromConnectionString:(_,name)=>db(name)},randomUUID,Buffer,openedStockKey,tshirtInventoryView,normalizeReceivingDetails,statusAfterReceiving,
+ const context={activeTshirtClaim:async()=>null,app:{http:(name,config)=>{handlers[name]=config.handler}},TableClient:{fromConnectionString:(_,name)=>db(name)},randomUUID,Buffer,openedStockKey,tshirtInventoryView,normalizeReceivingDetails,statusAfterReceiving,
   getTenantContext:async()=>({schoolId:school,access:{role,email:"admin@example.test"},tenant:{schoolName:"測試學校"}}),json:(jsonBody,status=200)=>({jsonBody,status}),process:{env:{STORAGE_CONNECTION_STRING:"test"}},console:{warn(){},error(){}},
   ensureTenantTables:async()=>{},tenantTable:()=>db("links"),tenantParentPartition:(s,e)=>s+":"+e,getStudentMaster:async()=>({studentName:"學生甲",status:"active"}),getStudentAliasInfo:async id=>({canonicalStudentId:id}),listUserStudentMappings:async()=>[],sendUniformRequestStatusEmail:async()=>({status:"sent"}),cadreActions:new Set(),staffProcurement:()=>{throw Error("unexpected staff procurement")}};
  for(const file of ["uniformInventory","uniformReceiving","uniformFulfillment","tshirtParentLoans"])runInNewContext(read("api/src/functions/"+file+".js").replace(/^import .*;\n/gm,""),{...context});

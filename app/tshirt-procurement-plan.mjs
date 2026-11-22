@@ -25,6 +25,11 @@ const outstanding=status=>["PENDING","APPROVED","ORDERED","ARRIVED","READY_FOR_P
 // A read-only procurement snapshot. Size backfills never become repeat orders.
 export function buildTshirtProcurementPlan({students=[],history=[],requests=[],stock=[],staffDemands=[],parentLoans=[],purchaseOrders=[],schoolYear,semester,extraBySize={}}){
  const term=tshirtTerm(schoolYear,semester),byHistory=new Map(history.map(x=>[String(x.studentId),x]));
+ const requestOrders=new Map(),staffOrders=new Map();
+ for(const order of purchaseOrders)if(order.status!=="CANCELLED")for(const link of order.links||[])(link.type==="REQUEST"?requestOrders:staffOrders).set(link.id,order);
+ const project=(record,order)=>order?{...record,purchaseOrderId:order.id,purchaseOrderNumber:order.orderNumber,status:["FULFILLED","READY_FOR_PICKUP"].includes(record.status)?record.status:order.status==="RECEIVED"?(record.kind==="regularUniform"?"READY_FOR_PICKUP":"ARRIVED"):"ORDERED"}:record;
+ requests=requests.map(x=>project(x,requestOrders.get(x.id)));
+ staffDemands=staffDemands.map(x=>project(x,staffOrders.get(x.id)));
  const current=students.filter(s=>isCurrentTshirtStudent(s)&&["A","B","C"].includes(groupOf(s)));
  const studentMap=new Map(current.map(s=>[String(s.studentId||s.id),s]));
  const rows=[],warnings=[];let excludedRequests=0,carryover=0;
@@ -76,7 +81,7 @@ export function buildTshirtProcurementPlan({students=[],history=[],requests=[],s
  }
  const incomingExtras=new Map();
  for(const request of requests){
-  if(request.kind!=="regularUniform"||request.status!=="ORDERED"||!studentMap.has(String(request.studentId))||day(request.createdAt)>=term.end)continue;
+  if(request.kind!=="regularUniform"||request.purchaseOrderId||request.status!=="ORDERED"||!studentMap.has(String(request.studentId))||day(request.createdAt)>=term.end)continue;
   if(!Array.isArray(request.procurementBreakdown)){
    if(positive(request.procurementQuantity)>positive(request.quantity))warnings.push("已採購備貨尚未分配尺碼，請先更正採購明細，避免重複下單");
    continue;
@@ -88,11 +93,13 @@ export function buildTshirtProcurementPlan({students=[],history=[],requests=[],s
   }
  }
  for(const order of purchaseOrders){
-  if(order.status!=="ORDERED"||Number(order.schoolYear)!==term.schoolYear||Number(order.semester)!==term.semester)continue;
-  for(const part of order.items||[]){
-   if(!TSHIRT_PLAN_SIZES.includes(part.size))continue;
-   incomingExtras.set(part.size,(incomingExtras.get(part.size)||0)+positive(part.quantity));
+  if(!["ORDERED","RECEIVING"].includes(order.status)||Number(order.schoolYear)!==term.schoolYear||Number(order.semester)!==term.semester)continue;
+  const free=new Map((order.items||[]).map(x=>[x.size,positive(x.quantity)]));
+  for(const link of order.links||[]){
+   const supplied=link.legacyReceipt&&link.legacySource==="new_arrival"?link.parts:[{size:link.size,quantity:link.quantity}];
+   for(const part of supplied||[])free.set(part.size,Math.max(0,(free.get(part.size)||0)-positive(part.quantity)));
   }
+  for(const [size,quantity] of free)if(TSHIRT_PLAN_SIZES.includes(size))incomingExtras.set(size,(incomingExtras.get(size)||0)+quantity);
  }
  const sizes=TSHIRT_PLAN_SIZES.map(size=>{
   const list=rows.filter(x=>x.size===size),inventory=stock.find(x=>x.key==="regular:"+size);
@@ -124,9 +131,9 @@ export function tshirtPurchaseOrderCsv(order,{exportedAt=new Date().toISOString(
  const items=(order?.items||[]).filter(x=>TSHIRT_PLAN_SIZES.includes(x.size)&&positive(x.quantity));
  const header=["採購單號","學期","建立時間","尺寸","數量","狀態","備註"],lines=[header];
  const label=`${order.schoolYear} 學年度${Number(order.semester)===1?"上":"下"}學期`;
- for(const item of items)lines.push([order.orderNumber,label,order.createdAt,item.size,positive(item.quantity),order.status==="ORDERED"?"已建立／待到貨":order.status,""]);
- lines.push([order.orderNumber,label,order.createdAt,"合計",items.reduce((n,x)=>n+positive(x.quantity),0),order.status==="ORDERED"?"已建立／待到貨":order.status,Number(order.pendingUnknownUnits)>0?`另有 ${order.pendingUnknownUnits} 件待填尺寸，未列入本採購單`:""]);
- lines.push([order.orderNumber,label,exportedAt,"匯出時間","",order.status==="ORDERED"?"已建立／待到貨":order.status,"本表不含姓名，供廠商依尺碼備貨"]);
+ for(const item of items)lines.push([order.orderNumber,label,order.createdAt,item.size,positive(item.quantity),({ORDERED:"已建立／待到貨",RECEIVING:"驗收處理中",RECEIVED:"已整單到貨／入庫",CANCELLED:"已取消"})[order.status]||order.status,""]);
+ lines.push([order.orderNumber,label,order.createdAt,"合計",items.reduce((n,x)=>n+positive(x.quantity),0),({ORDERED:"已建立／待到貨",RECEIVING:"驗收處理中",RECEIVED:"已整單到貨／入庫",CANCELLED:"已取消"})[order.status]||order.status,Number(order.pendingUnknownUnits)>0?`另有 ${order.pendingUnknownUnits} 件待填尺寸，未列入本採購單`:""]);
+ lines.push([order.orderNumber,label,exportedAt,"匯出時間","",({ORDERED:"已建立／待到貨",RECEIVING:"驗收處理中",RECEIVED:"已整單到貨／入庫",CANCELLED:"已取消"})[order.status]||order.status,"本表不含姓名，供廠商依尺碼備貨"]);
  const cell=v=>{let s=String(v??"");if(/^[\s]*[=+@\-\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"'};
  return "\uFEFF"+lines.map(row=>row.map(cell).join(",")).join("\r\n");
 }
@@ -149,4 +156,28 @@ export function tshirtPlanCsv(plan,{supplierOnly=false,exportedAt=new Date().toI
  }
  const cell=v=>{let s=String(v??"");if(/^[\s]*[=+@\-\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"'};
  return "\uFEFF"+lines.map(row=>row.map(cell).join(",")).join("\r\n");
+}
+
+// The same source identifiers are sent to the server; size totals alone never imply a parent has received a shirt.
+export function tshirtOrderCandidates(data,order,{legacy=false}={}){
+ const used=new Set((data.purchaseOrders||[]).filter(x=>x.status!=="CANCELLED").flatMap(x=>(x.links||[]).map(link=>link.type+":"+link.id)));
+ const capacity=new Map((order.items||[]).map(x=>[x.size,x.quantity]));
+ for(const link of order.links||[])for(const part of link.parts||[])capacity.set(part.size,(capacity.get(part.size)||0)-part.quantity);
+ const students=new Map((data.students||[]).filter(isCurrentTshirtStudent).map(x=>[String(x.studentId||x.id),x]));
+ const candidates=[];
+ for(const [type,records] of [["REQUEST",data.requests||[]],["STAFF",data.staffDemands||[]]])for(const row of records){
+  if(used.has(type+":"+row.id)||row.purchaseOrderId||type==="REQUEST"&&(row.kind!=="regularUniform"||!students.has(String(row.studentId)))||type==="STAFF"&&!STAFF_CATEGORIES[row.category])continue;
+  if(row.acquisition!=="PUBLIC"&&row.category!=="CADRE_FIRST"&&row.paymentStatus!=="VERIFIED")continue;
+  const date=day(row.createdAt);if(date&&date>=tshirtTerm(order.schoolYear,order.semester).end)continue;
+  if(type==="STAFF"&&Number(row.schoolYear)*2+Number(row.semester)>Number(order.schoolYear)*2+Number(order.semester))continue;
+  if(!["APPROVED",...(legacy?["ORDERED","ARRIVED","READY_FOR_PICKUP","FULFILLED"]:[])].includes(row.status))continue;
+  const parts=type==="REQUEST"&&row.status!=="APPROVED"?(row.procurementBreakdown||[{size:row.size,quantity:row.procurementQuantity||row.quantity}]):[{size:row.size,quantity:row.quantity}];
+  if(!parts.length||parts.some(x=>!TSHIRT_PLAN_SIZES.includes(x.size)||!Number.isSafeInteger(x.quantity)||x.quantity<1||x.quantity>(capacity.get(x.size)||0)))continue;
+  const includeReceived=["ARRIVED","READY_FOR_PICKUP","FULFILLED"].includes(row.status);
+  const selected=!legacy||row.status==="APPROVED";
+  candidates.push({type,id:row.id,etag:row.etag,includeReceived,parts,selected,name:type==="REQUEST"?students.get(String(row.studentId)).studentName||row.studentId:row.parentName||"幹部／志工",size:row.size,quantity:row.quantity,status:row.status});
+  if(selected)for(const part of parts)capacity.set(part.size,capacity.get(part.size)-part.quantity);
+  if(candidates.length+(order.links||[]).length>=80)return candidates;
+ }
+ return candidates;
 }

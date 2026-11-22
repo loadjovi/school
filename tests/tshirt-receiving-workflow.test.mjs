@@ -54,7 +54,7 @@ test("successful receiving automatically opens pickup and sends only the pickup 
  const frontend=readFileSync(new URL("../app/uniform-event-admin.js",import.meta.url),"utf8");
  const backend=readFileSync(new URL("../api/src/functions/uniformReceiving.js",import.meta.url),"utf8");
  const requests=readFileSync(new URL("../api/src/functions/uniformEventRequests.js",import.meta.url),"utf8");
- assert.match(backend,/status:statusAfterReceiving\(before\.status\)/);
+ assert.match(backend,/status:fromAvailable\?"READY_FOR_PICKUP":statusAfterReceiving\(before\.status\)/);
  assert.match(backend,/before\.status!=="READY_FOR_PICKUP"&&next\.status==="READY_FOR_PICKUP"/);
  assert.match(backend,/status:"READY_FOR_PICKUP"/);
  assert.doesNotMatch(backend,/status:"ARRIVED"/);

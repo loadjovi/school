@@ -13,6 +13,7 @@ import {upsertCurrentCompetitionMaster,latestCompetitionRequest} from "../lib/co
 import {notifyUniformReview,notifyUniformCancellation} from "../lib/lineAdminTodoNotification.mjs";
 import {notifyUniformPaymentRequired,uniformPaymentLineStates,uniformPaymentLineEligible} from "../lib/uniformPaymentLine.js";
 import {lineFirstLabEnabled} from "../lib/labNoticeDelivery.mjs";
+import {activeTshirtClaim} from "../lib/tshirtPurchaseOrderFlow.js";
 
 const kinds=new Set(["regularUniform","competitionUniform","fieldTrip","yearEndDinner"]);
 // 已核對的歷史公費配發，依校別與學生 ID 登錄；不依姓名或尺寸推定資格。
@@ -162,6 +163,11 @@ app.http("uniformEventRequests",{
       if(!previous)return err("Not found",404);
       if(data.etag!==previous.etag)return err("Record changed, refresh and retry",409);
       const before=decode(previous);
+      if(before.kind==="regularUniform"&&(data.status||data.action==="SET_PROCUREMENT_QUANTITY")){
+        const claim=await activeTshirtClaim(schoolId,"REQUEST",data.id);
+        if(claim)return err("此申請已納入 "+claim.orderNumber+"，請至採購總表統一處理",409);
+        if(data.status==="ORDERED")return err("請至『採購總表 → 確認轉採購單』統一下單，不再逐筆登記採購",409);
+      }
       if(before.paymentResolution&&paymentOnHold(before))return err("此筆補款／退費尚未結案，請由財務處理，不能變更金額或推進申請",409);
       if(data.action==="SEND_PAYMENT_LINE"){
         if(access.role!=="admin")return err("Admin only",403);
