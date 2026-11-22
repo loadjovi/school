@@ -13,17 +13,16 @@ function setupActivityReturn(){
 }
 setupActivityReturn();
 const teamName=group=>({A:"A 團",B:"B 團",儲備:"儲備團"})[group]||group;
-const includesStaff=()=>mode()==="members"&&form.elements.includeStaff.checked;
-const staffRole=()=>form.querySelector('[name="staffScope"]:checked')?.value==="finance"?"finance":"staff";
-const staffGroupKey=()=>staffRole()==="finance"?"school:finance":"school:cadres";
+const includesStaff=()=>mode()==="staff"||mode()==="members"&&form.elements.includeStaff.checked;
+const staffGroupKey=()=>form.querySelector('[name="staffScope"]:checked')?.value==="school"?"school:teachers":"school:cadres";
 const schoolGroupName=key=>schoolGroups.find(group=>group.key===key)?.title||({"school:teachers":"學校群組","school:cadres":"幹部群組","school:finance":"財務幹部群組"})[key]||"學校群組";
 const schoolGroupLabel=key=>{const group=schoolGroups.find(group=>group.key===key);return schoolGroupName(key)+(group?.bound?"「"+group.groupName+"」":"（尚未綁定）")};
 function selection(){
   const audience=mode(),members=audience==="members",group=audience==="activityGroup";
   const roles=members?[...form.querySelectorAll('[name="role"]:checked')].map(input=>input.value):[];
-  const schoolGroupKeys=audience==="schoolGroups"?[...form.querySelectorAll('[name="schoolGroup"]:checked')].map(input=>input.value):includesStaff()?[staffGroupKey()]:[];
+  const schoolGroupKeys=includesStaff()?[staffGroupKey()]:[];
   const allSchool=!members||form.querySelector('[name="groupScope"]:checked')?.value==="all";
-  return {audience:group?"activityGroup":audience==="schoolGroups"?"schoolGroups":"members",roles,groups:members&&!allSchool?[...form.querySelectorAll('[name="group"]:checked')].map(input=>input.value):[],schoolGroupKeys,allSchool,activityKey:group?$("activityKey").value:""};
+  return {audience:group?"activityGroup":audience==="staff"?"schoolGroups":"members",roles,groups:members&&!allSchool?[...form.querySelectorAll('[name="group"]:checked')].map(input=>input.value):[],schoolGroupKeys,allSchool,activityKey:group?$("activityKey").value:""};
 }
 function updateSummary(){
   if(mode()==="activityGroup"){
@@ -32,7 +31,6 @@ function updateSummary(){
     return;
   }
   const selected=selection(),parts=[];
-  if(mode()==="schoolGroups")parts.push(selected.schoolGroupKeys.length?selected.schoolGroupKeys.map(schoolGroupLabel).join("、"):"請勾選要通知的學校 LINE 群組");
   if(mode()==="members"){
     const roles=selected.roles.filter(role=>["parent","teacher"].includes(role)).map(role=>({parent:"家長",teacher:"老師"})[role]);
     if(!roles.length)parts.push("請勾選家長或老師");
@@ -65,15 +63,6 @@ function updateGroup(){
   $("createGroupCode").disabled=busy||!activity;$("createGroupCode").textContent=activity?.bound?"更換此活動的群組綁定":"產生群組綁定碼";
   $("unbindGroup").hidden=!activity?.bound;$("unbindGroup").disabled=busy;
 }
-function updateSchoolGroups(){
-  for(const [key,id] of [["school:teachers","schoolTeachersStatus"],["school:cadres","schoolCadresStatus"],["school:finance","schoolFinanceStatus"]]){
-    const group=schoolGroups.find(item=>item.key===key);
-    $(id).textContent=group?.bound?"已綁定："+group.groupName+(group.source==="settings"?"｜沿用"+group.sourceLabel:""):"尚未綁定此用途的群組";
-  }
-  $("staffGroupStatus").textContent=schoolGroupLabel(staffGroupKey())+"；訊息發到群組，依實際群組成員收件。";
-  const selected=schoolGroups.find(group=>group.key===$("schoolBindingKey").value);
-  $("unbindSchoolGroup").hidden=!selected?.bound||selected.source==="settings";
-}
 function updateMode(){
   const audience=mode(),group=audience==="activityGroup",members=audience==="members";
   $("memberPanel").hidden=!members;$("memberPanel").disabled=!members||busy;
@@ -82,11 +71,10 @@ function updateMode(){
   const selected=members&&form.querySelector('[name="groupScope"]:checked')?.value==="selected";
   $("teams").hidden=!selected;form.querySelectorAll('[name="group"]').forEach(input=>{input.disabled=!selected||busy});
   $("activityPanel").hidden=!group;$("activityPanel").disabled=!group||busy;
-  $("activityKey").required=group;$("messageLabel").textContent="3．輸入訊息";
-  $("schoolGroupPanel").hidden=audience!=="schoolGroups";$("schoolGroupPanel").disabled=audience!=="schoolGroups"||busy;
-  $("deliveryHint").textContent=group?"發送至此活動的志工 LINE 群組，群內所有成員皆可看到。":audience==="schoolGroups"?"發送至勾選的多人群組；同一群組只發一則。":includesStaff()?"家長／個別老師收到個人訊息，幹部通知發到選定的群組。":"發送至個人 LINE 聊天室；同一個 LINE 只會收到一則。";
-  $("receiptHint").textContent=group||audience==="schoolGroups"?"LINE API 受理不代表實際收件；請確認此校官方帳號仍在指定群組內。":"LINE API 受理不代表實際收件；個人收件者請加入本校官方帳號好友並確認未封鎖。";
-  updateGroup();updateSchoolGroups();updateSummary();
+  $("activityKey").required=group;$("messageLabel").textContent=(audience==="staff"?"2":"3")+"．輸入訊息";
+  $("deliveryHint").textContent=group?"發送至此活動的志工 LINE 群組，群內所有成員皆可看到。":audience==="staff"?"發送至原有的多人 LINE 群組。":includesStaff()?"家長／個別老師收到個人訊息，幹部通知發到選定的群組。":"發送至個人 LINE 聊天室；同一個 LINE 只會收到一則。";
+  $("receiptHint").textContent=group||audience==="staff"?"LINE API 受理不代表實際收件；請確認此校官方帳號仍在指定群組內。":"LINE API 受理不代表實際收件；個人收件者請加入本校官方帳號好友並確認未封鎖。";
+  updateGroup();updateSummary();
 }
 function setBusy(value){
   busy=value;form.querySelectorAll("input,select,textarea,button").forEach(element=>{element.disabled=value});
@@ -116,7 +104,7 @@ async function loadOptions(){
     const label=document.createElement("label"),input=document.createElement("input");label.className="choice";input.type="checkbox";input.name="group";input.value=group;input.checked=selectedGroups.includes(group);
     label.append(input,teamName(group));teams.append(label);
   }
-  schoolGroups=data.schoolGroups||[];if(!schoolGroups.some(group=>group.key===$("schoolBindingKey").value))$("schoolBindingKey").value="school:cadres";
+  schoolGroups=data.schoolGroups||[];
   activities=data.activities||[];const select=$("activityKey");select.replaceChildren(new Option("請先選擇活動",""));
   for(const activity of activities)select.append(new Option(activity.title+(activity.date?"｜"+activity.date.slice(0,10):"")+(activity.bound?"｜已綁定":""),activity.key));
   if(activities.some(x=>x.key===selected))select.value=selected;
@@ -124,7 +112,7 @@ async function loadOptions(){
 }
 form.addEventListener("input",event=>{
   revision++;clearPreview();
-  if(["activityKey","audience","schoolBindingKey","staffScope"].includes(event.target.name)){$("bindingInstructions").hidden=true;$("schoolBindingInstructions").hidden=true}
+  if(["activityKey","audience"].includes(event.target.name))$("bindingInstructions").hidden=true;
   updateMode();
 });
 form.addEventListener("submit",async event=>{
@@ -132,7 +120,6 @@ form.addEventListener("submit",async event=>{
   const selected=selection(),draftRevision=revision,audience=selected.audience;
   if(mode()==="members"&&!selected.roles.some(role=>["parent","teacher"].includes(role))){status.textContent="請勾選要通知的家長或老師。";return}
   if(mode()==="members"&&!selected.allSchool&&!selected.groups.length){status.textContent="請至少勾選一個團別。";return}
-  if(mode()==="schoolGroups"&&!selected.schoolGroupKeys.length){status.textContent="請至少勾選一個學校 LINE 群組。";return}
   const body={action:"preview",...selected,text:$("message").value,requestId:crypto.randomUUID()};
   setBusy(true);
   try{
@@ -173,27 +160,6 @@ async function refreshGroups(){
   finally{setBusy(false)}
 }
 $("refreshGroups").addEventListener("click",refreshGroups);
-$("refreshSchoolGroups").addEventListener("click",refreshGroups);
-async function schoolBindingCode(key){
-  if(busy)return;revision++;clearPreview();setBusy(true);
-  try{
-    const result=await request({action:"school-binding-code",schoolGroupKey:key});
-    $("schoolBindingCommand").value="#綁定學校通知 "+result.code;
-    $("schoolBindingExpiry").textContent="用途："+result.groupTitle+"｜有效期限："+new Date(result.expiresAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei"});
-    $("schoolBindingInstructions").hidden=false;
-  }catch(error){status.textContent=error.message}
-  finally{setBusy(false)}
-}
-$("createSchoolGroupCode").addEventListener("click",()=>schoolBindingCode($("schoolBindingKey").value));
-$("bindStaffGroup").addEventListener("click",()=>schoolBindingCode(staffGroupKey()));
-$("unbindSchoolGroup").addEventListener("click",async()=>{
-  const group=schoolGroups.find(item=>item.key===$("schoolBindingKey").value);
-  if(!group?.bound||group.source==="settings"||busy||!confirm("確定解除「"+group.title+"」與「"+group.groupName+"」的通知中心綁定？"))return;
-  revision++;clearPreview();setBusy(true);
-  try{await request({action:"school-unbind",schoolGroupKey:group.key});await loadOptions();$("schoolBindingInstructions").hidden=true;status.textContent="已解除通知中心的群組綁定。"}
-  catch(error){status.textContent=error.message}
-  finally{setBusy(false)}
-});
 $("unbindGroup").addEventListener("click",async()=>{
   const activity=selectedActivity();if(!activity?.bound||busy||!confirm(`確定解除「${activity.title}」與「${activity.groupName}」的通知綁定？`))return;
   revision++;clearPreview();setBusy(true);

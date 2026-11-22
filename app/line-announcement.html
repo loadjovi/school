@@ -14,17 +14,17 @@
   <main>
     <a id="backLink" href="/">← 返回學校後台</a>
     <p id="activityReturnHint" class="muted" hidden>從活動設定進入；發送後可返回原活動繼續編輯。</p>
-    <section class="card"><h1>📣 LINE 通知中心</h1><p>發送家長／個別老師訊息，或通知已綁定的學校、幹部與活動群組。</p><a class="account-link" href="/line-account.html">管理我自己的 LINE 綁定</a></section>
+    <section class="card"><h1>📣 LINE 通知中心</h1><p>通知家長、老師、學校幹部，或活動志工群組。</p><a class="account-link" href="/line-account.html">管理我自己的 LINE 綁定</a></section>
     <form class="card" id="announcement">
       <fieldset><legend>1．選擇通知對象</legend>
-        <label class="choice"><input type="radio" name="audience" value="members" checked>家長／個別老師</label>
-        <label class="choice"><input type="radio" name="audience" value="schoolGroups">學校／幹部 LINE 群組</label>
+        <label class="choice"><input type="radio" name="audience" value="members" checked>家長／老師</label>
+        <label class="choice"><input type="radio" name="audience" value="staff">學校／幹部</label>
         <label class="choice"><input type="radio" name="audience" value="activityGroup">活動志工 LINE 群組</label>
-        <div id="includeStaffOption"><label class="choice"><input type="checkbox" name="includeStaff">同時通知幹部 LINE 群組（選填）</label></div>
-        <fieldset id="staffPanel" hidden disabled><legend>另通知幹部群組</legend>
+        <div id="includeStaffOption"><label class="choice"><input type="checkbox" name="includeStaff">同時通知學校／幹部（選填）</label></div>
+        <fieldset id="staffPanel" hidden disabled><legend>通知群組</legend>
           <label class="choice"><input type="radio" name="staffScope" value="all" checked>幹部群組</label>
-          <label class="choice"><input type="radio" name="staffScope" value="finance">財務幹部群組</label>
-          <div id="staffGroupStatus" class="muted"></div><button type="button" id="bindStaffGroup" class="secondary">綁定／更換此群組</button>
+          <label class="choice"><input type="radio" name="staffScope" value="school">學校群組</label>
+          <div class="muted">發送至平台原有的多人 LINE 群組。</div>
         </fieldset>
       </fieldset>
       <fieldset id="memberPanel"><legend>2．選擇家長／老師與團別</legend>
@@ -35,15 +35,6 @@
         <div id="teams" hidden></div>
         <small class="muted">團別僅篩選上方勾選的家長／老師；名單隨學生主檔更新。</small>
       </fieldset>
-      <fieldset id="schoolGroupPanel" hidden disabled><legend>2．選擇學校 LINE 群組</legend>
-        <label class="choice"><input type="checkbox" name="schoolGroup" value="school:teachers">學校群組</label><div id="schoolTeachersStatus" class="muted"></div>
-        <label class="choice"><input type="checkbox" name="schoolGroup" value="school:cadres" checked>幹部群組</label><div id="schoolCadresStatus" class="muted"></div>
-        <details><summary>其他群組（選用）</summary><label class="choice"><input type="checkbox" name="schoolGroup" value="school:finance">財務幹部群組</label><div id="schoolFinanceStatus" class="muted"></div></details>
-        <p class="muted">直接沿用平台既有群組；訊息由群內所有成員看到。</p>
-        <details><summary>綁定或更換群組</summary><label for="schoolBindingKey">要設定的群組用途</label><select id="schoolBindingKey" name="schoolBindingKey"><option value="school:cadres">幹部群組</option><option value="school:teachers">學校群組</option><option value="school:finance">財務幹部群組</option></select><div class="actions"><button type="button" id="createSchoolGroupCode" class="secondary">產生群組綁定碼</button><button type="button" id="unbindSchoolGroup" class="secondary" hidden>解除通知中心綁定</button></div></details>
-        <button type="button" id="refreshSchoolGroups" class="secondary">重新讀取既有群組</button>
-      </fieldset>
-      <div id="schoolBindingInstructions" class="notice" hidden><b>綁定學校 LINE 群組</b><p>將此校官方帳號加入指定群組，於群內貼上下方指令，再按「重新讀取既有群組」。</p><textarea id="schoolBindingCommand" readonly aria-label="學校群組綁定指令"></textarea><small id="schoolBindingExpiry"></small></div>
       <fieldset id="activityPanel" hidden disabled><legend>2．選擇活動志工群組</legend>
         <label for="activityKey">活動</label><select id="activityKey" name="activityKey"><option value="">請先選擇活動</option></select>
         <div id="activityGroupStatus" class="notice" role="status">請選擇活動，確認本次通知的志工群組。</div>
@@ -62,6 +53,6 @@
     </form>
     <details class="card"><summary><b>最近發送紀錄</b></summary><div id="history">正在讀取…</div></details>
   </main>
-  <script type="module" src="/line-announcement.js?v=20261122-school-groups"></script>
+  <script type="module" src="/line-announcement.js?v=20261122-simple-group-routing"></script>
 </body>
 </html>

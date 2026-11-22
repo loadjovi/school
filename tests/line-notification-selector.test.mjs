@@ -57,26 +57,27 @@ test("default member notice names the role and all-team scope, with only family/
  assert.equal(p.elements.staffPanel.disabled,true);assert.equal(p.elements.activityPanel.disabled,true);
 });
 
-test("dynamic multi-team members can add finance recipients explicitly, and edits invalidate the send preview",async()=>{
+test("dynamic multi-team members can also notify the existing school group and edits invalidate the send preview",async()=>{
  const p=await page();p.choose("groupScope","selected");p.choose("group","A");p.choose("group","新測試團");p.choose("role","teacher");
- p.choose("includeStaff");p.choose("staffScope","finance");
+ p.choose("includeStaff");p.choose("staffScope","school");
  assert.equal(p.elements.staffPanel.hidden,false);assert.equal(p.elements.teams.hidden,false);
- assert.equal(p.elements.audienceSummary.textContent,"本次通知：A 團、新測試團的家長與老師；另通知財務幹部群組「財務群」");
- p.elements.message.value="跨團通知";await p.submit();assert.deepEqual(p.calls[0].roles,["parent","teacher"]);assert.deepEqual(p.calls[0].schoolGroupKeys,["school:finance"]);
+ assert.equal(p.elements.audienceSummary.textContent,"本次通知：A 團、新測試團的家長與老師；另通知學校群組「學校老師群」");
+ p.elements.message.value="跨團通知";await p.submit();assert.deepEqual(p.calls[0].roles,["parent","teacher"]);assert.deepEqual(p.calls[0].schoolGroupKeys,["school:teachers"]);
  assert.deepEqual(p.calls[0].groups,["A","新測試團"]);assert.equal(p.calls[0].allSchool,false);
  p.choose("staffScope","all");assert.equal(p.elements.recipientPreview.hidden,true);await p.send();assert.equal(p.calls.length,1);
 });
 
-test("school-group mode excludes retained member roles, teams and activities and can select both existing groups",async()=>{
+test("the original staff option sends to one existing group without member roles or new group-setting panels",async()=>{
  const p=await page();p.choose("role","teacher");p.choose("groupScope","selected");p.choose("group","A");p.choose("includeStaff");
- p.elements.activityKey.value="fieldTrip:one";p.choose("audience","schoolGroups");p.choose("schoolGroup","school:teachers");
+ p.elements.activityKey.value="fieldTrip:one";p.choose("audience","staff");
  assert.equal(p.elements.memberPanel.hidden,true);assert.equal(p.elements.memberPanel.disabled,true);assert.equal(p.elements.includeStaffOption.hidden,true);
- assert.equal(p.elements.staffPanel.hidden,true);assert.equal(p.elements.schoolGroupPanel.hidden,false);assert.equal(p.elements.activityKey.required,false);
- assert.equal(p.elements.messageLabel.textContent,"3．輸入訊息");assert.match(p.elements.audienceSummary.textContent,/學校老師群.*後援幹部群/);
- assert.match(p.elements.schoolCadresStatus.textContent,/沿用平台後台待辦群組/);assert.equal(p.elements.unbindSchoolGroup.hidden,true);
- p.elements.message.value="群組公告";await p.submit();assert.deepEqual(p.calls[0].roles,[]);assert.deepEqual(p.calls[0].groups,[]);
- assert.equal(p.calls[0].audience,"schoolGroups");assert.deepEqual(p.calls[0].schoolGroupKeys,["school:teachers","school:cadres"]);assert.equal(p.calls[0].activityKey,"");
- assert.match(p.elements.deliveryHint.textContent,/多人群組/);assert.doesNotMatch(p.elements.deliveryHint.textContent,/個人/);
+ assert.equal(p.elements.staffPanel.hidden,false);assert.equal(p.elements.activityKey.required,false);assert.equal(p.elements.messageLabel.textContent,"2．輸入訊息");
+ assert.match(p.elements.audienceSummary.textContent,/幹部群組「後援幹部群」/);
+ assert.equal(p.elements.schoolGroupPanel,undefined);assert.equal(p.elements.createSchoolGroupCode,undefined);assert.equal(p.elements.bindStaffGroup,undefined);
+ p.elements.message.value="幹部公告";await p.submit();assert.deepEqual(p.calls[0].roles,[]);assert.deepEqual(p.calls[0].groups,[]);
+ assert.equal(p.calls[0].audience,"schoolGroups");assert.deepEqual(p.calls[0].schoolGroupKeys,["school:cadres"]);assert.equal(p.calls[0].activityKey,"");
+ assert.match(p.elements.deliveryHint.textContent,/多人 LINE 群組/);assert.doesNotMatch(p.elements.deliveryHint.textContent,/個人/);
+ p.choose("staffScope","school");await p.submit();assert.deepEqual(p.calls[1].schoolGroupKeys,["school:teachers"]);assert.match(p.elements.audienceSummary.textContent,/學校老師群/);
 });
 
 test("activity-group mode sends only to the selected bound group, and switching back restores member scope",async()=>{
@@ -130,14 +131,15 @@ test("activity return links survive preview, send and notification-history refre
  assert.equal(p.elements.backLink.href,before);assert.equal(p.elements.returnActivityAfterSend.href,before);
  assert.equal(p.calls.filter(call=>call.action==="send").length,1);
 });
-test("group previews and partial results count groups and identify the named group without personal-recipient wording",async()=>{
- const recipientResults=[{reference:"a123456789ab",name:"後援幹部群",kind:"group",status:"accepted"},{reference:"b123456789ab",name:"學校老師群",kind:"group",status:"failed"}];
- const p=await page({accepted:1,failed:1,recipientResults});p.choose("audience","schoolGroups");p.choose("schoolGroup","school:teachers");p.elements.message.value="兩個群組的公告";await p.submit();
- assert.match(p.elements.previewCounts.textContent,/2 個 LINE 群組/);assert.doesNotMatch(p.elements.previewCounts.textContent,/個帳號|個人/);await p.send();assert.match(p.elements.result.textContent,/API 已受理 1 個群組.*失敗 1 個群組/);
- assert.match(content(p.elements.deliveryRecipients),/群組｜後援幹部群.*API 已受理.*群組｜學校老師群.*發送失敗/);assert.deepEqual(p.calls.filter(x=>x.action==="send")[0].roles,[]);
+test("staff group previews and failures count the existing group rather than individual staff accounts",async()=>{
+ const recipientResults=[{reference:"a123456789ab",name:"後援幹部群",kind:"group",status:"failed"}];
+ const p=await page({accepted:0,failed:1,recipientResults});p.choose("audience","staff");p.elements.message.value="幹部公告";await p.submit();
+ assert.match(p.elements.previewCounts.textContent,/1 個 LINE 群組/);assert.doesNotMatch(p.elements.previewCounts.textContent,/個帳號|個人/);await p.send();assert.match(p.elements.result.textContent,/API 已受理 0 個群組.*失敗 1 個群組/);
+ assert.match(content(p.elements.deliveryRecipients),/群組｜後援幹部群.*發送失敗/);assert.deepEqual(p.calls.filter(x=>x.action==="send")[0].roles,[]);
 });
-test("school-group code generation identifies the selected purpose and incomplete selections cannot preview",async()=>{
- const p=await page();p.choose("audience","schoolGroups");p.choose("schoolGroup","school:cadres",false);p.elements.message.value="公告";await p.submit();assert.equal(p.calls.length,0);assert.match(p.elements.result.textContent,/至少勾選一個學校 LINE 群組/);
- await p.elements.createSchoolGroupCode.handlers.click();assert.equal(p.calls[0].action,"school-binding-code");assert.equal(p.calls[0].schoolGroupKey,"school:cadres");assert.equal(p.elements.schoolBindingCommand.value,"#綁定學校通知 AABBCCDD11223344");assert.equal(p.elements.schoolBindingInstructions.hidden,false);
- assert.equal(p.calls.filter(x=>x.action==="send").length,0);
+test("the simple school and cadre choices invalidate old previews while preserving original activity group controls",async()=>{
+ const p=await page();p.choose("audience","staff");p.elements.message.value="公告";await p.submit();assert.equal(p.calls.length,1);
+ p.choose("staffScope","school");assert.equal(p.elements.recipientPreview.hidden,true);await p.send();assert.equal(p.calls.length,1);
+ assert.equal(p.elements.createGroupCode.hidden,false);assert.equal(p.elements.activityPanel.hidden,true);assert.equal(p.input("staffScope","finance"),undefined);
+ assert.doesNotMatch(html,/id="schoolBindingInstructions"|id="schoolGroupPanel"|id="refreshSchoolGroups"/);
 });
