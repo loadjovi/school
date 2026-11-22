@@ -108,7 +108,7 @@
     const current=Number(x.feedback?.level||0),comment="",history=x.feedbackHistory||[];
     return `<div class="practice-feedback-box">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div style="font-weight:900">💛 日常鼓勵｜不計分</div><span class="practice-feedback-chip">本月 ${Number(x.feedbackCount||0)} 次</span></div>
-      <small style="display:block;margin:4px 0 10px;color:var(--muted)">此功能為日常互動，可視需要使用，不需每月完成，也不影響任何成績；同一位老師同一天再次送出會更新當日回饋。</small>
+      <small style="display:block;margin:4px 0 10px;color:var(--muted)">儲存後同步通知家長，不計分；同一天修改會更新當日回饋。</small>
       <div class="practice-feedback-options">${practiceFeedbackLevels.map(m=>`<input type="radio" id="pf_${esc(x.studentId)}_${m.level}" name="pf_${esc(x.studentId)}" value="${m.level}" ${current===m.level?"checked":""}><label for="pf_${esc(x.studentId)}_${m.level}"><span>${m.icon}</span><small>${esc(m.label)}</small></label>`).join("")}</div>
       <div class="practice-feedback-presets">${practiceFeedbackPresets.map((t,i)=>`<button type="button" onclick="usePracticeFeedbackPreset('${esc(x.studentId)}',${i})">${esc(t)}</button>`).join("")}</div>
       <label style="margin-top:10px">老師留言（選填）</label>
@@ -280,18 +280,41 @@
     const el=document.getElementById("pfComment_"+studentId),text=practiceFeedbackPresets[Number(index)]||"";
     if(el){el.value=text;el.focus()}
   };
+  function feedbackNoticeMessage(notice){
+    if(!notice||notice.status==="disabled")return "💛 已儲存老師鼓勵回饋";
+    if(notice.status==="accepted")return "💛 已儲存，家長 LINE 通知已受理";
+    if(notice.status==="email_sent")return "💛 已儲存，已改寄 Email 通知家長";
+    if(notice.status==="mixed_sent")return "💛 已儲存，已透過 LINE／Email 通知家長";
+    if(notice.status==="unconfirmed")return "💛 已儲存；家長通知結果待確認";
+    if(notice.status==="no_recipients")return "💛 已儲存；尚無綁定此學生的家長";
+    if(notice.status==="obsolete"||notice.status==="ineligible")return "💛 已儲存；資料已更新，本次未發送通知";
+    return "💛 已儲存；家長通知未完成，可再次儲存重試";
+  }
   window.savePracticeFeedback=async function(studentId){
     if(!isTeacher()||state.practiceFeedbackSaving)return;
     const selected=document.querySelector(`input[name="pf_${CSS.escape(String(studentId))}"]:checked`);
     if(!selected){toast("請先選擇一個鼓勵圖示");return}
     const comment=document.getElementById("pfComment_"+studentId)?.value?.trim()||"";
-    state.practiceFeedbackSaving=String(studentId);render();
+    const level=Number(selected.value),button=document.getElementById("pfSave_"+studentId);
+    state.practiceFeedbackSaving=String(studentId);
+    if(button){button.disabled=true;button.textContent="⏳ 儲存中…"}
+    let saved=false,retryNotification=false;
     try{
-      await api("/api/practice-feedback",{method:"POST",body:JSON.stringify({studentId,month:state.practiceProgressMonth,level:Number(selected.value),comment})});
-      await loadPracticeProgress();
-      toast("💛 已送出老師鼓勵回饋");
+      const result=await api("/api/practice-feedback",{method:"POST",body:JSON.stringify({studentId,month:state.practiceProgressMonth,level,comment})});
+      saved=true;
+      retryNotification=!!result.notification&&!["accepted","email_sent","mixed_sent","disabled"].includes(result.notification.status);
+      let message=feedbackNoticeMessage(result.notification);
+      try{await loadPracticeProgress()}catch{message+="；請重新整理進度"}
+      toast(message);
     }catch(e){toast("❌ "+e.message)}
-    finally{state.practiceFeedbackSaving="";render()}
+    finally{
+      state.practiceFeedbackSaving="";render();
+      if(!saved||retryNotification){
+        const draft=document.getElementById("pfComment_"+studentId),option=document.getElementById("pf_"+studentId+"_"+level);
+        if(draft)draft.value=comment;
+        if(option)option.checked=true;
+      }
+    }
   };
   window.changePracticeProgressStatus=function(v,button){
     const group=button?.closest?.('.practice-summary-filters'),top=group?.getBoundingClientRect?.().top;

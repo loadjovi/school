@@ -38,7 +38,7 @@ async function one({schoolId,eventId,recipient,text,subject,lineSender,stillDue}
  catch(error){if([409,412].includes(error.statusCode))return {status:"unconfirmed",channel:"none"};throw error}
  let result={status:"failed",channel:"none"},line;
  try{
-  if(stillDue&&!await stillDue())result={status:"obsolete",channel:"none"};
+  if(stillDue&&!await stillDue(recipient))result={status:"obsolete",channel:"none"};
   else{
    try{
     if(lineSender)line=await lineSender(recipient);
@@ -50,7 +50,7 @@ async function one({schoolId,eventId,recipient,text,subject,lineSender,stillDue}
     }
    }catch{line={status:"failed"}}
    if(accepted(line))result={status:"accepted",channel:"line",lineStatus:statusOf(line),mailStatus:"skipped_line_accepted"};
-   else if(statusOf(line)==="ineligible"||stillDue&&!await stillDue())result={status:"obsolete",channel:"none",lineStatus:statusOf(line)};
+   else if(statusOf(line)==="ineligible"||stillDue&&!await stillDue(recipient))result={status:"obsolete",channel:"none",lineStatus:statusOf(line)};
    else{
     const fallback=await mail(schoolId,recipient,subject,text);
     result={status:accepted(fallback)?"accepted":fallback.status==="unconfirmed"?"unconfirmed":"failed",channel:"email",lineStatus:statusOf(line),mailStatus:statusOf(fallback)};

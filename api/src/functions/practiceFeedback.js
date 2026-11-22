@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, ensureStudentAccess, json } from "../lib/auth.js";
 import { ensureTenantTables, table, tenantStudentPartition, tenantSchoolPartition, getStudentMaster } from "../lib/storage.js";
+import { notifyPracticeFeedback } from "../lib/practiceFeedbackNotification.js";
 
 const safe=v=>String(v||"").replaceAll("'","''");
 const currentMonth=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit"}).format(new Date()).slice(0,7);
@@ -68,7 +69,7 @@ app.http("practiceFeedback",{
     if(!Number.isInteger(level)||level<1||level>5)return json({error:"鼓勵等級需為 1～5"},400);
     if(!ensureStudentAccess(a,studentId))return json({error:"無此學生存取權限"},403);
     const master=await getStudentMaster(studentId,schoolId);
-    if(!master)return json({error:"找不到學生資料"},404);
+    if(!master||master.status==="inactive")return json({error:"找不到在團學生資料"},404);
 
     const now=new Date().toISOString();
     const taipeiDate=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
@@ -88,7 +89,8 @@ app.http("practiceFeedback",{
       updatedAt:now
     };
     await table("tenantPracticeFeedback").upsertEntity(entity,"Replace");
+    const notification=await notifyPracticeFeedback(schoolId,entity);
     const monthRows=await listRows(schoolId,{studentId,month});
-    return json({ok:true,item:view(entity),monthCount:monthRows.length});
+    return json({ok:true,item:view(entity),monthCount:monthRows.length,notification});
   }
 });
