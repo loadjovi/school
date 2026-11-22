@@ -78,7 +78,7 @@ test('a hidden tool retains its measured height until it becomes visible again',
  h.height(900);h.resize();h.flush();assert.equal(h.messages.at(-1).data.height,902);
 });
 test('both HTML pages load the scoped bridge while preserving their business modules and standalone links',()=>{
- assert.match(read('app/line-announcement.html'),/href="\/line-account.html" target="_top"/);
+ assert.doesNotMatch(read('app/line-announcement.html'),/href="\/line-account.html"/);assert.match(read('app/line-announcement.html'),/id="lineAccountPanel"/);
  const line=read('app/line-announcement.html'),fees=read('app/fee-collections.html'),css=read('app/school-service-frame.css');
  for(const html of [line,fees]){assert.match(html,/school-service-frame\.js\?v=20261123-service-return" defer/);assert.match(html,/school-service-frame\.css\?v=20261123-service-return/)}
  assert.match(line,/id="backLink" href="\/"/);assert.match(fees,/id="feePlatformBack" class="back" href="\/"/);

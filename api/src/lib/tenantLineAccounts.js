@@ -287,12 +287,14 @@ export async function clearTenantLineSession(request) {
 }
 
 const oauthCookieName = "__Host-school-line-oauth";
-export async function createTenantLineOAuth(schoolId, config, google) {
+export async function createTenantLineOAuth(schoolId, config, google, {returnTo} = {}) {
+  if (returnTo !== undefined && (returnTo !== "notification-center" || !google?.sub)) throw new Error("Invalid LINE account return destination");
   const state = lineRandom(), verifier = lineRandom(), nonce = lineRandom();
   await (await writableStore()).createEntity({
     partitionKey: "oauth-" + tenantSchoolPartition(schoolId), rowKey: lineHash(state),
     verifier, nonce, configVersion: config.oauthVersion,
-    googleSub: google?.sub || "", googleEmail: google?.email || "", expires: Date.now() + 600000
+    googleSub: google?.sub || "", googleEmail: google?.email || "", expires: Date.now() + 600000,
+    ...(returnTo === "notification-center" ? {returnTo} : {})
   });
   return {state, verifier, nonce, cookie: lineCookie(oauthCookieName, state, 600)};
 }

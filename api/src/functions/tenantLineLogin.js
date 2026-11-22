@@ -80,6 +80,9 @@ app.http("tenantLineLoginStart", {
     if (!allowedOrigin(request, channel.appOrigin)) return json({error: "來源不符"}, 403);
     const input = await request.json().catch(() => null);
     if (!["login", "link"].includes(input?.mode)) return json({error: "操作不正確"}, 400);
+    if (Object.hasOwn(input, "returnTo") && input.returnTo !== "notification-center") return json({error: "返回位置不正確"}, 400);
+    const returnToCenter = input.returnTo === "notification-center";
+    if (returnToCenter && input.mode !== "link") return json({error: "此返回位置僅適用於管理員綁定帳號"}, 400);
     let google;
     if (input.mode === "link") {
       google = await verifyGoogle(request);
@@ -89,8 +92,9 @@ app.http("tenantLineLoginStart", {
       if (context.schoolId !== schoolId || !accountRoles.has(context.access.role)) {
         return json({error: "請先切換至此校已授權的身分"}, 403);
       }
+      if (returnToCenter && context.access.role !== "admin") return json({error: "僅學校管理員可返回 LINE 通知中心"}, 403);
     }
-    const txn = await createTenantLineOAuth(schoolId, channel, google);
+    const txn = await createTenantLineOAuth(schoolId, channel, google, returnToCenter ? {returnTo: "notification-center"} : undefined);
     const url = new URL(startUrl);
     url.search = new URLSearchParams({
       response_type: "code", client_id: channel.loginId, redirect_uri: callbackUrl(channel),
@@ -114,8 +118,14 @@ app.http("tenantLineLoginCallback", {
     const state = request.query.get("state"), code = request.query.get("code");
     try {
       const txn = await useTenantLineOAuth(request, schoolId, state, channel);
+      // The destination is a fixed enum stored during the authenticated start.
+      // Never accept a redirect path or destination from the callback query.
+      if (txn?.googleSub && txn.returnTo === "notification-center") {
+        resultUrl.pathname = "/line-announcement.html";
+        resultUrl.searchParams.set("tab", "account");
+      }
       if (!txn || !code) throw new Error("Expired or invalid authorization");
-      if(txn.googleSub)resultUrl.pathname="/line-account.html";
+      if(txn.googleSub && txn.returnTo !== "notification-center")resultUrl.pathname="/line-account.html";
       const tokens = await lineOAuthRequest("token", {
         grant_type: "authorization_code", code, redirect_uri: callbackUrl(channel), client_id: channel.loginId,
         client_secret: channel.loginSecret, code_verifier: txn.verifier

@@ -1,6 +1,7 @@
+import {createLineAccountPanel} from "./line-account-panel.js?v=20261123-account-navigation";
 import {createLineNotificationSettings} from "./line-notification-settings.js?v=20261123-notification-settings";
 const $=id=>document.getElementById(id),form=$("announcement"),status=$("result"),preview=$("preview"),send=$("send");
-let centerAdminReady=false,centerTab="send";
+let centerAdminReady=false,centerTab="send",accountPanel=null,accountReturnHandled=false;
 let confirmed=null,revision=0,activities=[],schoolGroups=[],optionsLoaded=false,loadingVersion=0,busy=false;
 const mode=()=>form.querySelector('[name="audience"]:checked')?.value||"members";
 const selectedActivity=()=>activities.find(x=>x.key===$("activityKey").value);
@@ -56,25 +57,31 @@ async function centerApi(path,options={}){
 }
 const groupSettings=createLineNotificationSettings({host:$("lineSettingsPanel"),api:centerApi,onChanged:async()=>{revision++;clearPreview();await loadOptions()}});
 async function selectCenterTab(tab){
-  if(!centerAdminReady||groupSettings.isBusy())return;
-  centerTab=tab==="settings"?"settings":"send";
-  $("lineSendPanel").hidden=centerTab!=="send";$("lineSettingsPanel").hidden=centerTab!=="settings";
+  if(!centerAdminReady||groupSettings.isBusy()||accountPanel?.isBusy())return;
+  centerTab=["settings","account"].includes(tab)?tab:"send";
+  $("lineSendPanel").hidden=centerTab!=="send";$("lineSettingsPanel").hidden=centerTab!=="settings";$("lineAccountPanel").hidden=centerTab!=="account";
   for(const button of document.querySelectorAll("[data-line-center-tab]"))button.setAttribute("aria-selected",String(button.dataset.lineCenterTab===centerTab));
   groupSettings.setActive(centerTab==="settings");
   if(centerTab==="settings")await groupSettings.load();
+  if(centerTab==="account"&&accountPanel){
+    const params=new URLSearchParams(location.search);await accountPanel.load(accountReturnHandled?undefined:params);accountReturnHandled=true;
+    if(params.has("line_link")||params.has("line_error")){params.delete("line_link");params.delete("line_error");params.set("tab","account");history.replaceState({},"",location.pathname+"?"+params)}
+  }
 }
 async function initializeCenter(){
   const options=loadOptions().catch(error=>{status.textContent=error.message});
   try{
     const me=await centerApi("/api/me");if(me.role!=="admin")throw Error("僅限本校管理員使用群組與通知設定");
-    centerAdminReady=true;$("lineSettingsTab").disabled=false;
-    if(new URLSearchParams(location.search).get("tab")==="settings")await selectCenterTab("settings");
+    accountPanel=createLineAccountPanel({host:$("lineAccountPanel"),api:centerApi,me,returnTo:"notification-center",navigate:url=>{if(window.parent!==window)window.parent.location.assign(url);else location.assign(url)},onChanged:async()=>{revision++;clearPreview();try{await loadOptions()}catch{}}});
+    centerAdminReady=true;$("lineSettingsTab").disabled=false;$("lineAccountTab").disabled=false;
+    const params=new URLSearchParams(location.search);const tab=params.has("line_link")||params.has("line_error")?"account":params.get("tab");if(["settings","account"].includes(tab))await selectCenterTab(tab);
   }catch(error){$("lineSettingsAuthStatus").textContent=error.message;status.textContent=error.message}
   await options;
 }
 $("lineSendTab").addEventListener("click",()=>selectCenterTab("send"));
 $("lineSettingsTab").addEventListener("click",()=>selectCenterTab("settings"));
-window.addEventListener("pagehide",()=>groupSettings.setActive(false));
+$("lineAccountTab").addEventListener("click",()=>selectCenterTab("account"));
+window.addEventListener("pagehide",()=>{groupSettings.setActive(false);accountPanel?.destroy()});
 function clearPreview(){confirmed=null;$("recipientPreview").hidden=true;$("deliveryReport").hidden=true;status.textContent=""}
 function drawRecipients(host,items){
   host.replaceChildren();

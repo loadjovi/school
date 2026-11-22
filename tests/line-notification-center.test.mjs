@@ -169,7 +169,7 @@ test("signed activity-group webhooks bind only in group chat and never touch gen
 
 test("the standalone LINE account page fetches no projects, bank templates or financial data for bound parents",async()=>{
  const calls=[],elements=Object.fromEntries(["siteName","roleTitle","roleIntro","status","lineBinding"].map(id=>[id,{textContent:"",innerHTML:"",className:"",hidden:false}]));
- const ctx={console,document:{documentElement:{hasAttribute:()=>true},getElementById:id=>elements[id]||null,addEventListener(){}},location:{hash:"",search:"",pathname:"/line-account.html"},history:{replaceState(){}},URLSearchParams,
+ const ctx={createLineAccountPanel:({api})=>({load:()=>api("/api/line/school-account"),destroy(){}}),console,document:{documentElement:{hasAttribute:()=>true},getElementById:id=>elements[id]||null,addEventListener(){}},location:{hash:"",search:"",pathname:"/line-account.html"},history:{replaceState(){}},URLSearchParams,
   sessionStorage:{getItem:()=>""},fetch:async url=>{calls.push(url);return {ok:true,json:async()=>url==="/api/me"?{role:"parent",schoolId:"school-a",capabilities:{lineAccount:true,feeCollections:true}}:{configured:true,bound:true,googleLinked:true,authProvider:"google",lineDisplayName:"家長"}}}
  };
  runInNewContext(read("app/fee-collections.js").replace(/^import .*;\n/gm,"").replace('if(!legacyLineEntry)load();','globalThis.loadAccount=load;'),ctx);

@@ -1,7 +1,7 @@
 (()=>{
  if(window.__schoolAdminWorkspace)return;
  window.__schoolAdminWorkspace=true;
- const groups={home:['工作首頁','先查看待辦，或選擇要辦理的工作。'],tasks:['待辦事項','點選一項待辦，直接進入處理畫面。'],more:['更多','操作紀錄、平台設定與使用說明。'],attendance:['出勤與請假','先選擇要處理的工作：一般課程點名、訓練點名、缺席追蹤或紀錄修正。'],accounts:['帳號管理','啟用老師、核准家長綁定，或設定校方查詢帳號。'],courses:['課表與行事曆','管理固定課表、停復課、併班及加練／寒暑訓等訓練課程。'],uniformAdmin:['團服與活動','管理團服，以及演出、比賽、快閃、交流與聯演活動。'],records:['操作紀錄','查詢資料異動及校方帳號使用紀錄。'],settings:['平台設定','調整通知、網站名稱與外觀。'],privateLookup:['個課紀錄查詢','依學生、日期與狀態查詢完整預約及異動紀錄。'],grades:['成績與練習','查看全體學生學期 20 分，或追蹤每月自主練習明細。']};
+ const groups={home:['工作首頁','先查看待辦，或選擇要辦理的工作。'],attendance:['出勤與請假','先選擇要處理的工作：一般課程點名、訓練點名、缺席追蹤或紀錄修正。'],accounts:['帳號管理','啟用老師、核准家長綁定，或設定校方查詢帳號。'],courses:['課表與行事曆','管理固定課表、停復課、併班及加練／寒暑訓等訓練課程。'],uniformAdmin:['團服與活動','管理團服，以及演出、比賽、快閃、交流與聯演活動。'],records:['操作紀錄','查詢資料異動及校方帳號使用紀錄。'],settings:['平台設定','調整通知、網站名稱與外觀。'],privateLookup:['個課紀錄查詢','依學生、日期與狀態查詢完整預約及異動紀錄。'],grades:['成績與練習','查看全體學生學期 20 分，或追蹤每月自主練習明細。']};
  Object.assign(groups,{financeAdmin:['財務核帳','核對款項、處理補退款，管理收款帳戶與財務通知。'],lineNotice:['LINE 通知中心','選擇通知對象，預覽後發送訊息。'],feeCollections:['收費與核帳','查看收費專案、繳費進度與核帳紀錄。']});
  const workspaceServices={finance:{group:'financeAdmin',frameId:'awFinanceServiceFrame',path:'/uniform-event-admin.html',title:'財務核帳'},line:{group:'lineNotice',frameId:'awLineServiceFrame',path:'/line-announcement.html',title:'LINE 通知中心'},fees:{group:'feeCollections',frameId:'awFeesServiceFrame',path:'/fee-collections.html',title:'收費與核帳'}};
  const accountTasks={
@@ -172,7 +172,7 @@
  });
  document.addEventListener("change",event=>{if(event.target.id==="awLessonStatus"){privateLookup.status=event.target.value;organize()}});
  const previousNav=nav;
- nav=function(){if(state.me?.role!=='admin')return previousNav();const section=state.adminWorkspaceSection||'home',current=state.page==='admin'&&['tasks','more','records','settings'].includes(section)?(section==='tasks'?'tasks':'more'):'home';return `<nav class="nav aw-bottom" aria-label="手機後台導覽">${[['home','工作首頁'],['tasks','待辦事項'],['more','更多']].map(([key,label])=>`<button type="button" data-workspace-group="${key}" ${current===key?'aria-current="page"':''}>${label}</button>`).join('')}</nav>`};
+ nav=function(){if(state.me?.role!=='admin')return previousNav();const section=({tasks:'home',more:'settings'})[state.adminWorkspaceSection]||state.adminWorkspaceSection||'home',current=state.page==='admin'&&['records','settings'].includes(section)?section:'home';return `<nav class="nav aw-bottom" aria-label="手機後台導覽">${[['home','工作首頁'],['records','操作紀錄'],['settings','平台設定']].map(([key,label])=>`<button type="button" data-workspace-group="${key}" ${current===key?'aria-current="page"':''}>${label}</button>`).join('')}</nav>`};
  const inScope=()=>typeof state!=='undefined'&&state.me?.role==='admin'&&state.page==='admin'&&!state.teacherAdminOpen&&!window.__roleModuleBootstrap&&!(window.__roleLoaderActive&&window.__roleModulesReady!==true);
  function schoolServiceAllowed(service){
   const capabilities=state.me?.capabilities||{};
@@ -184,7 +184,7 @@
   if(href){
    let source;try{source=new URL(href,location.origin)}catch{return null}
    if(source.origin!==location.origin||source.pathname!==config.path)return null;
-   if(service==='line'&&source.searchParams.has('tab')){const tab=source.searchParams.get('tab');if(!['send','settings'].includes(tab))return null;query.set('tab',tab);}
+   if(service==='line'&&source.searchParams.has('tab')){const tab=source.searchParams.get('tab');if(!['send','settings','account'].includes(tab))return null;query.set('tab',tab);}
    if(service==='finance'){
     if(source.searchParams.get('workspace')!=='finance')return null;
     const task=source.searchParams.get('task');if(task&&!['finance','accounts','notifications','activity-fees'].includes(task))return null;if(task)query.set('task',task);
@@ -233,6 +233,7 @@
  };
  window.openSchoolAdminWorkspace=async function(group='home'){
   if(state.me?.role!=='admin')return;
+  group=({tasks:'home',more:'settings'})[group]||group;
   const service=Object.keys(workspaceServices).find(key=>workspaceServices[key].group===group);if(service&&!schoolServiceAllowed(service))return;
   const alreadyWorkspace=inScope();
   if(group==='attendance'&&state.adminWorkspaceSection!=='attendance')state.adminAttendanceWorkspaceTask='home';
@@ -327,6 +328,7 @@
   if(!inScope())return;
   const main=document.querySelector('.main');if(!main)return;
   const activityEntry=activityWorkspaceEntry();if(activityEntry)state.adminWorkspaceSection='uniformAdmin';
+  state.adminWorkspaceSection=({tasks:'home',more:'settings'})[state.adminWorkspaceSection]||state.adminWorkspaceSection;
   const requestedService=Object.keys(workspaceServices).find(key=>workspaceServices[key].group===state.adminWorkspaceSection);
   if(requestedService&&!schoolServiceAllowed(requestedService))state.adminWorkspaceSection='home';
   const group=groups[state.adminWorkspaceSection]?state.adminWorkspaceSection:'home';
@@ -337,7 +339,7 @@
    root.innerHTML=`<div class="aw-heading"><div><small>學校後台</small><h1></h1><p></p></div><button type="button" class="aw-workspace-back" data-workspace-group="home" hidden>返回工作首頁</button></div>
    <div class="aw-home"><section class="aw-home-section" aria-labelledby="awDailyTitle"><h2 id="awDailyTitle">常用工作</h2><div class="aw-shortcuts aw-primary-jobs">${homeJobs(true)}</div></section><section class="aw-home-section" aria-labelledby="awManagementTitle"><h2 id="awManagementTitle">查詢與管理</h2><div class="aw-shortcuts aw-management-jobs">${homeJobs(false)}</div></section><details class="aw-onboarding"><summary>第一次使用？查看操作引導</summary><p>選一項工作，跟著提示操作。</p><div class="aw-guide-choices">${Object.entries(guideTasks).map(([key,[label]])=>`<button type="button" data-admin-guide="${key}">${label}</button>`).join('')}</div><button type="button" data-admin-guide-skip>收合說明</button></details></div>
    <section class="aw-todos" aria-label="目前待辦"><div class="section-title"><div class="aw-todo-heading"><h2>待辦事項</h2><small>點選一項即可處理</small></div><button type="button" data-admin-todo-reload>更新</button></div><div data-todo-body></div></section>
-   <div class="aw-more"><div class="aw-choice-list"><button type="button" data-workspace-group="records">操作紀錄 ›</button><button type="button" data-workspace-group="settings">平台設定 ›</button><button type="button" data-workspace-action="help">使用說明 ›</button><button type="button" data-admin-guide-reopen>重新查看入門引導 ›</button><a href="/line-account.html" data-aw-line-binding hidden>我的 LINE 綁定</a><button type="button" data-admin-logout>登出</button></div></div>
+   <section class="card aw-settings-tools" data-admin-group="settings" hidden><h2>使用協助</h2><div class="aw-choice-list"><button type="button" data-workspace-action="help">使用說明 ›</button><button type="button" data-admin-guide-reopen>重新查看入門引導 ›</button></div></section>
    <section class="aw-courses aw-course-task-picker" aria-labelledby="awCourseTaskTitle"><span class="aw-attendance-kicker">課務工作入口</span><h2 id="awCourseTaskTitle">今天要處理哪一項？</h2><p>選擇工作後，只會顯示需要操作的內容。</p><div class="aw-course-boundary"><b>這裡只管理課程與訓練</b><span>演出日期、比賽當天、快閃、校際交流與聯演，請到「團服與活動 → 活動設定」。</span></div><div class="aw-course-task-grid"><button type="button" data-course-work="fixed"><span class="aw-course-task-icon">📅</span><span><b>固定課表</b><small>匯入、預覽與正式啟用</small></span><span aria-hidden="true">›</span></button><button type="button" data-course-work="exceptions"><span class="aw-course-task-icon">🛑</span><span><b>停課／復課</b><small>選課程與日期，保留異動紀錄</small></span><span aria-hidden="true">›</span></button><button type="button" data-course-work="merge"><span class="aw-course-task-icon">🎼</span><span><b>單日分部併班</b><small>老師請假時安排接課分部</small></span><span aria-hidden="true">›</span></button><button type="button" data-course-work="addEvent"><span class="aw-course-task-icon">➕</span><span><b>新增訓練課程</b><small>比賽加練、寒訓、暑訓（可多天）</small></span><span aria-hidden="true">›</span></button><button type="button" data-course-work="manageEvents"><span class="aw-course-task-icon">🗓️</span><span><b>管理訓練行事曆</b><small>點名、取消／恢復與老師工時</small></span><span aria-hidden="true">›</span></button></div></section>
    ${Object.entries(workspaceServices).map(([service,config])=>`<section class="aw-service" data-workspace-service="${service}" hidden><p class="notice" data-service-loading="${service}" role="status" hidden>正在讀取${config.title}…</p><iframe id="${config.frameId}" title="${config.title}" src="about:blank" loading="lazy" scrolling="no"></iframe></section>`).join('')}
    <section class="aw-uniform" hidden><div class="aw-uniform-frame-wrap"><iframe id="awUniformFrame" title="團服與活動管理" loading="lazy" src="about:blank"></iframe></div></section><section class="aw-learning-workspace" hidden><div class="aw-learning-switcher"><span class="aw-learning-kicker">學習資料入口</span><h2>要查看哪一種資料？</h2><p>學期總覽用來掌握 20 分完成度；月報用來追蹤自主練習天數、分鐘與逐日內容。</p><div class="aw-learning-tabs" role="tablist" aria-label="成績與練習檢視"><button type="button" role="tab" data-learning-work="overview"><span class="aw-learning-icon">📊</span><span><b>學期成績總覽</b><small>自主練習 10＋點名 5＋學習表現 5</small></span></button><button type="button" role="tab" data-learning-work="practice"><span class="aw-learning-icon">📚</span><span><b>自主練習月報</b><small>每月天數、分鐘、未達標與逐日明細</small></span></button></div></div><div class="aw-learning-overview aw-semester-scores"><div class="aw-learning-context"><b>學期 20 分總覽</b><span>適合確認全體學生分數是否完成、篩選待補資料及匯出 CSV。</span></div><iframe id="awSemesterScoresFrame" title="全體學生學期 20 分成績" loading="lazy" src="about:blank"></iframe></div><div class="aw-learning-practice" hidden></div></section><div class="aw-private-lookup" hidden></div>
@@ -366,11 +368,10 @@
   const financeJob=root.querySelector('[data-workspace-tool="finance"]');if(financeJob)financeJob.hidden=!schoolServiceAllowed('finance');
   const serviceHost=root.querySelector('.aw-primary-jobs');
   for(const service of main.querySelectorAll('[data-admin-service]'))if(service.parentElement!==serviceHost)serviceHost.append(service);
-  root.querySelector('[data-aw-line-binding]').hidden=!serviceHost.querySelector('[data-admin-service="line"]');
-  for(const [selector,visible] of [['.aw-todos',['home','tasks'].includes(group)],['.aw-more',group==='more'],['.aw-courses',group==='courses'],['.aw-uniform',group==='uniformAdmin'],['.aw-learning-workspace',group==='grades'],['.aw-private-lookup',group==='privateLookup']])root.querySelector(selector).hidden=!visible;
+  for(const [selector,visible] of [['.aw-todos',group==='home'],['.aw-courses',group==='courses'],['.aw-uniform',group==='uniformAdmin'],['.aw-learning-workspace',group==='grades'],['.aw-private-lookup',group==='privateLookup']])root.querySelector(selector).hidden=!visible;
   for(const [service,config] of Object.entries(workspaceServices))root.querySelector('[data-workspace-service="'+service+'"]').hidden=group!==config.group||!schoolServiceAllowed(service);
   const todos=todoHtml(),body=root.querySelector('[data-todo-body]');if(body.innerHTML!==todos)body.innerHTML=todos;
-  if(['home','tasks'].includes(group)&&!summary.loading&&(summary.key!==taskScopeKey()||!summary.loadedAt))setTimeout(()=>loadTasks(),0);
+  if(group==='home'&&!summary.loading&&(summary.key!==taskScopeKey()||!summary.loadedAt))setTimeout(()=>loadTasks(),0);
   for(const card of main.querySelectorAll('.desktop-content > .card'))if(card.querySelector('h2')?.textContent.includes('待審核')||card.textContent.includes('目前沒有待審核'))root.querySelector('.aw-account-pending').append(card);
   const uniformFrame=root.querySelector('#awUniformFrame');
   bindUniformFrameNavigation(uniformFrame);
@@ -397,7 +398,7 @@
   root.querySelector('.aw-attendance-back').hidden=group!=='attendance'||attendanceTask==='home';
   root.querySelector('.aw-attendance-assist-slot').hidden=group!=='attendance'||attendanceTask!=='regular';
   if(group==='attendance'&&attendanceTask==='regular'&&typeof window.mountAdminAttendanceAssist==='function')window.mountAdminAttendanceAssist();
-  for(const b of document.querySelectorAll('.aw-bottom [data-workspace-group]')){const active=b.dataset.workspaceGroup===(['tasks','more','records','settings'].includes(group)?(group==='tasks'?'tasks':'more'):'home');b.classList.toggle('is-active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')}
+  for(const b of document.querySelectorAll('.aw-bottom [data-workspace-group]')){const active=b.dataset.workspaceGroup===(['records','settings'].includes(group)?group:'home');b.classList.toggle('is-active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')}
   // Keep all account management cards together in a stable, explicit order.
   const accountPanels=root.querySelector('.aw-account-panels');
   const schoolCard=main.querySelector('#schoolAccessAdmin');
@@ -449,9 +450,8 @@
   }
  }
  document.addEventListener('click',async e=>{
-  const b=e.target.closest?.('[data-admin-todo],[data-admin-todo-reload],[data-admin-guide],[data-admin-guide-skip],[data-admin-guide-reopen],[data-admin-guide-close],[data-admin-logout]');if(!b)return;e.preventDefault();
+  const b=e.target.closest?.('[data-admin-todo],[data-admin-todo-reload],[data-admin-guide],[data-admin-guide-skip],[data-admin-guide-reopen],[data-admin-guide-close]');if(!b)return;e.preventDefault();
   try{
-   if(b.hasAttribute('data-admin-logout')){logout();return}
    if(b.hasAttribute('data-admin-guide-close')){state.adminGuideTask='';organize();return}
    if(b.hasAttribute('data-admin-guide-skip')){try{localStorage.setItem(guideKey(),'done')}catch{}const d=document.querySelector('.aw-onboarding');if(d)d.open=false;return}
    if(b.hasAttribute('data-admin-guide-reopen')){await window.openSchoolAdminWorkspace('home');document.querySelector('.aw-onboarding').open=true;return}

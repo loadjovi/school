@@ -49,13 +49,13 @@ test("only finance verifiers see the dedicated finance shortcut, and finance tod
  assert.deepEqual(calls,["finance"]);
  assert.doesNotMatch(source,/data-demo-fee-entry|LAB 收費專案驗證（DEMO）|data-workspace-service-entry/);
 });
-test("existing service nodes move once into the same common-job grid, and own LINE binding remains available in More",()=>{
- const start=source.indexOf("  const serviceHost=root.querySelector("),end=source.indexOf("  for(const [selector,visible]",start),nodes=[{dataset:{adminService:"fees"}},{dataset:{adminService:"line"}}],binding={hidden:true};let moves=0;
- const host={append(node){moves++;node.parentElement=this},querySelector:selector=>nodes.find(node=>selector.includes('"'+node.dataset.adminService+'"'))};
- const context={main:{querySelectorAll:()=>nodes},root:{querySelector:selector=>selector.includes("aw-primary-jobs")?host:binding}};
- runInNewContext('{'+source.slice(start,end)+'}',context);assert.equal(moves,2);assert.equal(binding.hidden,false);
+test("existing service nodes move once into the common-job grid without retaining another personal binding entry",()=>{
+ const start=source.indexOf("  const serviceHost=root.querySelector("),end=source.indexOf("  for(const [selector,visible]",start),nodes=[{dataset:{adminService:"fees"}},{dataset:{adminService:"line"}}];let moves=0;
+ const host={append(node){moves++;node.parentElement=this}};
+ const context={main:{querySelectorAll:()=>nodes},root:{querySelector:()=>host}};
  runInNewContext('{'+source.slice(start,end)+'}',context);assert.equal(moves,2);
- assert.match(source,/href="\/line-account.html" data-aw-line-binding/);
+ runInNewContext('{'+source.slice(start,end)+'}',context);assert.equal(moves,2);
+ assert.doesNotMatch(source,/data-aw-line-binding|href="\/line-account.html"|aw-more|data-admin-logout/);
 });
 function todos({roleFinance=false,uniform=[],family=[],loading=false,error=false,registrations=[]}={}){
  const start=source.indexOf(" function todoHtml(){"),end=source.indexOf(" function mountGuide",start);
@@ -72,10 +72,24 @@ test("loading and failure remain unknown rather than falsely zero, and finance i
  assert.match(todos({error:true}),/暫時無法讀取/);assert.doesNotMatch(todos({error:true}),/目前沒有待處理事項/);
  const uniform=[{kind:"regularUniform",status:"APPROVED",paymentStatus:"REPORTED_UNVERIFIED"}];assert.doesNotMatch(todos({uniform}),/匯款待核帳/);assert.match(todos({uniform,roleFinance:true}),/匯款待核帳<\/span><b>1 筆/);
 });
-test("mobile navigation keeps Home active while working and provides a consistent return action",()=>{
+test("mobile navigation directly opens Home, Records and Settings with correct active states",()=>{
  const start=source.indexOf(" const previousNav=nav;"),end=source.indexOf(" const inScope=",start),state={me:{role:"admin"},page:"admin",adminWorkspaceSection:"uniformAdmin"},context={window:{},state,nav:()=>"legacy"};
- runInNewContext(source.slice(start,end),context);assert.match(context.nav(),/data-workspace-group="home" aria-current="page"/);assert.equal((context.nav().match(/<button/g)||[]).length,3);
- state.adminWorkspaceSection="tasks";assert.match(context.nav(),/data-workspace-group="tasks" aria-current="page"/);state.me.role="parent";assert.equal(context.nav(),"legacy");
+ runInNewContext(source.slice(start,end),context);
+ assert.deepEqual([...context.nav().matchAll(/data-workspace-group="([^"]+)"/g)].map(match=>match[1]),["home","records","settings"]);
+ assert.match(context.nav(),/data-workspace-group="home" aria-current="page"/);assert.equal((context.nav().match(/<button/g)||[]).length,3);
+ assert.doesNotMatch(context.nav(),/待辦事項|更多/);
+ for(const section of ["records","settings"]){state.adminWorkspaceSection=section;assert.match(context.nav(),new RegExp('data-workspace-group="'+section+'" aria-current="page"'))}
+ for(const [legacy,current] of [["tasks","home"],["more","settings"]]){state.adminWorkspaceSection=legacy;assert.match(context.nav(),new RegExp('data-workspace-group="'+current+'" aria-current="page"'))}
+ for(const role of ["parent","teacher"]){state.me.role=role;assert.equal(context.nav(),"legacy")}
  assert.match(source,/class="aw-workspace-back" data-workspace-group="home"/);
  const help=source.match(/<details class="aw-onboarding"[^>]*>/)?.[0];assert.ok(help);assert.doesNotMatch(help,/ open/);
+ assert.match(source,/<section class="card aw-settings-tools" data-admin-group="settings" hidden>[\s\S]*使用說明[\s\S]*data-admin-guide-reopen/);
+});
+test("legacy Tasks and More calls resolve directly to Home and Settings without reloading the application",async()=>{
+ const state={me:{role:"admin"},page:"admin",adminWorkspaceSection:"home"},calls=[],context={state,window:{scrollTo(){}},workspaceServices:{},groups:{home:[],records:[],settings:[],uniformAdmin:[]},inScope:()=>true,organize:()=>calls.push("organize"),requestAnimationFrame:fn=>fn(),go:async()=>{throw Error("must retain current app")},render:()=>{throw Error("must retain current app")}};
+ const start=source.indexOf(" window.openSchoolAdminWorkspace=async"),end=source.indexOf(" window.openSchoolAdminActivitySettings=",start);
+ runInNewContext(source.slice(start,end),context);
+ for(const [legacy,current] of [["tasks","home"],["more","settings"],["records","records"],["settings","settings"]]){await context.window.openSchoolAdminWorkspace(legacy);assert.equal(state.adminWorkspaceSection,current)}
+ assert.equal(calls.length,8);
+ state.me.role="parent";await context.window.openSchoolAdminWorkspace("tasks");assert.equal(state.adminWorkspaceSection,"settings");
 });

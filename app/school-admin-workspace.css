@@ -51,8 +51,10 @@
 
 .school-admin-workspace .desktop-content[data-page="admin"]{display:block}
 
-.desktop-shell[data-role="admin"]>.top>.userrow button{min-height:36px;padding:6px 10px}
-@media(min-width:900px){.desktop-shell[data-role="admin"]>.top>.userrow{flex-direction:row!important;align-items:center!important;gap:14px!important;top:15px}.desktop-shell[data-role="admin"]>.top .brand{padding-right:280px}.desktop-shell[data-role="admin"]>.top>.sub{margin-right:280px!important}}
+.desktop-shell[data-role="admin"]>.top>.userrow button{min-height:44px;padding:8px 10px}
+.desktop-shell[data-role="admin"]>.top>.userrow>.logout{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:64px;min-height:44px;margin:0;padding:8px 10px}
+.desktop-shell[data-role="admin"]>.top>.userrow>.logout:focus-visible{outline:3px solid #fff;outline-offset:3px}
+@media(min-width:900px){.desktop-shell[data-role="admin"]>.top>.userrow{flex-direction:row!important;align-items:center!important;gap:14px!important;top:15px}.desktop-shell[data-role="admin"]>.top .brand{padding-right:320px}.desktop-shell[data-role="admin"]>.top>.sub{margin-right:320px!important}}
 @media(max-width:899px){.desktop-shell[data-role="admin"]>.top{min-height:128px}}
 
 /* Tables scroll within their own panel; the page itself remains viewport-wide. */
@@ -62,14 +64,15 @@
 @media(max-width:899px){
  .desktop-shell[data-role="admin"]{width:100%;max-width:100%;min-width:0;border-radius:0;overflow:visible;padding-bottom:calc(86px + env(safe-area-inset-bottom,0px))}
  .desktop-shell[data-role="admin"]>.top{display:grid;grid-template-columns:minmax(0,1fr);gap:5px;height:auto;min-height:0;padding:12px 14px;position:sticky;top:0}
- .desktop-shell[data-role="admin"]>.top .brand{position:static;display:flex!important;align-items:center;gap:10px!important;padding:0!important;min-width:0;min-height:44px;font-size:18px;line-height:1.35}
+ .desktop-shell[data-role="admin"]>.top .brand{position:static;display:flex!important;align-items:center;gap:10px!important;padding:0 calc(76px + env(safe-area-inset-right,0px)) 0 0!important;min-width:0;min-height:44px;font-size:18px;line-height:1.35}
  .desktop-shell[data-role="admin"]>.top .brand>span:first-child{position:static!important;width:44px!important;height:44px!important;min-width:44px!important;flex-basis:44px!important;border-radius:9px!important}
  .desktop-shell[data-role="admin"]>.top .brand>span:last-child{min-width:0;overflow-wrap:anywhere}
  .desktop-shell[data-role="admin"]>.top>.sub{margin:0 0 2px 54px!important;min-height:0;font-size:12px}
  .desktop-shell[data-role="admin"]>.top>.userrow{position:static!important;display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;margin:2px 0 0!important;min-width:0;width:100%}
  .desktop-shell[data-role="admin"]>.top>.userrow>div:first-child{flex:1;min-width:0;flex-direction:row;align-items:center;gap:8px;flex-wrap:wrap}
  .desktop-shell[data-role="admin"]>.top>.userrow small{max-width:100%;font-size:12px;overflow-wrap:anywhere;white-space:normal;text-align:left}
- .desktop-shell[data-role="admin"]>.top>.userrow button{margin:0;min-height:40px;max-width:100%;font-size:12px}
+ .desktop-shell[data-role="admin"]>.top>.userrow button{margin:0;min-height:44px;max-width:100%;font-size:12px}
+ .desktop-shell[data-role="admin"]>.top>.userrow>.logout{position:absolute;top:12px;right:max(14px,env(safe-area-inset-right,0px));min-width:64px;min-height:44px}
  .desktop-shell[data-role="admin"] .main{min-width:0;width:100%;padding:16px 12px 24px}
  .desktop-shell[data-role="admin"] .main :is(.card,.desktop-content,.row2,.grid,.section-title,.item){min-width:0;max-width:100%}
  .desktop-shell[data-role="admin"] .main :is(.row2,.grid,.section-title,.item)>*{min-width:0}
@@ -123,7 +126,6 @@
 .aw-task-guide{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;padding:14px;margin-bottom:16px;background:#fff8e7;border:1px solid #e9c972;border-radius:12px;overflow-wrap:anywhere}
 .aw-task-guide p{font-size:14px;line-height:1.8;margin:6px 0 0}.aw-task-guide button{flex-shrink:0;font-size:12px!important;background:white;border:1px solid #cfb66e;padding:6px 8px}
 @media(max-width:899px){
- .desktop-shell[data-role="admin"]>.top>.userrow>.logout{display:none}
  .aw-shortcuts{grid-template-columns:repeat(2,minmax(0,1fr))}
  .aw-shortcuts button{padding:14px!important;min-height:108px}
  .aw-shortcuts button>span:first-child{flex:1;min-width:0}

@@ -1,3 +1,4 @@
+import {createLineAccountPanel} from "./line-account-panel.js?v=20261123-inline-account";
 import "./payment-resolution.js?v=20261122-single-parent-message";
 const accountOnly=document.documentElement.hasAttribute("data-line-account");
 const legacyLineEntry=!accountOnly&&(location.hash==="#lineBinding"||new URLSearchParams(location.search).has("line_link")||new URLSearchParams(location.search).has("line_error"));
@@ -20,53 +21,12 @@ async function api(path,options={}){
 function showStatus(message,type=""){$("status").textContent=message;$("status").hidden=!message;$('status').className=`notice ${type}`.trim()}
 function statusClass(status){return status==="REPORTED_UNVERIFIED"?"reported":status==="VERIFIED"?"":"closed"}
 
-function renderLineBinding(){
-  const line=state.line;
-  if(!line?.configured){$("lineBinding").innerHTML="";return}
-  if(line.pendingLink){
-    const {confirmationId,googleEmail,lineDisplayName}=line.pendingLink;
-    $("lineBinding").innerHTML=`<div class="card"><h2>確認要綁定的帳號</h2>
-      <p>請確認 Gmail 與 LINE 都是您自己的帳號。</p>
-      <dl><dt>Gmail</dt><dd>${esc(googleEmail)}</dd><dt>LINE 名稱</dt><dd>${esc(lineDisplayName||"未提供名稱")}</dd></dl>
-      <div class="actions"><button data-action="confirm-line-link" data-confirmation="${esc(confirmationId)}">確認綁定</button>
-      <button class="secondary" data-action="cancel-line-link" data-confirmation="${esc(confirmationId)}">取消</button></div></div>`;
-    return;
-  }
-  const googleAction=line.authProvider==="line"&&!line.googleLinked?'<div id="linkGoogleButton"></div>':"";
-  const detach=line.authProvider==="google"&&line.bound?'<button class="secondary" data-action="unbind-line">解除 LINE 綁定</button>':"";
-  const attach=line.authProvider==="google"&&!line.bound?'<button data-action="link-line">使用 LINE 授權並綁定</button>':"";
-  const sync=line.bound&&["admin","parent","unassigned"].includes(state.me?.role)?'<button class="secondary" data-action="sync-line-menu">同步我的 LINE 選單</button>':"";
-  $("lineBinding").innerHTML=`<div class="card"><h2>LINE 帳號</h2>
-    <p>${line.bound?`已連結 ${esc(line.lineDisplayName||"LINE")}`:"可連結此校 LINE 官方帳號，方便登入與接收通知。"}
-    ${line.googleLinked?" · 已連結 Gmail":""}</p>
-    <div class="actions">${attach}${sync}${detach}${googleAction}</div></div>`;
-  if(googleAction)showGoogleLink();
-}
-
-async function showGoogleLink(){
-  const button=$("linkGoogleButton");
-  if(/\bLine\//i.test(navigator.userAgent)){
-    button.textContent="如需連結 Gmail，請在 Safari 或 Chrome 以 LINE 登入後操作。";
-    return;
-  }
-  try{
-    const {googleClientId}=await api("config");
-    if(!googleClientId)throw new Error("此環境尚未設定 Gmail 連結");
-    if(!window.google?.accounts?.id)await new Promise((resolve,reject)=>{
-      const script=document.createElement("script");
-      script.src="https://accounts.google.com/gsi/client";script.onload=resolve;
-      script.onerror=()=>reject(new Error("Gmail 登入元件載入失敗"));
-      document.head.append(script);
-    });
-    if(!button.isConnected)return;
-    google.accounts.id.initialize({client_id:googleClientId,callback:async response=>{
-      try{
-        state.line=await api("line/school-account",{method:"POST",body:JSON.stringify({credential:response.credential})});
-        renderLineBinding();showStatus("請核對 Gmail 與 LINE 名稱，再確認綁定。");
-      }catch(error){showStatus(error.message,"error")}
-    }});
-    google.accounts.id.renderButton(button,{theme:"outline",size:"large",text:"continue_with",locale:"zh_TW"});
-  }catch(error){button.textContent=error.message}
+let lineAccountPanel;
+async function loadLineBinding(params){
+  if(!accountOnly)return null;
+  lineAccountPanel?.destroy();
+  lineAccountPanel=createLineAccountPanel({host:$("lineBinding"),api:(path,options)=>api(path.replace(/^\/api\//,""),options),me:state.me});
+  return lineAccountPanel.load(params);
 }
 
 function renderAdminCreate(){
@@ -173,23 +133,19 @@ async function load(){
     $("roleTitle").textContent=accountOnly?"LINE 通知設定":state.me.role==="admin"?"收費專案與匯款核帳":"繳費與核帳紀錄";
     $("roleIntro").textContent=state.me.schoolName||"";
     const billing=!accountOnly&&state.me.capabilities?.feeCollections===true&&state.me.role!=="unassigned";
-    const [line,templates,projects]=await Promise.all([
-      accountOnly&&state.me.capabilities?.lineAccount===true?api("line/school-account"):null,
+    const [templates,projects]=await Promise.all([
       billing&&state.me.role==="admin"?api("uniform-events/payment-account-templates"):null,
       billing?api("fee-collections/projects"):null
     ]);
-    state.line=line;state.templates=templates?.items||[];state.projects=projects?.items||[];
+    state.templates=templates?.items||[];state.projects=projects?.items||[];
     state.activities=projects?.dinnerActivities||[];
-    if(accountOnly){
-      renderLineBinding();
-      if(!state.line?.configured)$("lineBinding").textContent="此校尚未開啟 LINE 通知綁定，請聯絡學校管理員。";
-    }
+    if(accountOnly)state.line=await loadLineBinding(new URLSearchParams(location.search));
     if(billing){renderAdminCreate();renderProjects()}
     else if($("projects"))$("projects").textContent="";
     const params=new URLSearchParams(location.search);
     const lineError=params.get("line_error");
     const message=lineError==="conflict"?"這個 Gmail 或 LINE 已有其他綁定，請聯絡學校管理員核對。":lineError?"LINE 授權未完成，請從本頁重新授權。":"";
-    showStatus(message||(params.get("line_link")==="confirm"?(state.line?.pendingLink?"請核對 Gmail 與 LINE 名稱，再確認綁定。":"綁定確認已逾時，請重新開始。"):billing?`已載入 ${state.projects.length} 個收費專案。`:""),message?"error":"");
+    if(accountOnly)showStatus("");else showStatus(message||(params.get("line_link")==="confirm"?(state.line?.pendingLink?"請核對 Gmail 與 LINE 名稱，再確認綁定。":"綁定確認已逾時，請重新開始。"):billing?`已載入 ${state.projects.length} 個收費專案。`:""),message?"error":"");
     if(params.has("line_link")||lineError)history.replaceState({},"",location.pathname);
   }catch(error){showStatus(error.message,"error");if($("projects"))$("projects").innerHTML=""}
 }
@@ -202,33 +158,6 @@ document.addEventListener("click",async event=>{
   if(action==="reopen")return mutateProject(target.dataset.id,"REOPEN");
   target.disabled=true;
   try{
-    if(action==="link-line"){
-      const {url}=await api("line/tenant-login/"+encodeURIComponent(state.me.schoolId)+"/start",{
-        method:"POST",body:JSON.stringify({mode:"link"})
-      });
-      location.assign(url);
-    }
-    if(action==="confirm-line-link"||action==="cancel-line-link"){
-      const confirmed=action==="confirm-line-link";
-      try{
-        await api("line/school-account",{method:"POST",body:JSON.stringify({action:confirmed?"confirm-link":"cancel-link",confirmationId:target.dataset.confirmation})});
-        await load();
-        showStatus(confirmed?"已完成此校 Gmail 與 LINE 綁定。":"已取消此次綁定。");
-      }catch(error){
-        state.line=await api("line/school-account").catch(()=>null);
-        renderLineBinding();
-        throw error;
-      }
-    }
-    if(action==="sync-line-menu"){
-      const {audience,areaCount,chatActionsVerified}=await api("line/school-account",{method:"POST",body:JSON.stringify({action:"sync-menu"})});
-      const staffMessage=chatActionsVerified?"LINE 已確認套用幹部六宮格。上排三格在聊天室回覆，下排三格開啟後台。":`LINE 已確認套用幹部選單${areaCount===6?"（六宮格）":""}。`;
-      showStatus(audience==="parent"?"已同步家長選單。":audience==="staff"?staffMessage:audience==="default"?"目前使用通用選單。":"目前無法同步 LINE 選單。");
-    }
-    if(action==="unbind-line"&&confirm("確定解除此校 LINE 綁定？")){
-      await api("line/school-account",{method:"DELETE"});
-      await load();showStatus("已解除此校 LINE 綁定。");
-    }
     if(action==="retry-notice"){
       const {lineNotification}=await api("fee-collections/transfers",{method:"PATCH",body:JSON.stringify({
         projectId:target.dataset.project,chargeId:target.dataset.charge,action:"RETRY_LINE_NOTICE"
