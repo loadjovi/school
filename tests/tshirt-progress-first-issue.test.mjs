@@ -31,8 +31,8 @@ test("school handoff prompts actual parent receipt, rather than claiming complet
 test("parent progress reads authoritative first-issue data even with no new orders",()=>{
  assert.match(parent,/parentApi\("uniform-events\/tshirt-historical-size"\)/);
  assert.match(parent,/renderFirstTshirtProgress\(summary,tshirtOutcome\.items\)/);
- assert.match(parent,/if\(!requests\.length\)\{/);
- assert.match(parent,/if\(!tshirtOutcome\.items\.length\)summary\.append/);
+ assert.match(parent,/if\(!requests\.length\)history\.append/);
+ assert.match(parent,/renderFirstTshirtProgress\(archive,firstComplete,true\)/);
  assert.match(parent,/await loadInlineSizes\(\);await loadUniformRequestProgress\(\)/);
 });
 test("school lists historic issued students without a pending issue request",()=>{

@@ -62,7 +62,7 @@ test("parent inline and standalone views expose actual handover action",()=>{
  for(const p of ["parent-uniform-events.js","tshirt-historical-size.js"]){
   const s=readFileSync(new URL("../app/"+p,import.meta.url),"utf8");
   assert.match(s,/CONFIRM_FIRST_RECEIPT/);
-  assert.match(s,/我已收到團 T｜確認領取 1 件/);
+  assert.match(s,p==="parent-uniform-events.js"?/確認已收到團 T/:/我已收到團 T｜確認領取 1 件/);
  }
 });
 test("school roster uses persisted first receipt, not hardcoded reserve group",()=>{

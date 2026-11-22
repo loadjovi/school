@@ -88,13 +88,17 @@
    field(form,"銀行確認累計實收總額","receivedAmount",{type:"number",value:r.receivedAmount});field(form,"已退還溢繳金額","refundAmount",{type:"number",value:-r.balance});field(form,"退款日期","refundDate",{type:"date"});field(form,"退款憑據編號","reference",{max:100});field(form,"備註","note",{type:"textarea"});field(form,"我已在銀行完成退款並核對憑據","refundExecuted",{type:"checkbox"});
   });
  }
- async function loadParent(host,api,refresh){
+ async function loadParent(host,api,refresh,{historyHost}={}){
   if(!host||!enabled())return;host.hidden=false;host.replaceChildren(node("p","正在讀取補款與退費進度…"));
+  if(historyHost){historyHost.replaceChildren();historyHost.hidden=true}
   try{const data=await api("uniform-events/payment-resolution"),items=data.items||[];host.replaceChildren();if(!items.length){host.hidden=true;return}
-   host.append(node("h2","補款與退費"));const update=node("button","更新進度");update.type="button";update.onclick=()=>loadParent(host,api,refresh);host.append(update);const reload=async()=>{await loadParent(host,api,refresh);if(refresh)await refresh()};
-   for(const item of items.filter(item=>active.has(item.paymentStatus)))host.append(parentCard(item,api,reload));
-   const closed=items.filter(item=>!active.has(item.paymentStatus));if(closed.length){const archive=details(host,"已結案紀錄（"+closed.length+"）");for(const item of closed)archive.append(parentCard(item,api,reload))}
-  }catch(error){host.replaceChildren(node("p","補款與退費進度暫時無法讀取："+error.message));const retry=node("button","重新讀取");retry.type="button";retry.onclick=()=>loadParent(host,api,refresh);host.append(retry)}
+   const pending=items.filter(item=>active.has(item.paymentStatus)),options={historyHost};
+   const reload=async()=>{await loadParent(host,api,refresh,options);if(refresh)await refresh()};
+   host.hidden=!!historyHost&&!pending.length;
+   if(!host.hidden){host.append(node("h2",historyHost?"待處理款項（"+pending.length+"）":"補款與退費"));const update=node("button","更新");update.type="button";update.onclick=()=>loadParent(host,api,refresh,options);host.append(update)}
+   for(const item of pending)host.append(parentCard(item,api,reload));
+   const closed=items.filter(item=>!active.has(item.paymentStatus));if(closed.length){const target=historyHost||host;target.hidden=false;const archive=details(target,"補款／退費已結案（"+closed.length+"）");for(const item of closed)archive.append(parentCard(item,api,reload))}
+  }catch(error){host.hidden=false;host.replaceChildren(node("p","補款與退費進度暫時無法讀取："+error.message));const retry=node("button","重新讀取");retry.type="button";retry.onclick=()=>loadParent(host,api,refresh,{historyHost});host.append(retry)}
  }
  window.paymentResolutionUI={enabled,active,labels,financeControls,loadParent};
  const style=node("style");style.textContent=".payment-resolution-card{border:1px solid #d3a967;border-radius:12px;background:#fffaf0;padding:14px;margin:12px 0;overflow-wrap:anywhere}.payment-resolution-card details{margin-top:12px;padding:10px;border:1px solid #ddd;border-radius:8px}.payment-resolution-card summary{cursor:pointer;font-weight:700}.payment-resolution-card form{display:grid;gap:10px;margin-top:12px}.payment-resolution-card label{display:block}.payment-resolution-card input:not([type=checkbox]),.payment-resolution-card textarea{display:block;width:100%;max-width:100%;box-sizing:border-box;padding:10px;margin-top:5px;font:inherit;border:1px solid #aab8bd;border-radius:7px}.payment-resolution-card input[type=checkbox]{margin-left:8px}.payment-resolution-card button{min-height:44px;white-space:normal;padding:10px 14px;max-width:100%}";document.head.append(style);

@@ -80,8 +80,8 @@ test("network errors show a retry instead of a stale payment demand, and only th
 });
 test("the requested payment opens the history panel and targets that exact order after the bank form is available",()=>{
   const source=readFileSync(new URL("../app/parent-uniform-events.js",import.meta.url),"utf8"),start=source.indexOf("let uniformPaymentFocused=false;"),end=source.indexOf('document.getElementById("refreshUniformRequests")',start),messages=[];
-  let selected="";const target={style:{}},ctx={location:{search:"?focus="+encodeURIComponent("payment:"+id1),origin:"https://lab.example.invalid"},URLSearchParams,document:{getElementById:id=>id==="uniform-payment-"+id1?target:null},select:value=>{selected=value},requestAnimationFrame:fn=>fn(),window:{parent:{postMessage:(...args)=>messages.push(args)}}};
+  let selected="";const record={open:false},target={style:{},closest:()=>record},ctx={location:{search:"?focus="+encodeURIComponent("payment:"+id1),origin:"https://lab.example.invalid"},URLSearchParams,document:{getElementById:id=>id==="uniform-payment-"+id1?target:null},select:value=>{selected=value},requestAnimationFrame:fn=>fn(),window:{parent:{postMessage:(...args)=>messages.push(args)}}};
   runInNewContext(source.slice(start,end)+"\nfocusUniformPayment('"+id2+"');focusUniformPayment('"+id1+"');focusUniformPayment('"+id1+"');",ctx);
-  assert.equal(selected,"history");assert.equal(messages.length,1);assert.equal(messages[0][0].requestId,id1);assert.equal(messages[0][1],ctx.location.origin);
+  assert.equal(selected,"history");assert.equal(record.open,true);assert.equal(messages.length,1);assert.equal(messages[0][0].requestId,id1);assert.equal(messages[0][1],ctx.location.origin);
   assert.match(source,/payment\.id="uniform-payment-"\+item\.id/);
 });

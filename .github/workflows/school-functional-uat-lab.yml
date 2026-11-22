@@ -76,7 +76,7 @@ jobs:
           node --test tests/volunteer-loan-size-correction.test.mjs tests/volunteer-loan-return-stock.test.mjs
           node --test tests/tshirt-receiving-workflow.test.mjs tests/tshirt-available-stock.test.mjs tests/uniform-request-approval.test.mjs api/test/uniformRequestApproval.test.mjs tests/uniform-payment-line.test.mjs
           node --test tests/school-absence-followup.test.mjs
-          node --test tests/parent-uniform-payment-notice.test.mjs tests/payment-email-notifications.test.mjs tests/finance-payment-notifications.test.mjs
+          node --test tests/parent-uniform-payment-notice.test.mjs tests/parent-uniform-simple.test.mjs tests/payment-email-notifications.test.mjs tests/finance-payment-notifications.test.mjs
           node --test api/test/teacherParentReviews.test.mjs api/test/teacherAccountType.test.mjs
           node --test tests/private-lesson-line-review.test.mjs tests/private-lesson-line-confirm-ui.test.mjs tests/private-lesson-parent-line.test.mjs tests/parent-private-review-refresh-guard.test.mjs tests/private-lesson-no-auto-redraw.test.mjs api/test/privateLessonCompletionResilience.test.mjs
           node --test api/test/schoolScheduleRestore.test.mjs api/test/teacherLoginHistory.test.mjs api/test/sopLabDemoPreservation.test.mjs
