@@ -169,8 +169,25 @@
   if(state.me?.role!=='admin')return;
   await window.openSchoolAdminWorkspace('uniformAdmin');
   const frame=document.getElementById('awUniformFrame');
-  if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261102-activity-boundary&task=activity';
+  if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261122-frame-navigation&task=activity';
  };
+ function bindUniformFrameNavigation(frame){
+  if(!frame||frame.dataset.workspaceNavigationBound)return;
+  frame.dataset.workspaceNavigationBound='true';
+  frame.addEventListener('load',()=>{
+   let route;try{route=new URL(frame.contentWindow.location.href)}catch{return}
+   if(route.origin!==location.origin||!['/','/index.html'].includes(route.pathname))return;
+   const activity=String(route.searchParams.get('adminActivity')||'');
+   if(/^(calendarActivity|fieldTrip|yearEndDinner):[A-Za-z0-9_-]{1,80}$/.test(activity)&&state.me?.role==='admin'&&route.searchParams.get('activitySchool')===state.me.schoolId){
+    const query=new URLSearchParams({embedded:'school',task:'activity',activity,activitySchool:state.me.schoolId});
+    frame.src='/uniform-event-admin.html?'+query;
+    window.openSchoolAdminWorkspace('uniformAdmin').catch(error=>toast('返回原活動失敗：'+error.message));return;
+   }
+   // Repair cached links or a native navigation that placed the full application in this frame.
+   frame.src='about:blank';
+   window.openSchoolAdminWorkspace('home').catch(error=>toast('返回工作首頁失敗：'+error.message));
+  });
+ }
  const setGroup=(node,group)=>{if(node.dataset.adminGroup!==group)node.dataset.adminGroup=group};
  function classify(main){
   for(const [id,group] of Object.entries(rootGroups)){const node=document.getElementById(id);if(node&&main.contains(node))setGroup(node,group)}
@@ -252,10 +269,11 @@
   if(['home','tasks'].includes(group)&&!summary.loading&&(summary.key!==taskScopeKey()||!summary.loadedAt))setTimeout(()=>loadTasks(),0);
   for(const card of main.querySelectorAll('.desktop-content > .card'))if(card.querySelector('h2')?.textContent.includes('待審核')||card.textContent.includes('目前沒有待審核'))root.querySelector('.aw-account-pending').append(card);
   const uniformFrame=root.querySelector('#awUniformFrame');
+  bindUniformFrameNavigation(uniformFrame);
   if(activityEntry&&uniformFrame){
    const query=new URLSearchParams({embedded:'school',task:'activity',activity:activityEntry,activitySchool:state.me.schoolId});
    uniformFrame.src='/uniform-event-admin.html?'+query;activityEntryHandled=true;
-  }else if(group==='uniformAdmin'&&uniformFrame&&uniformFrame.getAttribute('src')==='about:blank')uniformFrame.src='/uniform-event-admin.html?embedded=school&v=20261102-activity-boundary';
+  }else if(group==='uniformAdmin'&&uniformFrame&&uniformFrame.getAttribute('src')==='about:blank')uniformFrame.src='/uniform-event-admin.html?embedded=school&v=20261122-frame-navigation';
   const learningTask=['overview','practice'].includes(state.adminLearningWorkspaceTask)?state.adminLearningWorkspaceTask:'overview';
   const learningOverview=root.querySelector('.aw-learning-overview'),learningPractice=root.querySelector('.aw-learning-practice');
   learningOverview.hidden=group!=='grades'||learningTask!=='overview';learningPractice.hidden=group!=='grades'||learningTask!=='practice';
@@ -354,14 +372,14 @@
      return;
     }
     if(b.dataset.adminTodo==='parents'){await window.openSchoolAdminWorkspace('accounts');state.adminAccountWorkspaceTask='pending';organize();requestAnimationFrame(()=>document.querySelector('.aw-account-work-heading')?.scrollIntoView({block:'start',behavior:'smooth'}));return}
-    const task={tshirt:'tshirt',competition:'competition',finance:'finance'}[b.dataset.adminTodo];if(task){await window.openSchoolAdminWorkspace('uniformAdmin');const frame=document.getElementById('awUniformFrame');if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261102-activity-boundary&task='+encodeURIComponent(task)}return;
+    const task={tshirt:'tshirt',competition:'competition',finance:'finance'}[b.dataset.adminTodo];if(task){await window.openSchoolAdminWorkspace('uniformAdmin');const frame=document.getElementById('awUniformFrame');if(frame)frame.src='/uniform-event-admin.html?embedded=school&v=20261122-frame-navigation&task='+encodeURIComponent(task)}return;
    }
    const task=guideTasks[b.dataset.adminGuide];if(task){
     try{localStorage.setItem(guideKey(),'done')}catch{}const intro=document.querySelector('.aw-onboarding');if(intro)intro.open=false;
     state.adminGuideTask=b.dataset.adminGuide;
     if(groups[task[1]])await window.openSchoolAdminWorkspace(task[1]);
-    else if(task[1]==='uniformAdmin'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&v=20261102-activity-boundary&task=guideUniform'}
-    else if(task[1]==='activitySettings'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&v=20261102-activity-boundary&task=activity'}
+    else if(task[1]==='uniformAdmin'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&v=20261122-frame-navigation&task=guideUniform'}
+    else if(task[1]==='activitySettings'){await window.openSchoolAdminWorkspace('uniformAdmin');document.getElementById('awUniformFrame').src='/uniform-event-admin.html?embedded=school&v=20261122-frame-navigation&task=activity'}
     else await window.desktopNavigate(task[1]);
     if(b.dataset.adminGuide==='parents')state.adminAccountWorkspaceTask='pending';organize();
    }
@@ -426,7 +444,17 @@
  });
  window.closeInlineTeacherAdmin=function(){state.teacherAdminInlineOpen=false;state.adminAccountWorkspaceTask='home';organize()};
  window.openAdminLearningWorkspace=async function(task='overview'){state.adminLearningWorkspaceTask=['overview','practice'].includes(task)?task:'overview';await window.openSchoolAdminWorkspace('grades')};
- window.addEventListener('message',event=>{if(event.origin!==location.origin||event.source!==document.getElementById('awUniformFrame')?.contentWindow)return;if(event.data?.type==='school-uniform-height'){const frame=document.getElementById('awUniformFrame');const height=Number(event.data.height);if(frame&&Number.isFinite(height)&&height>=200&&height<=30000)frame.style.height=Math.ceil(height)+'px';}});
+ window.addEventListener('message',event=>{
+  const frame=document.getElementById('awUniformFrame');
+  if(event.origin!==location.origin||!frame||event.source!==frame.contentWindow)return;
+  if(event.data?.type==='school-uniform-return'){
+   window.openSchoolAdminWorkspace('home').catch(error=>toast('返回工作首頁失敗：'+error.message));return;
+  }
+  if(event.data?.type==='school-uniform-height'){
+   const height=Number(event.data.height);
+   if(Number.isFinite(height)&&height>=200&&height<=30000)frame.style.height=Math.ceil(height)+'px';
+  }
+ });
  window.addEventListener('message',event=>{
    const frame=document.getElementById('awSemesterScoresFrame');
    if(event.origin!==location.origin||!frame||event.source!==frame.contentWindow||event.data?.type!=='school-semester-scores-height')return;

@@ -18,7 +18,7 @@ function returnLinks(url){
 function workspaceEntry(url,{role="admin",schoolId=school,page="admin"}={}){
  const parser=workspace.slice(workspace.indexOf(" let activityEntryHandled=false;"),workspace.indexOf(" function organize(){"));
  const block=workspace.slice(workspace.indexOf("  const uniformFrame=root.querySelector('#awUniformFrame');"),workspace.indexOf("  const learningTask="));
- const context={URLSearchParams,location:{search:new URL(url,origin).search},state:{me:{role,schoolId},page}};
+ const context={bindUniformFrameNavigation(){},URLSearchParams,location:{search:new URL(url,origin).search},state:{me:{role,schoolId},page}};
  return runInNewContext(parser+";({get:activityWorkspaceEntry,mount:(root,group,activityEntry)=>{"+block+"}})",context);
 }
 function restoreForm(url,items=[item],verifiedSchool=school){
