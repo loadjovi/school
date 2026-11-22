@@ -1,5 +1,6 @@
 import "./payment-resolution.js?v=20261122-single-parent-message";
-import {createTshirtStockCounter} from "./tshirt-stock-count.js?v=20261122-batch-stock";
+import {createTshirtStockCounter} from "./tshirt-stock-count.js?v=20261122-opened-stock";
+import {createTshirtStockDetails} from "./tshirt-stock-details.js?v=20261122-opened-stock";
 const el=id=>document.getElementById(id);
 const uniformRequestFlowHint=el("uniformRequestsHeading")?.nextElementSibling;
 if(uniformRequestFlowHint)uniformRequestFlowHint.textContent="依序完成核准、財務核帳、採購與驗收入庫；選擇「新貨到校」或「使用現有庫存」確認後，系統會自動開放領取並通知家長。實際交付時再按「確認實際發放」。";
@@ -39,11 +40,13 @@ async function api(path,options={}){
  return data;
 }
 let cachedRequests=[],cachedStock=[],cachedFamilyRegistrations=[],receivedRequestIds=new Set();
+let cachedStockDetails={openedItems:[],movements:[]};
 const tshirtStockCounter=createTshirtStockCounter({host:el("stock"),api,onReload:reloadUniformStock});
+const tshirtStockDetails=createTshirtStockDetails({host:el("tshirtStockDetails"),api,onReload:reloadUniformStock,onLoans:()=>document.querySelector('[data-tshirt-view="parents"]')?.click()});
 async function reloadUniformStock(){
  const data=await api("uniform-events/inventory");
  if(!Array.isArray(data.items))throw Error("庫存資料不完整，請重新讀取");
- cachedStock=data.items;window.uniformInventoryItems=cachedStock;renderModuleStock();
+ cachedStock=data.items;cachedStockDetails=data;window.uniformInventoryItems=cachedStock;renderModuleStock();
  window.dispatchEvent(new CustomEvent("uniformInventoryLoaded",{detail:{items:cachedStock}}));
 }
 let cachedStaffFinanceItems=null;
@@ -165,7 +168,7 @@ function renderModuleRequests(options={}){
  const units=x=>{const n=Number(x.procurementQuantity??x.quantity);return Number.isSafeInteger(n)&&n>0?n:1};
  const purchasedWaiting=rows.filter(x=>x.status==="ORDERED").reduce((n,x)=>n+units(x),0);
  const purchasedParentUnits=rows.filter(x=>x.status==="ORDERED").reduce((n,x)=>n+(Number(x.quantity)||1),0);
- const arrivedWaiting=rows.filter(x=>["ARRIVED","READY_FOR_PICKUP"].includes(x.status)).reduce((n,x)=>n+units(x),0);
+ const arrivedWaiting=rows.filter(x=>["ARRIVED","READY_FOR_PICKUP"].includes(x.status)).reduce((n,x)=>n+(Number(x.quantity)||1),0);
  const ready=readyRequests.length;
  const publicReady=readyRequests.filter(x=>x.acquisition==="PUBLIC").length;
  const buyoutReady=ready-publicReady;
@@ -213,10 +216,13 @@ function renderModuleRequests(options={}){
 
 function renderModuleStock(){
  const visibleStock=cachedStock.filter(x=>String(x.key).startsWith(activeAdminTab==="competitionUniform"?"competition:":"regular:"));
- el("stockStatus").textContent="目前顯示 "+visibleStock.length+" 筆"+(activeAdminTab==="competitionUniform"?" A 團比賽服":"團 T")+"庫存紀錄";
+ el("stockStatus").textContent=activeAdminTab==="regularUniform"?"新團 T 已建檔 "+visibleStock.length+" 個尺寸":"目前顯示 "+visibleStock.length+" 筆 A 團比賽服庫存紀錄";
+ el("uniformInventoryIntro").textContent=activeAdminTab==="regularUniform"?"新團 T 到貨自動入庫、發放後扣除；已拆封及志工借用另列下方。":"依款式與尺寸顯示比賽服庫存，盤點時請核對實體數量。";
  if(activeAdminTab==="regularUniform"){
   tshirtStockCounter.render(cachedStock);
+  tshirtStockDetails.render({...cachedStockDetails,items:cachedStock});
  }else if(activeAdminTab==="competitionUniform"){
+  el("tshirtStockDetails").hidden=true;
   const rows=cachedStock.filter(x=>String(x.key).startsWith("competition:")).map(x=>({size:String(x.key).slice("competition:".length).replace(":","／"),quantity:x.onHand+" 件",reserved:x.reserved,unavailable:x.unavailable}));
   table("stock",rows,[["size","款式／尺寸"],["quantity","現有"],["reserved","保留"],["unavailable","不可用"]]);
  }
@@ -614,7 +620,7 @@ async function load(){
     if(["regularUniform","competitionUniform"].includes(activeAdminTab))renderModuleRequests();
   }},
   {path:"uniform-events/inventory",status:"stockStatus",render:data=>{
-    cachedStock=data.items||[];
+    cachedStock=data.items||[];cachedStockDetails=data;
     window.uniformInventoryItems=cachedStock;
     if(["regularUniform","competitionUniform"].includes(activeAdminTab))renderModuleStock();
     window.dispatchEvent(new CustomEvent("uniformInventoryLoaded",{detail:{items:cachedStock}}));
@@ -630,7 +636,7 @@ async function load(){
      if(section.path.includes("receiving")){receivedRequestIds=new Set();if(["regularUniform","competitionUniform"].includes(activeAdminTab))renderModuleRequests()}
      if(section.path.includes("family-registration"))el("familyRows").textContent="家庭報名讀取失敗";
      if(section.path.includes("requests"))el("requests").textContent="申請資料讀取失敗，請檢查 API";
-     if(section.path.includes("inventory")){el("stock").textContent="庫存資料讀取失敗，請檢查 API";window.dispatchEvent(new CustomEvent("uniformInventoryLoadFailed",{detail:{message:result.reason.message}}))}
+     if(section.path.includes("inventory")){el("stock").textContent="庫存資料讀取失敗，請檢查 API";tshirtStockDetails.fail(result.reason.message);window.dispatchEvent(new CustomEvent("uniformInventoryLoadFailed",{detail:{message:result.reason.message}}))}
    }
  });
  if(hasFinanceAccess){

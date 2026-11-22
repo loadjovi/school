@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
+import {openedStockKey,tshirtInventoryView} from "../api/src/lib/tshirtInventoryView.mjs";
 const read=path=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
 const allSizes=["8","10","12","XS","S","M","L","XL","2L","3L","5L"];
 function backend(){
@@ -22,7 +23,7 @@ function backend(){
   }};
  const audit={createTable:async()=>{},createEntity:async row=>{if(failAudit)throw Error("index unavailable");audits.push(row)}};
  runInNewContext(read("api/src/functions/uniformInventory.js").replace(/^import .*;\n/gm,""),{
-  app:{http:(_,config)=>{handler=config.handler}},TableClient:{fromConnectionString:(_,name)=>name==="TenantUniformInventory"?inventory:audit},randomUUID:()=>"batch-"+(++sequence),
+  app:{http:(_,config)=>{handler=config.handler}},TableClient:{fromConnectionString:(_,name)=>name==="TenantUniformInventory"?inventory:name==="TenantTshirtParentLoans"?{listEntities:async function*(){}}:audit},randomUUID:()=>"batch-"+(++sequence),openedStockKey,tshirtInventoryView,
   getTenantContext:async()=>({schoolId,access:{role,email:"admin@example.test"}}),json:(jsonBody,status=200)=>({status,jsonBody}),process:{env:{STORAGE_CONNECTION_STRING:"test"}},console:{warn(){},error(){}}
  });
  const call=(body,method="POST")=>handler({method,json:async()=>body});
@@ -111,7 +112,7 @@ test("invalid or below-reserved counts never issue a write",async()=>{
  for(const value of ["-1","1.5","10001","abc","1"]){const h=frontend([{key:"regular:S",onHand:4,reserved:2,unavailable:0,etag:"v1"}]);h.edit("S",value);await h.submit();assert.equal(h.calls.length,0);assert.equal(h.input("S").focused,true)}
 });
 test("background refresh preserves a draft and explicit reload replaces it with fresh data",async()=>{
- const h=frontend([{key:"regular:S",onHand:4,etag:"v1"}]);h.edit("S","7");const draft=h.form();h.stock[0]={key:"regular:S",onHand:5,etag:"v2"};h.counter.render(h.stock);assert.equal(h.form(),draft);assert.equal(h.input("S").value,"7");
+ const h=frontend([{key:"regular:S",onHand:4,etag:"v1"}]);h.edit("S","7");const draft=h.form();h.stock[0]={key:"regular:S",onHand:5,etag:"v2"};h.counter.render(h.stock);assert.equal(h.form(),draft);assert.equal(h.input("S").value,"7");assert.equal(h.buttons()[0].disabled,true);assert.match(h.status().textContent,/庫存已有到貨、發放或借還異動/);await h.submit();assert.equal(h.calls.length,0);
  await h.buttons()[1].handlers.click();assert.notEqual(h.form(),draft);assert.equal(h.input("S").value,"5");h.edit("S","6");await h.submit();assert.equal(h.calls[0].body.items[0].etag,"v2");
 });
 test("repeat clicks while saving produce one batch and a rejected save retains all entered counts",async()=>{

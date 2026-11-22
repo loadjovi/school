@@ -20,7 +20,9 @@ function clean(x,n=150){return String(x||"").trim().slice(0,n)}
 async function get(table,partitionKey,rowKey){try{return await table.getEntity(partitionKey,rowKey)}catch(e){if(e.statusCode===404)return null;throw e}}
 function stockCounts(row){return {onHand:row?.onHand??0,reserved:row?.reserved??0,unavailable:row?.unavailable??0}}
 function validCounts(value){return Object.values(value).every(n=>Number.isSafeInteger(n)&&n>=0&&n<=100000)&&value.onHand-value.reserved-value.unavailable>=0}
-function stockRow(schoolId,size,counts){return {partitionKey:schoolId,rowKey:"regular:"+size,...counts}}
+const poolKey=(size,pool)=>pool==="opened"?"regular-opened:"+size:"regular:"+size;
+function stockRow(schoolId,size,counts,pool="new"){return {partitionKey:schoolId,rowKey:poolKey(size,pool),...counts}}
+function stockMovement(schoolId,{action,size,delta,email,actor,now,note=""}){return ["create",{partitionKey:schoolId,rowKey:"volunteer-move:"+randomUUID(),label:action,size,delta,quantity:1,parentEmail:email,actor,at:now,note}]}
 function ledgerKey(email){return "tshirt-loan:"+Buffer.from(email).toString("base64url")}
 function transactionAction(row,next){return row?["update",next,"Replace",{etag:row.etag}]:["create",next]}
 function conflict(message){const error=Error(message);error.statusCode=409;return error}
@@ -31,7 +33,7 @@ async function submitStock(inventory,operations){
 // The per-parent ledger and the size stock row live in one Azure Table
 // partition. Updating them in one transaction makes retries unable to borrow
 // or return the same physical shirt twice.
-async function mutateVolunteerStock({inventory,schoolId,email,action,size,oldSize,now}){
+async function mutateVolunteerStock({inventory,schoolId,email,action,size,oldSize,now,actor}){
  const key=ledgerKey(email),ledger=await get(inventory,schoolId,key);
  if(action==="BORROW_VOLUNTEER"){
   if(ledger?.status==="BORROWED"){
@@ -39,11 +41,11 @@ async function mutateVolunteerStock({inventory,schoolId,email,action,size,oldSiz
    return {applied:false,idempotent:true,operation:"BORROW",size};
   }
   if(ledger&&ledger.status!=="RETURNED")throw conflict("此志工的借用庫存狀態異常，請先核對");
-  const stock=await get(inventory,schoolId,"regular:"+size),before=stockCounts(stock);
-  if(!stock||!validCounts(before)||before.onHand-before.reserved-before.unavailable<1)throw conflict(size+" 尺寸目前沒有可借用庫存");
+  const stock=await get(inventory,schoolId,poolKey(size,"opened")),before=stockCounts(stock);
+  if(!stock||!validCounts(before)||before.onHand-before.reserved-before.unavailable<1)throw conflict(size+" 尺寸目前沒有已拆封團 T 可借用，請先至庫存管理登記已拆封庫存或由新團 T 拆封移入");
   const after={...before,onHand:before.onHand-1};
-  const nextLedger={partitionKey:schoolId,rowKey:key,kind:"tshirtVolunteerLoan",parentEmail:email,size,status:"BORROWED",borrowedAt:now,returnedAt:"",updatedAt:now};
-  await submitStock(inventory,[["update",stockRow(schoolId,size,after),"Replace",{etag:stock.etag}],transactionAction(ledger,nextLedger)]);
+  const nextLedger={partitionKey:schoolId,rowKey:key,kind:"tshirtVolunteerLoan",parentEmail:email,size,status:"BORROWED",stockPool:"opened",borrowedAt:now,returnedAt:"",updatedAt:now};
+  await submitStock(inventory,[["update",stockRow(schoolId,size,after,"opened"),"Replace",{etag:stock.etag}],transactionAction(ledger,nextLedger),stockMovement(schoolId,{action:"志工借出（已拆封）",size,delta:-1,email,actor,now})]);
   return {applied:true,operation:"BORROW",size,before,after};
  }
  if(action==="RETURN"){
@@ -53,10 +55,10 @@ async function mutateVolunteerStock({inventory,schoolId,email,action,size,oldSiz
   }
   if(ledger&&ledger.status!=="BORROWED")throw conflict("此志工的借用庫存狀態異常，請先核對");
   if(ledger&&ledger.size!==size)throw conflict("歸還尺寸與借用庫存紀錄不一致，請先核對");
-  const stock=await get(inventory,schoolId,"regular:"+size),before=stockCounts(stock),after={...before,onHand:before.onHand+1};
+  const stock=await get(inventory,schoolId,poolKey(size,"opened")),before=stockCounts(stock),after={...before,onHand:before.onHand+1};
   if(!validCounts(before)||!validCounts(after))throw conflict("庫存數量異常，請先核對");
-  const nextLedger={partitionKey:schoolId,rowKey:key,kind:"tshirtVolunteerLoan",parentEmail:email,size,status:"RETURNED",borrowedAt:ledger?.borrowedAt||"",returnedAt:now,updatedAt:now,legacyLoan:!ledger};
-  await submitStock(inventory,[transactionAction(stock,stockRow(schoolId,size,after)),transactionAction(ledger,nextLedger)]);
+  const nextLedger={partitionKey:schoolId,rowKey:key,kind:"tshirtVolunteerLoan",parentEmail:email,size,status:"RETURNED",stockPool:"opened",borrowedAt:ledger?.borrowedAt||"",returnedAt:now,updatedAt:now,legacyLoan:!ledger};
+  await submitStock(inventory,[transactionAction(stock,stockRow(schoolId,size,after,"opened")),transactionAction(ledger,nextLedger),stockMovement(schoolId,{action:"志工洗淨歸還（已拆封）",size,delta:1,email,actor,now})]);
   return {applied:true,operation:"RETURN",size,before,after,legacyLoan:!ledger};
  }
  if(action==="CORRECT_VOLUNTEER_SIZE"){
@@ -64,13 +66,14 @@ async function mutateVolunteerStock({inventory,schoolId,email,action,size,oldSiz
   if(ledger.status!=="BORROWED")throw conflict("此志工的借用庫存狀態異常，請先核對");
   if(ledger.size===size)return {applied:false,idempotent:true,operation:"CORRECT_SIZE",from:oldSize,to:size};
   if(ledger.size!==oldSize)throw conflict("借用尺寸已變更，請重新整理後再試");
-  const oldStock=await get(inventory,schoolId,"regular:"+oldSize),newStock=await get(inventory,schoolId,"regular:"+size);
+  const pool=ledger.stockPool==="opened"?"opened":"new";
+  const oldStock=await get(inventory,schoolId,poolKey(oldSize,pool)),newStock=await get(inventory,schoolId,poolKey(size,pool));
   const oldBefore=stockCounts(oldStock),newBefore=stockCounts(newStock);
   if(!oldStock||!validCounts(oldBefore)||oldBefore.onHand>=100000)throw conflict("原尺寸庫存數量異常，請先核對");
   if(!newStock||!validCounts(newBefore)||newBefore.onHand-newBefore.reserved-newBefore.unavailable<1)throw conflict(size+" 尺寸目前沒有可借用庫存");
   const oldAfter={...oldBefore,onHand:oldBefore.onHand+1},newAfter={...newBefore,onHand:newBefore.onHand-1};
-  const nextLedger={partitionKey:schoolId,rowKey:key,kind:"tshirtVolunteerLoan",parentEmail:email,size,status:"BORROWED",borrowedAt:ledger.borrowedAt||now,returnedAt:"",updatedAt:now};
-  await submitStock(inventory,[["update",stockRow(schoolId,oldSize,oldAfter),"Replace",{etag:oldStock.etag}],["update",stockRow(schoolId,size,newAfter),"Replace",{etag:newStock.etag}],["update",nextLedger,"Replace",{etag:ledger.etag}]]);
+  const nextLedger={partitionKey:schoolId,rowKey:key,kind:"tshirtVolunteerLoan",parentEmail:email,size,status:"BORROWED",stockPool:ledger.stockPool||"legacy-new",borrowedAt:ledger.borrowedAt||now,returnedAt:"",updatedAt:now};
+  await submitStock(inventory,[["update",stockRow(schoolId,oldSize,oldAfter,pool),"Replace",{etag:oldStock.etag}],["update",stockRow(schoolId,size,newAfter,pool),"Replace",{etag:newStock.etag}],["update",nextLedger,"Replace",{etag:ledger.etag}],stockMovement(schoolId,{action:"更正志工借用尺寸",size:oldSize+" → "+size,delta:0,email,actor,now})]);
   return {applied:true,operation:"CORRECT_SIZE",from:oldSize,to:size,oldBefore,oldAfter,newBefore,newAfter};
  }
  return null;
@@ -126,7 +129,7 @@ app.http("tshirtParentLoans",{methods:["GET","POST"],authLevel:"anonymous",route
    next={...previous,status:action==="MARK_WASHING"?"WASHING":"RETURNED",returnedAt:action==="RETURN"?now:""};
   }
   if(["BORROW_VOLUNTEER","CORRECT_VOLUNTEER_SIZE","RETURN"].includes(action)){
-   try{stockResult=await mutateVolunteerStock({inventory,schoolId,email,action,size:next.size,oldSize:previous?.size,now})}
+   try{stockResult=await mutateVolunteerStock({inventory,schoolId,email,action,size:next.size,oldSize:previous?.size,now,actor:clean(ctx.access.email,200)})}
    catch(e){if(e.statusCode===409)return json({error:e.message},409);throw e}
   }
   await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"tshirt.parent."+action,subjectId:email,actor:clean(ctx.access.email,200),at:now,details:JSON.stringify({studentId,before:previous,after:next,stock:stockResult}).slice(0,20000)});

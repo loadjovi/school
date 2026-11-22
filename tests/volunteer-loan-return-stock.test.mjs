@@ -12,15 +12,15 @@ const panel=html.slice(panelStart,html.indexOf('data-tshirt-panel="students"',pa
 
 test("active volunteer loan has one direct clean-return action instead of a hidden washing workflow",()=>{
  new vm.Script(ui,{filename:"tshirt-parent-loans.js"});
- assert.match(ui,/確認洗淨歸還並回庫存/);
+ assert.match(ui,/確認洗淨歸還並回已拆封庫存/);
  assert.match(ui,/action:"RETURN"/);
- assert.match(ui,/同尺寸可用庫存會增加 1 件/);
+ assert.match(ui,/同尺寸已拆封庫存會增加 1 件/);
  assert.match(ui,/每次借用只能回庫存一次/);
  assert.doesNotMatch(panel,/<option value="MARK_WASHING">/);
  assert.doesNotMatch(panel,/<option value="RETURN">/);
  assert.match(panel,/使用後由家長洗淨再交回/);
- assert.match(panel,/同尺寸庫存才會加回 1 件/);
- assert.match(html,/tshirt-parent-loans\.js\?v=20261105-volunteer-return-stock/);
+ assert.match(panel,/同尺寸已拆封庫存才會加回 1 件/);
+ assert.match(html,/tshirt-parent-loans\.js\?v=20261122-opened-stock/);
  assert.match(html,/uniform-event-admin\.js\?v=20261105-existing-stock-direct/);
  assert.match(admin,/addEventListener\("tshirtParentLoansChanged",\(\)=>load\(\)\)/);
 });
