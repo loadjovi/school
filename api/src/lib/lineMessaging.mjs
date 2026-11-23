@@ -39,14 +39,14 @@ export function parseLineBindingCommand(text){
   return match?match[1]:"";
 }
 
-export async function lineApi(path,{method="POST",body,accessToken,retryKey}={}){
+export async function lineApi(path,{method="POST",body,accessToken,retryKey,timeoutMs=10000}={}){
   const token=String(accessToken||"").trim();
   if(!token)throw new Error("LINE_CHANNEL_ACCESS_TOKEN 未設定");
   const response=await fetch(`https://api.line.me${path}`,{
     method,
     headers:{Authorization:`Bearer ${token}`,...(body?{"Content-Type":"application/json"}:{}),...(retryKey?{"X-Line-Retry-Key":retryKey}:{})},
     ...(body?{body:JSON.stringify(body)}:{}),
-    signal:AbortSignal.timeout(10000)
+    signal:AbortSignal.timeout(Number.isInteger(timeoutMs)&&timeoutMs>=500&&timeoutMs<=10000?timeoutMs:10000)
   });
   const responseText=await response.text();
   if(response.status===409&&retryKey&&response.headers.get("x-line-accepted-request-id"))return {accepted:true};

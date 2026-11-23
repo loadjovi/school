@@ -7,6 +7,7 @@ import {sendUniformRequestStatusEmail} from "../lib/email.js";
 import {validatePurchaseOrderInput,tshirtPurchaseOrderSizes} from "../lib/tshirtPurchaseOrderRules.mjs";
 import {normalizeReceivingDetails} from "../lib/uniformReceivingRules.mjs";
 import {tshirtClaimKey} from "../lib/tshirtPurchaseOrderFlow.js";
+import {staffReceiptKey} from "../lib/tshirtStaffIssue.js";
 
 const clean=(value,max=300)=>String(value||"").trim().slice(0,max);
 const idPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -23,7 +24,7 @@ function view(entity,receipt){
 async function tables(){
  const connection=process.env.STORAGE_CONNECTION_STRING;if(!connection)throw Error("Storage unavailable");
  const result={};
- for(const [key,name] of Object.entries({orders:"TenantTshirtPurchaseOrders",inventory:"TenantUniformInventory",requests:"TenantUniformEventRequest",staff:"TenantTshirtStaffDemand",audit:"TenantUniformEventAudit"})){
+ for(const [key,name] of Object.entries({orders:"TenantTshirtPurchaseOrders",inventory:"TenantUniformInventory",requests:"TenantUniformEventRequest",staff:"TenantTshirtStaffDemand",loans:"TenantTshirtParentLoans",audit:"TenantUniformEventAudit"})){
   result[key]=TableClient.fromConnectionString(connection,name);await result[key].createTable().catch(error=>{if(error.statusCode!==409)throw error});
  }
  return result;
@@ -44,6 +45,10 @@ async function validateLinks(clients,schoolId,order,inputs){
   const row=await get(sourceTable(clients,input.type),schoolId,input.id);if(!row||row.etag!==input.etag)reject("需求已變更，請重新整理後再整合");
   const record=decode(row),parent=input.type==="REQUEST";
   if(parent&&record.kind!=="regularUniform"||!parent&&!["CADRE_FIRST","CADRE_EXTRA","VOLUNTEER_EXTRA"].includes(record.category))reject("此筆不是團 T 採購需求");
+  if(!parent&&record.category==="CADRE_FIRST"){
+   const loan=await get(clients.loans,schoolId,String(record.parentEmail||"").trim().toLowerCase());
+   if(loan&&(loan.role!=="CADRE"||loan.status!=="REQUESTED"||loan.size!==record.size))reject("此家長已有歷史領用或其他借用紀錄，請先核對首次公費需求");
+  }
   if(record.acquisition!=="PUBLIC"&&record.category!=="CADRE_FIRST"&&record.paymentStatus!=="VERIFIED")reject("需求尚未完成財務核帳，不可納入採購");
   if(!Number.isSafeInteger(record.quantity)||record.quantity<1||record.quantity>20)reject("需求件數異常，請核對");
   const receipt=parent?await get(clients.inventory,schoolId,"received:"+input.id):null,legacy=Boolean(receipt);
@@ -117,7 +122,20 @@ async function receiveOrder(clients,schoolId,order,input,actor){
   const row=await get(sourceTable(clients,link.type),schoolId,link.id);if(!row)reject("部分需求已不存在，請核對後再同步");
   const record=decode(row);
   if(record.status==="CANCELLED"||record.size!==link.size||record.quantity!==link.quantity||record.acquisition!=="PUBLIC"&&record.category!=="CADRE_FIRST"&&record.paymentStatus!=="VERIFIED")reject("需求或款項已異動，請先核對");
-  if(link.type!=="REQUEST")continue;
+  if(link.type==="STAFF"){
+   if(record.category==="CADRE_FIRST"&&record.status!=="FULFILLED"){
+    const loan=await get(clients.loans,schoolId,String(record.parentEmail||"").trim().toLowerCase());
+    if(loan&&(loan.role!=="CADRE"||loan.status!=="REQUESTED"||loan.size!==record.size))reject("幹部首次領用狀況已變更，請先核對；本次尚未入庫");
+   }
+   const key=staffReceiptKey(link.id),old=await get(clients.inventory,schoolId,key);
+   if(old&&(old.purchaseOrderId!==order.rowKey||old.size!==link.size||old.quantity!==link.quantity))reject("幹部／志工需求的到貨保留紀錄不同，請先核對");
+   if(!old){
+    const held=record.status==="FULFILLED"?0:link.quantity;
+    if(held)reservations.set(link.size,(reservations.get(link.size)||0)+held);
+    changes.push(["create",{partitionKey:schoolId,rowKey:key,demandId:link.id,parentEmail:record.parentEmail||"",kind:"regularUniform",size:link.size,quantity:link.quantity,reservedQuantity:held,source:"purchase_order",purchaseOrderId:order.rowKey,receivedAt:"",receivedDate:details.receivedDate,receivedBy:actor}]);
+   }
+   continue;
+  }
   const old=await get(clients.inventory,schoolId,"received:"+link.id),issued=await get(clients.inventory,schoolId,"issued:"+link.id);
   if(old){
    if(!link.legacyReceipt||old.purchaseOrderId&&old.purchaseOrderId!==order.rowKey)reject("需求已被另行入庫，請核對採購單");

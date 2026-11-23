@@ -1,10 +1,10 @@
 import {TableClient} from "@azure/data-tables";
-import {getTenantLineRecipient} from "./tenantLineAccounts.js";
+import {getTenantLineDeliveryRecipient} from "./tenantLineAccounts.js";
 import {lineAudienceStudents,resolveLineAudience} from "./lineAudience.js";
 import {workflowLineEnabled,workflowLineRetryKey} from "./lineAdminTodoNotification.mjs";
 import {resolveTenantLineChannel} from "./lineTenantConfig.js";
 import {lineApi} from "./lineMessaging.mjs";
-import {lineFirstLabEnabled,deliverLabNotice} from "./labNoticeDelivery.mjs";
+import {lineFirstLabEnabled,deliverLabNotice,labNoticeUrl} from "./labNoticeDelivery.mjs";
 import {familyPaymentInfo,paymentNoticeKey} from "./paymentNoticeRules.mjs";
 
 const groupCode = value => {
@@ -31,7 +31,7 @@ export const collectingTrip = activity => activity?.module === "fieldTrip" && ac
   activity.collectionOpen === true && activity.paymentOpen === true && activity.feeStatus === "PUBLISHED" &&
   [activity.studentFee,activity.firstAdultFee,activity.extraAdultFee,activity.extraChildFee].some(fee => fee > 0);
 
-async function registeredPaymentAudience(schoolId, botUserId, activityId) {
+async function registeredPaymentAudience(schoolId, channel, activityId) {
   const client = TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantFamilyEventRegistration");
   const emails = new Set(),registrations=new Map();
   try {
@@ -43,7 +43,8 @@ async function registeredPaymentAudience(schoolId, botUserId, activityId) {
   } catch (error) {
     if (error.statusCode !== 404) throw error;
   }
-  const accounts = await Promise.all([...emails].map(email=>getTenantLineRecipient(schoolId,email,botUserId)));
+  const trusted=channel.schoolId===schoolId&&channel.botUserId&&(channel.configured===true||channel.loginConfigured===true);
+  const accounts = await Promise.all([...emails].map(email=>trusted?getTenantLineDeliveryRecipient(schoolId,email,channel):null));
   return {
     targets:[...new Set(accounts.map(account=>account?.lineUserId).filter(id=>/^U[0-9a-f]{32}$/i.test(id||"")))].sort(),
     unbound:accounts.filter(account=>!account?.lineUserId).length,
@@ -66,11 +67,12 @@ export async function notifyPaidActivityOpened(schoolId, activity, openedAt, kin
     if ((!channel.loginConfigured || !channel.botUserId)&&!lineFirst) return {status:"disabled"};
     const payment = kind === "payment";
     const audience = payment
-      ? await registeredPaymentAudience(schoolId,channel.botUserId,activity.id)
+      ? await registeredPaymentAudience(schoolId,channel,activity.id)
       : await activityParentAudience(schoolId,channel.botUserId,activity);
     const counts = {accepted:0,failed:0,unbound:audience.unbound,deliveryMode:"push"};
     if (!audience.targets.length&&!lineFirst) return {...counts,status:"no_recipients"};
-    const url = new URL("/", channel.appOrigin||"https://icy-ocean-0a2602100-lineuat.eastasia.6.azurestaticapps.net");
+    const appUrl=channel.appOrigin||labNoticeUrl(schoolId);if(!appUrl)return {status:"not_configured"};
+    const url = new URL(appUrl);
     url.searchParams.set("schoolId", schoolId);
     url.searchParams.set("paidActivity", activity.module + ":" + activity.id);
     const format = new Intl.DateTimeFormat("zh-TW", {timeZone:"Asia/Taipei",dateStyle:"short",timeStyle:"short",hour12:false});

@@ -14,7 +14,7 @@ const uid="11111111-1111-4111-a111-111111111111",owner="parent@example.test",sch
 const uniform={kind:"regularUniform",status:"APPROVED",acquisition:"PURCHASE",amount:400,studentId:"990101",parentEmail:owner,size:"S",quantity:1,paymentStatus:"REPORTED_UNVERIFIED",transferReport:{amount:400,lastFive:"12345",transferDate:"2026-11-21",reportedAt:"2026-11-21T10:00:00Z"}};
 const parent={role:"parent",email:owner,students:["990101"]},finance={role:"admin",email:"finance@example.test",capabilities:{financeVerifier:true}};
 const evidence={receivedAmount:300,bankPostedAt:"2026-11-21",note:"銀行查核已收 300",reason:"應繳 400，銀行實收 300"};
-function harness(){
+function harness({environment,realPolicy=false}={}){
  const stores=new Map(),notices=[],pushes=[];let version=0,conflict=false,auditFails=false,enabled=true,line=true;
  const db=name=>{if(!stores.has(name))stores.set(name,new Map());const rows=stores.get(name);return {
   createTable:async()=>{},getEntity:async(p,r)=>{const row=rows.get(p+"|"+r);if(!row)throw Object.assign(Error("missing"),{statusCode:404});return structuredClone(row)},
@@ -24,8 +24,10 @@ function harness(){
   listEntities:async function*(options){const partition=options.queryOptions.filter.match(/PartitionKey eq '([^']+)'/)[1];for(const row of rows.values())if(row.partitionKey===partition)yield structuredClone(row)}
  }};
  const tableNames={uniform:"TenantUniformEventRequest",family:"TenantFamilyEventRegistration",staff:"TenantTshirtStaffDemand"};
+ const env={STORAGE_CONNECTION_STRING:"test-storage",...(environment===undefined?{}:{LAB_ENVIRONMENT:environment})};
+ const productionPolicy=runInNewContext(strip(read("api/src/lib/paymentResolutionRules.mjs"))+";paymentResolutionEnabled",{process:{env}});
  const api=runInNewContext(strip(read("api/src/lib/paymentResolution.js"))+";({applyPaymentResolution,listPaymentResolutions,receivePaymentRefundRequest})",{
-  ...rules,safeAllocateTshirtAvailableStock:async()=>({status:"procurement_required"}),paymentResolutionEnabled:()=>enabled,createHash,randomUUID,URL,process:{env:{STORAGE_CONNECTION_STRING:"test-storage"}},TableClient:{fromConnectionString:(_c,name)=>db(name)},
+  ...rules,safeAllocateTshirtAvailableStock:async()=>({status:"procurement_required"}),paymentResolutionEnabled:realPolicy?productionPolicy:()=>enabled,createHash,randomUUID,URL,process:{env},TableClient:{fromConnectionString:(_c,name)=>db(name)},
   ensureStudentAccess:(access,id)=>access.role==="admin"||access.students?.includes(String(id)),getStudentAliasInfo:async id=>({canonicalStudentId:id}),getStudentMaster:async id=>({studentName:"學生 "+id}),
   getMappedStudentsByEmail:async email=>email===owner?[{studentId:"990101"}]:[],familyPaymentInfo,financeRecipients,
   listTenantAdmins:async()=>[{role:"schoolAdmin",status:"active",email:finance.email},{role:"schoolAdmin",status:"active",email:"ordinary@example.test"}],financeAssignments:async()=>[{email:finance.email,status:"active"}],
@@ -137,8 +139,8 @@ class Element{
 }
 const descendants=el=>[el,...el.children.flatMap(child=>descendants(child))];
 const allText=el=>[el.textContent,...el.children.map(allText)].join(" ");
-function uiHarness(){const window={},head=new Element("head"),confirmations=[];let confirmed=true;
- runInNewContext(read("app/payment-resolution.js"),{window,document:{documentElement:{hasAttribute:()=>true},head,createElement:tag=>new Element(tag)},crypto:{randomUUID},confirm:message=>{confirmations.push(message);return confirmed},FormData:class{constructor(form){this.form=form}entries(){return descendants(this.form).filter(el=>el.name&&(el.type!=="checkbox"||el.checked)).map(el=>[el.name,el.value])[Symbol.iterator]()}}});
+function uiHarness(attribute="true"){const window={},head=new Element("head"),confirmations=[];let confirmed=true;
+ runInNewContext(read("app/payment-resolution.js"),{window,document:{documentElement:{getAttribute:()=>attribute},head,createElement:tag=>new Element(tag)},crypto:{randomUUID},confirm:message=>{confirmations.push(message);return confirmed},FormData:class{constructor(form){this.form=form}entries(){return descendants(this.form).filter(el=>el.name&&(el.type!=="checkbox"||el.checked)).map(el=>[el.name,el.value])[Symbol.iterator]()}}});
  return {ui:window.paymentResolutionUI,confirmations,setConfirmed:v=>{confirmed=v}};
 }
 function fill(form,values){for(const [name,value] of Object.entries(values)){const input=descendants(form).find(el=>el.name===name);assert.ok(input,name);if(input.type==="checkbox")input.checked=value;else input.value=String(value)}}
@@ -173,4 +175,38 @@ test("dedicated finance reload after second verification exposes the paid reques
  runInNewContext(snippet("function syncFinanceViews(","function staffFinancePending(")+snippet("const approvedStage=","\n")+"\n"+snippet("async function loadInlineFinance()","\nel(\"inlineFinanceReview\").addEventListener")+";this.reload=loadInlineFinance;this.approvedStage=approvedStage",scope);
  await scope.reload();assert.equal(scope.cachedRequests[0].paymentStatus,"VERIFIED");assert.equal(renderedStage,undefined,"finance does not render hidden operational panels");scope.renderModuleRequests();assert.equal(renderedStage,"ready");assert.equal(renderedPlan.waitingUnits,0);assert.equal(renderedPlan.needUnits,1);assert.equal(renderedPlan.rows[0].ready,true);assert.equal(historyStatus,"VERIFIED");assert.deepEqual(events,["uniformRequestsLoaded"]);
  await scope.reload();assert.equal(events.length,1,"unchanged finance reads must not reload procurement again");
+});
+
+test("Production enables the full supplement workflow without a LAB build while preserving finance and payer permissions",async()=>{
+ for(const environment of [undefined,"production"]){
+  const h=harness({environment,realPolicy:true});await h.put("uniform",uniform);
+  await assert.rejects(()=>h.apply("REQUEST_ADJUSTMENT",evidence,{role:"admin",email:"ordinary@example.test",capabilities:{}}),error=>error.status===403);
+  await h.apply("REQUEST_ADJUSTMENT",evidence);
+  assert.equal((await h.current()).paymentStatus,"ADJUSTMENT_REQUIRED");
+  assert.doesNotMatch(h.notices[0].text,/LAB/);
+  await assert.rejects(()=>h.apply("REPORT_SUPPLEMENT",{amount:100,lastFive:"55555",transferDate:"2026-11-22"},{...parent,email:"different@example.test"}),error=>error.status===403);
+  await h.apply("REPORT_SUPPLEMENT",{amount:100,lastFive:"55555",transferDate:"2026-11-22"},parent);
+  await h.apply("VERIFY_ADJUSTMENT",{receivedAmount:400,bankPostedAt:"2026-11-22",note:"銀行兩筆合計核對足額"});
+  const current=await h.current();assert.equal(current.paymentStatus,"VERIFIED");assert.equal(current.paymentResolution.balance,0);assert.equal(current.paymentResolutionEvents.length,3);
+ }
+ const lab=harness({environment:"functional-uat",realPolicy:true});await lab.put("uniform",uniform);
+ await assert.rejects(()=>lab.apply("REQUEST_ADJUSTMENT",evidence),error=>error.status===404);
+ assert.equal((await lab.current()).paymentStatus,"REPORTED_UNVERIFIED");assert.equal(lab.notices.length,0);
+});
+
+test("payment resolution stays closed for unknown environments and only the generated LINE LAB enables its own policy",()=>{
+ const source=strip(read("api/src/lib/paymentResolutionRules.mjs"));
+ const policy=(environment,prepared=false)=>runInNewContext((prepared?source.replace("const buildEnablesPaymentResolution = false;","const buildEnablesPaymentResolution = true;"):source)+";paymentResolutionEnabled()",{process:{env:{LAB_ENVIRONMENT:environment}}});
+ assert.equal(policy("functional-uat"),false);assert.equal(policy("functional-uat",true),true);
+ for(const environment of ["preview","staging","unrecognized"]){assert.equal(policy(environment),false);assert.equal(policy(environment,true),false)}
+});
+
+test("the resolution panel requires explicit enablement and all Production entrypoints provide it",async()=>{
+ for(const attribute of [null,"false",""]){
+  const h=uiHarness(attribute),host=new Element("section");let calls=0;
+  h.ui.financeControls(host,uniform,"uniform",()=>{calls++});await h.ui.loadParent(host,()=>{calls++});
+  assert.equal(h.ui.enabled(),false);assert.equal(host.children.length,0);assert.equal(calls,0);
+ }
+ for(const path of ["app/index.html","app/uniform-event-admin.html","app/parent-uniform-events.html"])assert.match(read(path),/<html\b[^>]*data-payment-resolution="true"/);
+ assert.equal(uiHarness("true").ui.enabled(),true);
 });

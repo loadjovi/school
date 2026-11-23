@@ -5,6 +5,7 @@ import {randomUUID} from "node:crypto";
 import {getTenantContext,json} from "../lib/auth.js";
 import {getStudentMaster,ensureTenantTables,table as tenantTable,tenantParentPartition} from "../lib/storage.js";
 import {staffProcurement} from "../lib/tshirtStaffProcurement.js";
+import {issueStaffTshirt,cadreIssueKey,getStaffIssueRow} from "../lib/tshirtStaffIssue.js";
 
 const sizes=new Set(["8","10","12","XS","S","M","L","XL","2L","3L","5L"]);
 const actions=new Set([...cadreActions,"BORROW_VOLUNTEER","CORRECT_VOLUNTEER_SIZE","MARK_WASHING","RETURN"]);
@@ -109,6 +110,7 @@ app.http("tshirtParentLoans",{methods:["GET","POST"],authLevel:"anonymous",route
   const now=new Date().toISOString(),name=clean(data.parentName,80),size=clean(data.size,10);
   let next,stockResult=null;
   if(cadreActions.has(action)){
+   if(["CORRECT_CADRE_PENDING","EDIT_CADRE_PENDING"].includes(action)&&await getStaffIssueRow(inventory,schoolId,cadreIssueKey(email)))return json({error:"此筆已有實際發放與扣庫存紀錄，請先核對實際交付；不能直接改回尚未領取或變更尺寸"},409);
    try{next=cadreApplication(previous,{action,size,parentName:name,studentId,reason:data.reason},now)}
    catch(e){return json({error:e.message},e.statusCode||400)}
   }else if(action==="BORROW_VOLUNTEER"){
@@ -128,6 +130,27 @@ app.http("tshirtParentLoans",{methods:["GET","POST"],authLevel:"anonymous",route
    if(action==="RETURN"&&!["BORROWED","WASHING"].includes(old.status))return json({error:"Only an active volunteer loan can be returned"},409);
    next={...previous,status:action==="MARK_WASHING"?"WASHING":"RETURNED",returnedAt:action==="RETURN"?now:""};
   }
+  if(action==="ISSUE_CADRE"){
+   const demands=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantTshirtStaffDemand");
+   await demands.createTable().catch(error=>{if(error.statusCode!==409)throw error});
+   const matches=[];
+   for await(const row of demands.listEntities({queryOptions:{filter:`PartitionKey eq '${schoolId.replaceAll("'","''")}'`}})){
+    const record=JSON.parse(row.payload||"{}");
+    if(record.category==="CADRE_FIRST"&&clean(record.parentEmail,320).toLowerCase()===email&&record.status!=="CANCELLED")matches.push({row,record});
+   }
+   if(matches.length>1)return json({error:"此家長有多筆首次公費需求，請先核對；尚未扣除庫存"},409);
+   const match=matches[0],record=match?.record||{parentEmail:email,parentName:name,studentId,category:"CADRE_FIRST",size,quantity:1,status:"ARRIVED",paymentStatus:"NOT_REQUIRED"};
+   if(record.size!==size)return json({error:"領用尺寸與採購需求不同，請先核對；尚未扣除庫存"},409);
+   try{
+    const issued=await issueStaffTshirt({inventory,schoolId,id:match?.row.rowKey||"cadre:"+email,record,actor:ctx.access.email,note:"幹部確認團 T 實際發放",loanClient:client});
+    const ledger=issued.ledger;stockResult={applied:!issued.alreadyIssued,alreadyIssued:issued.alreadyIssued,size,quantity:ledger.quantity};
+    Object.assign(next,{issuedAt:ledger.issuedAt,stockIssueId:ledger.rowKey});
+    if(match&&record.status!=="FULFILLED"){
+     const completed={...record,status:"FULFILLED",fulfilledAt:ledger.issuedAt,issuedAt:ledger.issuedAt,issuedBy:ledger.issuedBy,issuedQuantity:ledger.quantity,stockIssueId:ledger.rowKey,progressAt:ledger.issuedAt,progressBy:ledger.issuedBy,progressNote:"已於幹部領用紀錄確認實際發放",updatedAt:now};
+     await demands.updateEntity({partitionKey:schoolId,rowKey:match.row.rowKey,payload:JSON.stringify(completed),updatedAt:now},"Replace",{etag:match.row.etag});
+    }
+   }catch(error){if([409,412].includes(error.statusCode))return json({error:error.message||"庫存或需求已更新，請重新整理後重試"},409);throw error}
+  }
   if(["BORROW_VOLUNTEER","CORRECT_VOLUNTEER_SIZE","RETURN"].includes(action)){
    try{stockResult=await mutateVolunteerStock({inventory,schoolId,email,action,size:next.size,oldSize:previous?.size,now,actor:clean(ctx.access.email,200)})}
    catch(e){if(e.statusCode===409)return json({error:e.message},409);throw e}
@@ -137,5 +160,5 @@ app.http("tshirtParentLoans",{methods:["GET","POST"],authLevel:"anonymous",route
   try{if(old)await client.updateEntity(entity,"Replace",{etag:old.etag});else await client.createEntity(entity)}
   catch(e){if([409,412].includes(e.statusCode))return json({error:"Record changed; refresh and retry"},409);throw e}
   return json({item:{parentEmail:email,...next},stock:stockResult});
- }catch(e){console.error("tshirtParentLoans",e);return json({error:"Parent T-shirt operation failed"},500)}
+ }catch(e){console.error("tshirtParentLoans",e);return json({error:"領用結果待確認，請重新整理並重試同一筆；不會重複扣庫存"},500)}
 }});

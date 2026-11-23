@@ -1,5 +1,8 @@
 const buildEnablesPaymentResolution = false;
-export const paymentResolutionEnabled=()=>buildEnablesPaymentResolution&&process.env.LAB_ENVIRONMENT==="functional-uat";
+export const paymentResolutionEnabled=()=>{
+ const environment=String(process.env.LAB_ENVIRONMENT||"").trim();
+ return !environment||environment==="production"||buildEnablesPaymentResolution&&environment==="functional-uat";
+};
 export const resolutionStatuses=new Set(["ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED","REFUNDED"]);
 export const paymentOnHold=item=>resolutionStatuses.has(item?.paymentStatus);
 export class PaymentResolutionError extends Error{constructor(message,status=400){super(message);this.status=status}}

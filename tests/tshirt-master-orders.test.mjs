@@ -6,6 +6,7 @@ import {randomUUID} from "node:crypto";
 import {validatePurchaseOrderInput,tshirtPurchaseOrderSizes} from "../api/src/lib/tshirtPurchaseOrderRules.mjs";
 import {normalizeReceivingDetails,statusAfterReceiving} from "../api/src/lib/uniformReceivingRules.mjs";
 import {tshirtInventoryView} from "../api/src/lib/tshirtInventoryView.mjs";
+import {staffReceiptKey} from "../api/src/lib/tshirtStaffIssue.js";
 import {buildTshirtProcurementPlan,tshirtOrderCandidates,TSHIRT_PLAN_SIZES} from "../app/tshirt-procurement-plan.mjs";
 const read=path=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
 function harness(){
@@ -23,7 +24,7 @@ function harness(){
    for(const [action,row,,options] of actions){const k=key(row.partitionKey,row.rowKey),old=staged.get(k);assert.equal(seen.has(k),false);seen.add(k);if(action==="create"?!!old:!old||old.etag!==options.etag)throw error(action==="create"?409:412);staged.set(k,{...row,etag:"v"+(++version)})}
    tables.set(name,staged);if(name==="TenantUniformInventory"&&loseBatch){loseBatch=false;throw error(503)}
   }});
- const context={app:{http:(name,config)=>{handlers[name]=config.handler}},TableClient:{fromConnectionString:(_,name)=>db(name)},randomUUID,Buffer,validatePurchaseOrderInput,tshirtPurchaseOrderSizes,normalizeReceivingDetails,statusAfterReceiving,process:{env:{STORAGE_CONNECTION_STRING:"test"}},console:{error(){},warn(){}},
+ const context={app:{http:(name,config)=>{handlers[name]=config.handler}},TableClient:{fromConnectionString:(_,name)=>db(name)},randomUUID,Buffer,staffReceiptKey,validatePurchaseOrderInput,tshirtPurchaseOrderSizes,normalizeReceivingDetails,statusAfterReceiving,process:{env:{STORAGE_CONNECTION_STRING:"test"}},console:{error(){},warn(){}},
   getTenantContext:async()=>({schoolId:school,access:{role,email:"admin@example.test"},tenant:{schoolName:"測試學校"}}),json:(jsonBody,status=200)=>({status,jsonBody}),getStudentMaster:async id=>({studentName:"學生"+id,status:"active"}),getStudentAliasInfo:async id=>({canonicalStudentId:id}),listUserStudentMappings:async()=>[],sendUniformRequestStatusEmail:async input=>{notices.push(input);return {status:"sent"}}};
  const flow=runInNewContext(read("api/src/lib/tshirtPurchaseOrderFlow.js").replace(/^import .*;\n/gm,"").replaceAll("export ","")+";({tshirtClaimKey,activeTshirtClaim})",context);
  for(const file of ["tshirtPurchaseOrders","uniformReceiving","uniformFulfillment"])runInNewContext(read("api/src/functions/"+file+".js").replace(/^import .*;\n/gm,""),{...context,...flow});

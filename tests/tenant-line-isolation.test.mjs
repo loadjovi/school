@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {createHmac, randomInt} from "node:crypto";
+import {createHash,createHmac, randomInt} from "node:crypto";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 import {
@@ -120,17 +120,36 @@ test("group binding checks school partition, bot and conditional update for a on
 test("legacy token is available to Sacred Heart only and explicit sends fail without a token", async () => {
   const env = {LINE_CHANNEL_SECRET: "legacy-secret", LINE_CHANNEL_ACCESS_TOKEN: "legacy-token"};
   const {resolveTenantLineChannel, lineTargetMatchesChannel} = load("api/src/lib/lineTenantConfig.js", {
-    process: {env}, defaultTenantId, tenantSchoolPartition: value => value,
+    createHash,process: {env}, defaultTenantId, tenantSchoolPartition: value => value,lineApi:async()=>({userId:botId}),
     getTenantDirectory: async () => ({status: "active"}),
     TableClient: {fromConnectionString: () => ({getEntity: async () => {throw Object.assign(new Error(), {statusCode: 404});}})}
   }, ";({resolveTenantLineChannel,lineTargetMatchesChannel})");
   const sacredHeart = await resolveTenantLineChannel("sacred-heart");
   assert.equal(sacredHeart.accessToken, "legacy-token");
+  assert.equal(sacredHeart.botUserId,botId);assert.equal(sacredHeart.loginConfigured,false);
   assert.equal(lineTargetMatchesChannel({targetId: "group-a"}, sacredHeart), true);
   assert.equal(lineTargetMatchesChannel({targetId: "group-a"}, channelA), false);
   assert.equal(lineTargetMatchesChannel({targetId: "group-a", botUserId: channelB.botUserId}, channelA), false);
   assert.equal((await resolveTenantLineChannel("school-b")).accessToken, "");
   await assert.rejects(pushLineMessage("group-a", "test"), /LINE_CHANNEL_ACCESS_TOKEN/);
+});
+
+test("legacy Messaging API verifies and caches its bot without enabling OAuth or writing channel configuration",async()=>{
+ const calls=[],env={LINE_CHANNEL_SECRET:"legacy-secret",LINE_CHANNEL_ACCESS_TOKEN:"legacy-token",LINE_LOGIN_CHANNEL_ID:"1234567890",LINE_LOGIN_CHANNEL_SECRET:"unscoped-login-secret",LINE_APP_ORIGIN:"https://production.example.invalid"};
+ let writes=0;
+ const client={getEntity:async()=>{throw Object.assign(Error("missing"),{statusCode:404})},async *listEntities(){},createTable:async()=>{writes++},upsertEntity:async()=>{writes++}};
+ const api=load("api/src/lib/lineTenantConfig.js",{createHash,URL,process:{env},defaultTenantId,tenantSchoolPartition:String,getTenantDirectory:async()=>({status:"active"}),TableClient:{fromConnectionString:()=>client},lineApi:async(path,options)=>{calls.push({path,options});return {userId:botId}}},";({resolveTenantLineChannel,listTenantLineLoginSchools})");
+ const channels=await Promise.all([api.resolveTenantLineChannel("sacred-heart"),api.resolveTenantLineChannel("sacred-heart")]);
+ for(const channel of channels){assert.equal(channel.configured,true);assert.equal(channel.botUserId,botId);assert.equal(channel.acceptsLegacy,true);assert.equal(channel.loginConfigured,false);assert.equal(channel.loginId,"");assert.equal(channel.loginSecret,"");assert.equal(channel.oauthVersion,"")}
+ assert.equal(calls.length,1);assert.equal(calls[0].path,"/v2/bot/info");assert.equal(calls[0].options.method,"GET");assert.equal(calls[0].options.timeoutMs,3000);
+ assert.equal((await api.listTenantLineLoginSchools([{schoolId:"sacred-heart",status:"active"}])).length,0);
+ const other=await api.resolveTenantLineChannel("school-b");assert.equal(other.configured,false);assert.equal(other.botUserId,"");assert.equal(other.accessToken,"");assert.equal(calls.length,1);assert.equal(writes,0);
+});
+test("failed or malformed legacy bot verification does not authorize inherited groups or OAuth",async()=>{
+ for(const result of [null,{userId:"bad"},Error("unavailable")]){
+  const api=load("api/src/lib/lineTenantConfig.js",{createHash,process:{env:{LINE_CHANNEL_SECRET:"legacy-secret",LINE_CHANNEL_ACCESS_TOKEN:"legacy-token"}},defaultTenantId,tenantSchoolPartition:String,getTenantDirectory:async()=>({status:"active"}),TableClient:{fromConnectionString:()=>({getEntity:async()=>{throw Object.assign(Error("missing"),{statusCode:404})}})},lineApi:async()=>{if(result instanceof Error)throw result;return result}},";({resolveTenantLineChannel,lineTargetMatchesChannel})");
+  const channel=await api.resolveTenantLineChannel("sacred-heart");assert.equal(channel.botUserId,"");assert.equal(channel.acceptsLegacy,false);assert.equal(channel.loginConfigured,false);assert.equal(api.lineTargetMatchesChannel({targetId:"legacy-group"},channel),false);
+ }
 });
 
 test("only the same verified Sacred Heart bot can inherit existing groups", async () => {

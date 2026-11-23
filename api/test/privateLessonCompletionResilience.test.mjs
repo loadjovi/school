@@ -7,7 +7,7 @@ import {normalizeWeeklyGoals,readWeeklyGoals,isPublishedLesson} from "../src/lib
 const privateLessonSource=readFileSync(new URL("../src/functions/privateLesson.js",import.meta.url),"utf8");
 const emailSource=readFileSync(new URL("../src/lib/email.js",import.meta.url),"utf8");
 
-function privateLessonHarness({failNotificationAudit=false}={}){
+function privateLessonHarness({failNotificationAudit=false,lesson={},access={},conflictingWrite=false}={}){
   const handlers={},errors=[],sent=[];
   let updates=0;
   const initialEntity={
@@ -15,13 +15,14 @@ function privateLessonHarness({failNotificationAudit=false}={}){
     eventDate:"2026-11-12",startTime:"10:00",endTime:"10:50",minutes:50,status:"scheduled",actualAttendanceStatus:"present",
     lessonContent:"音階",teacher:"teacher@example.org",teacherName:"測試老師",parentConfirmation:"not_required",
     emailNotificationType:"scheduled",emailNotificationStatus:"accepted",emailNotificationRecipients:1,emailNotificationAcceptedCount:1,emailNotificationSentCount:1,emailNotificationFailedCount:0,
-    emailNotificationResendCount:0,emailNotificationLastResentAt:"",emailNotificationLastResentBy:"",createdAt:"2026-11-12T02:00:00Z",updatedAt:"2026-11-12T02:00:00Z"
+    emailNotificationResendCount:0,emailNotificationLastResentAt:"",emailNotificationLastResentBy:"",createdAt:"2026-11-12T02:00:00Z",updatedAt:"2026-11-12T02:00:00Z",etag:"v1",...lesson
   };
   const stored={...initialEntity};
   const client={
     getEntity:async()=>({...stored}),
-    updateEntity:async patch=>{
+    updateEntity:async (patch,_mode,options)=>{
       updates+=1;
+      if(conflictingWrite){assert.equal(options.etag,"v1");throw Object.assign(Error("Conflict"),{statusCode:412})}
       if(failNotificationAudit&&updates===2)throw new Error("notification audit storage unavailable");
       Object.assign(stored,patch);
     },
@@ -29,7 +30,7 @@ function privateLessonHarness({failNotificationAudit=false}={}){
   };
   const context={
     app:{http:(name,config)=>{handlers[name]=config.handler}},
-    getTenantContext:async()=>({access:{role:"privateTeacher",email:"teacher@example.org",displayName:"測試老師",capabilities:{private:true}},schoolId:"school-a"}),
+    getTenantContext:async()=>({access:{role:"privateTeacher",email:"teacher@example.org",displayName:"測試老師",capabilities:{private:true},...access},schoolId:"school-a"}),
     ensurePrivateAccess:()=>true,ensureStudentAccess:()=>true,getStudentAliasInfo:async id=>({canonicalStudentId:id,aliases:[id]}),
     json:(body,status=200)=>({status,jsonBody:body}),ensureTenantTables:async()=>{},table:()=>client,rowKey:()=>"unused",listByStudent:async()=>[],
     getTeacherDirectory:async()=>({teacherName:"測試老師"}),listUserStudentMappings:async()=>[{parentEmail:"parent@example.org",studentId:"student-1"}],
@@ -42,9 +43,45 @@ function privateLessonHarness({failNotificationAudit=false}={}){
   };
   const source=privateLessonSource.slice(privateLessonSource.indexOf("const attendanceStatuses=")).replace(/\bexport\s+/g,"");
   runInNewContext(source,context);
-  const request=()=>({method:"PATCH",headers:{get:name=>name==="origin"?"https://example.test":null},json:async()=>({studentId:"student-1",lessonId:"lesson-1",action:"complete_lesson",lessonContent:"音階 D 大調",attendanceStatus:"present",weeklyPracticeGoals:[]})});
+  const request=(action="complete_lesson")=>({method:"PATCH",headers:{get:name=>name==="origin"?"https://example.test":null},json:async()=>({studentId:"student-1",lessonId:"lesson-1",action,lessonContent:"音階 D 大調",attendanceStatus:"present",weeklyPracticeGoals:[]})});
   return {handler:handlers.privateLesson,request,get entity(){return stored},sent,errors,get updates(){return updates}};
 }
+
+test("the owning teacher can cancel an ended erroneous booking with no attendance or parent completion request",async()=>{
+  const h=privateLessonHarness({lesson:{weeklyPracticeGoalsJson:'["draft"]'}});
+  const cancel=()=>h.handler(h.request("cancel_mistaken_booking"));
+  const first=await cancel();
+  assert.equal(first.status,200);
+  assert.equal(first.jsonBody.item.workflowStatus,"cancelled");
+  assert.equal(first.jsonBody.item.actualAttendanceStatus,"");
+  assert.equal(h.entity.parentConfirmation,"not_required");
+  assert.equal(h.entity.cancelledBy,"teacher@example.org");
+  assert.equal(h.entity.completedAt,undefined);
+  assert.equal(h.entity.lessonContent,"");
+  assert.equal(h.entity.weeklyPracticeGoalsJson,"[]");
+  assert.equal(h.sent[0].eventType,"cancelled");
+  assert.equal(h.sent[0].recipients.join(","),"parent@example.org");
+  assert.match(h.sent[0].reason,/請忽略先前的預約通知/);
+  assert.equal(h.sent[0].lessonContent,"");
+  await cancel();
+  assert.equal(h.sent.length,1);
+  assert.equal((await h.handler(h.request())).status,409);
+});
+
+test("an erroneous booking cancellation cannot bypass ownership, the end time or completed records",async()=>{
+  for(const [params,status] of [
+    [{access:{role:"parent",capabilities:{}}},403],
+    [{access:{email:"other-teacher@example.org"}},403],
+    [{lesson:{eventDate:"2099-11-12"}},409],
+    [{lesson:{status:"teacher_completed",parentConfirmation:"pending"}},409],
+    [{lesson:{status:"present",parentConfirmation:"confirmed"}},409],
+    [{conflictingWrite:true},409]
+  ]){
+    const h=privateLessonHarness(params);
+    assert.equal((await h.handler(h.request("cancel_mistaken_booking"))).status,status);
+    assert.equal(h.sent.length,0);
+  }
+});
 
 test("completed lesson remains successful when the notification audit write fails",async()=>{
   const h=privateLessonHarness({failNotificationAudit:true});

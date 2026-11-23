@@ -9,8 +9,10 @@ const strip=text=>text.replace(/^import\s+[\s\S]*?;\r?\n/gm,"").replace(/^export
 const missing=statusCode=>Object.assign(Error(String(statusCode)),{statusCode});
 const bot="U"+"a".repeat(32),groupA="C"+"a".repeat(32),groupB="C"+"b".repeat(32);
 const channel={schoolId:"school-a",botUserId:bot,channelSecret:"secret-a",accessToken:"token-a",loginConfigured:true,configured:true,legacy:false,appOrigin:"https://school-a.example.invalid"};
+const matchingSource=read("api/src/lib/lineTenantConfig.js");
+const lineTargetMatchesChannel=runInNewContext(matchingSource.slice(matchingSource.indexOf("export function lineTargetMatchesChannel"),matchingSource.indexOf("export function tenantWebhookPath")).replace("export ","")+";lineTargetMatchesChannel");
 function fixture(){
- const tables=new Map(),existingTargets=new Map();let version=0,clock=Date.now();
+ const tables=new Map(),existingTargets=new Map(),channels=new Map();let version=0,clock=Date.now();
  const key=(p,r)=>p+"|"+r;
  const rows=name=>{if(!tables.has(name))tables.set(name,new Map());return tables.get(name)};
  const mutate=(map,action,row,mode,options)=>{
@@ -32,11 +34,11 @@ function fixture(){
  });
  class Clock extends Date{constructor(...args){super(...(args.length?args:[clock]))}static now(){return clock}}
  const api=runInNewContext(strip(read("api/src/lib/lineActivityGroups.js"))+";({requireLineActivity,getActivityLineGroup,listActivityLineGroups,listSchoolLineGroups,schoolLineGroupTarget,parseActivityLineBinding,createActivityLineBinding,consumeActivityLineBinding,clearActivityLineGroup,leaveActivityLineGroup,recordLineAnnouncement,lineAnnouncementHistory})",{
-  TableClient:{fromConnectionString:(_,name)=>client(name)},process:{env:{STORAGE_CONNECTION_STRING:"test"}},createHash,randomBytes,tenantSchoolPartition:x=>x,Date:Clock,getLineNotificationTarget:async(school,purpose)=>existingTargets.get(school+":"+purpose)||{}
+  TableClient:{fromConnectionString:(_,name)=>client(name)},process:{env:{STORAGE_CONNECTION_STRING:"test"}},createHash,randomBytes,tenantSchoolPartition:x=>x,Date:Clock,getLineNotificationTarget:async(school,purpose)=>existingTargets.get(school+":"+purpose)||{},resolveTenantLineChannel:async school=>channels.get(school)||{...channel,schoolId:school,acceptsLegacy:false},lineTargetMatchesChannel
  });
  const seed=(school,key,title="活動",enabled=true)=>mutate(rows("TenantUniformEventConfig"),"upsert",{partitionKey:school,rowKey:key,payload:JSON.stringify({title,enabled,eventDate:"2026-12-09"})},"Replace");
  seed("school-a","fieldTrip:exchange","交流活動");seed("school-a","calendarActivity:competition","比賽活動");seed("school-b","fieldTrip:exchange","乙校交流");
- return {api,seed,tables,rows,advance:ms=>{clock+=ms},setExisting:(school,purpose,target)=>existingTargets.set(school+":"+purpose,target)};
+ return {api,seed,tables,rows,advance:ms=>{clock+=ms},setExisting:(school,purpose,target)=>existingTargets.set(school+":"+purpose,target),setChannel:(school,current)=>channels.set(school,current)};
 }
 
 test("an activity binding code is one-use, school/bot-specific, expiring, and cannot change general todo groups",async()=>{
@@ -71,18 +73,18 @@ test("regeneration, unbinding, disabled activities, bot changes and a group leav
  await assert.rejects(a.createActivityLineBinding(channel,"fieldTrip:unknown","admin"),/活動已關閉/);
 });
 
-function controller(h){
- const handlers={},sends=[],audiences=[],groupNames=new Map();let role="admin",school="school-a",groupName="交流志工群",fails=false,targets=["U"+"1".repeat(32)],pushFailure=()=>null;
+function controller(h,{resolvedChannel=channel}={}){
+ const handlers={},sends=[],audiences=[],groupNames=new Map();let role="admin",school=resolvedChannel.schoolId,groupName="交流志工群",fails=false,targets=["U"+"1".repeat(32)],pushFailure=()=>null;
  runInNewContext(strip(read("api/src/functions/lineAnnouncements.js")),{
   app:{http:(name,entry)=>{handlers[name]=entry.handler}},createHash,console,process:{env:{LAB_ENVIRONMENT:"functional-uat"}},
   getTenantContext:async()=>({schoolId:school,access:{role,email:"admin@example.invalid"},tenant:{schoolName:"甲校"}}),json:(data,status=200)=>({data,status}),
-  resolveTenantLineChannel:async()=>({...channel,schoolId:school}),workflowLineEnabled:()=>true,workflowLineRetryKey:(...args)=>args.join("|"),
+  resolveTenantLineChannel:async()=>({...resolvedChannel,schoolId:school}),workflowLineEnabled:()=>true,workflowLineRetryKey:(...args)=>args.join("|"),
   ...h.api,lineAudienceStudents:async()=>[{groupName:"A"},{groupName:"新團"}],lineAudienceGroups:students=>students.map(x=>x.groupName),lineAudienceRoles:["parent","teacher","staff","finance"],
   resolveLineAudience:async(s,b,input)=>{audiences.push({s,b,input});return {targets,recipients:targets.map((userId,index)=>({userId,name:index?"Eileen":"Roy"})),matched:2,unbound:1}},
   getLineGroupSummary:async id=>groupNames.has(id)?groupNames.get(id)===null?null:{groupName:groupNames.get(id)}:{groupName},pushLineMessage:async(to,text,options)=>{sends.push({to,text,options});if(fails)throw Error("provider unavailable");const error=pushFailure(to,options);if(error)throw error},
   lineApi:async(path,options)=>sends.push({path,options})
  });
- const request=(body,origin=channel.appOrigin)=>handlers.lineAnnouncements({method:body?"POST":"GET",headers:new Headers({origin}),json:async()=>body});
+ const request=(body,origin=resolvedChannel.appOrigin)=>handlers.lineAnnouncements({method:body?"POST":"GET",headers:new Headers({origin}),json:async()=>body});
  return {request,sends,audiences,setRole:v=>{role=v},setSchool:v=>{school=v},setName:v=>{groupName=v},setGroupName:(id,name)=>groupNames.set(id,name),setFails:v=>{fails=v},setTargets:v=>{targets=v},setPushFailure:v=>{pushFailure=v}};
 }
 const draft={action:"preview",audience:"activityGroup",activityKey:"fieldTrip:exchange",text:"請志工 08:00 集合",requestId:"12345678-1234-1234-1234-123456789abc"};
@@ -231,6 +233,42 @@ test("both existing platform groups appear by their saved names without creating
  assert.equal(groups.filter(x=>x.bound).length,2);assert.equal(groups.find(x=>x.key==="school:teachers").sourceLabel,"平台學生缺席通知群組");assert.equal(h.rows("TenantLineNotificationCenter").size,0);
  assert.doesNotMatch(JSON.stringify(groups),/targetId|groupId|secret-a|token-a/);assert.equal(c.sends.length,0);
  await assert.rejects(h.api.clearActivityLineGroup("school-a",bot,"school:cadres"),/沿用平台原有綁定/);
+});
+test("verified same-school legacy groups retain their names without a new binding, while stale or unrelated channels stay isolated",async()=>{
+ const h=fixture(),legacy={targetId:groupA,targetLabel:"原有幹部群",targetType:"group",botUserId:""};
+ h.setExisting("school-a","admin",legacy);
+ h.setChannel("school-a",{...channel,loginConfigured:false,acceptsLegacy:true});
+ const group=await h.api.getActivityLineGroup("school-a",bot,"school:cadres");
+ assert.equal(group.groupId,groupA);assert.equal(group.groupName,"原有幹部群");assert.equal(group.source,"settings");
+ assert.equal(h.rows("TenantLineNotificationCenter").size,0);assert.equal(legacy.botUserId,"");
+ assert.equal((await h.api.listSchoolLineGroups("school-a",bot)).find(x=>x.key==="school:cadres").bound,true);
+ for(const override of [{acceptsLegacy:false},{configured:false},{schoolId:"school-b"},{botUserId:"U"+"b".repeat(32)}]){
+  h.setChannel("school-a",{...channel,acceptsLegacy:true,...override});
+  assert.equal(await h.api.getActivityLineGroup("school-a",bot,"school:cadres"),null);
+ }
+ h.setChannel("school-a",{...channel,acceptsLegacy:true});
+ h.setExisting("school-a","admin",{...legacy,botUserId:"U"+"b".repeat(32)});
+ assert.equal(await h.api.getActivityLineGroup("school-a",bot,"school:cadres"),null);
+ assert.equal(await h.api.getActivityLineGroup("school-b",bot,"school:cadres"),null);
+ assert.equal(h.rows("TenantLineNotificationCenter").size,0);
+});
+test("an existing production Messaging-only account can preview and notify its original groups while OAuth stays disabled",async()=>{
+ const school="sacred-heart",lookups=[];
+ const config=runInNewContext(strip(read("api/src/lib/lineTenantConfig.js"))+";({resolveTenantLineChannel,listTenantLineLoginSchools})",{
+  createHash,URL,process:{env:{LINE_CHANNEL_SECRET:"legacy-secret",LINE_CHANNEL_ACCESS_TOKEN:"legacy-token",LINE_APP_ORIGIN:channel.appOrigin}},defaultTenantId:()=>school,tenantSchoolPartition:String,getTenantDirectory:async()=>({status:"active"}),
+  TableClient:{fromConnectionString:()=>({getEntity:async()=>{throw missing(404)},async *listEntities(){}})},lineApi:async(path,options)=>{lookups.push({path,options});return {userId:bot}}
+ });
+ const resolved=await config.resolveTenantLineChannel(school);assert.equal(resolved.loginConfigured,false);assert.equal(resolved.botUserId,bot);assert.equal(resolved.appOrigin,channel.appOrigin);
+ assert.equal((await config.listTenantLineLoginSchools([{schoolId:school,status:"active"}])).length,0);
+ const h=fixture();h.setChannel(school,resolved);
+ for(const [purpose,id,name] of [["admin",groupA,"原有幹部群"],["absence",groupB,"原有學校群"]])h.setExisting(school,purpose,{targetType:"group",targetId:id,targetLabel:name,botUserId:""});
+ const c=controller(h,{resolvedChannel:resolved});c.setGroupName(groupA,"原有幹部群");c.setGroupName(groupB,"原有學校群");
+ const options=await c.request();assert.equal(options.status,200);assert.equal(options.data.schoolGroups.filter(x=>x.bound).length,2);
+ const body={...draft,audience:"schoolGroups",schoolGroupKeys:["school:cadres","school:teachers"]},preview=await c.request(body);
+ assert.equal(preview.status,200);assert.equal(preview.data.groupDeliverable,2);assert.equal(c.sends.length,0);
+ const result=await c.request({...body,action:"send",preview:preview.data.preview});assert.equal(result.status,200);assert.equal(result.data.groupAccepted,2);
+ assert.deepEqual(c.sends.map(x=>x.to).sort(),[groupA,groupB]);assert.ok(c.sends.every(x=>x.options.accessToken==="legacy-token"));assert.equal(c.audiences.length,0);
+ assert.equal([...h.rows("TenantLineNotificationCenter").values()].some(row=>row.rowKey.startsWith("group:")),false);assert.equal(lookups.length,1);
 });
 test("selecting both existing groups sends one push per group and never resolves individual admin accounts",async()=>{
  const h=fixture();h.setExisting("school-a","admin",existingGroup(groupA,"後援幹部群"));h.setExisting("school-a","absence",existingGroup(groupB,"學校老師群"));

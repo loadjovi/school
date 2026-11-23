@@ -212,18 +212,18 @@ test("finance LINE dispatch contains no transfer details and only reaches assign
   channel.financeTransferLineEnabled=true;
   assert.equal(await notify("sacred-heart",event),"sent");
   const record={paymentStatus:"REPORTED_UNVERIFIED",transferReport:{reportedAt:event.reportedAt}};
-  assert.equal(await retryProduction("sacred-heart",event.kind,event.id,record),"lab_suppressed");
-  assert.equal(await retryNamedLab("sacred-heart",event.kind,event.id,record),"lab_suppressed");
+  assert.equal(await retryProduction("sacred-heart",event.kind,event.id,record),"sent");
+  assert.equal(await retryNamedLab("sacred-heart",event.kind,event.id,record),"sent");
   env.LAB_ENVIRONMENT="functional-uat";
   assert.equal(await retryProduction("sacred-heart",event.kind,event.id,record),"lab_suppressed");
-  assert.equal(outbound.length,1);
+  assert.equal(outbound.length,3);
   assert.equal(await retryNamedLab("sacred-heart",event.kind,event.id,{...record,paymentStatus:"VERIFIED"}),"ineligible");
   assert.equal(await retryNamedLab("sacred-heart",event.kind,event.id,{...record,transferReport:{reportedAt:"2020-01-01T00:00:00Z"}}),"ineligible");
   assert.equal(await retryNamedLab("sacred-heart",event.kind,event.id,record),"sent");
   assert.equal(outbound[0][0],"finance-user");
   assert.match(outbound[0][1],/財務待辦/);
   assert.doesNotMatch(outbound[0][1],/private-request-id/);
-  assert.equal(outbound[0][2].retryKey,outbound[1][2].retryKey);
+  assert.ok(outbound.every(row=>row[2].retryKey===outbound[0][2].retryKey));
 });
 
 test("uniform cancellation sends the stored reason only to the original applicant's school LINE account", async () => {
@@ -259,13 +259,15 @@ test("announcement previews support a new group and deduplicate households and r
   const students=[{rowKey:"student-a",groupName:"新團"},{rowKey:"student-b",groupName:"新團"},{rowKey:"student-c",groupName:"A"}];
   const target="U"+"a".repeat(32);
   const audience=load("lineAudience.js",{
+    resolveTenantLineChannel:async school=>({schoolId:school,botUserId:"bot-one",configured:true}),
     listUserStudentMappings:async schoolStatus=>{
       assert.equal(schoolStatus,"active");
       return [{studentId:"student-a",parentEmail:"same@example.test"},{studentId:"student-b",parentEmail:"same@example.test"},{studentId:"student-c",parentEmail:"other@example.test"}];
     },
     getStudentAliasInfo:async(id,school)=>{assert.equal(school,"sacred-heart");return {canonicalStudentId:id}},
     listTenantAdmins:async()=>[{role:"schoolAdmin",status:"active",partitionKey:"same@example.test"}],
-    getTenantLineRecipient:async(school,email,bot)=>{
+    getTenantLineDeliveryRecipient:async(school,email,channel)=>{
+      const bot=channel.botUserId;
       assert.deepEqual([school,email,bot],["sacred-heart","same@example.test","bot-one"]);
       return {lineUserId:target};
     }

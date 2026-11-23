@@ -37,10 +37,10 @@ test("removed LAB project and transfer APIs stop before any read, write or reque
  }
  assert.equal(storageCalls,0);
 });
-test("ordinary and production builds retain the explicit per-school fee feature gate without a DEMO fallback",()=>{
+test("the retired standalone fee DEMO stays disabled in ordinary and production builds despite old feature settings",()=>{
  for(const config of [{labBuild:false,environment:"functional-uat"},{labBuild:false,environment:"production"},{labBuild:true,environment:"production"}]){
   const h=configuration(config);assert.equal(h.tenantFeeEnabled("sacred-heart"),false);assert.equal(h.tenantFeeEnabled("school-b"),false);
-  h.env.LINE_SCHOOL_B_FEE_COLLECTIONS_ENABLED="true";assert.equal(h.tenantFeeEnabled("school-b"),true);assert.equal(h.tenantFeeEnabled("sacred-heart"),false);
+  h.env.LINE_SCHOOL_B_FEE_COLLECTIONS_ENABLED="true";assert.equal(h.tenantFeeEnabled("school-b"),false);assert.equal(h.tenantFeeEnabled("sacred-heart"),false);
   h.env.LINE_SCHOOL_B_FEE_COLLECTIONS_ENABLED="false";assert.equal(h.tenantFeeEnabled("school-b"),false);
  }
 });

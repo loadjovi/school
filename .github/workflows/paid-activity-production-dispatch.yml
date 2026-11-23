@@ -1,0 +1,48 @@
+name: Dispatch scheduled production activity notices
+
+on:
+  schedule:
+    - cron: '2-57/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: paid-activity-production-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: github.repository == 'loadjovi/school' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Dispatch due notices with this workflow's short-lived identity
+        env:
+          PRODUCTION_ORIGIN: https://lively-field-09afddc00.6.azurestaticapps.net
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          origin = os.environ['PRODUCTION_ORIGIN']
+          request_url = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']
+          separator = '&' if '?' in request_url else '?'
+          request_url += separator + urllib.parse.urlencode({'audience': origin})
+          request = urllib.request.Request(request_url, headers={
+              'Authorization': 'Bearer ' + os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})
+          with urllib.request.urlopen(request, timeout=20) as response:
+              token = json.load(response).get('value', '')
+          if not isinstance(token, str) or not token or len(token) > 16000:
+              raise RuntimeError('GitHub did not issue a valid scheduler identity')
+          request = urllib.request.Request(origin + '/api/line/paid-activity-notices/dispatch',
+              data=b'{}', method='POST', headers={
+                  'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+          with urllib.request.urlopen(request, timeout=90) as response:
+              result = json.load(response)
+          counts = {name: int(result.get(name, 0)) for name in ('processed', 'failed')}
+          print(json.dumps(counts))
+          if counts['failed']:
+              raise RuntimeError('Some due activity notices could not be processed')
+          PY

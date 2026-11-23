@@ -1,17 +1,14 @@
 import {app} from "@azure/functions";
 import {TableClient} from "@azure/data-tables";
-import {createHash,timingSafeEqual} from "node:crypto";
+import {authorizePaidActivityScheduler} from "../lib/paidActivitySchedulerAuth.mjs";
 import {json} from "../lib/auth.js";
 import {dispatchPaidActivityNotices} from "../lib/paidActivitySchedule.js";
 
-const digest = value => createHash("sha256").update(value).digest();
 app.http("paidActivityNoticeDispatch",{
   methods:["POST"],route:"line/paid-activity-notices/dispatch",authLevel:"anonymous",
   handler:async request=>{
-    const secret = process.env.LINE_PAID_ACTIVITY_SCHEDULER_TOKEN || "";
-    if (!secret) return json({error:"Scheduler not configured"},503);
-    const supplied = request.headers.get("authorization") || "";
-    if (!timingSafeEqual(digest(supplied),digest("Bearer "+secret))) return json({error:"Unauthorized"},401);
+    const access=await authorizePaidActivityScheduler(request.headers.get("authorization"));
+    if(!access.authorized)return json({error:access.status===503?"Scheduler identity service unavailable":"Unauthorized"},access.status);
     const table = TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,
       process.env.UNIFORM_EVENT_CONFIG_TABLE || "TenantUniformEventConfig");
     const now = new Date().toISOString();

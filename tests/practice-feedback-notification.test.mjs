@@ -6,7 +6,7 @@ import {createHash} from "node:crypto";
 
 const read=path=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
 const strip=source=>source.replace(/^import .*;\n/gm,"").replace(/^export /gm,"");
-function harness(){
+function harness({production=false}={}){
  const stores=new Map(),handlers={},pushes=[],mails=[],lookups=[];
  let school="school-a",role="teacher",allowed=true,privateOnly=false,temporary=false,active=true,revision=0,lineFailure=false,mailFailure=false,onClaim=null;
  const unbound=new Set(),error=code=>Object.assign(Error(String(code)),{statusCode:code}),key=(p,r)=>p+"/"+r;
@@ -26,13 +26,13 @@ function harness(){
  });
  const parents=new Map([["school-a",[{studentId:"student1",parentEmail:"one@example.test",status:"active"},{studentId:"old-id",parentEmail:"two@example.test",status:"active"},{studentId:"student1",parentEmail:"ONE@example.test",status:"active"},{studentId:"other-child",parentEmail:"other@example.test",status:"active"},{studentId:"student1",parentEmail:"removed@example.test",status:"inactive"}]], ["school-b",[{studentId:"student1",parentEmail:"school-b@example.test",status:"active"}]]]);
  const partition=(s,id)=>s+"|student|"+id;
- const scope={createHash,process:{env:{LAB_ENVIRONMENT:"functional-uat",STORAGE_CONNECTION_STRING:"test"}},console:{error(){}},
+ const scope={createHash,URL,defaultTenantId:()=>"sacred-heart",process:{env:{LAB_ENVIRONMENT:production?"production":"functional-uat",STORAGE_CONNECTION_STRING:"test",LINE_SCHOOL_A_APP_ORIGIN:"https://a.example.test",LINE_SCHOOL_B_APP_ORIGIN:"https://b.example.test"}},console:{error(){}},
   app:{http:(name,config)=>{handlers[name]=config.handler}},getTenantContext:async()=>({schoolId:school,access:{role,email:"teacher@example.test",displayName:"陳老師",capabilities:{teacherSettings:role==="teacher",privateOnly},temporaryAssignment:temporary,students:["student1"]}}),json:(jsonBody,status=200)=>({jsonBody,status}),ensureStudentAccess:(_a,id)=>allowed&&id==="student1",ensureTenantTables:async()=>{},table:db,tenantSchoolPartition:String,tenantStudentPartition:partition,
   getStudentMaster:async(id,s)=>id==="student1"?{studentName:s==="school-a"?"甲同學":"乙同學",status:active?"active":"inactive"}:null,getStudentIdAliases:async id=>id==="student1"?["student1","old-id"]:[id],
   TableClient:{fromConnectionString:(_conn,name)=>db(name)},tenantEmailAddress:email=>String(email).includes("@")?email:"",tenantEmailConfig:()=>({connectionString:"test",senderAddress:"lab@example.test"}),getTenantLineParentContact:async()=>null,
   resolveTenantLineChannel:async s=>({loginConfigured:true,botUserId:"bot-"+s,accessToken:"token-"+s}),getTenantLineRecipient:async(s,email,bot)=>{lookups.push({s,email,bot});return unbound.has(email)?null:{lineUserId:s+"-"+email}},pushLineMessage:async(user,text,options)=>{if(lineFailure)throw error(400);pushes.push({user,text,options})},EmailClient:class{async beginSend(input){if(mailFailure)throw error(400);mails.push(input);return {}}}
  };
- Object.assign(scope,runInNewContext(strip(read("api/src/lib/labNoticeDelivery.mjs")).replace("const buildEnablesLineFirstLab = false;","const buildEnablesLineFirstLab = true;")+";({deliverLabNotice,labNoticeLineResult,lineFirstLabEnabled})",{...scope}));
+ Object.assign(scope,runInNewContext((production?strip(read("api/src/lib/labNoticeDelivery.mjs")):strip(read("api/src/lib/labNoticeDelivery.mjs")).replace("const buildEnablesLineFirstLab = false;","const buildEnablesLineFirstLab = true;"))+";({deliverLabNotice,labNoticeLineResult,lineFirstLabEnabled})",{...scope}));
  Object.assign(scope,runInNewContext(strip(read("api/src/lib/practiceFeedbackNotification.js"))+";({notifyPracticeFeedback})",{...scope}));
  runInNewContext(strip(read("api/src/functions/practiceFeedback.js")),{...scope});
  const input=(extra={})=>({studentId:"student1",month:"2026-11",level:4,comment:"這週練習很穩定，繼續保持！",...extra});
@@ -82,8 +82,18 @@ test("deleted or superseded feedback cannot send stale content, and parent bindi
 test("no mapped parent is reported honestly; inactive mappings and other students never receive a notice",async()=>{
  const h=harness();h.parents.set("school-a",h.parents.get("school-a").filter(x=>x.studentId==="other-child"||x.status==="inactive"));const result=await h.post();assert.equal(result.status,200);assert.equal(result.jsonBody.notification.status,"no_recipients");assert.equal(h.pushes.length,0);assert.equal(h.mails.length,0);
 });
-test("the notification feature is disabled outside the independent LINE LAB",async()=>{
- const h=harness();h.process.env.LAB_ENVIRONMENT="production";const result=await h.post();assert.equal(result.status,200);assert.equal(result.jsonBody.notification.status,"disabled");assert.equal(h.rows("tenantPracticeFeedback").size,1);assert.equal(h.pushes.length,0);assert.equal(h.mails.length,0);
+test("unrecognized nonproduction LAB environments cannot send encouragement",async()=>{
+ const h=harness();h.process.env.LAB_ENVIRONMENT="other-lab";const result=await h.post();assert.equal(result.status,200);assert.equal(result.jsonBody.notification.status,"disabled");assert.equal(h.rows("tenantPracticeFeedback").size,1);assert.equal(h.pushes.length,0);assert.equal(h.mails.length,0);
+});
+test("Production encouragement notifies the student's mapped parents without LAB build transforms or duplicate saves",async()=>{
+ const h=harness({production:true});
+ const result=await h.post();assert.equal(result.status,200);assert.equal(result.jsonBody.notification.status,"accepted");assert.equal(h.pushes.length,2);
+ await h.post();assert.equal(h.pushes.length,2);assert.equal(h.rows("tenantPracticeMonthlyEvaluation").size,0);
+ assert.ok(h.pushes.every(push=>push.options.accessToken==="token-school-a"));
+ assert.match(h.pushes[0].text,/【老師的日常鼓勵】/);assert.doesNotMatch(JSON.stringify(h.pushes),/【LAB|lineuat|icy-ocean/);
+ const fallback=harness({production:true});fallback.unbound.add("two@example.test");
+ assert.equal((await fallback.post()).jsonBody.notification.status,"mixed_sent");assert.equal(fallback.mails.length,1);
+ assert.doesNotMatch(JSON.stringify(fallback.mails),/【LAB|lineuat|icy-ocean/);
 });
 
 function uiHarness({notice={status:"accepted"},saveFails=false,refreshFails=false}={}){

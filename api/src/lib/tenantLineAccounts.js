@@ -1,10 +1,12 @@
 import {createHash, randomBytes, randomUUID} from "node:crypto";
 import {TableClient} from "@azure/data-tables";
 import {defaultTenantId, getMappedStudentsByEmail, getRegistrationsByEmail, tenantSchoolPartition} from "./storage.js";
+import {lineApi} from "./lineMessaging.mjs";
 
 const name = "TenantLineIdentity";
 let database;
 let initialized;
+const deliveryBotProofs=new Map();
 export const lineHash = value => createHash("sha256").update(value).digest("hex");
 export const lineRandom = () => randomBytes(32).toString("base64url");
 const lineKey = (botUserId, userId) => "line-" + lineHash(botUserId + ":" + userId);
@@ -58,6 +60,43 @@ export async function getTenantLineRecipient(schoolId, email, botUserId) {
   if (!email || !botUserId) return null;
   const row = await read(tenantSchoolPartition(schoolId), emailKey(email));
   return row?.botUserId === botUserId && row.lineUserId ? row : null;
+}
+
+// Delivery-only compatibility. It never creates a login, identity, or role, and
+// the stricter account lookup above remains authoritative for authentication.
+export async function getTenantLineDeliveryRecipient(schoolId, email, channel) {
+  const partitionKey=tenantSchoolPartition(schoolId),address=String(email||"").trim().toLowerCase();
+  if(!address||channel?.schoolId!==partitionKey||!channel.botUserId)return null;
+  const current=await read(partitionKey,emailKey(address));
+  if(current)return current.botUserId===channel.botUserId&&current.lineUserId?current:null;
+  if(!["","production"].includes(String(process.env.LAB_ENVIRONMENT||"").trim().toLowerCase())||
+    partitionKey!==defaultTenantId()||channel.configured!==true||channel.acceptsLegacy!==true||!channel.accessToken)return null;
+  try{
+    // A modern Google index, including an explicit unlink marker, must never
+    // be silently revived from the older binding table.
+    const safe=address.replaceAll("'","''");
+    for await(const row of store().listEntities({queryOptions:{filter:`PartitionKey eq '${partitionKey.replaceAll("'","''")}' and googleEmail eq '${safe}'`}})){
+      if(row.googleEmail===address)return null;
+    }
+    const old=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,process.env.LINE_ACCOUNT_BINDING_TABLE||"TenantLineAccountBinding");
+    const binding=await old.getEntity(partitionKey,"email_"+lineHash(address).slice(0,40));
+    const userId=binding.lineUserId;
+    if(binding.status!=="ACTIVE"||binding.schoolId!==partitionKey||binding.parentEmail!==address||
+      !/^U[0-9a-f]{32}$/i.test(userId||"")||binding.lineUserIdHash!==lineHash(userId)||
+      binding.botUserId&&binding.botUserId!==channel.botUserId)return null;
+    const proofKey=lineHash(channel.accessToken)+":"+channel.botUserId;
+    let proof=deliveryBotProofs.get(proofKey);
+    if(!proof||proof.expires<=Date.now()){
+      if(deliveryBotProofs.size>=100)deliveryBotProofs.clear();
+      proof={expires:Date.now()+60000,result:lineApi("/v2/bot/info",{method:"GET",accessToken:channel.accessToken,timeoutMs:3000})};
+      deliveryBotProofs.set(proofKey,proof);
+    }
+    let bot;try{bot=await proof.result}catch(error){deliveryBotProofs.delete(proofKey);throw error}
+    if(bot?.userId!==channel.botUserId)return null;
+    const profile=await lineApi("/v2/bot/profile/"+encodeURIComponent(userId),{method:"GET",accessToken:channel.accessToken,timeoutMs:3000});
+    if(profile?.userId!==userId)return null;
+    return {parentEmail:address,lineUserId:userId,botUserId:channel.botUserId,displayName:String(profile.displayName||binding.lineDisplayName||"").slice(0,100),deliveryOnly:true};
+  }catch{return null}
 }
 
 export async function recordTenantLineFriendship(schoolId, botUserId, userId, friend, checkedAt) {

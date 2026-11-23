@@ -25,7 +25,7 @@ test("operations never mount staff payment verification or adjustment forms, inc
  }
 });
 test("operation controls still finish received demands and do not advance a held payment",async()=>{
- const h=render({canVerifyFinance:true}),completed=h.nodes.find(node=>node.textContent==="確認需求已處理完成");
+ const h=render({canVerifyFinance:true}),completed=h.nodes.find(node=>node.textContent==="確認實際發放並扣庫存");
  assert.ok(completed);await completed.handlers.click();assert.deepEqual(JSON.parse(JSON.stringify(h.calls)),[{id:"arrived",action:"UPDATE_DEMAND_STATUS",status:"FULFILLED",note:"作業備註"}]);
  for(const name of ["supplement","refund"]){
   const card=h.body.children.find(node=>node.children[0].textContent.startsWith(name+"｜"));

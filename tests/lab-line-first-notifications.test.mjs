@@ -6,15 +6,15 @@ import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 const read=path=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
 const withoutImports=source=>source.replace(/^import .*;\n/gm,"").replace(/^export /gm,"");
-function harness(){
+function harness({production=false}={}){
  const records=new Map(),lines=[],mails=[],bindings=new Map(),contacts=new Map(),failLine=new Set(),failMail=new Set();let configured=true,finishFailure=false,mailUnknown=false,version=0;
  const db={createTable:async()=>{},getEntity:async(p,r)=>{const row=records.get(p+":"+r);if(!row)throw Object.assign(Error("missing"),{statusCode:404});return {...row}},
   createEntity:async row=>{const key=row.partitionKey+":"+row.rowKey;if(records.has(key))throw Object.assign(Error("exists"),{statusCode:409});records.set(key,{...row,etag:"e"+(++version)})},
   updateEntity:async(row,mode,options)=>{const key=row.partitionKey+":"+row.rowKey,old=records.get(key);if(options?.etag&&old?.etag!==options.etag)throw Object.assign(Error("changed"),{statusCode:412});if(finishFailure&&row.status==="accepted")throw Error("ledger timeout");records.set(key,{...(mode==="Replace"?{}:old),...row,etag:"e"+(++version)})}
  };
  class EmailClient{constructor(connection){this.connection=connection}async beginSend(message){mails.push({connection:this.connection,...message});if(mailUnknown)throw Error("network timeout");if(failMail.has(message.recipients.to[0].address))throw Object.assign(Error("bad recipient"),{statusCode:400});return {}}}
- const env={LAB_ENVIRONMENT:"functional-uat"};
- const scope={createHash,URL,TableClient:{fromConnectionString:(connection,name)=>{assert.equal(name,"TenantNotificationDelivery");return db}},EmailClient,process:{env},
+ const env={LAB_ENVIRONMENT:production?"production":"functional-uat",LINE_SCHOOL_A_APP_ORIGIN:"https://a.example.test",LINE_SCHOOL_B_APP_ORIGIN:"https://b.example.test"};
+ const scope={createHash,URL,defaultTenantId:()=>"sacred-heart",TableClient:{fromConnectionString:(connection,name)=>{assert.equal(name,"TenantNotificationDelivery");return db}},EmailClient,process:{env},
   tenantEmailAddress:value=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value||"")&&!String(value).endsWith(".invalid")?String(value).toLowerCase():"",
   tenantEmailConfig:(school,options)=>{assert.equal(options.fallback,true);return configured?{connectionString:"mail-"+school,senderAddress:"sender@"+school+".example.invalid"}:{}},
   getTenantLineParentContact:async(school,email)=>contacts.get(school+":"+email)||"",
@@ -22,7 +22,7 @@ function harness(){
   resolveTenantLineChannel:async school=>({loginConfigured:true,botUserId:"bot-"+school,accessToken:"token-"+school}),
   pushLineMessage:async(user,text,options)=>{lines.push({user,text,options});if(failLine.has(user))throw Error("LINE rejected")}
  };
- const policy=read("api/src/lib/labNoticeDelivery.mjs").replace("const buildEnablesLineFirstLab = false;","const buildEnablesLineFirstLab = true;");
+ const rawPolicy=read("api/src/lib/labNoticeDelivery.mjs"),policy=production?rawPolicy:rawPolicy.replace("const buildEnablesLineFirstLab = false;","const buildEnablesLineFirstLab = true;");
  const functions=runInNewContext(withoutImports(policy)+";({lineFirstLabEnabled,deliverLabNotice,labNoticeLineResult,labNoticeStates,labNoticeUrl})",scope);
  const notice={schoolId:"school-a",eventId:"event-one",recipients:["alice@example.test"],subject:"團 T 核准",text:"應繳 NT$ 400"};
  return {...functions,scope,notice,records,lines,mails,bindings,contacts,failLine,failMail,setConfigured:value=>{configured=value},setFinishFailure:value=>{finishFailure=value},setMailUnknown:value=>{mailUnknown=value},env};
@@ -74,7 +74,7 @@ test("school-scoped configuration, recipient lookup and delivery records cannot 
  const h=harness();h.bindings.set("school-b:alice@example.test","user-b");
  await h.deliverLabNotice(h.notice);await h.deliverLabNotice({...h.notice,schoolId:"school-b"});
  assert.equal(h.mails[0].connection,"mail-school-a");assert.equal(h.lines[0].options.accessToken,"token-school-b");assert.equal(h.records.size,2);
- h.env.LAB_ENVIRONMENT="production";assert.equal((await h.deliverLabNotice({...h.notice,eventId:"event-three"})).status,"disabled");assert.equal(h.mails.length,1);
+ h.env.LAB_ENVIRONMENT="unknown-lab";assert.equal((await h.deliverLabNotice({...h.notice,eventId:"event-three"})).status,"disabled");assert.equal(h.mails.length,1);
 });
 test("LAB mail is allowed only for the generated fallback path and honors the tenant's explicit disable",()=>{
  const env={LAB_ENVIRONMENT:"functional-uat",ACS_EMAIL_SCHOOL_A_CONNECTION_STRING:"mail-a",ACS_EMAIL_SCHOOL_A_SENDER:"sender@example.test"};
@@ -82,6 +82,47 @@ test("LAB mail is allowed only for the generated fallback path and honors the te
  const config=runInNewContext(withoutImports(raw)+";tenantEmailConfig",{process:{env},URL,defaultTenantId:()=>"school-a"});
  assert.equal(config("school-a").mode,"lab_suppressed");assert.equal(config("school-a",{fallback:true}).connectionString,"mail-a");
  assert.equal(config("school-b",{fallback:true}).connectionString,"");env.ACS_EMAIL_SCHOOL_A_ENABLED="false";assert.equal(config("school-a",{fallback:true}).mode,"disabled");
+});
+test("the unmodified Production policy sends LINE first and keeps delivery deduplication across schools",async()=>{
+ const h=harness({production:true});h.bindings.set("school-a:alice@example.test","user-a");h.bindings.set("school-b:alice@example.test","user-b");
+ assert.equal(h.lineFirstLabEnabled(),true);
+ for(const schoolId of ["school-a","school-b"]){await h.deliverLabNotice({...h.notice,schoolId});await h.deliverLabNotice({...h.notice,schoolId})}
+ assert.equal(h.lines.length,2);assert.equal(h.mails.length,0);assert.equal(h.records.size,2);
+ assert.deepEqual(h.lines.map(line=>line.options.accessToken),["token-school-a","token-school-b"]);
+ assert.notEqual(h.lines[0].options.retryKey,h.lines[1].options.retryKey);
+ delete h.env.LAB_ENVIRONMENT;assert.equal(h.lineFirstLabEnabled(),true);
+ h.env.LAB_ENVIRONMENT="functional-uat";assert.equal(h.lineFirstLabEnabled(),false);
+});
+test("Production links use only the current school's configured origin and fail closed for unknown schools",async()=>{
+ const h=harness({production:true});
+ assert.equal(h.labNoticeUrl("school-a"),"https://a.example.test/?schoolId=school-a");
+ assert.equal(h.labNoticeUrl("school-b"),"https://b.example.test/?schoolId=school-b");
+ assert.equal(h.labNoticeUrl("sacred-heart"),"https://lively-field-09afddc00.6.azurestaticapps.net/?schoolId=sacred-heart");
+ h.env.LINE_APP_ORIGIN="https://wrong-school.example.test";h.env.PUBLIC_APP_URL="https://wrong-school.example.test";
+ assert.equal(h.labNoticeUrl("unknown-school"),"");let customCalls=0;
+ assert.equal((await h.deliverLabNotice({...h.notice,schoolId:"unknown-school",lineSender:async()=>{customCalls++;return "accepted"}})).status,"not_configured");
+ assert.equal(h.mails.length,0);assert.equal(h.records.size,0);assert.equal(customCalls,0);
+ h.env.ACS_EMAIL_UNKNOWN_SCHOOL_APP_URL="https://third.example.test/portal/";
+ assert.equal(h.labNoticeUrl("unknown-school"),"https://third.example.test/portal/?schoolId=unknown-school");
+ for(const value of ["https://user:pass@a.example.test/","javascript:alert(1)","http://a.example.test/","https://icy-ocean-0a2602100-lineuat.eastasia.6.azurestaticapps.net/"]){h.env.LINE_SCHOOL_A_APP_ORIGIN=value;assert.equal(h.labNoticeUrl("school-a"),"")}
+ assert.equal(h.labNoticeUrl("school-a' or PartitionKey ne ''"),"");
+});
+test("Production fallback preserves Email opt-out and never sends LAB branding or a UAT link",async()=>{
+ const h=harness({production:true}),api=runInNewContext(withoutImports(read("api/src/lib/email.js"))+";({sendPaymentRequiredEmail,sendTeacherAccessEnabledEmail})",{...h.scope,...h});
+ h.env.ACS_EMAIL_SCHOOL_A_ENABLED="false";
+ const disabled=await api.sendTeacherAccessEnabledEmail({schoolId:"school-a",recipient:"alice@example.test",teacherName:"老師甲"});
+ assert.equal(h.labNoticeLineResult(disabled).status,"email_not_configured");assert.equal(h.mails.length,0);
+ h.env.ACS_EMAIL_SCHOOL_A_ENABLED="true";
+ const sent=await api.sendPaymentRequiredEmail({schoolId:"school-a",recipient:"alice@example.test",title:"團 T",amount:400});assert.equal(sent.channel,"email");
+ assert.match(h.mails[0].content.plainText,/https:\/\/a\.example\.test\/\?schoolId=school-a/);
+ assert.doesNotMatch(JSON.stringify(h.mails),/【LAB|lineuat|icy-ocean/);
+});
+test("an individual-lesson Email switch can suppress fallback without blocking an accepted LINE notice",async()=>{
+ const h=harness({production:true});h.bindings.set("school-a:alice@example.test","user-a");
+ const email=runInNewContext(withoutImports(read("api/src/lib/email.js"))+";sendPrivateLessonWorkflowEmail",{...h.scope,...h});
+ const result=await email({schoolId:"school-a",recipients:["alice@example.test","bob@example.test"],notificationId:"lesson-switch",mailAllowed:false,eventType:"scheduled",studentName:"學生甲"});
+ assert.equal(result.lineAcceptedCount,1);assert.equal(result.mailAcceptedCount,0);assert.equal(h.lines.length,1);assert.equal(h.mails.length,0);
+ assert.ok(result.results.some(r=>r.recipient==="bob@example.test"&&r.mailStatus==="disabled"));
 });
 test("payment, teacher-account and uniform-status Email entry points follow the same LINE-first policy",async()=>{
  const h=harness();h.bindings.set("school-a:alice@example.test","user-a");
@@ -95,7 +136,7 @@ test("private lessons route each guardian separately while retaining the special
  const h=harness();const email=runInNewContext(withoutImports(read("api/src/lib/email.js"))+";({sendPrivateLessonWorkflowEmail,formatPrivateLessonNotice})",{...h.scope,...h});
  const source=read("api/src/functions/privateLesson.js"),part=source.slice(source.indexOf("async function notifyWorkflow("),source.indexOf("function emailResponse("));
  const calls=[];
- const workflow=runInNewContext(part+";notifyWorkflow",{...email,lineFirstLabEnabled:h.lineFirstLabEnabled,clean:v=>String(v||""),getSystemSettings:async()=>({emailNotificationsEnabled:false}),parentEmailsForStudent:async()=>["alice@example.test","bob@example.test"],activityStudentId:()=>"student-one",publicAppUrl:()=>h.labNoticeUrl("school-a"),readWeeklyGoals:()=>[],notifyPrivateLessonLine:async(school,options)=>{calls.push(options);return options.recipients[0]==="alice@example.test"?"accepted":"not_bound"},console});
+ const workflow=runInNewContext(part+";notifyWorkflow",{...email,lineFirstLabEnabled:h.lineFirstLabEnabled,clean:v=>String(v||""),getSystemSettings:async()=>({emailNotificationsEnabled:true}),parentEmailsForStudent:async()=>["alice@example.test","bob@example.test"],activityStudentId:()=>"student-one",publicAppUrl:()=>h.labNoticeUrl("school-a"),readWeeklyGoals:()=>[],notifyPrivateLessonLine:async(school,options)=>{calls.push(options);return options.recipients[0]==="alice@example.test"?"accepted":"not_bound"},console});
  const result=await workflow({request:{},schoolId:"school-a",schoolName:"學校",entity:{rowKey:"lesson-one",updatedAt:"2026-11-21T12:00:00Z",eventDate:"2026-11-21",teacher:"teacher@example.test"},eventType:"completed",studentName:"學生甲",teacherName:"老師甲"});
  assert.equal(calls.length,2);assert.equal(h.mails.length,1);assert.equal(h.mails[0].recipients.to[0].address,"bob@example.test");assert.equal(result.status,"accepted");assert.equal(result.recipientCount,1);assert.equal(result.lineStatus,"partial");
 });
@@ -109,6 +150,16 @@ test("activity invitations use Email only for missing LINE accounts and never se
  assert.equal((await notify("school-a",{...activity,openAt:new Date(Date.now()+60000).toISOString()},"version-one","registration")).status,"scheduled");assert.equal(h.mails.length,0);assert.equal(h.lines.length,0);
  const result=await notify("school-a",activity,"version-one","registration");assert.equal(result.accepted,1);assert.equal(result.emailAccepted,1);assert.equal(result.failed,0);
  assert.equal(h.mails[0].recipients.to[0].address,"bob@example.test");assert.equal(h.lines.length,1);
+});
+test("Production messaging-only activity notices keep their school's real platform link",async()=>{
+ const h=harness({production:true});h.bindings.set("school-a:alice@example.test","user-a");
+ const notify=runInNewContext(withoutImports(read("api/src/lib/paidActivityLine.js"))+";notifyPaidActivityOpened",{...h.scope,...h,workflowLineEnabled:()=>true,
+  resolveTenantLineChannel:async()=>({schoolId:"school-a",configured:true,loginConfigured:false,botUserId:"bot-school-a",accessToken:"token-school-a",appOrigin:""}),
+  lineAudienceStudents:async()=>[{groupName:"A"}],resolveLineAudience:async()=>({targets:["user-a"],unbound:0,contacts:[{email:"alice@example.test",userId:"user-a"}]})});
+ const result=await notify("school-a",{id:"production-dinner",module:"yearEndDinner",title:"期末餐會",enabled:true,targetGroups:"A"},"version-one","registration");
+ assert.equal(result.accepted,1);assert.equal(result.unbound,0);assert.equal(h.mails.length,0);
+ assert.match(h.lines[0].text,/https:\/\/a\.example\.test\/\?schoolId=school-a&paidActivity=yearEndDinner%3Aproduction-dinner/);
+ assert.doesNotMatch(h.lines[0].text,/【LAB|lineuat|icy-ocean/);
 });
 test("notification-center preview and send include unbound members in Email fallback and record the chosen channel",async()=>{
  const h=harness(),user="U"+"a".repeat(32),history=[];h.bindings.set("school-a:alice@example.test",user);let handler;

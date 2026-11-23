@@ -7,7 +7,7 @@ import {uniformNeedsPayment} from "../api/src/lib/paymentNoticeRules.mjs";
 const read=path=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
 const strip=source=>source.replace(/^import .*;\n/gm,"").replace(/^export /gm,"");
 const workspace=read("app/school-admin-workspace.js"),adminSource=read("app/uniform-event-admin.js");
-function harness(){
+function harness({production=false,legacy=false}={}){
  const stores=new Map(),outbound=[],mails=[],parentNotices=[];let role="parent",schoolId="school-a",seq=0,version=0,groupFailure=false,adminFailure=false,blocked=false,groupBot="",mode="instant_only",admins=[{partitionKey:"admin@example.test",role:"schoolAdmin",status:"active"}];
  const db=name=>{
   if(!stores.has(name))stores.set(name,new Map());const rows=stores.get(name);
@@ -17,15 +17,16 @@ function harness(){
    listEntities:async function*({queryOptions}={}){for(const row of rows.values())if(!queryOptions||queryOptions.filter.includes("'"+row.partitionKey+"'"))yield structuredClone(row)}
   };
  };
- const scope={createHash,URL,console:{info(){},warn(){},error(){}},process:{env:{LAB_ENVIRONMENT:"functional-uat",STORAGE_CONNECTION_STRING:"test"}},TableClient:{fromConnectionString:(_conn,name)=>db(name)},
+ const scope={createHash,URL,defaultTenantId:()=>"sacred-heart",console:{info(){},warn(){},error(){}},process:{env:{...(production?{LINE_SCHOOL_A_APP_ORIGIN:"https://school-a.example.test",LINE_SCHOOL_B_APP_ORIGIN:"https://school-b.example.test"}:{LAB_ENVIRONMENT:"functional-uat"}),STORAGE_CONNECTION_STRING:"test"}},TableClient:{fromConnectionString:(_conn,name)=>db(name)},
   tenantEmailAddress:value=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value||"")?String(value):"",tenantEmailConfig:school=>({connectionString:"mail-"+school,senderAddress:"school@example.test"}),
   EmailClient:class{async beginSend(message){mails.push(message);return {}}},getTenantLineParentContact:async()=>null,getTenantLineRecipient:async()=>({lineUserId:"individual-admin"}),
-  resolveTenantLineChannel:async school=>({configured:true,loginConfigured:true,botUserId:"bot-"+school,accessToken:"token-"+school}),
-  getLineNotificationTarget:async school=>({mode,targetId:"group-"+school,targetType:"group",botUserId:groupBot||"bot-"+school}),lineTargetMatchesChannel:(target,channel)=>target.botUserId===channel.botUserId,
+  resolveTenantLineChannel:async school=>({configured:true,loginConfigured:!legacy,legacy,acceptsLegacy:legacy,botUserId:legacy?"":"bot-"+school,accessToken:"token-"+school}),
+  getLineNotificationTarget:async school=>({mode,targetId:"group-"+school,targetType:"group",botUserId:legacy?"":groupBot||"bot-"+school}),lineTargetMatchesChannel:(target,channel)=>target.botUserId?target.botUserId===channel.botUserId:channel.acceptsLegacy,
   listTenantAdmins:async()=>{if(adminFailure)throw Error("directory unavailable");return admins},pushLineMessage:async(target,text,options)=>{if(groupFailure&&target.startsWith("group-"))throw Error("group rejected");outbound.push({target,text,options})}
  };
- Object.assign(scope,runInNewContext(strip(read("api/src/lib/labNoticeDelivery.mjs")).replace("const buildEnablesLineFirstLab = false;","const buildEnablesLineFirstLab = true;")+";({lineFirstLabEnabled,deliverLabNotice,labNoticeLineResult,labNoticeUrl})",scope));
- Object.assign(scope,runInNewContext(strip(read("api/src/lib/lineAdminTodoNotification.mjs")).replace("const buildEnablesLabAdminTodos = false;","const buildEnablesLabAdminTodos = true;")+";({notifyUniformReview,notifyUniformCancellation,uniformReviewNotice})",scope));
+ const buildSource=(source,marker)=>production?source:source.replace(`const ${marker} = false;`,`const ${marker} = true;`);
+ Object.assign(scope,runInNewContext(buildSource(strip(read("api/src/lib/labNoticeDelivery.mjs")),"buildEnablesLineFirstLab")+";({lineFirstLabEnabled,deliverLabNotice,labNoticeLineResult,labNoticeUrl})",scope));
+ Object.assign(scope,runInNewContext(buildSource(strip(read("api/src/lib/lineAdminTodoNotification.mjs")),"buildEnablesLabAdminTodos")+";({workflowLineEnabled,notifyUniformReview,notifyUniformCancellation,notifyFinanceTransfer,uniformReviewNotice})",scope));
  let handler;
  const apiScope={...scope,app:{http:(_name,config)=>{handler=config.handler}},randomUUID:()=>"request-"+(++seq),getTenantContext:async()=>({schoolId,access:{role,email:role==="parent"?"parent@example.test":"admin@example.test",capabilities:{financeVerifier:true}}}),ensureStudentAccess:(_a,id)=>id==="student-one"&&!blocked,
   getStudentAliasInfo:async id=>({canonicalStudentId:id}),getStudentMaster:async id=>id==="student-one"?{studentName:"甲同學",groupName:"A"}:null,listUserStudentMappings:async()=>[],json:(jsonBody,status=200)=>({status,jsonBody}),
@@ -56,6 +57,64 @@ test("replaying an existing application notice changes neither request nor finan
  const h=harness();await h.post();h.admin();const item=await h.get(),before=JSON.stringify(item);
  for(let i=0;i<2;i++){const result=await h.call("PATCH",{action:"SEND_STAFF_NOTICE",id:item.id,etag:item.etag});assert.equal(result.status,200);assert.equal(result.jsonBody.staffLineStatus,"sent")}
  assert.equal(h.outbound.length,1);assert.equal(h.mails.length,0);assert.equal(h.parentNotices.length,1);assert.equal(JSON.stringify(await h.get()),before);
+});
+test("the unmodified production build uses each school's existing group once and omits LAB branding",async()=>{
+ const h=harness({production:true}),created=await h.post();
+ assert.equal(created.status,201);assert.equal(created.jsonBody.staffLineStatus,"sent");
+ assert.equal(h.outbound.length,1);assert.equal(h.outbound[0].target,"group-school-a");
+ assert.equal(h.outbound[0].options.accessToken,"token-school-a");
+ assert.match(h.outbound[0].text,/【後台待辦通知】[\s\S]*工作首頁/);assert.doesNotMatch(h.outbound[0].text,/LAB|lineuat/);
+ h.admin();const item=await h.get(),before=JSON.stringify(item);
+ for(let i=0;i<2;i++)assert.equal((await h.call("PATCH",{action:"SEND_STAFF_NOTICE",id:item.id,etag:item.etag})).jsonBody.staffLineStatus,"sent");
+ assert.equal(h.outbound.length,1);assert.equal(h.mails.length,0);assert.equal(JSON.stringify(await h.get()),before);
+ await h.notifyUniformReview("school-b",item);assert.equal(h.outbound.length,2);
+ assert.equal(h.outbound[1].target,"group-school-b");assert.equal(h.outbound[1].options.accessToken,"token-school-b");
+ assert.notEqual(h.outbound[0].options.retryKey,h.outbound[1].options.retryKey);
+});
+test("a production group from another channel cannot receive the application or trigger individual LINE duplicates",async()=>{
+ const h=harness({production:true});h.setGroupBot("foreign-bot");const created=await h.post();
+ assert.equal(created.status,201);assert.equal(created.jsonBody.staffLineStatus,"email_sent");
+ assert.equal(h.outbound.length,0);assert.equal(h.mails.length,1);
+ assert.equal(h.mails[0].recipients.to[0].address,"admin@example.test");
+ assert.doesNotMatch(h.mails[0].content.subject+h.mails[0].content.plainText,/LAB|lineuat/);
+ assert.equal((await h.get()).paymentStatus,"AWAITING_TRANSFER");
+});
+test("an already trusted legacy production group keeps receiving without a new LINE Login binding",async()=>{
+ const h=harness({production:true,legacy:true});h.setAdmins([]);h.setAdminFailure();const created=await h.post();
+ assert.equal(created.status,201);assert.equal(created.jsonBody.staffLineStatus,"sent");
+ assert.equal(h.outbound.length,1);assert.equal(h.outbound[0].target,"group-school-a");
+ assert.equal(h.outbound[0].options.accessToken,"token-school-a");assert.equal(h.mails.length,0);
+ assert.doesNotMatch(h.outbound[0].text,/LAB|lineuat/);
+});
+test("production off and daily-only modes do not send immediate LINE or fallback Email",async()=>{
+ for(const mode of ["off","daily_only"]){
+  const h=harness({production:true});h.setMode(mode);const created=await h.post();
+  assert.equal(created.status,201);assert.equal(created.jsonBody.staffLineStatus,mode);
+  assert.equal(h.outbound.length,0);assert.equal(h.mails.length,0);
+ }
+});
+test("an unrecognized environment cannot dispatch administrator, finance or cancellation notices",async()=>{
+ for(const environment of ["staging","test","prodution"]){
+  const h=harness({production:true});h.process.env.LAB_ENVIRONMENT=environment;
+  assert.equal(h.workflowLineEnabled(),false);
+  const created=await h.post();assert.equal(created.status,201);assert.equal(created.jsonBody.staffLineStatus,"environment_suppressed");
+  assert.equal(await h.notifyFinanceTransfer("school-a",{kind:"uniform",id:"request",reportedAt:"2026-11-24T01:00:00Z"}),"environment_suppressed");
+  assert.equal(await h.notifyUniformCancellation("school-a",{kind:"regularUniform",status:"CANCELLED",parentEmail:"parent@example.test"}),"environment_suppressed");
+  assert.equal(h.outbound.length,0);assert.equal(h.mails.length,0);
+ }
+ const production=harness({production:true});production.process.env.LAB_ENVIRONMENT="production";assert.equal(production.workflowLineEnabled(),true);
+});
+test("production finance retries reuse only a current pending report's original delivery identity",async()=>{
+ const calls=[],env={};
+ const source=read("api/src/lib/lineAdminTodoNotification.mjs"),start=source.indexOf("export async function retryFinanceTransfer("),end=source.indexOf("export async function notifyFinanceTransfer(",start);
+ const retry=runInNewContext(strip(source.slice(start,end))+";retryFinanceTransfer",{workflowLineEnabled:()=>!env.name||env.name==="production",labEnvironment:()=>env.name==="functional-uat",notifyFinanceTransfer:async(...args)=>{calls.push(args);return "sent"}});
+ const reportedAt=new Date(Date.now()-60000).toISOString(),report={paymentStatus:"REPORTED_UNVERIFIED",transferReport:{reportedAt}};
+ assert.equal(await retry("school-a","uniform","same-request",report),"sent");
+ assert.deepEqual(JSON.parse(JSON.stringify(calls[0])),["school-a",{kind:"uniform",id:"same-request",reportedAt}]);
+ env.name="production";assert.equal(await retry("school-a","uniform","same-request",{...report,paymentStatus:"VERIFIED"}),"ineligible");
+ assert.equal(await retry("school-a","uniform","same-request",{...report,transferReport:{reportedAt:new Date(Date.now()-24*3600000).toISOString()}}),"ineligible");
+ assert.equal(await retry("school-a","uniform","same-request",{...report,transferReport:{reportedAt:new Date(Date.now()+3600000).toISOString()}}),"ineligible");
+ env.name="staging";assert.equal(await retry("school-a","uniform","same-request",report),"environment_suppressed");assert.equal(calls.length,1);
 });
 test("missing older application notifications can be replayed from the persisted row without creating a second application",async()=>{
  const h=harness();h.admin();await h.db("TenantUniformEventRequest").createEntity({partitionKey:"school-a",rowKey:"old-buyout",updatedAt:"2026-11-22T10:00:00Z",payload:JSON.stringify({...h.input,status:"APPROVED",paymentStatus:"AWAITING_TRANSFER",amount:2625,parentEmail:"parent@example.test"})});

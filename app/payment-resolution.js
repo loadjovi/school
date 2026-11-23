@@ -1,7 +1,7 @@
 (()=>{
  "use strict";
  if(window.paymentResolutionUI)return;
- const enabled=()=>document.documentElement.hasAttribute("data-payment-resolution");
+ const enabled=()=>document.documentElement.getAttribute("data-payment-resolution")==="true";
  const active=new Set(["ADJUSTMENT_REQUIRED","SUPPLEMENT_REPORTED","REFUND_REQUESTED"]),busy=new Set(),outcomes=new Map();
  const labels={ADJUSTMENT_REQUIRED:"金額待處理，流程暫停",SUPPLEMENT_REPORTED:"已回報補款，待財務核帳",REFUND_REQUESTED:"已申請退費，待財務處理",REFUNDED:"已退款，申請已作廢",VERIFIED:"已足額核帳"};
  const money=n=>"NT$ "+Number(n||0).toLocaleString("zh-TW");

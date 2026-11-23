@@ -4,7 +4,8 @@ import {getStudentAliasInfo} from "./auth.js";
 import {ensureTenantTables,getMappedStudentsByEmail,table,tenantStudentPartition} from "./storage.js";
 import {workflowLineEnabled,workflowLineRetryKey} from "./lineAdminTodoNotification.mjs";
 import {resolveTenantLineChannel} from "./lineTenantConfig.js";
-import {getTenantLineRecipient} from "./tenantLineAccounts.js";
+import {getTenantLineRecipient,getTenantLineDeliveryRecipient} from "./tenantLineAccounts.js";
+import {labNoticeUrl} from "./labNoticeDelivery.mjs";
 import {pushLineMessage} from "./lineMessaging.mjs";
 import {validateParentLessonReview} from "./privateLessonReview.mjs";
 
@@ -49,17 +50,20 @@ export async function notifyPrivateLessonLine(schoolId,{recipients,entity,eventT
   if(!workflowLineEnabled()||!recipients.length)return "disabled";
   try{
     const channel=await resolveTenantLineChannel(schoolId);
-    if(!channel.loginConfigured||!channel.botUserId)return "not_configured";
-    const text=(process.env.LAB_ENVIRONMENT==="functional-uat"?"【LAB】\n":"")+format(channel.appOrigin);
+    const messagingReady=(channel.configured===true||channel.loginConfigured===true)&&channel.botUserId;
+    if(!messagingReady)return "not_configured";
+    const appUrl=channel.appOrigin||(typeof labNoticeUrl==="function"?labNoticeUrl(schoolId):"");
+    if(!appUrl)return "not_configured";
+    const text=(process.env.LAB_ENVIRONMENT==="functional-uat"?"【LAB】\n":"")+format(appUrl);
     const eventId=["private",entity.rowKey,eventType,entity.updatedAt,...(deliveryId?[deliveryId]:[])].join(":");
     const seen=new Set();
-    const accounts=await Promise.all(recipients.map(email=>getTenantLineRecipient(schoolId,email,channel.botUserId)));
+    const accounts=await Promise.all(recipients.map(email=>typeof getTenantLineDeliveryRecipient==="function"?getTenantLineDeliveryRecipient(schoolId,email,channel):getTenantLineRecipient(schoolId,email,channel.botUserId)));
     const tasks=accounts.flatMap((account,index)=>{
       if(!account?.lineUserId||seen.has(account.lineUserId))return [];
       const userId=account.lineUserId;
       seen.add(userId);
       return [(async()=>{
-        const canReview=eventType==="completed"&&entity.completedAt&&Date.now()<Date.parse(entity.completedAt)+reviewLifetime;
+        const canReview=channel.loginConfigured===true&&!account.deliveryOnly&&eventType==="completed"&&entity.completedAt&&Date.now()<Date.parse(entity.completedAt)+reviewLifetime;
         const code=canReview?await reserveReview(channel,entity,recipients[index],userId):"";
         const review=code?reviewInstructions(code,Date.parse(entity.completedAt)+reviewLifetime):"";
         await pushLineMessage(userId,text+review,{accessToken:channel.accessToken,retryKey:workflowLineRetryKey(schoolId,eventId,userId),...(code?{quickReply:reviewQuickReply(code)}:{})});

@@ -8,6 +8,18 @@ const buildEnablesLabPaymentNotifications = false;
 const buildDisablesLabFeeProjects = false;
 const schoolRow = schoolId => `school-${schoolId}`;
 const fingerprint = value => createHash("sha256").update(value).digest("hex");
+const legacyBotLookups=new Map();
+async function verifiedLegacyBot(accessToken){
+  const key=fingerprint(accessToken),cached=legacyBotLookups.get(key),now=Date.now();
+  if(cached&&cached.expiresAt>now)return cached.pending;
+  if(legacyBotLookups.size>4)legacyBotLookups.clear();
+  const entry={expiresAt:now+5*60*1000,pending:null};
+  entry.pending=Promise.resolve().then(()=>lineApi("/v2/bot/info",{method:"GET",accessToken,timeoutMs:3000}))
+    .then(bot=>/^U[a-f0-9]{32}$/i.test(bot?.userId||"")?bot.userId.toLowerCase().replace(/^u/,"U"):"")
+    .catch(()=>"")
+    .then(botUserId=>{if(!botUserId)entry.expiresAt=Date.now()+15000;return botUserId});
+  legacyBotLookups.set(key,entry);return entry.pending;
+}
 
 function table() {
   return TableClient.fromConnectionString(
@@ -37,9 +49,9 @@ function labPaymentNotificationsEnabled(schoolId) {
 }
 
 export function tenantFeeEnabled(schoolId) {
-  if (buildDisablesLabFeeProjects && process.env.LAB_ENVIRONMENT === "functional-uat") return false;
-  const prefix = "LINE_" + tenantSchoolPartition(schoolId).replaceAll("-", "_").toUpperCase();
-  return process.env[prefix + "_FEE_COLLECTIONS_ENABLED"] === "true";
+  // The standalone fee-project DEMO is retired in every environment.
+  // Actual reconciliation stays in the existing uniform/activity workflow.
+  return false;
 }
 
 function credentials(schoolId, legacy = false) {
@@ -66,7 +78,14 @@ function credentials(schoolId, legacy = false) {
 export async function resolveTenantLineChannel(schoolId) {
   const id = tenantSchoolPartition(schoolId);
   const [tenant, row] = await Promise.all([getTenantDirectory(id), read(table(), schoolRow(id))]);
-  return resolveChannel(id, tenant, row);
+  const channel=resolveChannel(id,tenant,row);
+  if(channel.legacy&&channel.configured&&!channel.botUserId){
+    // Preserve the existing default-school Messaging API independently of OAuth.
+    // The token is verified read-only; no channel or binding records are created.
+    const botUserId=await verifiedLegacyBot(channel.accessToken);
+    return {...channel,botUserId,acceptsLegacy:!!botUserId};
+  }
+  return channel;
 }
 
 export async function listTenantLineLoginSchools(tenants) {
@@ -105,7 +124,7 @@ function resolveChannel(id, tenant, row) {
     accessToken: configured ? accessToken : "",
     hasSecret: Boolean(channelSecret), hasToken: Boolean(accessToken),
     loginConfigured, loginId: loginConfigured ? loginId : "",
-    loginSecret: loginConfigured ? loginSecret : "", appOrigin: loginConfigured ? appOrigin : "",
+    loginSecret: loginConfigured ? loginSecret : "", appOrigin: configured ? appOrigin : "",
     oauthVersion: loginConfigured ? fingerprint(row.botUserId + loginFingerprint) : "",
     parentMenuId, staffMenuId, paymentLineEnabled, paymentRequestLineEnabled, financeTransferLineEnabled, paymentConfirmationLineEnabled
   };

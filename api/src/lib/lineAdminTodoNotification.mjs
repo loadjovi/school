@@ -9,7 +9,7 @@ import {resolveTenantLineChannel,lineTargetMatchesChannel} from "./lineTenantCon
 import {lineFirstLabEnabled,deliverLabNotice,labNoticeLineResult,labNoticeUrl} from "./labNoticeDelivery.mjs";
 
 const buildEnablesLabAdminTodos = false;
-export const workflowLineEnabled = () => !labEnvironment() || buildEnablesLabAdminTodos;
+export const workflowLineEnabled = () => !process.env.LAB_ENVIRONMENT || process.env.LAB_ENVIRONMENT==="production" || labEnvironment()&&buildEnablesLabAdminTodos;
 const immediateModes = new Set(["important_and_daily", "instant_only"]);
 const labEnvironment = () => process.env.LAB_ENVIRONMENT === "functional-uat";
 
@@ -53,13 +53,14 @@ export async function notifyUniformReview(schoolId, request) {
 
 export async function notifyAdminTodo(schoolId, {id, text, groupRetryKey}) {
   const lab = labEnvironment();
-  if (lab && !buildEnablesLabAdminTodos) return "lab_suppressed";
+  if (!workflowLineEnabled()) return lab ? "lab_suppressed" : "environment_suppressed";
 
   if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()){
     try{
       const [target,channel]=await Promise.all([getLineNotificationTarget(schoolId),resolveTenantLineChannel(schoolId)]);
-      const message="【LAB】後台待辦通知\n"+text+"\n請至學校後台 → 待辦事項查看。";
-      if(immediateModes.has(target.mode)&&target.targetType==="group"&&channel.loginConfigured&&lineTargetMatchesChannel(target,channel)&&target.botUserId){
+      if(!immediateModes.has(target.mode))return target.mode;
+      const message=(lab?"【LAB】後台待辦通知":"【後台待辦通知】")+"\n"+text+"\n請至學校後台 → 工作首頁查看。";
+      if(immediateModes.has(target.mode)&&target.targetType==="group"&&channel.configured&&lineTargetMatchesChannel(target,channel)&&(!lab||channel.loginConfigured&&target.botUserId)){
         const group=await deliverLabNotice({schoolId,eventId:"admin-todo:"+id,recipients:["line-group:"+target.targetId],subject:"後台待辦通知",text:message,lineSender:async()=>{
           await pushLineMessage(target.targetId,message,{accessToken:channel.accessToken,retryKey:workflowLineRetryKey(schoolId,id,target.targetId)});return "accepted";
         }});
@@ -101,7 +102,7 @@ export async function notifyAdminTodo(schoolId, {id, text, groupRetryKey}) {
     const message = [
       lab ? "【LAB】後台待辦通知" : "【後台待辦通知】",
       text,
-      "請至學校後台 → 待辦事項查看。"
+      "請至學校後台 → 工作首頁查看。"
     ].join("\n");
     return await sendToTargets(schoolId,channel,targets,id,message);
   } catch (error) {
@@ -111,7 +112,7 @@ export async function notifyAdminTodo(schoolId, {id, text, groupRetryKey}) {
 }
 
 export async function retryFinanceTransfer(schoolId, kind, id, report) {
-  if (!labEnvironment() || !buildEnablesLabAdminTodos) return "lab_suppressed";
+  if (!workflowLineEnabled()) return labEnvironment() ? "lab_suppressed" : "environment_suppressed";
   // Reuse the original provider retry key while its deduplication window is open.
   const reportedAt = report.transferReport?.reportedAt;
   const age = Date.now() - Date.parse(reportedAt);
@@ -122,7 +123,7 @@ export async function retryFinanceTransfer(schoolId, kind, id, report) {
 export async function notifyFinanceTransfer(schoolId, {kind,id,reportedAt,recipientEmails}) {
   if (!id || !reportedAt || !["uniform","family"].includes(kind)) return "ineligible";
   const lab = labEnvironment();
-  if (lab && !buildEnablesLabAdminTodos) return "lab_suppressed";
+  if (!workflowLineEnabled()) return lab ? "lab_suppressed" : "environment_suppressed";
   if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()&&!recipientEmails){
     try{
       const [admins,assignments]=await Promise.all([listTenantAdmins(schoolId,"active"),financeAssignments(schoolId)]);
@@ -151,7 +152,7 @@ export async function notifyUniformCancellation(schoolId, request) {
   if (!notice || request.status !== "CANCELLED") return;
   if (!request.parentEmail) return "applicant_unknown";
   const lab = process.env.LAB_ENVIRONMENT === "functional-uat";
-  if (lab && !buildEnablesLabAdminTodos) return "lab_suppressed";
+  if (!workflowLineEnabled()) return lab ? "lab_suppressed" : "environment_suppressed";
 
   try {
     const channel = await resolveTenantLineChannel(schoolId);

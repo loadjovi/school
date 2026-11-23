@@ -13,6 +13,78 @@ const botId = "U" + "a".repeat(32);
 const userId = "U" + "b".repeat(32);
 const google = {sub: "google-id", email: "parent@example.com"};
 
+function deliveryCompatibility({schoolId="sacred-heart",binding={},channel={},profile={},bot={},modern=[],environment="production",rejectProfile=false}={}){
+ const writes=[],requests=[],tables=new Map(),hash=value=>createHash("sha256").update(value).digest("hex");
+ const legacy={partitionKey:schoolId,rowKey:"email_"+hash(google.email).slice(0,40),status:"ACTIVE",schoolId,parentEmail:google.email,lineUserId:userId,lineUserIdHash:hash(userId),...binding};
+ tables.set("TenantLineAccountBinding",[legacy]);tables.set("TenantLineIdentity",modern);
+ const db=name=>({getEntity:async(p,r)=>{const row=(tables.get(name)||[]).find(x=>x.partitionKey===p&&x.rowKey===r);if(!row)throw missing(404);return {...row}},
+  async *listEntities({queryOptions:{filter}}){for(const row of tables.get(name)||[])if(filter.includes("'"+row.partitionKey+"'")&&filter.includes("'"+row.googleEmail+"'"))yield {...row}},
+  createEntity:async row=>writes.push(row),updateEntity:async row=>writes.push(row),submitTransaction:async actions=>writes.push(actions)});
+ const globals={createHash,randomBytes,randomUUID,process:{env:{LAB_ENVIRONMENT:environment,STORAGE_CONNECTION_STRING:"test"}},defaultTenantId:()=>"sacred-heart",tenantSchoolPartition:String,TableClient:{fromConnectionString:(_c,name)=>db(name)},lineApi:async(path,options)=>{
+  requests.push({path,options});if(path==="/v2/bot/info")return {userId:botId,...bot};if(rejectProfile)throw Error("profile not verified");return {userId,displayName:"原綁定家長",...profile};
+ }};
+ const api=load("api/src/lib/tenantLineAccounts.js",globals,";({getTenantLineDeliveryRecipient,getTenantLineRecipient,getTenantLineAccount})");
+ return {writes,requests,tables,api,channel:{schoolId,configured:true,loginConfigured:false,botUserId:botId,acceptsLegacy:true,accessToken:"verified-school-token",...channel}};
+}
+test("Production preserves a verified default-school legacy messaging recipient without creating LINE Login or identities",async()=>{
+ const h=deliveryCompatibility();
+ assert.equal(await h.api.getTenantLineRecipient("sacred-heart",google.email,botId),null);
+ const result=await h.api.getTenantLineDeliveryRecipient("sacred-heart",google.email,h.channel);
+ assert.equal(result.lineUserId,userId);assert.equal(result.deliveryOnly,true);assert.equal(result.botUserId,botId);
+ assert.equal(await h.api.getTenantLineAccount("sacred-heart",botId,userId),null);assert.equal(h.writes.length,0);
+ assert.deepEqual(h.requests.map(r=>r.path),["/v2/bot/info","/v2/bot/profile/"+userId]);
+ assert.ok(h.requests.every(r=>r.options.accessToken==="verified-school-token"));
+});
+test("legacy delivery rejects another tenant, inactive or reassigned bindings, a foreign bot and unconfirmed proof",async()=>{
+ for(const options of [{schoolId:"school-b"},{binding:{status:"INACTIVE"}},{binding:{schoolId:"other-school"}},{binding:{parentEmail:"reassigned@example.test"}},{binding:{lineUserIdHash:"changed"}},{binding:{botUserId:"another-bot"}},{channel:{schoolId:"other-school"}},{channel:{configured:false}},{channel:{acceptsLegacy:false}},{channel:{accessToken:""}},{bot:{userId:"another-bot"}},{profile:{userId:"another-user"}},{rejectProfile:true},{environment:"functional-uat"}]){
+  const h=deliveryCompatibility(options);assert.equal(await h.api.getTenantLineDeliveryRecipient(h.channel.schoolId,google.email,h.channel),null);assert.equal(h.writes.length,0);
+ }
+});
+test("modern binding and unlink markers remain authoritative over old delivery bindings",async()=>{
+ const unlinked={partitionKey:"sacred-heart",rowKey:"google-old",googleEmail:google.email,googleSub:google.sub,parentEmail:google.email};
+ const h=deliveryCompatibility({modern:[unlinked]});assert.equal(await h.api.getTenantLineDeliveryRecipient("sacred-heart",google.email,h.channel),null);assert.equal(h.requests.length,0);assert.equal(h.writes.length,0);
+ const foreign={partitionKey:"sacred-heart",rowKey:"email-"+createHash("sha256").update(google.email).digest("hex"),lineUserId:"changed-user",botUserId:"other-bot"};
+ const changed=deliveryCompatibility({modern:[foreign]});assert.equal(await changed.api.getTenantLineDeliveryRecipient("sacred-heart",google.email,changed.channel),null);assert.equal(changed.requests.length,0);
+});
+test("legacy private-lesson delivery sends a platform link but never creates an OAuth review capability",async()=>{
+ for(const loginConfigured of [false,true]){
+  const h=deliveryCompatibility({channel:{loginConfigured}}),pushes=[],reviewWrites=[];
+  const current=load("api/src/lib/linePrivateLesson.js",{
+   process:{env:{LAB_ENVIRONMENT:"production"}},workflowLineEnabled:()=>true,
+   resolveTenantLineChannel:async()=>h.channel,getTenantLineRecipient:h.api.getTenantLineRecipient,getTenantLineDeliveryRecipient:h.api.getTenantLineDeliveryRecipient,
+   labNoticeUrl:schoolId=>"https://lively-field-09afddc00.6.azurestaticapps.net/?schoolId="+schoolId,
+   workflowLineRetryKey:()=>"same-provider-retry-key",pushLineMessage:async(...args)=>pushes.push(args),
+   TableClient:{fromConnectionString:()=>({createTable:async()=>reviewWrites.push("table"),createEntity:async()=>reviewWrites.push("token")})},
+   console:{warn(){}},createHmac:()=>{throw Error("A legacy recipient must never receive a review token")}
+  },";notifyPrivateLessonLine");
+  const now=new Date().toISOString(),result=await current("sacred-heart",{recipients:[google.email],entity:{rowKey:"lesson-one",partitionKey:"sacred-heart|student|one",completedAt:now,updatedAt:now},eventType:"completed",format:origin=>"個課已完成，請登入平台確認。\n"+origin});
+  assert.equal(result,"accepted");assert.equal(pushes.length,1);assert.equal(pushes[0][0],userId);
+  assert.match(pushes[0][1],/lively-field.*schoolId=sacred-heart/);assert.doesNotMatch(pushes[0][1],/【LAB|lineuat|#個課評鑑/);
+  assert.equal(pushes[0][2].quickReply,undefined);assert.equal(reviewWrites.length,0);assert.equal(h.writes.length,0);
+ }
+});
+test("manual and registered-payment audiences count verified legacy recipients on the same LINE transport used for delivery",async()=>{
+ const h=deliveryCompatibility(),resolves=[];
+ const audience=load("api/src/lib/lineAudience.js",{
+  resolveTenantLineChannel:async school=>{resolves.push(school);return h.channel},
+  getTenantLineDeliveryRecipient:h.api.getTenantLineDeliveryRecipient,
+  listUserStudentMappings:async()=>[{studentId:"one",parentEmail:google.email},{studentId:"one",parentEmail:google.email}],
+  getStudentAliasInfo:async id=>({canonicalStudentId:id})
+ },";resolveLineAudience");
+ const students=[{rowKey:"one",groupName:"A"}],preview=await audience("sacred-heart",botId,{roles:["parent"],groups:["A"],students});
+ assert.equal(resolves.length,1);assert.equal(preview.matched,1);assert.equal(preview.unbound,0);
+ assert.deepEqual([...preview.targets],[userId]);assert.equal(preview.contacts[0].userId,userId);
+ assert.equal(await h.api.getTenantLineRecipient("sacred-heart",google.email,botId),null);
+ const foreign=await audience("sacred-heart","foreign-bot",{roles:["parent"],groups:[],students});assert.equal(foreign.unbound,1);assert.equal(foreign.targets.length,0);
+ const registered=load("api/src/lib/paidActivityLine.js",{
+  process:{env:{STORAGE_CONNECTION_STRING:"test"}},getTenantLineDeliveryRecipient:h.api.getTenantLineDeliveryRecipient,
+  TableClient:{fromConnectionString:(_connection,name)=>{assert.equal(name,"TenantFamilyEventRegistration");return {async *listEntities({queryOptions:{filter}}){assert.equal(filter,"PartitionKey eq 'sacred-heart'");yield {rowKey:"registration-one",payload:JSON.stringify({kind:"fieldTrip",activityId:"trip-one",registrationStatus:"REGISTERED",paymentStatus:"AWAITING_TRANSFER",parentEmail:google.email})}}}}}
+ },";registeredPaymentAudience");
+ const payment=await registered("sacred-heart",h.channel,"trip-one");assert.equal(payment.unbound,0);assert.deepEqual([...payment.targets],[userId]);assert.equal(payment.contacts[0].userId,userId);
+ assert.equal((await registered("sacred-heart",{...h.channel,schoolId:"other-school"},"trip-one")).targets.length,0);
+ assert.equal(h.writes.length,0);
+});
+
 function dataTables() {
   const rows = new Map();
   let version = 0;

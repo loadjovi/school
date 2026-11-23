@@ -19,7 +19,7 @@ function fixture(){
   const scope={
     console,process:{env:{LAB_ENVIRONMENT:"functional-uat"}},URL,createHash,
     workflowLineEnabled:()=>true,workflowLineRetryKey:(...values)=>values.join("/"),
-    resolveTenantLineChannel:async school=>{assert.equal(school,"school-a");return {loginConfigured:true,botUserId:bot,accessToken:"test",appOrigin:"https://school.test"}},
+    resolveTenantLineChannel:async school=>{assert.equal(school,"school-a");return {schoolId:school,loginConfigured:true,botUserId:bot,accessToken:"test",appOrigin:"https://school.test"}},
     lineAudienceStudents:async()=>[studentA,studentB,studentC],
     resolveLineAudience:async(school,botId,{roles,groups,students})=>{
       assert.equal(school,"school-a");assert.equal(botId,bot);assert.equal(roles.join(),"parent");assert.equal(groups.length,0);
@@ -31,7 +31,8 @@ function fixture(){
       assert.equal(queryOptions.filter,"PartitionKey eq 'school-a'");
       for(const entry of registrations)yield {payload:JSON.stringify(entry)};
     }})},
-    getTenantLineRecipient:async (school,email,botId)=>{
+    getTenantLineDeliveryRecipient:async (school,email,channel)=>{
+      const botId=channel.botUserId;
       assert.equal(school,"school-a");assert.equal(botId,bot);calls.push(["recipient",email]);return {lineUserId:user};
     },
     lineApi:async(path,options)=>calls.push([path,options])

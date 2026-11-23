@@ -24,61 +24,18 @@ jobs:
         with:
           submodules: true
           lfs: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: JavaScript syntax check
         run: |
-          find api/src -name "*.js" -print0 | xargs -0 -n1 node --check
-          find app -maxdepth 1 -name "*.js" -print0 | xargs -0 -n1 node --check
-      - name: Attendance to-do regression tests
-        run: node --test tests/admin-attendance-todos.test.mjs tests/school-absence-followup.test.mjs
-      - name: School admin private lesson readonly lookup regressions
-        run: node --test tests/admin-private-lesson-lookup.test.mjs
-      - name: Single-month parent encouragement leaderboard and privacy regressions
-        run: node --test api/test/parentPracticeLeaderboard.test.mjs tests/parent-leaderboard-finalized-default.test.mjs
-      - name: Private lesson background refresh regression test
-        run: node --test tests/private-lesson-no-auto-redraw.test.mjs
-      - name: Parent private lesson feedback draft preservation regression
-        run: node --test tests/parent-private-review-refresh-guard.test.mjs
-      - name: Private lesson catchup and teacher queue regression tests
-        run: node --test tests/private-lesson-catchup-queue.test.mjs
-      - name: Private lesson completion and notification resilience tests
-        run: node --test api/test/privateLessonCompletionResilience.test.mjs
-      - name: School absence Email notification and audit regression tests
-        run: node --test tests/school-absence-email.test.mjs
-      - name: Semester score private lesson follow-up regression tests
-        run: node --test tests/admin-semester-scores.test.mjs tests/admin-score-quick-filters.test.mjs tests/admin-private-followup.test.mjs api/test/privateLessonFollowup.test.mjs
-      - name: Teacher parent review identity regression tests
-        run: node --test api/test/teacherParentReviews.test.mjs api/test/teacherAccountType.test.mjs
-      - name: Course restoration and teacher login history regression tests
-        run: node --test api/test/schoolScheduleRestore.test.mjs api/test/teacherLoginHistory.test.mjs
-      - name: Competition uniform canonical master regression tests
-        run: node --test tests/competition-uniform-master.test.mjs
-      - name: T-shirt semester procurement and staff demand regression tests
-        run: node --test tests/tshirt-procurement-plan.test.mjs tests/tshirt-cadre-application.test.mjs tests/tshirt-procurement-admin.test.mjs api/test/tshirtStaffDemand.test.mjs api/test/tshirtPurchaseOrderRules.test.mjs
-      - name: Volunteer loan size correction audit regression tests
-        run: node --test tests/volunteer-loan-size-correction.test.mjs tests/volunteer-loan-return-stock.test.mjs
-      - name: First-time T-shirt receipt regression tests
-        run: node --test tests/tshirt-first-receipt.test.mjs
-      - name: T-shirt receiving draft and existing-stock regression tests
-        run: node --test tests/tshirt-receiving-workflow.test.mjs
-
-      - name: LINE webhook signature and binding regression tests
-        run: node --test tests/line-webhook.test.mjs tests/line-absence-notification.test.mjs tests/tenant-line-isolation.test.mjs tests/tenant-line-workflows.test.mjs tests/tenant-notification-isolation.test.mjs tests/fee-collection-rules.test.mjs tests/line-activity-calendar.test.mjs tests/line-latest-announcements.test.mjs tests/line-today-courses.test.mjs
-
-      - name: Parent home uniform payment notice tests
-        run: node --test tests/parent-uniform-payment-notice.test.mjs tests/payment-email-notifications.test.mjs tests/finance-payment-notifications.test.mjs
-      - name: Administrative attendance section completion regression tests
-        run: node --test tests/admin-assist-section-status.test.mjs
-      - name: School administrative attendance workspace regression tests
-        run: node --test tests/admin-attendance-workspace.test.mjs
-      - name: Training attendance canonical roster ordering regressions
-        run: node --test tests/training-attendance-admin-ux.test.mjs
-      - name: First-issue T-shirt parent progress regression tests
-        run: node --test tests/tshirt-progress-first-issue.test.mjs
-      - name: Functional UAT isolation and parity tests
+          find api/src -type f \( -name "*.js" -o -name "*.mjs" \) -print0 | xargs -0 -n1 node --check
+          find app -maxdepth 1 -type f \( -name "*.js" -o -name "*.mjs" \) -print0 | xargs -0 -n1 node --check
+      - name: Full production regression suite
+        run: node --test tests/*.test.mjs api/test/*.test.mjs
+      - name: LAB isolation and source parity
         run: python3 -m unittest discover -s tests -p 'test_functional_lab_isolation.py' -v
 
-      - name: LAB reset recovery and private lesson fixture tests
-        run: node --test tests/lab-data-reset.test.mjs tests/lab-private-fixtures.test.mjs api/test/sopLabDemoPreservation.test.mjs
       - name: Build And Deploy
         if: github.event_name == 'push' || !github.event.pull_request.draft
         id: builddeploy

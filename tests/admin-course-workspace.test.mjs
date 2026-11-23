@@ -48,7 +48,7 @@ test("training course creation and management are separate workflows",()=>{
 test("course workflow assets are cache-busted",()=>{
   assert.match(index,/schedule-admin\.js\?v=20261102-course-workflow/);
   assert.match(index,/special-calendar\.js\?v=20261102-training-form/);
-  assert.match(index,/school-admin-workspace\.css\?v=20261102-learning-workspace/);
+  assert.match(index,/school-admin-workspace\.css\?v=\d{8}-[a-z0-9-]+/);
   assert.match(index,/webview-guard\.js\?v=\d{8}-[a-z0-9-]+"/);
   assert.match(guard,/school-admin-workspace\.js\?v=\d{8}-[a-z0-9-]+"/);
 });

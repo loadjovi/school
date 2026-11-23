@@ -43,7 +43,7 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         self.assertIn("const buildDisablesLabFeeProjects = false;",(self.lab/"api/src/lib/lineTenantConfig.js").read_text())
         self.assertNotIn("data-line-uat-fees",(self.lab/"app/fee-collections.html").read_text())
         self.assertNotIn("data-line-uat-fees",(self.lab/"app/index.html").read_text())
-    def test_payment_resolution_is_only_enabled_in_named_line_lab(self):
+    def test_production_resolution_is_preserved_but_legacy_lab_stays_suppressed(self):
         path="api/src/lib/paymentResolutionRules.mjs"
         self.assertIn("const buildEnablesPaymentResolution = false;",(ROOT/path).read_text())
         self.assertIn("const buildEnablesPaymentResolution = false;",(self.lab/path).read_text())
@@ -56,7 +56,7 @@ class FunctionalUATIsolationTests(unittest.TestCase):
     def test_manual_finance_line_retry_is_only_exposed_in_named_line_uat(self):
         filename="app/uniform-event-admin.html"
         marker="data-line-uat-finance-retry"
-        self.assertNotIn(marker,(ROOT/filename).read_text(encoding="utf-8"))
+        self.assertIn(marker,(ROOT/filename).read_text(encoding="utf-8"))
         self.assertNotIn(marker,(self.lab/filename).read_text(encoding="utf-8"))
         with tempfile.TemporaryDirectory(prefix="sh-line-uat-") as work:
             output=Path(work)/"release"
@@ -219,7 +219,7 @@ class FunctionalUATIsolationTests(unittest.TestCase):
         self.assertIn("  workflow_dispatch:",flow)
         self.assertIn("app_location: .functional-lab-build/app",flow)
         self.assertIn("api_location: .functional-lab-build/api",flow)
-        self.assertIn("node --test tests/admin-semester-scores.test.mjs",flow)
+        self.assertIn("node --test tests/*.test.mjs api/test/*.test.mjs",flow)
         self.assertNotIn("api_location: api",flow)
 
     def test_sop_fixtures_api_exists_only_in_generated_lab(self):

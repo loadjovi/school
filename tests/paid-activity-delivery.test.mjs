@@ -14,12 +14,13 @@ function sender(){
  const calls=[],lookups=[],mappings=[{studentId:"a",parentEmail:"dad@test.invalid"},{studentId:"old-a",parentEmail:"mom@test.invalid"},{studentId:"b",parentEmail:"dad@test.invalid"}];
  const students=[{rowKey:"a",groupName:"A 團"},{rowKey:"b",groupName:"新團"}];
  const audience=run("api/src/lib/lineAudience.js",{
+  resolveTenantLineChannel:async school=>({schoolId:school,botUserId:bot,configured:true}),
   listUserStudentMappings:async(status,school)=>{assert.equal(status,"active");assert.equal(school,"school-a");return mappings},
   getStudentAliasInfo:async(id,school)=>{assert.equal(school,"school-a");return {canonicalStudentId:id==="old-a"?"a":id}},
-  getTenantLineRecipient:async(school,email,botId)=>{assert.deepEqual([school,botId],["school-a",bot]);lookups.push(email);return {lineUserId:email.startsWith("dad")?user(1):user(2)}}
+  getTenantLineDeliveryRecipient:async(school,email,channel)=>{const botId=channel.botUserId;assert.deepEqual([school,botId],["school-a",bot]);lookups.push(email);return {lineUserId:email.startsWith("dad")?user(1):user(2)}}
  },"({resolveLineAudience})");
  const context={console,URL,process:{env:{}},workflowLineEnabled:()=>true,
-  workflowLineRetryKey:(...parts)=>parts.join("/"),resolveTenantLineChannel:async school=>{assert.equal(school,"school-a");return {loginConfigured:true,botUserId:bot,accessToken:"test-school-token",appOrigin:"https://school.invalid"}},
+  workflowLineRetryKey:(...parts)=>parts.join("/"),resolveTenantLineChannel:async school=>{assert.equal(school,"school-a");return {schoolId:school,loginConfigured:true,botUserId:bot,accessToken:"test-school-token",appOrigin:"https://school.invalid"}},
   lineAudienceStudents:async school=>{assert.equal(school,"school-a");return students},resolveLineAudience:audience.resolveLineAudience,
   lineApi:async(path,options)=>{calls.push({path,options})}
  };

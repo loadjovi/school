@@ -7,6 +7,7 @@ Static Web App with a different deployment token and storage account.
 """
 from __future__ import annotations
 import argparse
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -167,6 +168,9 @@ def prepare(output: Path, *, line_uat: bool = False) -> None:
     count=0
     for page in app.rglob("*.html"):
         text=page.read_text(encoding="utf-8")
+        # Production features stay explicit in source; LAB builders re-enable only
+        # the named LINE verification environment after stripping those flags.
+        text=re.sub(r"\s+(?:data-payment-resolution|data-line-first-notifications|data-line-uat-finance-retry)(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+))?", '', text)
         if "</body>" not in text:continue
         text=text.replace("</body>",'<script defer src="/functional-lab-banner.js?v=20261119-lab-labels"></script></body>')
         text=text.replace("<head>","<head><meta name=\"robots\" content=\"noindex,nofollow\">",1)

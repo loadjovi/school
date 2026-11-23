@@ -3,7 +3,8 @@ import {getTeacherProfile,listStudentMaster,listTeacherDirectory,listTenantAdmin
 import {financeAssignments} from "./financeAccess.js";
 import {financeRecipients} from "./financeNoticeRules.mjs";
 import {teacherCourseAccess} from "./teacherAccountType.js";
-import {getTenantLineRecipient} from "./tenantLineAccounts.js";
+import {getTenantLineDeliveryRecipient} from "./tenantLineAccounts.js";
+import {resolveTenantLineChannel} from "./lineTenantConfig.js";
 
 export const lineAudienceRoles = ["parent","teacher","staff","finance"];
 const normalized = text => String(text||"").trim().normalize("NFC");
@@ -50,7 +51,9 @@ export async function resolveLineAudience(schoolId, botUserId, {roles,groups,stu
     if(roles.includes("staff"))include(admins.filter(row=>row.role==="schoolAdmin"&&row.status==="active").map(row=>row.partitionKey||row.email));
     if(roles.includes("finance"))include(financeRecipients(admins,await financeAssignments(schoolId)));
   }
-  const identities=[...emails],accounts=await Promise.all(identities.map(email=>getTenantLineRecipient(schoolId,email,botUserId)));
+  const channel=await resolveTenantLineChannel(schoolId);
+  const trusted=channel.schoolId===schoolId&&channel.botUserId===botUserId&&botUserId&&(channel.configured===true||channel.loginConfigured===true);
+  const identities=[...emails],accounts=await Promise.all(identities.map(email=>trusted?getTenantLineDeliveryRecipient(schoolId,email,channel):null));
   const recipients=new Map();
   accounts.forEach((account,index)=>{
     const userId=account?.lineUserId;if(!/^U[0-9a-f]{32}$/i.test(userId||"")||recipients.has(userId))return;

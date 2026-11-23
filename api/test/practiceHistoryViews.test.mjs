@@ -17,7 +17,7 @@ function makeParent(iso,fetchPractice){
   const context={
     Date:fixedDate(iso),Intl,encodeURIComponent,
     state:{me:{role:"parent"},student:{studentId:"child-a",name:"甲同學"},page:"practice"},
-    window:{},practicePage:()=>"<div class=\"card\"><h2>最近練習</h2><div>本月練習</div></div>",recordPage:()=>"<div>出勤紀錄</div>",savePractice:async()=>true,
+    document:{getElementById:()=>null,querySelector:()=>null,activeElement:null},window:{},practicePage:()=>"<div class=\"card\"><h2>最近練習</h2><div>本月練習</div></div>",recordPage:()=>"<div>出勤紀錄</div>",savePractice:async()=>true,
     setTimeout:callback=>scheduled.push(callback),api:fetchPractice,esc:escapeHtml,
     render(){context.latest=context.practicePage()}
   };
@@ -95,7 +95,7 @@ test("teacher has a one-click previous month and sees every record for the selec
   const context={
     Date:fixedDate("2026-10-03T02:00:00Z"),Intl,encodeURIComponent,esc:escapeHtml,
     state:{me:{role:"teacher",capabilities:{teacherSettings:true}},page:"practiceProgress"},
-    window:{},document:{getElementById:()=>app},api:async url=>{
+    window:{},document:{getElementById:()=>app,querySelectorAll:()=>[]},api:async url=>{
       requests.push(url);
       return url.startsWith("/api/practice-feedback")?{items:[]}:{month:"2026-09",taipeiToday:"2026-10-03",effectiveTargetDays:30,qualifiedMinutes:20,items:[item]};
     },shell:x=>x,render:()=>{},go:()=>{},toast:()=>{}

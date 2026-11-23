@@ -25,7 +25,7 @@ export async function notifyPracticeFeedback(schoolId,feedback){
  try{
   const context=await noticeContext(schoolId,feedback);if(!context)return {status:"ineligible"};
   const {stored,student,recipients}=context;
-  const text=["【LAB｜老師的日常鼓勵】",`${student.studentName||student.name||"學生"}，你的努力被看見了！`,`${stored.teacherName||"老師"}：${levels[Number(stored.level)]||"💛 繼續加油"}`,stored.comment,`回饋日期：${stored.feedbackDate}`,"這是日常鼓勵，不影響成績。"].filter(Boolean).join("\n");
+  const text=[(process.env.LAB_ENVIRONMENT==="functional-uat"?"【LAB｜老師的日常鼓勵】":"【老師的日常鼓勵】"),`${student.studentName||student.name||"學生"}，你的努力被看見了！`,`${stored.teacherName||"老師"}：${levels[Number(stored.level)]||"💛 繼續加油"}`,stored.comment,`回饋日期：${stored.feedbackDate}`,"這是日常鼓勵，不影響成績。"].filter(Boolean).join("\n");
   return labNoticeLineResult(await deliverLabNotice({schoolId,eventId:`practice-feedback:${stored.rowKey}:${fingerprint(stored)}`,recipients,subject:"老師的日常鼓勵",text,stillDue:async recipient=>{
    const current=await noticeContext(schoolId,feedback);return !!current&&current.recipients.includes(recipient);
   }}));

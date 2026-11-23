@@ -160,9 +160,9 @@ function drawStaff(){
   if(x.category!=="CADRE_FIRST"&&x.status==="APPROVED"&&x.paymentStatus!=="VERIFIED"){
    const hint=document.createElement("p");hint.textContent=resolutionHeld?"款項處理中，請由財務核帳區完成後再採購。":"待財務核帳，完成後會自動納入採購。";card.append(hint);
   }
-  const next=resolutionHeld?[]:{APPROVED:x.purchaseOrderId?[]:[["CANCELLED","取消需求"]],ORDERED:[],ARRIVED:[["FULFILLED","確認需求已處理完成"]]}[x.status]||[];
+  const next=resolutionHeld?[]:{APPROVED:x.purchaseOrderId?[]:[["CANCELLED","取消需求"]],ORDERED:[],ARRIVED:[["FULFILLED","確認實際發放並扣庫存"]]}[x.status]||[];
   for(const [status,label] of next){const button=document.createElement("button");button.type="button";button.textContent=label;button.addEventListener("click",async()=>{
-   const note=prompt(label+"：請填寫實際處理說明（這裡只更新需求進度；驗收、庫存與發放請依原流程另行登記）。");if(!note?.trim())return;
+   const note=prompt(label+"：請確認已交付給家長，並填寫領用人或發放說明。完成後只扣除此需求的件數，不會重複扣庫存。");if(!note?.trim())return;
    await saveChange(x,{action:"UPDATE_DEMAND_STATUS",status,note:note.trim()},button);
   });card.append(button)}
   body.append(card);

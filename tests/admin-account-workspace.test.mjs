@@ -44,7 +44,7 @@ test("account jobs explain three steps and stay mobile friendly",()=>{
 
 test("account workflow assets are cache-busted",()=>{
   assert.match(index,/styles\.css\?v=20261104-practice-filter-anchor/);
-  assert.match(index,/school-admin-workspace\.css\?v=20261102-learning-workspace/);
+  assert.match(index,/school-admin-workspace\.css\?v=\d{8}-[a-z0-9-]+/);
   assert.match(index,/webview-guard\.js\?v=\d{8}-[a-z0-9-]+"/);
   assert.match(guard,/school-admin-workspace\.js\?v=\d{8}-[a-z0-9-]+"/);
 });

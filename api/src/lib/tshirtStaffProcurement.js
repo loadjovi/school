@@ -5,6 +5,7 @@ import {json} from "./auth.js";
 import {getUniformPrice} from "./uniformPricing.js";
 import {newStaffDemand,updateStaffDemand,StaffDemandError} from "./tshirtStaffDemandRules.mjs";
 import {activeTshirtClaim} from "./tshirtPurchaseOrderFlow.js";
+import {issueStaffTshirt,syncCadreIssueLoan} from "./tshirtStaffIssue.js";
 
 const response=(body,status=200)=>({...json(body,status),headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}});
 const decode=row=>({...JSON.parse(row.payload),id:row.rowKey,etag:row.etag});
@@ -36,12 +37,21 @@ export async function staffProcurement(request,ctx,{loanClient,audit,linked,data
     if(claim)return response({error:"此需求已納入 "+claim.orderNumber+"，請至採購總表統一處理"},409);
     if(input.status==="ORDERED"||input.status==="ARRIVED")return response({error:"請至採購總表統一下單與驗收到貨"},409);
    }
-   next=updateStaffDemand(JSON.parse(old.payload),input,{finance,actor,at});
+   const previous=JSON.parse(old.payload);
+   if(input.action==="UPDATE_DEMAND_STATUS"&&input.status==="FULFILLED"&&previous.status==="FULFILLED")return response({item:safe({...previous,id}),alreadyCompleted:true});
+   next=updateStaffDemand(previous,input,{finance,actor,at});
+   if(input.action==="UPDATE_DEMAND_STATUS"&&input.status==="FULFILLED"){
+    const inventory=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantUniformInventory");
+    await inventory.createTable().catch(error=>{if(error.statusCode!==409)throw error});
+    const {ledger}=await issueStaffTshirt({inventory,schoolId,id,record:previous,actor,note:input.note,loanClient});
+    await syncCadreIssueLoan(loanClient,schoolId,previous,ledger);
+    Object.assign(next,{fulfilledAt:ledger.issuedAt,issuedAt:ledger.issuedAt,issuedBy:ledger.issuedBy,issuedQuantity:ledger.quantity,stockIssueId:ledger.rowKey});
+   }
   }
   await audit.createEntity({partitionKey:schoolId,rowKey:randomUUID(),action:"tshirt.staff."+input.action,subjectId:id,actor,at,details:JSON.stringify({parentEmail:next.parentEmail,category:next.category,size:next.size,quantity:next.quantity,from:old?decode(old).status:null,to:next.status,paymentStatus:next.paymentStatus,note:next.progressNote||next.verificationNote||next.note}).slice(0,20000)});
   const entity={partitionKey:schoolId,rowKey:id,payload:JSON.stringify(next),updatedAt:at};
   try{if(old)await client.updateEntity(entity,"Replace",{etag:old.etag});else await client.createEntity(entity)}catch(e){if([409,412].includes(e.statusCode))return response({error:"需求已被其他人更新，請重新整理"},409);throw e}
   const paymentNotification=input.action==="ADD_DEMAND"&&next.paymentStatus==="AWAITING_TRANSFER"?await safePaymentNotifications(schoolId,{scope:{kind:"staff",id}}):null;
   return response({item:safe({...next,id}),paymentNotification});
- }catch(e){if(e instanceof StaffDemandError)return response({error:e.message},e.status);console.error("staffProcurement",e);return response({error:"團 T 幹部／志工需求處理失敗，請重新整理確認"},500)}
+ }catch(e){if(e instanceof StaffDemandError)return response({error:e.message},e.status);if([409,412].includes(e.statusCode))return response({error:e.message||"資料已更新，請重新整理後重試"},409);console.error("staffProcurement",e);return response({error:"團 T 幹部／志工需求處理結果待確認，請重新整理並重試同一筆；不會重複扣庫存"},503)}
 }

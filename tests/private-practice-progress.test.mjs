@@ -8,7 +8,7 @@ import * as goalRules from "../api/src/lib/musicLearningGoals.mjs";
 import {privatePracticeProgress} from "../api/src/lib/privatePracticeProgress.mjs";
 const read=p=>readFileSync(new URL("../"+p,import.meta.url),"utf8"),strip=s=>s.replace(/^import .*;\n/gm,"").replace(/^export /gm,"");
 const teacher="teacher@example.test",goal="第 12～34 小節換把練習",day="2026-11-22";
-function harness(){
+function harness({production=false}={}){
  const stores=new Map(),handlers={},pushes=[],mails=[],lookups=[];let school="school-a",role="parent",privateAccess=true,activeTeacher=true,assigned=true,bound=true,lineFail=false,mailFail=false,race=false,revision=0,onDeliveryClaim=null;
  const error=code=>Object.assign(Error(String(code)),{statusCode:code}),key=(p,r)=>p+"|"+r;
  const rows=name=>{if(!stores.has(name))stores.set(name,new Map());return stores.get(name)};
@@ -18,7 +18,7 @@ function harness(){
   updateEntity:async(row,mode,options)=>{const old=rows(name).get(key(row.partitionKey,row.rowKey));if(!old)throw error(404);if(options?.etag&&options.etag!==old.etag)throw error(412);put(name,mode==="Merge"?{...old,...row}:row)},deleteEntity:async(p,r)=>rows(name).delete(key(p,r))});
  const partition=(s,id)=>s+"|student|"+id,aliases=id=>["student1","old-id"].includes(id)?["student1","old-id"]:[id];
  const access=()=>({role,email:role==="parent"?"parent@example.test":teacher,capabilities:{private:role!=="parent"&&privateAccess,privateOnly:true},privateStudentIds:["student1"]});
- const scope={...practiceRules,...goalRules,privatePracticeProgress,createHash,URL,process:{env:{LAB_ENVIRONMENT:"functional-uat",STORAGE_CONNECTION_STRING:"test"}},console:{error(){}},
+ const scope={defaultTenantId:()=>"sacred-heart",...practiceRules,...goalRules,privatePracticeProgress,createHash,URL,process:{env:{LAB_ENVIRONMENT:production?"production":"functional-uat",STORAGE_CONNECTION_STRING:"test",LINE_SCHOOL_A_APP_ORIGIN:"https://a.example.test",LINE_SCHOOL_B_APP_ORIGIN:"https://b.example.test"}},console:{error(){}},
   app:{http:(name,config)=>{handlers[name]=config.handler}},getTenantContext:async()=>({schoolId:school,access:access()}),json:(jsonBody,status=200)=>({status,jsonBody}),ensureStudentAccess:(a,id)=>["student1","old-id"].includes(id),ensurePrivateAccess:(a,id)=>a.role==="admin"||a.capabilities.private&&a.privateStudentIds.includes(id),getStudentIdAliases:async id=>aliases(id),tenantStudentPartition:partition,ensureTenantTables:async()=>{},table:db,activityStudentId:row=>row.studentId,
   listByStudent:async(_name,id,start,end,s)=>[...rows("tenantPractice").values()].filter(row=>row.partitionKey===partition(s,id)&&(!start||row.eventDate>=start)&&(!end||row.eventDate<=end)),
   getTeacherDirectory:async()=>({status:activeTeacher?"active":"inactive"}),getTeacherProfile:async()=>({privateStudentIds:JSON.stringify(assigned?["old-id"]:[])}),getStudentMaster:async()=>({studentName:"甲同學",status:"active"}),
@@ -26,7 +26,7 @@ function harness(){
   resolveTenantLineChannel:async s=>({loginConfigured:true,botUserId:"bot-"+s,accessToken:"token-"+s}),getTenantLineRecipient:async(s,email,bot)=>{lookups.push({s,email,bot});return bound?{lineUserId:"user-"+s}:null},pushLineMessage:async(user,text,options)=>{if(lineFail)throw error(400);pushes.push({user,text,options})},
   EmailClient:class{async beginSend(input){if(mailFail)throw error(400);mails.push(input);return {}}}
  };
- Object.assign(scope,runInNewContext(strip(read("api/src/lib/labNoticeDelivery.mjs")).replace('const buildEnablesLineFirstLab = false;','const buildEnablesLineFirstLab = true;')+';({lineFirstLabEnabled,deliverLabNotice,labNoticeLineResult,labNoticeUrl})',{...scope}));
+ Object.assign(scope,runInNewContext((production?strip(read("api/src/lib/labNoticeDelivery.mjs")):strip(read("api/src/lib/labNoticeDelivery.mjs")).replace('const buildEnablesLineFirstLab = false;','const buildEnablesLineFirstLab = true;'))+';({lineFirstLabEnabled,deliverLabNotice,labNoticeLineResult,labNoticeUrl})',{...scope}));
  Object.assign(scope,runInNewContext(strip(read("api/src/lib/privatePracticeNotification.js"))+';({notifyPrivatePractice})',{...scope}));
  for(const file of ["practice","privateLessonPractice"])runInNewContext(strip(read('api/src/functions/'+file+'.js')),{...scope});
  const lesson=(extra={},s=school)=>put("tenantPrivateLesson",{partitionKey:partition(s,"student1"),rowKey:"lesson1",studentId:"student1",teacher,eventDate:"2026-11-19",status:"teacher_completed",weeklyPracticeGoalsJson:JSON.stringify(["音階",goal]),...extra});lesson();
@@ -45,6 +45,16 @@ test("a saved linked practice notifies only its assigned private teacher via the
 test("LINE-unbound teachers receive fallback email, while delivery failures cannot roll back a practice record",async()=>{
  const h=harness();h.setBound(false);const result=await h.post();assert.equal(result.status,201);assert.equal(result.jsonBody.practiceNotification.status,"email_sent");assert.equal(h.pushes.length,0);assert.equal(h.mails.length,1);assert.equal(h.mails[0].recipients.to[0].address,teacher);
  const f=harness();f.setLineFail(true);f.setMailFail(true);assert.equal((await f.post()).status,201);assert.equal(f.rows("tenantPractice").size,1);f.setLineFail(false);f.setMailFail(false);assert.equal((await f.post()).jsonBody.duplicate,true);assert.equal(f.pushes.length,1);assert.equal(f.rows("tenantPractice").size,1);
+});
+test("Production practice progress uses the assigned teacher and the current school's real URL without LAB transforms",async()=>{
+ const h=harness({production:true});
+ assert.equal((await h.post()).jsonBody.practiceNotification.status,"accepted");await h.post();assert.equal(h.pushes.length,1);
+ assert.equal(h.lookups[0].email,teacher);assert.match(h.pushes[0].text,/https:\/\/a\.example\.test\/\?schoolId=school-a&practiceLesson=lesson1&practiceStudent=student1/);
+ assert.doesNotMatch(h.pushes[0].text,/【LAB|lineuat|icy-ocean/);
+ h.setSchool("school-b");h.lesson();await h.post();assert.equal(h.pushes.length,2);
+ assert.match(h.pushes[1].text,/https:\/\/b\.example\.test\/\?schoolId=school-b&practiceLesson=lesson1/);assert.equal(h.pushes[1].options.accessToken,"token-school-b");
+ const fallback=harness({production:true});fallback.setBound(false);assert.equal((await fallback.post()).jsonBody.practiceNotification.status,"email_sent");
+ assert.equal(fallback.mails[0].recipients.to[0].address,teacher);assert.doesNotMatch(JSON.stringify(fallback.mails),/【LAB|lineuat|icy-ocean/);
 });
 test("no goal, inactive teachers, removed assignments and deleted sessions never notify an unrelated person",async()=>{
  const plain=harness();await plain.post(plain.input({weeklyGoal:null}));assert.equal(plain.pushes.length,0);assert.equal(plain.mails.length,0);

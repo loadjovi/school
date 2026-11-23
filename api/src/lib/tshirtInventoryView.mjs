@@ -18,6 +18,7 @@ export function tshirtInventoryView(rows,loans=[]){
    movements.push({id:key,at:row.receivedAt,action:row.source==="existing_stock"?"使用現有庫存":"到貨入庫",sizes:parts.map(x=>x.size+" × "+x.quantity).join("、"),quantity:row.source==="existing_stock"?0:row.procurementQuantity||row.quantity,note:row.note||"",actor:row.receivedBy||""});
   }
   if(key.startsWith("issued:")&&row.kind==="regularUniform")movements.push({id:key,at:row.issuedAt,action:"實際發放",sizes:row.size,quantity:-row.quantity,note:row.note||"",actor:row.issuedBy||""});
+  if((key.startsWith("staff-issued:")||key.startsWith("cadre-issued:"))&&row.kind==="regularUniform")movements.push({id:key,at:row.issuedAt,action:"幹部／志工實際發放",sizes:row.size,quantity:-row.quantity,note:(row.parentName?row.parentName+"；":"")+(row.note||""),actor:row.issuedBy||""});
   if(key.startsWith("opened-move:")||key.startsWith("volunteer-move:")){
    const transfer=row.action==="OPEN_FROM_NEW";
    movements.push({id:key,at:row.at,action:row.label,sizes:row.size+(transfer?" × "+row.quantity:""),quantity:transfer?null:row.delta,note:(transfer?"新團 T -"+row.quantity+"、已拆封 +"+row.quantity+"。":"")+(row.note||""),actor:row.actor||""});

@@ -20,7 +20,7 @@ app.http("lineAnnouncements",{
     try{
       const channel=await resolveTenantLineChannel(schoolId);
       const lineFirst=typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled();
-      if((!channel.configured||!channel.loginConfigured||!channel.botUserId)&&!lineFirst||!workflowLineEnabled())return fail("此環境尚未啟用 LINE 通知中心",409);
+      if((!channel.configured||!channel.botUserId)&&!lineFirst||!workflowLineEnabled())return fail("此環境尚未啟用 LINE 通知中心",409);
       if(request.method==="GET"){
         const [students,activities,schoolGroups,history]=await Promise.all([lineAudienceStudents(schoolId),listActivityLineGroups(schoolId,channel.botUserId),listSchoolLineGroups(schoolId,channel.botUserId),lineAnnouncementHistory(schoolId)]);
         return json({groups:lineAudienceGroups(students),activities,schoolGroups,history,lineFirst,schoolName:ctx.tenant?.systemName||ctx.tenant?.schoolName||"學校平台"});

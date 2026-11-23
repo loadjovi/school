@@ -2,6 +2,7 @@ import {TableClient} from "@azure/data-tables";
 import {createHash,randomBytes} from "node:crypto";
 import {tenantSchoolPartition} from "./storage.js";
 import {getLineNotificationTarget} from "./settings.js";
+import {resolveTenantLineChannel,lineTargetMatchesChannel} from "./lineTenantConfig.js";
 
 const clients=new Map();
 const activityKey=/^(fieldTrip|yearEndDinner|calendarActivity):[A-Za-z0-9_-]{1,80}$/;
@@ -44,7 +45,12 @@ export async function getActivityLineGroup(schoolId,botUserId,key){
   const purpose=key==="school:cadres"?"admin":key==="school:teachers"?"absence":"";
   if(!purpose)return null;
   const target=await getLineNotificationTarget(schoolId,purpose);
-  if(target?.targetType!=="group"||target.botUserId!==botUserId||!/^C[a-f0-9]{32}$/i.test(target.targetId||""))return null;
+  if(target?.targetType!=="group"||!/^C[a-f0-9]{32}$/i.test(target.targetId||""))return null;
+  if(target.botUserId!==botUserId){
+    if(target.botUserId||!/^U[a-f0-9]{32}$/i.test(botUserId||""))return null;
+    const channel=await resolveTenantLineChannel(schoolId);
+    if(!channel.configured||channel.schoolId!==tenantSchoolPartition(schoolId)||channel.botUserId!==botUserId||!lineTargetMatchesChannel(target,channel))return null;
+  }
   return {groupId:target.targetId,groupName:target.targetLabel||schoolGroupNames[key],botUserId,source:"settings",sourceLabel:purpose==="admin"?"平台後台待辦群組":"平台學生缺席通知群組"};
 }
 export async function listActivityLineGroups(schoolId,botUserId){
@@ -97,7 +103,7 @@ export async function consumeActivityLineBinding(channel,code,groupId,groupName)
 }
 export async function clearActivityLineGroup(schoolId,botUserId,key){
   await requireGroupTarget(schoolId,key);
-  if((await getActivityLineGroup(schoolId,botUserId,key))?.source==="settings")throw fail("此群組沿用平台原有綁定，請至平台設定變更；原通知用途維持不變");
+  if((await getActivityLineGroup(schoolId,botUserId,key))?.source==="settings")throw fail("此群組沿用平台原有綁定，請在 LINE 通知中心的「群組與通知設定」變更；原通知用途維持不變");
   const client=await center(),partitionKey=tenantSchoolPartition(schoolId),old=await read(client,partitionKey,"group:"+key);
   if(!old||old.botUserId!==botUserId)return;
   await client.updateEntity({partitionKey,rowKey:old.rowKey,groupId:"",groupName:"",boundAt:"",pendingCodeHash:"",updatedAt:new Date().toISOString()},"Merge",{etag:old.etag});
