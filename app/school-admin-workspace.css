@@ -297,3 +297,57 @@
 .aw-service>iframe{display:block;width:100%;min-width:0;height:1100px;border:0;background:transparent}
 .aw-service>iframe[data-service-loading="true"]{visibility:hidden}
 .aw-service>[data-service-loading]{margin:0 0 10px}
+
+/* Attendance reports use the same readable scale as the school workspace. */
+.desktop-shell[data-role="admin"] [data-page="attendance"]>.attendance-workspace-return{grid-column:1/-1}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .section-title{gap:12px;align-items:flex-start;flex-wrap:wrap}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .section-title h2{margin:0 0 6px}
+.desktop-shell[data-role="admin"] [data-page="attendance"] :is(label,.muted){font-size:14px;line-height:1.6}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-primary-kpis{gap:12px;margin-top:16px}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-primary-kpis>div{padding:14px}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-primary-kpis b{font-size:24px;color:var(--aw-ink);line-height:1.3}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-primary-kpis span{font-size:13px;line-height:1.5}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-primary-kpis .attention b{color:#b42318}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-quick-grid{gap:12px;margin-top:16px}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-quick-card{gap:10px;padding:14px}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-quick-card b{font-size:23px;line-height:1.3}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-quick-card small{font-size:14px;line-height:1.5}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-quick-card em{font-size:12px;line-height:1.5}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-course-grid{gap:12px;margin-top:16px}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-course-card{min-width:0;padding:14px}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-course-head{flex-wrap:wrap}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-course-head b{font-size:15px;line-height:1.5}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-course-main strong{font-size:24px;line-height:1.4}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-course-main small{font-size:13px;line-height:1.5}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-course-detail{gap:5px;font-size:13px;line-height:1.5}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-private-reference{gap:8px;padding:12px}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-private-reference :is(b,span,small){font-size:13px;line-height:1.6}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-row{padding:18px 0}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-top{align-items:center;gap:10px 16px;flex-wrap:wrap}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-name{flex:1 1 200px}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-name b{font-size:17px;line-height:1.5;color:var(--aw-ink)}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-name small{font-size:13px;line-height:1.6;margin-top:3px}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-rate{flex-direction:row;align-items:center;gap:10px;flex-wrap:wrap}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-rate-value{display:flex;align-items:center;gap:6px}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-rate-value small{font-size:13px;color:var(--aw-muted)}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .badge{font-size:13px;line-height:1.5;white-space:nowrap}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-rate button{font-size:14px;min-width:64px;min-height:44px;padding:8px 12px}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-summary{gap:8px;margin-top:12px}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-summary>span{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:10px 12px;min-width:0;font-size:13px;line-height:1.5;white-space:normal}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-summary b{font-size:16px;line-height:1.4;white-space:nowrap}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-recent{margin-top:10px;padding:10px 12px;font-size:13px;line-height:1.6}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-class-breakdown{margin-top:8px;font-size:13px;line-height:1.6}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-row .item{align-items:flex-start}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-row .item b{font-size:14px;line-height:1.5}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-row .item small{font-size:13px;line-height:1.6}
+.desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-pager span{font-size:13px}
+@media(max-width:700px){
+ .desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-primary-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-course-grid{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:600px){
+ .desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-student-rate{flex:1 1 100%;justify-content:space-between}
+ .desktop-shell[data-role="admin"] [data-page="attendance"] .attendance-primary-kpis b{font-size:22px}
+}

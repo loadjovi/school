@@ -137,8 +137,9 @@
     downloadCsv(`${state.attendanceMonth}_弦樂團學生出勤表.csv`,rows);toast("📥 已匯出學生出勤表");
   };
   function attendancePage(){
+    const back=state.me?.role==="admin"&&typeof window.openSchoolAdminAttendanceTask==="function"?`<div class="attendance-workspace-return"><button type="button" class="secondary aw-attendance-back" onclick="openSchoolAdminAttendanceTask('home')">← 返回出勤工作選單</button></div>`:"";
     const d=state.attendanceData;
-    if(!d)return `<div class="card"><h2>📋 學生出勤表</h2><div class="notice">正在讀取出勤資料…</div></div>`;
+    if(!d)return back+`<div class="card"><h2>📋 學生出勤表</h2><div class="notice">正在讀取出勤資料…</div></div>`;
     const groups=["全部",...new Set((d.items||[]).map(x=>String(x.groupName)).filter(Boolean))];
     const scope=scopedAttendanceItems(),items=filteredItems();
     const groupTotals=scope.reduce((o,x)=>{const s=groupStats(x);for(const k of ["present","late","leave","absent","total","attended"])o[k]+=Number(s[k]||0);return o},{present:0,late:0,leave:0,absent:0,total:0,attended:0});
@@ -183,7 +184,7 @@
       return `<div class="attendance-student-row">
         <div class="attendance-student-top">
           <div class="attendance-student-name"><div><b>${esc(x.name)}</b>${needs}</div><small>${esc(x.groupName)}團｜${esc(x.section||"待確認")}｜${esc(x.instrument)}｜${esc(x.grade)}</small></div>
-          <div class="attendance-student-rate">${rateBadge(s.rate)}<button class="secondary" onclick="showAttendanceDetail('${esc(x.studentId)}')">${selected?"收合":"明細"}</button></div>
+          <div class="attendance-student-rate">${state.me?.role==="admin"?`<div class="attendance-student-rate-value"><small>到課率</small>${rateBadge(s.rate)}</div>`:rateBadge(s.rate)}<button class="secondary" aria-expanded="${selected}" aria-label="${selected?"收合":"查看"}${esc(x.name)}的出勤明細" onclick="showAttendanceDetail('${esc(x.studentId)}')">${selected?"收合":"明細"}</button></div>
         </div>
         <div class="attendance-student-summary">
           <span class="present">✅ 到課 <b>${s.attended}/${s.total}</b></span>
@@ -199,7 +200,7 @@
 
     const pager=totalPages>1?`<div class="attendance-pager"><button class="secondary" onclick="changeAttendancePage(${page-1})" ${page<=1?"disabled":""}>← 上一頁</button><span>第 ${page} / ${totalPages} 頁</span><button class="secondary" onclick="changeAttendancePage(${page+1})" ${page>=totalPages?"disabled":""}>下一頁 →</button></div>`:`<div class="muted" style="text-align:center;margin-top:12px">共 ${items.length} 位學生</div>`;
 
-    return `<div class="card hero attendance-workbench"><div class="section-title"><div><h2>📋 出勤行政工作台</h2><div class="muted">先看需要處理的人，再查看明細；主統計以分部／合奏／綜合課為準。</div></div><span class="badge ok">${esc(state.attendanceMonth)}</span></div>
+    return back+`<div class="card hero attendance-workbench"><div class="section-title"><div><h2>📋 出勤行政工作台</h2><div class="muted">先看需要處理的人，再查看明細；主統計以分部／合奏／綜合課為準。</div></div><span class="badge ok">${esc(state.attendanceMonth)}</span></div>
       <div class="row2"><div><label>月份</label><input type="month" value="${esc(state.attendanceMonth)}" onchange="changeAttendanceMonth(this.value)"></div><div><label>團別</label><select onchange="changeAttendanceGroup(this.value)">${groups.map(g=>`<option value="${esc(g)}" ${g===state.attendanceGroup?"selected":""}>${esc(g==="全部"?"全部團別":g+"團")}</option>`).join("")}</select></div></div>
       <label>搜尋學生</label><input value="${esc(state.attendanceSearch||"")}" placeholder="姓名／分部／樂器／年級" oninput="changeAttendanceSearch(this.value)">
       <div class="attendance-primary-kpis">
