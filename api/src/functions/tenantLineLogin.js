@@ -51,9 +51,12 @@ async function lineOAuthRequest(endpoint, fields) {
 
 async function tryMenuSync(channel, account, userId) {
   try {
-    await refreshTenantLineMenu(channel, account, userId);
-  } catch {
+    const audience = await refreshTenantLineMenu(channel, account, userId);
+    if (["staff", "parent", "default"].includes(audience)) return {status: "synced", audience};
+    return {status: "pending", message: "帳號綁定已完成，選單版型尚未準備完成；不需重新綁定或指派人員。"};
+  } catch (error) {
     console.warn("LINE menu sync deferred", {schoolId: channel.schoolId});
+    return {status: "pending", message: error instanceof LineMenuSyncError ? error.message : "帳號綁定已完成，選單暫時無法更新；可稍後重試，不需重新綁定。"};
   }
 }
 
@@ -232,9 +235,9 @@ app.http("tenantLineAccount", {
           await clearTenantLineSession(request);
           cleared.push(lineSessionCookie(token));
         }
-        await tryMenuSync(channel, linked);
+        const menuSync = await tryMenuSync(channel, linked);
         return {...json({configured: true, bound: true, googleLinked: true, authProvider: line ? "line" : "google",
-          lineDisplayName: linked.displayName}), headers: privateHeaders, cookies: cleared};
+          lineDisplayName: linked.displayName, menuSync}), headers: privateHeaders, cookies: cleared};
       }
       if (!line || line.botUserId !== channel.botUserId) return json({error: "請先完成此校 LINE 登入"}, 403);
       const verified = await verifyGoogleToken(body?.credential);

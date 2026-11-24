@@ -13,7 +13,7 @@ async function googleClient(){
 // Reused by the standalone account page and the notification center. Entry is read-only.
 export function createLineAccountPanel({host,api,me,returnTo='account',navigate=url=>location.assign(url),onChanged=async()=>{},confirm=message=>window.confirm(message)}){
  let line=null,busy=false,destroyed=false,generation=0,message='',failed=false,authorizationPending=false;
- let callbackError='',callbackLink='';
+ let callbackError='',callbackLink='',menuStatus='';
  const scope=()=>[me?.schoolId||'',...['school_context_id','role_context','google_id_token'].map(key=>sessionStorage.getItem(key)||'')].join('|');
  const originalScope=scope();
  const sameIdentity=()=>scope()===originalScope&&(!sessionStorage.getItem('school_context_id')||sessionStorage.getItem('school_context_id')===me?.schoolId);
@@ -31,7 +31,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
  }
  async function run(action,body,question){
   if(busy||!valid()||!permitted()||question&&!confirm(question))return;
-  busy=true;const version=++generation;message='正在處理…';failed=false;render();
+  busy=true;const version=++generation;message='正在處理…';menuStatus='';failed=false;render();
   try{
    if(action==='link'){
     callbackError='';callbackLink='';
@@ -48,11 +48,13 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
     line=result;message='請核對 Gmail 與 LINE 名稱，再確認綁定。';return;
    }
    if(action==='sync'){
-    message=result.audience==='parent'?'已同步家長選單。':result.audience==='staff'?(result.chatActionsVerified?'LINE 已確認套用幹部六宮格。上排三格在聊天室回覆，下排三格開啟後台。':'LINE 已確認套用幹部選單。'):result.audience==='default'?'目前使用通用選單。':'目前無法同步 LINE 選單。';
+    message=result.audience==='parent'?'已同步已核准家長的登入四宮格。':result.audience==='staff'?(result.chatActionsVerified?'LINE 已確認套用幹部六宮格。上排三格在聊天室回覆，下排三格開啟後台。':'LINE 已確認套用幹部／老師六宮格。'):result.audience==='default'?'目前使用預設三宮格；學生資料須完成家長／學生核准後開放。':'目前無法同步 LINE 選單。';
    }else{
     line=await api('/api/line/school-account');if(!valid()||version!==generation)return;
     callbackError='';callbackLink='';
     message=action==='confirm'?'已完成此校 Gmail 與 LINE 綁定。':action==='cancel'?'已取消此次綁定。':'已解除此校 LINE 綁定。';
+    if(action==='confirm'&&result.menuSync?.status==='synced')menuStatus=result.menuSync.audience==='parent'?'已依核准家長身分自動套用登入四宮格。':result.menuSync.audience==='staff'?'已依同校幹部與老師名冊自動套用六宮格。':'目前使用預設三宮格；學生資料須完成家長／學生核准後開放。';
+    if(action==='confirm'&&result.menuSync?.status==='pending')menuStatus='帳號綁定已完成，選單尚未同步。'+(result.menuSync.message||'可按「同步我的 LINE 選單」重試。');
    }
    await changed(action);
   }catch(error){
@@ -79,6 +81,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
   if(!valid())return;
   host.replaceChildren();host.append(make('h2','我的 LINE 綁定'));
   const status=make('p',message);status.className='notice'+(failed?' error':'');status.setAttribute('role',failed?'alert':'status');status.setAttribute('aria-live','polite');status.hidden=!message;host.append(status);
+  if(menuStatus){const menu=make('p',menuStatus);menu.className='notice';menu.setAttribute('role','status');host.append(menu)}
   if(!accountRoles.has(me?.role)){host.append(make('p','請切換至此校已授權的身分。'));return}
   if(!permitted()||line?.configured===false){host.append(make('p','此校尚未開啟 LINE 通知綁定，請聯絡學校管理員。'));return}
   if(!line){host.append(button('重新讀取綁定狀態',()=>load(),true));return;}
@@ -91,7 +94,8 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
   host.append(make('p',(line.bound?'已連結 '+(line.lineDisplayName||'LINE'):'連結自己的 LINE，方便登入與接收通知。')+(line.googleLinked?' · 已連結 Gmail':'')));
   const actions=make('div');actions.className='actions';
   if(line.authProvider==='google'&&!line.bound)actions.append(button('使用 LINE 授權並綁定',()=>run('link')));
-  if(line.bound&&['admin','parent','unassigned'].includes(me.role))actions.append(button('同步我的 LINE 選單',()=>run('sync',{action:'sync-menu'}),true));
+  host.append(make('p','選單依同校身分自動判定：尚未綁定平台為預設三宮格，已登入且學生關係已核准的家長為四宮格，幹部／啟用中的老師為六宮格。學生資料僅依已核准關係開放；需要時可重試同步。'));
+  if(line.bound)actions.append(button('同步我的 LINE 選單',()=>run('sync',{action:'sync-menu'}),true));
   if(line.authProvider==='google'&&line.bound)actions.append(button('解除 LINE 綁定',()=>run('unbind',null,'確定解除此校 LINE 綁定？'),true));
   actions.append(button('更新綁定狀態',()=>load(),true));host.append(actions);
   if(line.authProvider==='line'&&!line.googleLinked){const google=make('div');host.append(google);if(!busy)renderGoogle(google,generation)}
@@ -99,7 +103,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
  async function load(params){
   if(busy||!valid())return line;
   if(params!==undefined){callbackError=params?.get('line_error')||'';callbackLink=params?.get('line_link')||''}
-  const version=++generation;busy=true;message='正在讀取 LINE 綁定狀態…';failed=false;render();
+  const version=++generation;busy=true;message='正在讀取 LINE 綁定狀態…';menuStatus='';failed=false;render();
   try{
    line=permitted()?await api('/api/line/school-account'):{configured:false,bound:false};
    if(!valid()||version!==generation)return null;

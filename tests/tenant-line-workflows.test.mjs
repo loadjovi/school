@@ -487,6 +487,7 @@ test("LINE admin sync protects the existing menu and verifies LINE actually assi
   const channel = {schoolId: "sacred-heart", accessToken: "school-token", configured: true, parentMenuId, staffMenuId};
   let schoolAdmin = true, areaCount = 4, linkedMenuId = parentMenuId, chatActions = false;
   const {refreshTenantLineMenu} = load("api/src/lib/tenantLineMenu.js", {
+    discoverTenantLineRoleMenu: async () => "",
     listTenantRolesByEmail: async () => schoolAdmin ? [{role:"schoolAdmin", schoolId:"sacred-heart"}] : [],
     getTeacherDirectory: async () => null, defaultTenantId: () => "sacred-heart",
     getMappedStudentsByEmail: async () => [], process: {env: {LAB_ENVIRONMENT: "functional-uat"}},

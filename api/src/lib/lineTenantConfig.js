@@ -225,12 +225,15 @@ export async function saveTenantLineChannel(schoolId, status, actor) {
 
 const richMenuIdPattern = /^richmenu-[a-f0-9]{32}$/;
 
-function menuValidationError(menu, channel) {
-  if (!Array.isArray(menu?.areas) || menu.areas.length !== 6) return "請選擇六宮格的家長與幹部選單";
+function menuValidationError(menu, channel, audience = "staff") {
+  const areaCount = audience === "parent" ? 4 : 6;
+  if (!Array.isArray(menu?.areas) || menu.areas.length !== areaCount) {
+    return audience === "parent" ? "已登入家長選單須使用四宮格" : "幹部與老師選單須使用六宮格";
+  }
   for (const area of menu.areas) {
     const action = area?.action;
     if (action?.type === "message" && typeof action.text === "string" && action.text) continue;
-    if (action?.type !== "uri") return "選單包含此平台尚未支援的動作，請選擇平台六宮格選單";
+    if (action?.type !== "uri") return "選單包含此平台尚未支援的動作，請選擇平台選單";
     if (!channel.appOrigin) return "請先設定此校 APP_ORIGIN，再驗證選單連結";
     const destinations = [action.uri];
     if (action.altUri?.desktop !== undefined) destinations.push(action.altUri.desktop);
@@ -268,7 +271,8 @@ async function availableMenuChoices(channel) {
   if (!Array.isArray(result?.richmenus)) throw new LineConfigError("LINE 選單清單格式不正確，請稍後再試");
   // Expose only display metadata. Menu actions and credentials remain server-side.
   return result.richmenus.filter(menu => richMenuIdPattern.test(menu?.richMenuId || "")).map(menu => {
-    const validationError = menuValidationError(menu, channel);
+    const parentValidationError = menuValidationError(menu, channel, "parent");
+    const staffValidationError = menuValidationError(menu, channel, "staff");
     return {
       richMenuId: menu.richMenuId,
       name: typeof menu.name === "string" ? menu.name.slice(0, 300) : "",
@@ -278,7 +282,10 @@ async function availableMenuChoices(channel) {
         height: Number.isInteger(menu.size?.height) ? menu.size.height : 0
       },
       areaCount: Array.isArray(menu.areas) ? menu.areas.length : 0,
-      selectable: !validationError, validationError
+      parentSelectable: !parentValidationError, parentValidationError,
+      staffSelectable: !staffValidationError, staffValidationError,
+      // Existing consumers use these fields for the original six-grid picker.
+      selectable: !staffValidationError, validationError: staffValidationError
     };
   });
 }
@@ -299,14 +306,14 @@ export async function saveTenantLineMenus(schoolId, selection, actor) {
   }
   if (parentMenuId === staffMenuId) throw new LineConfigError("家長與幹部選單必須使用不同的選單");
   const {id, client, row, channel} = await managedMenuChannel(schoolId);
-  await Promise.all([parentMenuId, staffMenuId].filter(Boolean).map(async richMenuId => {
+  await Promise.all([["parent", parentMenuId], ["staff", staffMenuId]].filter(([, richMenuId]) => richMenuId).map(async ([audience, richMenuId]) => {
     let menu;
     try {
       menu = await lineApi(`/v2/bot/richmenu/${richMenuId}`, {method: "GET", accessToken: channel.accessToken});
     } catch {
       throw new LineConfigError("選單不存在或不屬於此校官方帳號，請重新載入選單");
     }
-    const validationError = menuValidationError(menu, channel);
+    const validationError = menuValidationError(menu, channel, audience);
     if (validationError) throw new LineConfigError(validationError);
   }));
   const menus = await availableMenuChoices(channel);

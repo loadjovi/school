@@ -4,11 +4,12 @@ import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 
 const source=readFileSync(new URL("../app/global-tenant-admin.js",import.meta.url),"utf8");
+const channelLoader=source.slice(source.indexOf("  window.loadGlobalLineChannel="),source.indexOf("  const globalLineMenuRequests="));
 const picker=source.slice(source.indexOf("  const globalLineMenuRequests="),source.indexOf("  function inlineAdminPanel("));
 const parentId="richmenu-"+"a".repeat(32),staffId="richmenu-"+"b".repeat(32);
 const config={schoolId:"school-a",parentMenuId:parentId,staffMenuId:staffId,menus:[
- {richMenuId:parentId,name:'家長 <script>bad</script>',areaCount:6},
- {richMenuId:staffId,name:"幹部",areaCount:6},
+ {richMenuId:parentId,name:'家長 <script>bad</script>',areaCount:4,parentSelectable:true,parentValidationError:"",staffSelectable:false,staffValidationError:"幹部／老師須為六宮格",selectable:false},
+ {richMenuId:staffId,name:"幹部",areaCount:6,parentSelectable:false,parentValidationError:"登入家長須為四宮格",staffSelectable:true,staffValidationError:"",selectable:true},
  {richMenuId:"richmenu-"+"c".repeat(32),name:"舊版",areaCount:3}
 ]};
 function harness({global=true,reply=()=>config}={}){
@@ -21,6 +22,18 @@ function harness({global=true,reply=()=>config}={}){
  return {window,calls,alerts,nodes,panel,controls,setGlobal:value=>global=value};
 }
 
+test("Global shows existing personnel as the automatic audience source and keeps template controls collapsed",async()=>{
+ const panel={dataset:{},innerHTML:"",textContent:""},calls=[],window={confirm:()=>true};
+ runInNewContext(channelLoader,{window,canGlobal:()=>true,document:{getElementById:id=>id==="globalLineChannel_school-a"?panel:null},location:{origin:"https://school.example.test"},URL,JSON,
+  esc:value=>String(value??""),api:async(path,options)=>{calls.push({path,options});return {messagingConfigured:true,legacy:false,status:"active",email:{mode:"disabled"},webhookPath:"/api/line/webhook/school-a"}}});
+ await window.loadGlobalLineChannel("school-a");
+ assert.equal(calls.length,1);assert.equal(calls[0].options,undefined);
+ assert.match(panel.innerHTML,/LINE 選單自動套用/);assert.match(panel.innerHTML,/Global 指派的本校幹部與啟用中的老師名冊/);
+ assert.match(panel.innerHTML,/尚未綁定平台：預設三宮格/);assert.match(panel.innerHTML,/已核准學生關係的家長：四宮格/);assert.match(panel.innerHTML,/老師名冊：六宮格/);
+ assert.match(panel.innerHTML,/不需另外指派 LINE 角色/);assert.match(panel.innerHTML,/學生資料僅依已核准關係開放/);
+ assert.match(panel.innerHTML,/<details><summary>進階：選單版型設定<\/summary>/);assert.doesNotMatch(panel.innerHTML,/<details[^>]*open|<select/);
+});
+
 test("Global loads only the selected school's existing menus and escapes names",async()=>{
  const h=harness();await h.window.loadGlobalLineMenus("school-a");
  assert.deepEqual(h.calls.map(call=>call.path),["/api/line/tenant-config/school-a/menus"]);
@@ -29,6 +42,18 @@ test("Global loads only the selected school's existing menus and escapes names",
  assert.match(h.panel.innerHTML,/&lt;script&gt;bad&lt;\/script&gt;/);assert.doesNotMatch(h.panel.innerHTML,/<script>/);
  assert.match(h.panel.innerHTML,/<option[^>]+disabled[^>]*>舊版｜3 格/);
  assert.match(h.panel.innerHTML,/我的 LINE 綁定/);
+});
+test("advanced templates independently allow parent four-grid and staff six-grid while leaving default three-grid unchanged",async()=>{
+ const h=harness();await h.window.loadGlobalLineMenus("school-a");
+ const parentOptions=h.panel.innerHTML.match(/id="globalLineParentMenu_school-a">([\s\S]*?)<\/select>/)[1];
+ const staffOptions=h.panel.innerHTML.match(/id="globalLineStaffMenu_school-a">([\s\S]*?)<\/select>/)[1];
+ const parentChoice=parentOptions.match(new RegExp('<option value="'+parentId+'"([^>]*)>'))[1];
+ const staffParentChoice=staffOptions.match(new RegExp('<option value="'+parentId+'"([^>]*)>'))[1];
+ const staffChoice=staffOptions.match(new RegExp('<option value="'+staffId+'"([^>]*)>'))[1];
+ const parentStaffChoice=parentOptions.match(new RegExp('<option value="'+staffId+'"([^>]*)>'))[1];
+ assert.doesNotMatch(parentChoice,/disabled/);assert.match(staffParentChoice,/disabled/);assert.doesNotMatch(staffChoice,/disabled/);assert.match(parentStaffChoice,/disabled/);
+ assert.match(h.panel.innerHTML,/家長登入四宮格/);assert.match(h.panel.innerHTML,/預設三宮格沿用此校官方帳號設定/);
+ assert.equal(h.calls.length,1);assert.equal(h.calls[0].options,undefined);
 });
 test("menu picker guards reads and saves when Global capability is absent",async()=>{
  const h=harness({global:false});await h.window.loadGlobalLineMenus("school-a");await h.window.saveGlobalLineMenus("school-a");

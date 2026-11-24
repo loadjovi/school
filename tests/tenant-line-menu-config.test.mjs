@@ -12,9 +12,9 @@ const hash = value => createHash("sha256").update(value).digest("hex");
 const schoolId = "school-a", botId = "U" + "a".repeat(32), otherBot = "U" + "b".repeat(32);
 const parentId = "richmenu-" + "1".repeat(32), staffId = "richmenu-" + "2".repeat(32);
 const otherId = "richmenu-" + "3".repeat(32), origin = "https://production.example.invalid";
-const menu = (richMenuId, action = {type: "message", text: "#今日課程"}) => ({
+const menu = (richMenuId, action = {type: "message", text: "#今日課程"}, areaCount = richMenuId === parentId ? 4 : 6) => ({
   richMenuId, name: richMenuId === staffId ? "幹部選單" : "家長選單", chatBarText: "功能",
-  size: {width: 2500, height: 1686}, areas: Array.from({length: 6}, () => ({action: {...action}}))
+  size: {width: 2500, height: 1686}, areas: Array.from({length: areaCount}, () => ({action: {...action}}))
 });
 
 function fixture(options = {}) {
@@ -78,6 +78,10 @@ test("Global menu discovery exposes safe display metadata from the selected scho
   assert.equal(data.parentMenuId, parentId); assert.equal(data.staffMenuId, otherId);
   assert.equal(data.menus.length, 2);
   assert.equal(data.menus[1].selectable, true); assert.equal(data.menus[1].areaCount, 6);
+  assert.equal(data.menus[0].parentSelectable, true); assert.equal(data.menus[0].staffSelectable, false);
+  assert.equal(data.menus[0].parentValidationError, ""); assert.match(data.menus[0].staffValidationError, /六宮格/);
+  assert.equal(data.menus[1].parentSelectable, false); assert.equal(data.menus[1].staffSelectable, true);
+  assert.match(data.menus[1].parentValidationError, /四宮格/); assert.equal(data.menus[1].staffValidationError, "");
   assert.deepEqual(JSON.parse(JSON.stringify(data.menus[1].size)), {width: 2500, height: 1686});
   assert.equal(f.calls.length, 1); assert.equal(f.calls[0].path, "/v2/bot/richmenu/list");
   assert.equal(f.calls[0].request.accessToken, "school-a-token"); assert.equal(f.calls[0].request.method, "GET");
@@ -108,7 +112,7 @@ test("menu configuration requires an active verified modern school channel and n
   }
 });
 
-test("invalid, duplicate, foreign or non-six-area menu selections cannot be saved", async () => {
+test("invalid, duplicate, foreign or wrong-audience menu selections cannot be saved", async () => {
   for (const selection of [{parentMenuId: "", staffMenuId: ""}, {parentMenuId: parentId, staffMenuId: "bad"}, {parentMenuId: staffId, staffMenuId: staffId}]) {
     const f = fixture();
     await assert.rejects(f.api.saveTenantLineMenus(schoolId, selection, "global"));
@@ -121,6 +125,23 @@ test("invalid, duplicate, foreign or non-six-area menu selections cannot be save
   const f = fixture({definitions: new Map([[staffId, short]])});
   await assert.rejects(f.api.saveTenantLineMenus(schoolId, {parentMenuId: "", staffMenuId: staffId}, "global"), /六宮格/);
   assert.equal(f.writes.length, 0);
+});
+
+test("logged-in parent four-grid and staff six-grid are independently enforced while the unbound default remains unchanged", async () => {
+  const accepted = fixture();
+  await accepted.api.saveTenantLineMenus(schoolId, {parentMenuId: parentId, staffMenuId: staffId}, "global");
+  assert.equal(accepted.writes.length, 1);
+  assert.ok(accepted.calls.every(call => call.request.method === "GET"));
+  for (const [parentCount, staffCount, error] of [[3, 6, /家長.*四宮格/], [6, 6, /家長.*四宮格/], [4, 3, /幹部與老師.*六宮格/], [4, 4, /幹部與老師.*六宮格/]]) {
+    const f = fixture({definitions: new Map([[parentId, menu(parentId, undefined, parentCount)], [staffId, menu(staffId, undefined, staffCount)]])});
+    await assert.rejects(f.api.saveTenantLineMenus(schoolId, {parentMenuId: parentId, staffMenuId: staffId}, "global"), error);
+    assert.equal(f.writes.length, 0);
+  }
+  const unsafeParent = fixture({definitions: new Map([[parentId, menu(parentId, {type: "uri", uri: "https://lab.example.invalid/"})], [staffId, menu(staffId)]])});
+  const choice = (await unsafeParent.api.listTenantLineMenus(schoolId)).menus[0];
+  assert.equal(choice.parentSelectable, false); assert.match(choice.parentValidationError, /其他環境/);
+  await assert.rejects(unsafeParent.api.saveTenantLineMenus(schoolId, {parentMenuId: parentId, staffMenuId: staffId}, "global"), /其他環境/);
+  assert.equal(unsafeParent.writes.length, 0);
 });
 
 test("discovery marks LAB, other-school, alternate desktop and unsupported switch destinations unavailable and save rechecks", async () => {
