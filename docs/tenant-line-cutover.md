@@ -41,11 +41,11 @@ LINE 首先依校停用有問題的功能或停用該校 LINE。Email 可透過�
 
 ## Facebook 活動影音選單
 
-Global → 學校管理 → 查看通知設定，可填入本校 Facebook 網址並按「套用 Facebook 新版選單」。只有 Global 可建立／套用全校版型；普通帳號仍僅能同步自己的選單。
+Facebook 已啟用後，網址、圖片預覽與套用按鈕不再顯示於 Global 日常管理頁。既有網址、選單 ID、圖片及自動套用流程保留；需維護版型時，由 Global 透過受權限保護的 `POST /api/line/tenant-config/<schoolId>/menus/apply` 管理 API 處理。家長不需手動同步。
 
 套用流程先驗證兩張隨程式發布的圖片（家長五格、幹部六格），建立或沿用相同版本的 Rich Menu，上傳圖片後才以 ETag 更新同校的兩個選單 ID 及 Facebook 目標。租約避免同校重複提交；失敗只清理本次新增資產，不刪既有版型。官方預設三格不變，也不批次改動任何使用者。既有 LINE 帳號下一次操作或自行同步時依同校名冊套用。
 
-Facebook 按鈕使用固定同校路徑 `/api/line/facebook/<schoolId>?openExternalBrowser=1`，伺服器僅轉到該校已儲存且經驗證的 HTTPS Facebook 網址，不接受來訪者指定目的地。各校互不沿用目標；聖心的建議網址僅用來預填其設定欄，不是其他學校的預設值。
+Facebook 按鈕使用固定同校路徑 `/api/line/facebook/<schoolId>?openExternalBrowser=1`，伺服器僅轉到該校已儲存且經驗證的 HTTPS Facebook 網址，不接受來訪者指定目的地。各校互不沿用目標；聖心的建議網址僅屬該校的維護資訊，不是其他學校的預設值。
 
 
 ## 家長不需手動同步

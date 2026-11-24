@@ -70,17 +70,6 @@
   }
   const globalLineChannelRequests=new Map();
   const globalLineScope=()=>[state.me?.identityId||state.me?.email||"",state.me?.role||"",state.globalTenant?.selectedSchoolId||""].join("|");
-  function facebookMenuPanel(sid,channel){
-    const facebookUrl=String(channel.facebookUrl||channel.facebookSuggestedUrl||"");
-    return `<div class="global-inline-admin" id="globalLineFacebook_${esc(sid)}"><h3>Facebook 活動影音</h3>
-      <p class="muted">家長保留原有四個功能，新增「活動影音」成為五個入口；幹部／老師維持六格，將「開啟幹部平台」改為 Facebook。</p>
-      <label for="globalLineFacebookUrl_${esc(sid)}">此校 Facebook 粉專或社團網址</label>
-      <input type="url" id="globalLineFacebookUrl_${esc(sid)}" value="${esc(facebookUrl)}" maxlength="2048" placeholder="https://www.facebook.com/…" autocomplete="off">
-      <details><summary>預覽新版選單</summary><div class="row2"><figure style="margin:8px 0;min-width:0"><img src="/line-menu-parent-facebook.jpg" alt="家長選單：原有四個功能與 Facebook 活動影音" loading="lazy" style="display:block;width:100%;height:auto"><figcaption>家長五個入口</figcaption></figure><figure style="margin:8px 0;min-width:0"><img src="/line-menu-staff-facebook.jpg" alt="幹部與老師六宮格：第六格為 Facebook 活動影音" loading="lazy" style="display:block;width:100%;height:auto"><figcaption>幹部／老師六宮格</figcaption></figure></div></details>
-      <button class="primary" onclick="applyGlobalLineFacebookMenus(${esc(JSON.stringify(String(sid)))})">套用 Facebook 新版選單</button>
-      <p class="muted">保留官方帳號預設三宮格與現有人員權限。套用後，已綁定帳號於下次 LINE 操作或同步選單時更新，不需重新綁定。</p>
-      <div id="globalLineFacebookStatus_${esc(sid)}" aria-live="polite"></div></div>`;
-  }
   window.loadGlobalLineChannel=async function(sid,status){
     if(!canGlobal()||state.globalTenant?.selectedSchoolId!==sid)return;
     const panel=document.getElementById("globalLineChannel_"+sid);
@@ -111,37 +100,13 @@
       </div>
       <button class="primary" onclick="loadGlobalLineChannel('${esc(sid)}','active')">驗證並啟用</button>
       ${channel.status!=="disabled"?`<button class="secondary" onclick="loadGlobalLineChannel('${esc(sid)}','disabled')">停用</button>`:""}
-      ${channel.messagingConfigured&&!channel.legacy?`<div class="global-inline-admin"><h3>LINE 選單自動套用</h3><div class="notice">尚未綁定平台：預設三宮格；完成登入且已核准學生關係的家長：四個功能，套用 Facebook 新版後為五個入口；依 Global 指派的本校幹部與啟用中的老師名冊：六宮格。<br>人員身分沿用同校名冊，不需另外指派 LINE 角色。家長的學生資料僅依已核准關係開放。</div>${facebookMenuPanel(sid,channel)}<details><summary>進階：選單版型設定</summary><p class="muted">此處調整全校共用的選單版型，人員身分仍依同校名冊自動判定。</p><button class="secondary" onclick="loadGlobalLineMenus(${esc(JSON.stringify(String(sid)))})">讀取選單版型</button><div id="globalLineMenus_${esc(sid)}" aria-live="polite"></div></details></div>`:""}`;
+      ${channel.messagingConfigured&&!channel.legacy?`<div class="global-inline-admin"><h3>LINE 選單自動套用</h3><div class="notice">尚未綁定平台：預設三宮格；完成登入且已核准學生關係的家長：${channel.facebookUrl?"五個入口":"家長功能選單"}；依 Global 指派的本校幹部與啟用中的老師名冊：六宮格。<br>人員身分沿用同校名冊，不需另外指派 LINE 角色。家長的學生資料僅依已核准關係開放。</div><details><summary>進階：選單版型設定</summary><p class="muted">此處調整全校共用的選單版型，人員身分仍依同校名冊自動判定。</p><button class="secondary" onclick="loadGlobalLineMenus(${esc(JSON.stringify(String(sid)))})">讀取選單版型</button><div id="globalLineMenus_${esc(sid)}" aria-live="polite"></div></details></div>`:""}`;
     }catch(e){
       if(current())panel.textContent=e.message||"無法讀取 LINE 設定";
     }
   };
   const globalLineMenuRequests=new Map();
-  const globalLineFacebookRequests=new Map();
   const lineMenuSelectable=(menu,staff)=>(staff?menu.areaCount===6:[4,5].includes(menu.areaCount))&&((staff?menu.staffSelectable:menu.parentSelectable)??menu.selectable)!==false;
-  window.applyGlobalLineFacebookMenus=async function(sid){
-    if(!canGlobal()||state.globalTenant?.selectedSchoolId!==sid)return;
-    const panel=document.getElementById("globalLineFacebook_"+sid),input=document.getElementById("globalLineFacebookUrl_"+sid),status=document.getElementById("globalLineFacebookStatus_"+sid);
-    if(!panel||!input||!status||panel.dataset.applying==="true")return;
-    let target;
-    try{target=new URL(String(input.value||"").trim())}catch{}
-    if(!target||target.protocol!=="https:"||target.username||target.password||target.port||target.hash||!["facebook.com","www.facebook.com","m.facebook.com","fb.com","www.fb.com"].includes(target.hostname)){
-      status.className="notice error";status.textContent="請填入完整的 HTTPS Facebook 粉專或社團網址。";return;
-    }
-    const request=Symbol(),scope=globalLineScope();globalLineFacebookRequests.set(sid,request);panel.dataset.applying="true";
-    const controls=Array.from(panel.querySelectorAll("button,input")),disabled=controls.map(control=>control.disabled);controls.forEach(control=>control.disabled=true);
-    const current=()=>canGlobal()&&globalLineScope()===scope&&globalLineFacebookRequests.get(sid)===request&&document.getElementById("globalLineFacebook_"+sid)===panel;
-    status.className="notice";status.textContent="正在建立並套用此校 Facebook 新版選單…";
-    try{
-      const result=await api("/api/line/tenant-config/"+encodeURIComponent(sid)+"/menus/apply",{method:"POST",body:JSON.stringify({facebookUrl:target.href})});
-      if(!current())return;
-      if(result.schoolId!==sid||result.applied!==true)throw Error("尚未確認選單已套用，請重新讀取設定確認。");
-      status.textContent="已套用 Facebook 新版選單：家長五個入口、幹部／老師六宮格。下次 LINE 操作或同步選單時會依同校身分更新，不需重新綁定。";
-      globalLineMenuRequests.set(sid,Symbol());
-      const menuPanel=document.getElementById("globalLineMenus_"+sid);if(menuPanel){menuPanel.innerHTML="";menuPanel.textContent="新版選單已套用，可重新讀取版型查看。"}
-    }catch(e){if(current()){status.className="notice error";status.textContent=e.message||"Facebook 新版選單尚未套用，請稍後再試。"}}
-    finally{if(current()){panel.dataset.applying="false";controls.forEach((control,index)=>control.disabled=disabled[index])}}
-  };
   function lineMenuOptions(menus,current,staff){
     const known=menus.some(menu=>menu.richMenuId===current);
     return `<option value="">${staff?"請選擇幹部選單":"暫不設定家長選單"}</option>`+
@@ -152,7 +117,7 @@
     const menus=Array.isArray(result.menus)?result.menus:[],parent=String(result.parentMenuId||""),staff=String(result.staffMenuId||"");
     panel.innerHTML=`${message?`<div class="notice" role="status">${esc(message)}</div>`:""}
       <p class="muted" style="overflow-wrap:anywhere">目前家長選單：${esc(parent||"尚未設定")}<br>目前幹部選單：${esc(staff||"尚未設定")}</p>
-      ${menus.length?"":'<div class="notice">此官方帳號尚無可選取的 Rich Menu，可先套用 Facebook 新版選單。</div>'}
+      ${menus.length?"":'<div class="notice">此官方帳號尚無可選取的 Rich Menu，請先準備此校的選單版型。</div>'}
       <div class="row2"><div style="min-width:0"><label for="globalLineParentMenu_${esc(sid)}">家長登入版型（四格／Facebook 新版五入口）</label><select style="max-width:100%;min-width:0" id="globalLineParentMenu_${esc(sid)}">${lineMenuOptions(menus,parent,false)}</select></div>
       <div style="min-width:0"><label for="globalLineStaffMenu_${esc(sid)}">幹部／老師六宮格</label><select style="max-width:100%;min-width:0" id="globalLineStaffMenu_${esc(sid)}">${lineMenuOptions(menus,staff,true)}</select></div></div>
       <p class="muted">此設定適用全校共用版型：已核准家長使用四格或 Facebook 新版五入口、幹部／老師六宮格；未綁定平台的預設三宮格沿用此校官方帳號設定。連結須指向此校目前的平台。版型會在綁定及 LINE 操作時自動套用；需要時可到「我的 LINE 綁定」重試同步。</p>

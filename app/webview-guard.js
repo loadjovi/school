@@ -122,7 +122,7 @@
       "/school-access.js?v=20261027-school-followup",
       "/school-access-audit-admin.js?v=20261017-simple-records",
       "/school-admin-activity.js?v=20261025-restore",
-      "/school-access-refresh-fix.js?v=20261124-facebook-menus",
+      "/school-access-refresh-fix.js?v=20261124-global-cleanup",
       "/training-attendance.js?v=20261102-activity-boundary"
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
@@ -142,7 +142,7 @@
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20261027-school-followup",
-      "/school-access-refresh-fix.js?v=20261124-facebook-menus"
+      "/school-access-refresh-fix.js?v=20261124-global-cleanup"
     ];
     if(role==="school")return ["/school-access.js?v=20261027-school-followup"];
     if(role==="parent")return [
@@ -159,7 +159,7 @@
     if(role==="globalAdmin")return [
       "/school-access.js?v=20261027-school-followup",
       "/school-access-audit-admin.js?v=20261017-simple-records",
-      "/school-access-refresh-fix.js?v=20261124-facebook-menus"
+      "/school-access-refresh-fix.js?v=20261124-global-cleanup"
     ];
     return [];
   }
