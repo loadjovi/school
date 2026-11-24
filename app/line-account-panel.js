@@ -37,7 +37,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
   try{
    if(action==='link'){
     callbackError='';callbackLink='';
-    const payload={mode:'link',...(returnTo==='notification-center'?{returnTo:'notification-center'}:{})};
+    const payload={mode:'link',...(['notification-center','teacher-account'].includes(returnTo)?{returnTo}:{})};
     const result=await api('/api/line/tenant-login/'+encodeURIComponent(me.schoolId)+'/start',{method:'POST',body:JSON.stringify(payload)});
     if(!valid()||version!==generation)return;
     const url=new URL(result.url);

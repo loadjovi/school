@@ -121,7 +121,7 @@ app.http("me",{methods:["GET"],authLevel:"anonymous",route:"me",handler:async(re
   else if(a.role==="parent"&&a.schoolId)activeContextKey="parent:"+a.schoolId;
 
   return json({
-    identityId:a.sub||"",email:identityEmail,displayName:a.displayName,role:a.role,section:a.section||null,picture:a.picture||null,
+    authProvider:"google",identityId:a.sub||"",email:identityEmail,displayName:a.displayName,role:a.role,section:a.section||null,picture:a.picture||null,
     schoolId:a.schoolId||null,schoolName:a.schoolName||"",systemName:a.systemName||"",
     memberships:a.memberships||[],capabilities:{...a.capabilities,...features},
     assignments:a.sectionAssignments||a.assignments||[],ensembleGroups:a.ensembleGroups||[],

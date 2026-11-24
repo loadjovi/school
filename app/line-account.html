@@ -14,6 +14,7 @@
     label{display:block;font-weight:700;margin:10px 0 4px}input,select,textarea{display:block;width:100%;padding:11px 12px;border:1px solid #9fb5a9;border-radius:9px;background:#fff;color:#17372b}textarea{min-height:80px;resize:vertical}.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}button,.button{border:0;border-radius:9px;background:var(--main);color:#fff;padding:10px 14px;font-weight:750;cursor:pointer;text-decoration:none;text-align:center}button.secondary,.button.secondary{background:#fff;color:var(--main);border:1px solid var(--main)}button.warn-action{background:#9a5510}button.danger{background:#9b3326}button:disabled{opacity:.5;cursor:not-allowed}
     .project{border-left:5px solid var(--main)}.project[data-status="DRAFT"]{border-left-color:#7b8790}.project[data-status="CLOSED"]{border-left-color:#9a5510}.status{display:inline-block;padding:3px 9px;border-radius:999px;background:#dff3e7;color:#17653e;font-size:13px;font-weight:750}.status.reported{background:#fff0c8;color:#7e5000}.status.closed{background:#e9edef;color:#56616a}.bank{padding:12px;border:1px dashed #8aab9b;border-radius:10px;background:#f8fbf9;overflow-wrap:anywhere}.charge{padding:13px 0;border-top:1px solid #e2eae5}.charge:first-child{border-top:0}.charge-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.charge strong{overflow-wrap:anywhere}.code{font-size:28px;font-weight:800;letter-spacing:.18em;color:var(--blue);text-align:center;padding:10px;border:2px dashed #8da0d5;border-radius:11px;background:#f4f6ff}.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}.steps span{padding:9px;border-radius:9px;background:#edf2fb;text-align:center;font-weight:700;font-size:14px}.divider{border:0;border-top:1px solid var(--line);margin:18px 0}.loading{text-align:center;padding:48px;color:#5d6e66}.hidden{display:none!important}
     @media(max-width:720px){header{position:static}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.row{grid-template-columns:1fr}.steps{grid-template-columns:1fr}.charge-head{display:block}.charge-head .status{margin-top:5px}.actions button{flex:1 1 145px}h1{font-size:23px}}
+    .teacher-account-embedded{background:transparent}.teacher-account-embedded>header,.teacher-account-embedded .back,.teacher-account-embedded .hero{display:none}.teacher-account-embedded main{padding:0;max-width:none}.teacher-account-embedded .card{margin:0}
   </style>
 </head>
 <body>
@@ -24,6 +25,6 @@
     <div id="status" class="notice" role="status">正在讀取 LINE 綁定狀態…</div>
     <section id="lineBinding"></section>
   </main>
-  <script type="module" src="/fee-collections.js?v=20261124-parent-auto-menu"></script>
+  <script type="module" src="/fee-collections.js?v=20261124-teacher-account-return"></script>
 </body>
 </html>

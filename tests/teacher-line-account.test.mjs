@@ -7,14 +7,14 @@ const read=path=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
 const strip=source=>source.replace(/^import\s+[\s\S]*?;\r?\n/gm,"").replace(/^export /gm,"");
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[c]);
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
-function screen({role="privateTeacher",configured=true,reply={configured:true,bound:false,authProvider:"google"}}={}){
+function screen({role="privateTeacher",configured=true,reply={configured:true,bound:false,authProvider:"google"},search="",loader=false,legacyRedirect=false}={}){
  const state={me:{role,schoolId:"school-a",identityId:"teacher-sub",email:"teacher@example.invalid",capabilities:{lineAccount:configured}},page:"teacherHome"};
- let html="";const calls=[],assigned=[],events={};
- const document={visibilityState:"visible",getElementById:id=>id==="teacherLineAccount"&&html?{remove(){html=""}}:null,querySelector:()=>({insertAdjacentHTML(_,value){html+=value}}),addEventListener(name,fn){events[name]=fn}};
- const window={addEventListener(name,fn){events[name]=fn}};
- const context={state,document,window,location:{assign:url=>assigned.push(url)},esc,render(){html=""},api:async(path,options)=>{calls.push({path,options});return typeof reply==="function"?reply(path,options):reply}};
+ let html="";const calls=[],assigned=[],events={},storage=new Map(),app={innerHTML:""},frame={contentWindow:{},style:{}};
+ const document={visibilityState:"visible",getElementById:id=>id==="app"?app:id==="teacherLineAccountFrame"&&app.innerHTML.includes("teacherLineAccountFrame")?frame:id==="teacherLineAccount"&&html?{remove(){html=""}}:null,querySelector:()=>({insertAdjacentHTML(_,value){html+=value}}),addEventListener(name,fn){events[name]=fn}};
+ const window={__roleLoaderActive:loader,__roleModulesReady:!loader,addEventListener(name,fn){events[name]=fn}};
+ const context={state,document,window,URL,URLSearchParams,history:{replaceState(){}},sessionStorage:{getItem:key=>storage.get(key)||"",setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},location:{search,pathname:"/",hash:"",origin:"https://school-a.example.invalid",assign:url=>assigned.push(url)},shell:content=>"<header>老師身分選單</header>"+content,esc,render(){html="";if(legacyRedirect)state.page="private"},api:async(path,options)=>{calls.push({path,options});return typeof reply==="function"?reply(path,options):reply}};
  runInNewContext(read("app/teacher-line-account.js"),context);
- return {state,window,context,calls,assigned,events,html:()=>html};
+ return {state,window,context,calls,assigned,events,storage,app,frame,html:()=>html};
 }
 
 test("unbound authorized teachers see a Gmail-specific binding entry and start verified LINE OAuth",async()=>{
@@ -25,8 +25,36 @@ test("unbound authorized teachers see a Gmail-specific binding entry and start v
  assert.equal((h.html().match(/id="teacherLineAccount"/g)||[]).length,1);
  await h.window.teacherLineAccount.bind();
  assert.equal(h.calls[1].path,"/api/line/tenant-login/school-a/start");
- assert.deepEqual(JSON.parse(h.calls[1].options.body),{mode:"link"});
+ assert.deepEqual(JSON.parse(h.calls[1].options.body),{mode:"link",returnTo:"teacher-account"});
  assert.equal(h.assigned.length,1);
+ assert.equal(h.storage.get("teacher_line_account_return"),"school-a");
+});
+
+test("teacher callback opens only the same-school account frame and keeps the teacher shell",async()=>{
+ const h=screen({search:"?teacherLineAccount=school-a&line_link=confirm&line_error=verification"});
+ assert.equal(h.state.page,"teacherLineAccount");
+ assert.match(h.app.innerHTML,/老師身分選單/);assert.match(h.app.innerHTML,/返回教學首頁/);
+ const src=h.app.innerHTML.match(/src="([^"]+)"/)[1].replaceAll('&amp;','&'),query=new URL(src,'https://school-a.example.invalid').searchParams;
+ assert.equal(query.get('embedded'),'teacher');assert.equal(query.get('schoolId'),'school-a');assert.equal(query.get('line_link'),'confirm');
+ assert.equal(query.get('line_error'),'verification');assert.doesNotMatch(h.app.innerHTML,/學生姓名|送出綁定申請/);
+ const same=h.app.innerHTML;h.context.render();assert.equal(h.app.innerHTML,same);
+ h.events.message({origin:'https://evil.invalid',source:h.frame.contentWindow,data:{type:'teacher-line-account-height',height:900}});assert.equal(h.frame.style.height,undefined);
+ h.events.message({origin:h.context.location.origin,source:{},data:{type:'teacher-line-account-height',height:900}});assert.equal(h.frame.style.height,undefined);
+ h.events.message({origin:h.context.location.origin,source:h.frame.contentWindow,data:{type:'teacher-line-account-height',height:900}});assert.equal(h.frame.style.height,'900px');
+ const other=screen({search:'?teacherLineAccount=school-b&line_link=confirm'});await settle();assert.equal(other.state.page,'teacherHome');assert.equal(other.app.innerHTML,'');
+ const parent=screen({role:'parent',search:'?teacherLineAccount=school-a'});assert.equal(parent.app.innerHTML,'');
+});
+
+test("teacher binding rejects an unexpected authorization destination",async()=>{
+ const h=screen({reply:async(_path,options)=>options?{url:'https://evil.invalid/'}:{configured:true,bound:false,authProvider:'google'}});
+ await settle();await h.window.teacherLineAccount.bind();assert.equal(h.assigned.length,0);assert.equal(h.storage.has('teacher_line_account_return'),false);
+});
+
+test("teacher callback survives role-module loading without legacy render redirecting it to attendance",()=>{
+ const h=screen({search:'?teacherLineAccount=school-a&line_link=confirm',loader:true,legacyRedirect:true});
+ assert.equal(h.state.page,'teacherLineAccount');assert.match(h.app.innerHTML,/正在準備老師 LINE 綁定/);assert.doesNotMatch(h.app.innerHTML,/iframe/);
+ h.window.__roleLoaderActive=false;h.window.__roleModulesReady=true;h.context.render();
+ assert.equal(h.state.page,'teacherLineAccount');assert.match(h.app.innerHTML,/teacherLineAccountFrame/);
 });
 
 test("bound teacher status is kept in settings and removed from the teaching home",async()=>{

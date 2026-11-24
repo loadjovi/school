@@ -20,7 +20,7 @@ function harness({authProvider="line",role="parent",schoolId="school-a",authenti
 test("Google and LINE login can reuse complete child profiles from the same authorized access check",async()=>{
  for(const authProvider of ["google","line"]){
   const h=harness({authProvider}),response=await h.get("includeStudentProfiles=1&schoolId=other-school&studentId=unrelated-child");
-  assert.equal(response.status,200);assert.equal(h.accessReads,1);
+  assert.equal(response.status,200);assert.equal(h.accessReads,1);assert.equal(response.data.authProvider,authProvider);
   assert.deepEqual(response.data.studentProfiles,[child]);
   assert.equal(response.data.studentProfiles[0].grade,"四年級");assert.deepEqual(response.data.studentProfiles[0].studentIdAliases,["student1","old-id"]);
  }

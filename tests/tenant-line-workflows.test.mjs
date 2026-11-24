@@ -570,7 +570,7 @@ test("a new staff tab resumes a verified Google or LINE session only for the req
     const storage = new Map(), requests = [], profiles = [], loginScreens = [];
     const state = {token};
     const boot = runInNewContext(bootScript + ";boot", {
-      state, URLSearchParams, location:{search:""}, window:{getLineStaffEntry:()=>pending},
+      teacherLineAccountEntry:()=>"",state, URLSearchParams, location:{search:""}, window:{getLineStaffEntry:()=>pending},
       sessionStorage:{setItem:(key,value)=>storage.set(key,value)},
       fetch:async (url, options) => {
         requests.push({url, options});

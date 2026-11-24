@@ -1,4 +1,4 @@
-import {createLineAccountPanel} from "./line-account-panel.js?v=20261124-parent-auto-menu";
+import {createLineAccountPanel} from "./line-account-panel.js?v=20261124-teacher-account-return";
 import "./payment-resolution.js?v=20261122-single-parent-message";
 const accountOnly=document.documentElement.hasAttribute("data-line-account");
 const legacyLineEntry=!accountOnly&&(location.hash==="#lineBinding"||new URLSearchParams(location.search).has("line_link")||new URLSearchParams(location.search).has("line_error"));
@@ -22,11 +22,17 @@ function showStatus(message,type=""){$("status").textContent=message;$("status")
 function statusClass(status){return status==="REPORTED_UNVERIFIED"?"reported":status==="VERIFIED"?"":"closed"}
 
 let lineAccountPanel,accountEntryVersion=0;
+const teacherAccountRoles=new Set(['teacher','sectionTeacher','ensembleTeacher','comprehensiveTeacher','privateTeacher']);
+const teacherEmbedded=accountOnly&&new URLSearchParams(location.search).get('embedded')==='teacher';
+function teacherAccountMessage(type,extra={}){if(teacherEmbedded&&window.parent!==window)window.parent.postMessage({type,...extra},location.origin)}
 function accountEntryScope(){return ['school_context_id','role_context','google_id_token'].map(key=>sessionStorage.getItem(key)||'').join('|')}
 async function loadLineBinding(params){
   if(!accountOnly)return null;
   lineAccountPanel?.destroy();
-  lineAccountPanel=createLineAccountPanel({host:$("lineBinding"),api:(path,options)=>api(path.replace(/^\/api\//,""),options),me:state.me});
+  lineAccountPanel=createLineAccountPanel({host:$("lineBinding"),api:(path,options)=>api(path.replace(/^\/api\//,""),options),me:state.me,
+    returnTo:teacherAccountRoles.has(state.me.role)?'teacher-account':'account',
+    navigate:url=>{if(teacherEmbedded&&window.parent!==window){sessionStorage.setItem('teacher_line_account_return',state.me.schoolId);window.parent.location.assign(url)}else location.assign(url)},
+    onChanged:async()=>teacherAccountMessage('teacher-line-account-changed')});
   return lineAccountPanel.load(params);
 }
 
@@ -131,6 +137,10 @@ async function load(){
   const current=()=>!accountOnly||version===accountEntryVersion&&scope===accountEntryScope();
   try{
     const me=await api("me");if(!current())return;state.me=me;
+    if(teacherEmbedded){
+      if(!teacherAccountRoles.has(me.role)||me.schoolId!==new URLSearchParams(location.search).get('schoolId'))throw Error('請以此校老師身分重新開啟 LINE 綁定。');
+      document.body.classList.add('teacher-account-embedded');
+    }
     if(!["admin","parent","unassigned","teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me.role))throw new Error("請切換至此校已授權的身分。");
     $("siteName").textContent=state.me.systemName||state.me.schoolName||"學校平台";
     $("roleTitle").textContent=accountOnly?"LINE 通知設定":state.me.role==="admin"?"收費專案與匯款核帳":"繳費與核帳紀錄";
@@ -180,6 +190,11 @@ document.addEventListener("click",async event=>{
 });
 
 if(accountOnly){
+ if(teacherEmbedded){
+  const resize=()=>teacherAccountMessage('teacher-line-account-height',{height:Math.ceil(document.body.scrollHeight)});
+  if(typeof ResizeObserver==='function')new ResizeObserver(resize).observe(document.body);
+  window.addEventListener?.('load',resize);
+ }
  window.addEventListener?.('pagehide',()=>{accountEntryVersion++;lineAccountPanel?.destroy();lineAccountPanel=null;state.line=null});
  window.addEventListener?.('pageshow',event=>{if(event.persisted)void load()});
 }

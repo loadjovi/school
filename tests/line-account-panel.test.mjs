@@ -49,10 +49,10 @@ test('an unsupported role or missing account capability cannot start account req
  for(const options of [{role:'teacherUnknown'},{capability:false}]){const h=fixture(options);await h.panel.load();assert.equal(h.calls.length,0);assert.match(h.host.textContent,/尚未開啟|已授權的身分/);assert.equal(h.button('使用 LINE 授權並綁定'),undefined)}
 });
 test('OAuth starts only on action and requests the fixed notification-center destination when selected',async()=>{
- for(const returnTo of ['account','notification-center']){
+ for(const returnTo of ['account','notification-center','teacher-account']){
   const h=fixture({line:unbound,returnTo});await h.panel.load();await h.click('使用 LINE 授權並綁定');
   const call=h.calls.find(x=>x.method==='POST');assert.equal(call.path,'/api/line/tenant-login/school-a/start');
-  assert.deepEqual(call.body,returnTo==='notification-center'?{mode:'link',returnTo:'notification-center'}:{mode:'link'});
+  assert.deepEqual(call.body,returnTo!=='account'?{mode:'link',returnTo}:{mode:'link'});
   assert.deepEqual(h.navigation,['https://access.line.me/oauth2/v2.1/authorize?state=test']);
  }
 });
@@ -188,6 +188,31 @@ test('the actual standalone account entry reuses this panel without loading fina
  const feeSource=readFileSync(new URL('../app/fee-collections.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('if(!legacyLineEntry)load();','this.standaloneLoad=load;');
  runInNewContext(source+'\n'+feeSource,scope);await scope.standaloneLoad();
  assert.deepEqual(calls,['/api/me','/api/line/school-account']);assert.match(elements.lineBinding.textContent,/已連結 測試家長/);assert.equal(elements.status.hidden,true);assert.equal(elements.roleTitle.textContent,'LINE 通知設定');
+});
+
+test('the embedded teacher account reads the pending Gmail pair, confirms explicitly and returns OAuth through the teacher workspace',async()=>{
+ const elements=Object.fromEntries(['siteName','roleTitle','roleIntro','status','lineBinding'].map(id=>{const node=new Element();node.connected=true;return [id,node]}));
+ const calls=[],messages=[],navigation=[],storage=new Map([['school_context_id','school-a'],['role_context','teacher'],['google_id_token','teacher-google-token']]);
+ let account={...unbound,pendingLink:{confirmationId:'teacher-confirm',googleEmail:'teacher@example.test',lineDisplayName:'Wen'}};
+ const profile={authProvider:'google',role:'teacher',schoolId:'school-a',capabilities:{lineAccount:true}};
+ const scope={document:{body:{classList:{add(){}}},documentElement:{hasAttribute:()=>true},getElementById:id=>elements[id]||null,createElement:tag=>new Element(tag),addEventListener(){}},
+  window:{addEventListener(){},parent:{postMessage:(data,origin)=>messages.push({data,origin}),location:{assign:url=>navigation.push(url)}}},
+  location:{origin:'https://school-a.example.test',hash:'',search:'?embedded=teacher&schoolId=school-a&line_link=confirm',pathname:'/line-account.html'},history:{replaceState(){}},
+  sessionStorage:{getItem:key=>storage.get(key)||'',setItem:(key,value)=>storage.set(key,value)},URLSearchParams,URL,navigator:{userAgent:'Test'},console,
+  fetch:async(url,options)=>{const body=options.body&&JSON.parse(options.body);calls.push({url,method:options.method||'GET',body});
+   if(body?.action==='confirm-link'){account={...bound,lineDisplayName:'Wen'};return {ok:true,json:async()=>({...account,menuSync:{status:'synced',audience:'staff',areaCount:6}})}}
+   return {ok:true,json:async()=>url==='/api/me'?profile:url.includes('/tenant-login/')?{url:'https://access.line.me/oauth2/v2.1/authorize?state=teacher'}:account};
+  }};
+ const feeSource=readFileSync(new URL('../app/fee-collections.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('if(!legacyLineEntry)load();','this.standaloneLoad=load;');
+ runInNewContext(source+'\n'+feeSource,scope);await scope.standaloneLoad();
+ assert.deepEqual(calls.map(call=>call.url),['/api/me','/api/line/school-account']);assert.equal(calls.every(call=>call.method==='GET'),true);
+ assert.match(elements.lineBinding.textContent,/teacher@example.test/);assert.match(elements.lineBinding.textContent,/Wen/);assert.doesNotMatch(elements.lineBinding.textContent,/學生姓名|學號|送出綁定申請/);
+ await nodes(elements.lineBinding).find(node=>node.ownText==='確認綁定').handlers.click();
+ assert.equal(calls.filter(call=>call.method==='POST').length,1);assert.equal(calls.find(call=>call.method==='POST').body.action,'confirm-link');
+ assert.match(elements.lineBinding.textContent,/已完成此校 Gmail 與 LINE 綁定/);assert.equal(messages[0].data.type,'teacher-line-account-changed');
+ assert.equal(messages[0].origin,scope.location.origin);assert.equal(calls.some(call=>/projects|templates/.test(call.url)),false);
+ account=unbound;await scope.standaloneLoad();await nodes(elements.lineBinding).find(node=>node.ownText==='使用 LINE 授權並綁定').handlers.click();
+ assert.deepEqual(calls.at(-1).body,{mode:'link',returnTo:'teacher-account'});assert.equal(storage.get('teacher_line_account_return'),'school-a');assert.equal(navigation.length,1);
 });
 
 function standaloneFixture(){
