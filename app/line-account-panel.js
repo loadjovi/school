@@ -48,12 +48,12 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
     line=result;message='請核對 Gmail 與 LINE 名稱，再確認綁定。';return;
    }
    if(action==='sync'){
-    message=result.audience==='parent'?'已同步已核准家長的登入四宮格。':result.audience==='staff'?(result.chatActionsVerified?'LINE 已確認套用幹部六宮格。上排三格在聊天室回覆，下排三格開啟後台。':'LINE 已確認套用幹部／老師六宮格。'):result.audience==='default'?'目前使用預設三宮格；學生資料須完成家長／學生核准後開放。':'目前無法同步 LINE 選單。';
+    message=result.audience==='parent'?'已同步已核准家長選單。':result.audience==='staff'?(result.chatActionsVerified?'LINE 已確認套用幹部六宮格，上排三格可在聊天室查詢。':'LINE 已確認套用幹部／老師六宮格。'):result.audience==='default'?'目前使用預設三宮格；學生資料須完成家長／學生核准後開放。':'目前無法同步 LINE 選單。';
    }else{
     line=await api('/api/line/school-account');if(!valid()||version!==generation)return;
     callbackError='';callbackLink='';
     message=action==='confirm'?'已完成此校 Gmail 與 LINE 綁定。':action==='cancel'?'已取消此次綁定。':'已解除此校 LINE 綁定。';
-    if(action==='confirm'&&result.menuSync?.status==='synced')menuStatus=result.menuSync.audience==='parent'?'已依核准家長身分自動套用登入四宮格。':result.menuSync.audience==='staff'?'已依同校幹部與老師名冊自動套用六宮格。':'目前使用預設三宮格；學生資料須完成家長／學生核准後開放。';
+    if(action==='confirm'&&result.menuSync?.status==='synced')menuStatus=result.menuSync.audience==='parent'?'已依核准家長身分自動套用家長選單。':result.menuSync.audience==='staff'?'已依同校幹部與老師名冊自動套用六宮格。':'目前使用預設三宮格；學生資料須完成家長／學生核准後開放。';
     if(action==='confirm'&&result.menuSync?.status==='pending')menuStatus='帳號綁定已完成，選單尚未同步。'+(result.menuSync.message||'可按「同步我的 LINE 選單」重試。');
    }
    await changed(action);
@@ -94,7 +94,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
   host.append(make('p',(line.bound?'已連結 '+(line.lineDisplayName||'LINE'):'連結自己的 LINE，方便登入與接收通知。')+(line.googleLinked?' · 已連結 Gmail':'')));
   const actions=make('div');actions.className='actions';
   if(line.authProvider==='google'&&!line.bound)actions.append(button('使用 LINE 授權並綁定',()=>run('link')));
-  host.append(make('p','選單依同校身分自動判定：尚未綁定平台為預設三宮格，已登入且學生關係已核准的家長為四宮格，幹部／啟用中的老師為六宮格。學生資料僅依已核准關係開放；需要時可重試同步。'));
+  host.append(make('p','選單依同校身分自動判定：尚未綁定平台為預設三宮格，已核准家長啟用 Facebook 後為五格，幹部／啟用中的老師為六宮格。學生資料僅依已核准關係開放；需要時可重試同步。'));
   if(line.bound)actions.append(button('同步我的 LINE 選單',()=>run('sync',{action:'sync-menu'}),true));
   if(line.authProvider==='google'&&line.bound)actions.append(button('解除 LINE 綁定',()=>run('unbind',null,'確定解除此校 LINE 綁定？'),true));
   actions.append(button('更新綁定狀態',()=>load(),true));host.append(actions);

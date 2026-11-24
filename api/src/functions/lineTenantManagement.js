@@ -4,8 +4,10 @@ import {getAccess, json} from "../lib/auth.js";
 import {getTenantDirectory, tenantIdValue} from "../lib/storage.js";
 import {
   LineConfigError, resolveTenantLineChannel, saveTenantLineChannel, tenantWebhookLinks,
-  listTenantLineMenus, saveTenantLineMenus
+  listTenantLineMenus, saveTenantLineMenus, applyTenantLineMenuTemplates
 } from "../lib/lineTenantConfig.js";
+import {tenantFacebookSuggestion} from "../lib/lineFacebookConfig.js";
+import {LineMenuApplyError} from "../lib/lineMenuApply.js";
 
 function privateJson(body, status = 200) {
   const response = json(body, status);
@@ -38,6 +40,7 @@ app.http("tenantLineChannelConfig", {
         schoolId, status: channel.status, legacy: channel.legacy, acceptsLegacy: channel.acceptsLegacy,
         messagingConfigured: channel.configured, channelSecretConfigured: channel.hasSecret,
         accessTokenConfigured: channel.hasToken, loginConfigured: channel.loginConfigured,
+        facebookUrl: channel.facebookUrl || "", facebookSuggestedUrl: tenantFacebookSuggestion(schoolId),
         loginCallback: channel.loginConfigured ? channel.appOrigin + "/api/line/tenant-login/" + schoolId + "/callback" : "",
         ...tenantWebhookLinks(channel)
       });
@@ -45,6 +48,30 @@ app.http("tenantLineChannelConfig", {
       if (error instanceof LineConfigError) return privateJson({error: error.message}, 409);
       console.error("Tenant LINE config failed", {schoolId, status: error?.statusCode});
       return privateJson({error: "LINE 設定處理失敗"}, 500);
+    }
+  }
+});
+
+app.http("tenantLineMenuApply", {
+  methods: ["POST"], authLevel: "anonymous", route: "line/tenant-config/{schoolId}/menus/apply",
+  handler: async request => {
+    const access = await getAccess(request);
+    if (!access.authenticated) return privateJson({error: "Unauthorized"}, 401);
+    if (access.capabilities?.globalAdmin !== true) return privateJson({error: "Global Admin 權限不足"}, 403);
+    const schoolId = request.params.schoolId;
+    if (!schoolId || tenantIdValue(schoolId) !== schoolId) return privateJson({error: "學校不存在"}, 404);
+    try {
+      if (!await getTenantDirectory(schoolId)) return privateJson({error: "學校不存在"}, 404);
+      let body;
+      try { body = await request.json(); } catch { return privateJson({error: "JSON 格式不正確"}, 400); }
+      if (!body || Array.isArray(body) || typeof body.facebookUrl !== "string" || Object.keys(body).length !== 1) {
+        return privateJson({error: "僅接受 Facebook 網址"}, 400);
+      }
+      return privateJson(await applyTenantLineMenuTemplates(schoolId, body.facebookUrl, access.email));
+    } catch (error) {
+      if (error instanceof LineConfigError || error instanceof LineMenuApplyError) return privateJson({error: error.message}, 409);
+      console.error("Tenant LINE menu apply failed", {schoolId, status: error?.statusCode});
+      return privateJson({error: "新版選單套用失敗，原有選單設定仍保留，請稍後重試。"}, 500);
     }
   }
 });

@@ -1,4 +1,5 @@
 import {lineApi} from "./lineMessaging.mjs";
+import {tenantFacebookUrl} from "./lineFacebookConfig.js";
 
 const richMenuId = /^richmenu-[a-f0-9]{32}$/i;
 const staffTargets = ["staff_today_courses", "staff_activity_calendar", "staff_announcements", "staff_attendance", "staff_todos", "staff_portal"];
@@ -8,13 +9,31 @@ const parentQueryKeys = new Set(["schoolId", "openExternalBrowser", "openInAppBr
 
 function orderedGrid(menu, audience) {
   const {width, height} = menu?.size || {};
-  const count = audience === "parent" ? 4 : 6;
+  const counts = audience === "parent" ? [4, 5] : [6];
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 ||
-      !Array.isArray(menu.areas) || menu.areas.length !== count) return null;
+      !Array.isArray(menu.areas) || !counts.includes(menu.areas.length)) return null;
   const areas = [...menu.areas];
   if (areas.some(area => !area?.bounds || ["x", "y", "width", "height"].some(key => !Number.isInteger(area.bounds[key])) ||
       area.bounds.x < 0 || area.bounds.y < 0 || area.bounds.width <= 0 || area.bounds.height <= 0)) return null;
   areas.sort((a, b) => a.bounds.y - b.bounds.y || a.bounds.x - b.bounds.x);
+  if (audience === "parent" && areas.length === 5) {
+    // Parent menu with Facebook: three query buttons above two portal buttons.
+    let y = 0;
+    const heights = [];
+    for (const row of [areas.slice(0, 3), areas.slice(3)]) {
+      let x = 0;
+      for (const area of row) {
+        const bounds = area.bounds;
+        if (bounds.x !== x || bounds.y !== y || bounds.height !== row[0].bounds.height ||
+            Math.abs(bounds.width - width / row.length) > 1 || Math.abs(bounds.height - height / 2) > 1) return null;
+        x += bounds.width;
+      }
+      if (x !== width) return null;
+      heights.push(row[0].bounds.height);
+      y += row[0].bounds.height;
+    }
+    return y === height && Math.abs(heights[0] - heights[1]) <= 1 ? areas : null;
+  }
   const layouts = audience === "parent" ? [[2, 2], [4, 1], [1, 4]] : [[3, 2]];
   const fits = ([columns, rows]) => {
     if (width < columns || height < rows) return false;
@@ -53,6 +72,9 @@ function normalizedUrl(url) {
 }
 
 function uriAction(action, channel, target) {
+  // Menu metadata is created before an apply transaction commits. Ignore
+  // Facebook candidates until the school has a valid, active redirect target.
+  if (target === "facebook" && !tenantFacebookUrl(channel.facebookUrl)) return null;
   if (action?.type !== "uri" || typeof action.uri !== "string") return null;
   const values = [action.uri];
   if (action.altUri !== undefined) {
@@ -62,7 +84,11 @@ function uriAction(action, channel, target) {
   const urls = values.map(value => sameSchoolUrl(value, channel));
   if (urls.some(url => !url)) return null;
   for (const url of urls) {
-    if (target) {
+    if (target === "facebook") {
+      if (url.pathname !== "/api/line/facebook/" + encodeURIComponent(channel.schoolId) ||
+          url.searchParams.getAll("openExternalBrowser").length !== 1 || url.searchParams.get("openExternalBrowser") !== "1" ||
+          [...url.searchParams.keys()].some(key => key !== "openExternalBrowser")) return null;
+    } else if (target) {
       if (!["/", "/index.html"].includes(url.pathname) || url.searchParams.getAll("line_menu").length !== 1 ||
           url.searchParams.get("line_menu") !== target || url.searchParams.getAll("schoolId").length !== 1 ||
           [...url.searchParams.keys()].some(key => !staffQueryKeys.has(key))) return null;
@@ -81,30 +107,43 @@ function compatibleMenu(menu, channel, audience) {
   const areas = orderedGrid(menu, audience);
   if (!areas) return null;
   const actions = [];
-  let legacy = false;
+  let legacy = false, facebook = false;
+  const parentQueries = new Set();
   for (let index = 0; index < areas.length; index++) {
     const action = areas[index].action;
     if (index < 3) {
       const text = typeof action?.text === "string" ? action.text.trim() : "";
-      const expected = (audience === "staff" ? "#幹部" : "") + queryLabels[index];
-      if (action?.type === "message" && (text === expected || audience === "parent" && text === "#" + expected)) {
+      if (audience === "parent") {
+        const query = text.startsWith("#") ? text.slice(1) : text;
+        if (action?.type !== "message" || !queryLabels.includes(query) || parentQueries.has(query)) return null;
+        parentQueries.add(query);actions.push({type: "message", text: query});
+        continue;
+      }
+      const expected = "#幹部" + queryLabels[index];
+      if (action?.type === "message" && text === expected) {
         actions.push({type: "message", text: expected});
         continue;
       }
-      if (audience !== "staff") return null;
       const uri = uriAction(action, channel, staffTargets[index]);
       if (!uri) return null;
       legacy = true;
       actions.push(uri);
     } else {
-      const uri = uriAction(action, channel, audience === "staff" ? staffTargets[index] : undefined);
+      const facebookSlot = audience === "staff" && index === 5 || audience === "parent" && index === 4;
+      let uri = facebookSlot ? uriAction(action, channel, "facebook") : null;
+      if (uri) facebook = true;
+      else if (audience === "parent" && index === 4) return null;
+      else uri = uriAction(action, channel, audience === "staff" ? staffTargets[index] : undefined);
       if (!uri) return null;
       actions.push(uri);
     }
   }
   // Mixed legacy/chat top rows are not a known platform template.
   if (legacy && actions.slice(0, 3).some(action => action.type !== "uri")) return null;
-  return {id: menu.richMenuId, priority: legacy ? 1 : 0, signature: JSON.stringify({size: [menu.size.width, menu.size.height],
+  // An apply can expose metadata before its transaction commits and may then
+  // remove failed assets. Only committed role IDs may activate an FB variant.
+  if (facebook && menu.richMenuId !== (audience === "staff" ? channel.staffMenuId : channel.parentMenuId)) return null;
+  return {id: menu.richMenuId, priority: (legacy ? 2 : 0) + (facebook ? 0 : 1), signature: JSON.stringify({size: [menu.size.width, menu.size.height],
     areas: areas.map((area, index) => ({bounds: [area.bounds.x, area.bounds.y, area.bounds.width, area.bounds.height], action: actions[index]}))})};
 }
 

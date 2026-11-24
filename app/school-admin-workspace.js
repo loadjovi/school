@@ -180,7 +180,7 @@
  }
  function serviceEntryUrl(service,href){
   const config=workspaceServices[service];if(!config||!schoolServiceAllowed(service))return null;
-  const url=new URL(config.path,location.origin),query=new URLSearchParams({embedded:'school',workspaceService:service,workspaceSchool:state.me.schoolId,v:'20261124-auto-role-menus'});
+  const url=new URL(config.path,location.origin),query=new URLSearchParams({embedded:'school',workspaceService:service,workspaceSchool:state.me.schoolId,v:'20261124-facebook-menus'});
   if(href){
    let source;try{source=new URL(href,location.origin)}catch{return null}
    if(source.origin!==location.origin||source.pathname!==config.path)return null;

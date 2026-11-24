@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
+import {tenantFacebookUrl, tenantFacebookMenuUrl} from "../api/src/lib/lineFacebookConfig.js";
 
 const source = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const load = (path, globals, result) => runInNewContext(
@@ -32,7 +33,7 @@ function fixture(options = {}) {
     ...options.row
   };
   const rows = new Map(options.noRow ? [] : [[initialRow.rowKey, initialRow]]);
-  const calls = [], writes = [], definitions = options.definitions || new Map([[parentId, menu(parentId)], [staffId, menu(staffId)]]);
+  const calls = [], writes = [], applyCalls = [], definitions = options.definitions || new Map([[parentId, menu(parentId)], [staffId, menu(staffId)]]);
   const client = {
     async getEntity(partition, key) {
       if (!rows.has(key)) throw Object.assign(Error("missing"), {statusCode: 404});
@@ -53,6 +54,8 @@ function fixture(options = {}) {
     }
   };
   const api = load("api/src/lib/lineTenantConfig.js", {
+    tenantFacebookUrl, tenantFacebookMenuUrl,
+    applyTenantLineMenus: async input => {applyCalls.push(input); return {schoolId: input.schoolId, facebookUrl: input.facebookUrl, parentMenuId: parentId, staffMenuId: staffId, applied: true};},
     createHash, URL, process: {env}, defaultTenantId: () => "sacred-heart", tenantSchoolPartition: String,
     getTenantDirectory: async () => ({status: options.tenantStatus || "active"}),
     TableClient: {fromConnectionString: () => client},
@@ -67,9 +70,62 @@ function fixture(options = {}) {
       if (!definitions.has(id)) throw Object.assign(Error("foreign account"), {status: 404});
       return definitions.get(id);
     }
-  }, ";({listTenantLineMenus,saveTenantLineMenus,resolveTenantLineChannel,saveTenantLineChannel,LineConfigError})");
-  return {api, env, rows, calls, writes, definitions};
+  }, ";({listTenantLineMenus,saveTenantLineMenus,resolveTenantLineChannel,saveTenantLineChannel,applyTenantLineMenuTemplates,LineConfigError})");
+  return {api, env, rows, calls, writes, definitions, applyCalls};
 }
+
+test("Facebook template apply validates the address and uses only this active school's verified configuration", async () => {
+  const f = fixture(), facebookUrl = "https://www.facebook.com/groups/school-a/";
+  const result = await f.api.applyTenantLineMenuTemplates(schoolId, facebookUrl, "global@example.invalid");
+  assert.equal(result.applied, true); assert.equal(f.applyCalls.length, 1);
+  assert.equal(f.applyCalls[0].channel.schoolId, schoolId); assert.equal(f.applyCalls[0].channel.botUserId, botId);
+  assert.equal(f.applyCalls[0].configRow.etag, "v1"); assert.equal(f.applyCalls[0].facebookUrl, facebookUrl);
+  assert.equal(f.writes.length, 0);
+  for (const address of ["http://www.facebook.com/example", "https://facebook.com.evil.invalid/", "javascript:alert(1)", ""]) {
+    await assert.rejects(f.api.applyTenantLineMenuTemplates(schoolId, address, "global"), /Facebook/);
+  }
+  assert.equal(f.applyCalls.length, 1);
+  const disabled = fixture({row: {status: "disabled"}});
+  await assert.rejects(disabled.api.applyTenantLineMenuTemplates(schoolId, facebookUrl, "global"), /先驗證並啟用/);
+  assert.equal(disabled.applyCalls.length, 0);
+});
+
+test("Facebook family five-entry menus require this school's activated redirect while legacy four entries remain valid", async () => {
+  const facebookUrl = "https://www.facebook.com/groups/school-a/";
+  const five = menu(parentId, undefined, 5);
+  five.areas[4].action = {type: "uri", uri: origin + "/api/line/facebook/school-a?openExternalBrowser=1"};
+  const f = fixture({row: {facebookUrl}, definitions: new Map([[parentId, five], [staffId, menu(staffId)]])});
+  const choices = await f.api.listTenantLineMenus(schoolId);
+  assert.equal(choices.facebookUrl, facebookUrl); assert.equal(choices.menus[0].parentSelectable, true);
+  await f.api.saveTenantLineMenus(schoolId, {parentMenuId: parentId, staffMenuId: staffId}, "global");
+  assert.equal(f.writes.length, 1);
+  const notActivated = fixture({definitions: new Map([[parentId, five], [staffId, menu(staffId)]])});
+  await assert.rejects(notActivated.api.saveTenantLineMenus(schoolId, {parentMenuId: parentId, staffMenuId: staffId}, "global"), /Facebook/);
+  const foreign = structuredClone(five); foreign.areas[4].action.uri = origin + "/api/line/facebook/school-b?openExternalBrowser=1";
+  const other = fixture({row: {facebookUrl}, definitions: new Map([[parentId, foreign], [staffId, menu(staffId)]])});
+  await assert.rejects(other.api.saveTenantLineMenus(schoolId, {parentMenuId: parentId, staffMenuId: staffId}, "global"), /Facebook/);
+});
+
+test("school Facebook addresses survive channel reverification and replacement without inheriting old menu IDs", async () => {
+  const facebookUrl = "https://www.facebook.com/groups/school-a/";
+  for (const botIdChange of [botId, otherBot]) {
+    const f = fixture({botId: botIdChange, row: {facebookUrl, menuBotUserId: botId, menuAppOrigin: origin, parentMenuId: parentId, staffMenuId: staffId, menuTemplateVersion: "facebook-v1", menuApplyOperationId: "old-operation"}});
+    await f.api.saveTenantLineChannel(schoolId, "active", "global");
+    const row = f.rows.get("school-school-a"); assert.equal(row.facebookUrl, facebookUrl);
+    assert.equal((await f.api.resolveTenantLineChannel(schoolId)).facebookUrl, facebookUrl);
+    assert.equal(row.menuTemplateVersion, botIdChange === botId ? "facebook-v1" : undefined);
+  }
+});
+
+test("advanced menu selection cannot adopt an asset while a Global apply operation still owns its lease", async () => {
+  const f = fixture();
+  f.rows.set("menu-apply-" + schoolId, {partitionKey: "line", rowKey: "menu-apply-" + schoolId, operationId: "applying", leaseExpiresAt: new Date(Date.now() + 90000).toISOString(), etag: "lease"});
+  await assert.rejects(f.api.saveTenantLineMenus(schoolId, {parentMenuId: parentId, staffMenuId: staffId}, "global"), /正在套用/);
+  assert.equal(f.calls.length, 0); assert.equal(f.writes.length, 0);
+  f.rows.get("menu-apply-" + schoolId).leaseExpiresAt = new Date(Date.now() - 1000).toISOString();
+  await f.api.saveTenantLineMenus(schoolId, {parentMenuId: parentId, staffMenuId: staffId}, "global");
+  assert.equal(f.writes.length, 1);
+});
 
 test("Global menu discovery exposes safe display metadata from the selected school's token without changing LINE", async () => {
   const f = fixture();

@@ -1,6 +1,7 @@
 import {defaultTenantId, getMappedStudentsByEmail, getTeacherDirectory, listTenantRolesByEmail} from "./storage.js";
 import {lineApi} from "./lineMessaging.mjs";
 import {discoverTenantLineRoleMenu} from "./tenantLineMenuDiscovery.js";
+import {tenantFacebookUrl} from "./lineFacebookConfig.js";
 
 export async function tenantLineParentStudents(schoolId, parentEmail) {
   if (!parentEmail) return [];
@@ -53,19 +54,34 @@ export async function refreshTenantLineMenu(channel, account, userId = account?.
       if (error.status === 404) throw new LineMenuSyncError("此校官方帳號找不到已設定的選單，請核對選單 ID。");
       throw error;
     }
-    const areaCount = role === "staff" ? 6 : 4;
-    if (!Array.isArray(definition.areas) || definition.areas.length !== areaCount) {
-      throw new LineMenuSyncError(role === "staff" ? "幹部與老師的選單須使用六宮格，請核對選單版型。" : "已確認家長學生關係，但家長四宮格版型不符；不需重新綁定帳號。");
+    if (!Array.isArray(definition.areas) || !(role === "staff" ? definition.areas.length === 6 : [4, 5].includes(definition.areas.length))) {
+      throw new LineMenuSyncError(role === "staff" ? "幹部與老師的選單須使用六宮格，請核對選單版型。" : "已確認家長學生關係，但家長四格或含 Facebook 的五格版型不符；不需重新綁定帳號。");
     }
     if (channel.appOrigin) for (const area of definition.areas) {
       if (area.action?.type !== "uri") continue;
       for (const value of [area.action.uri, ...(area.action.altUri?.desktop === undefined ? [] : [area.action.altUri.desktop])]) {
         let url;
         try { url = new URL(value); } catch { throw new LineMenuSyncError("選單連結不正確，請由管理員核對選單版型。"); }
-        if (url.username || url.password || url.origin !== channel.appOrigin || url.searchParams.getAll("schoolId").some(id => id !== schoolId)) {
+        if (url.username || url.password || url.origin !== channel.appOrigin || url.searchParams.getAll("schoolId").some(id => id !== schoolId) ||
+            url.pathname.startsWith("/api/line/facebook/") && url.pathname !== "/api/line/facebook/" + encodeURIComponent(schoolId)) {
           throw new LineMenuSyncError("選單連結不屬於此校目前的平台，請由管理員核對正式版型。");
         }
+        if (url.pathname.startsWith("/api/line/facebook/") && !tenantFacebookUrl(channel.facebookUrl)) {
+          throw new LineMenuSyncError("此校 Facebook 活動影音尚未啟用，請由管理員套用新版選單。");
+        }
       }
+    }
+    if (role === "parent" && definition.areas.length === 5) {
+      const facebook = definition.areas.some(area => {
+        if (area.action?.type !== "uri") return false;
+        try {
+          const url = new URL(area.action.uri);
+          return url.origin === channel.appOrigin && url.pathname === "/api/line/facebook/" + encodeURIComponent(schoolId) &&
+            !url.hash && url.searchParams.getAll("openExternalBrowser").length === 1 && url.searchParams.get("openExternalBrowser") === "1" &&
+            [...url.searchParams.keys()].every(key => key === "openExternalBrowser");
+        } catch { return false; }
+      });
+      if (!facebook) throw new LineMenuSyncError("家長五格選單缺少此校 Facebook 入口，請核對新版選單。");
     }
     if (role === "staff" && schoolId === defaultTenantId() && process.env.LAB_ENVIRONMENT === "functional-uat") {
       if (!Array.isArray(definition.areas) || definition.areas.length !== 6) {
@@ -87,7 +103,7 @@ export async function refreshTenantLineMenu(channel, account, userId = account?.
     if (menuId || error.status !== 404) throw error;
   }
   if (parentTemplateMissing) {
-    if (verify) throw new LineMenuSyncError("已確認家長學生關係，但家長四宮格版型尚未準備完成；不需重新綁定帳號。");
+    if (verify) throw new LineMenuSyncError("已確認家長學生關係，但家長選單版型尚未準備完成；不需重新綁定帳號。");
     return "unavailable";
   }
   if (!verify || !menuId) return menuId ? role : "default";

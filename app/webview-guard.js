@@ -122,7 +122,7 @@
       "/school-access.js?v=20261027-school-followup",
       "/school-access-audit-admin.js?v=20261017-simple-records",
       "/school-admin-activity.js?v=20261025-restore",
-      "/school-access-refresh-fix.js?v=20261124-auto-role-menus",
+      "/school-access-refresh-fix.js?v=20261124-facebook-menus",
       "/training-attendance.js?v=20261102-activity-boundary"
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
@@ -142,7 +142,7 @@
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20261027-school-followup",
-      "/school-access-refresh-fix.js?v=20261124-auto-role-menus"
+      "/school-access-refresh-fix.js?v=20261124-facebook-menus"
     ];
     if(role==="school")return ["/school-access.js?v=20261027-school-followup"];
     if(role==="parent")return [
@@ -159,7 +159,7 @@
     if(role==="globalAdmin")return [
       "/school-access.js?v=20261027-school-followup",
       "/school-access-audit-admin.js?v=20261017-simple-records",
-      "/school-access-refresh-fix.js?v=20261124-auto-role-menus"
+      "/school-access-refresh-fix.js?v=20261124-facebook-menus"
     ];
     return [];
   }
@@ -170,7 +170,7 @@
     }
   }
   function roleScriptList(){
-    return [...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261124-auto-role-menus","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
+    return [...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261124-facebook-menus","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
   }
   window.preloadRoleModules=()=>{
     if(typeof state!=="undefined"&&["parent","admin"].includes(state.me?.role))preloadScripts(roleScriptList());

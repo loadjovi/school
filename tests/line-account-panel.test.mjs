@@ -77,7 +77,7 @@ test('syncing the personal menu retains staff response semantics without changin
 });
 test('bound teachers can retry automatic menu sync without receiving an additional role grant',async()=>{
  for(const role of ['teacher','sectionTeacher','ensembleTeacher','comprehensiveTeacher','privateTeacher']){
-  const h=fixture({role});await h.panel.load();assert.match(h.host.textContent,/依同校身分自動判定/);assert.match(h.host.textContent,/尚未綁定平台為預設三宮格/);assert.match(h.host.textContent,/學生關係已核准的家長為四宮格/);assert.match(h.host.textContent,/老師為六宮格/);
+  const h=fixture({role});await h.panel.load();assert.match(h.host.textContent,/依同校身分自動判定/);assert.match(h.host.textContent,/尚未綁定平台為預設三宮格/);assert.match(h.host.textContent,/已核准家長啟用 Facebook 後為五格/);assert.match(h.host.textContent,/老師為六宮格/);
   assert.equal(h.calls.some(call=>call.method!=='GET'),false);
   await h.click('同步我的 LINE 選單');assert.equal(h.calls.filter(call=>call.method==='POST').length,1);assert.deepEqual(h.calls.at(-1).body,{action:'sync-menu'});
  }
@@ -91,14 +91,14 @@ test('confirmation keeps binding success separate from automatic menu sync succe
   assert.match(h.host.textContent,/已完成此校 Gmail 與 LINE 綁定/);assert.ok(h.button('同步我的 LINE 選單'));assert.ok(h.button('解除 LINE 綁定'));
   assert.doesNotMatch(h.host.textContent,/操作未完成|重新授權|重新綁定/);
   if(menuSync.status==='pending')assert.match(h.host.textContent,/帳號綁定已完成，選單尚未同步。選單服務暫時忙碌/);
-  else assert.match(h.host.textContent,menuSync.audience==='parent'?/依核准家長身分自動套用登入四宮格/:menuSync.audience==='staff'?/依同校幹部與老師名冊自動套用六宮格/:/目前使用預設三宮格；學生資料須完成家長／學生核准後開放/);
+  else assert.match(h.host.textContent,menuSync.audience==='parent'?/依核准家長身分自動套用家長選單/:menuSync.audience==='staff'?/依同校幹部與老師名冊自動套用六宮格/:/目前使用預設三宮格；學生資料須完成家長／學生核准後開放/);
  }
 });
-test('sync feedback distinguishes approved-parent four-grid from the default three-grid',async()=>{
+test('sync feedback distinguishes approved-parent functions from the default three-grid',async()=>{
  for(const audience of ['parent','default']){
   const h=fixture({role:'parent',apiOverride:(_path,_options,body)=>body?.action==='sync-menu'?{audience}:undefined});
   await h.panel.load();await h.click('同步我的 LINE 選單');
-  assert.match(h.host.textContent,audience==='parent'?/已同步已核准家長的登入四宮格/:/目前使用預設三宮格；學生資料須完成家長／學生核准後開放/);
+  assert.match(h.host.textContent,audience==='parent'?/已同步已核准家長選單/:/目前使用預設三宮格；學生資料須完成家長／學生核准後開放/);
  }
 });
 test('an in-flight mutation cannot be submitted twice and late scope changes clear private identity text',async()=>{

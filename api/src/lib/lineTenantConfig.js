@@ -2,6 +2,8 @@ import {createHash} from "node:crypto";
 import {TableClient} from "@azure/data-tables";
 import {defaultTenantId, getTenantDirectory, tenantSchoolPartition} from "./storage.js";
 import {lineApi} from "./lineMessaging.mjs";
+import {tenantFacebookUrl, tenantFacebookMenuUrl} from "./lineFacebookConfig.js";
+import {applyTenantLineMenus} from "./lineMenuApply.js";
 
 const partitionKey = "line";
 const buildEnablesLabPaymentNotifications = false;
@@ -129,6 +131,8 @@ function resolveChannel(id, tenant, row) {
     oauthVersion: loginConfigured ? fingerprint(row.botUserId + loginFingerprint) : "",
     parentMenuId: menuOverride ? row.parentMenuId || "" : parentMenuId,
     staffMenuId: menuOverride ? row.staffMenuId || "" : staffMenuId,
+    facebookUrl: typeof row?.facebookUrl === "string" ? row.facebookUrl : "",
+    menuTemplateVersion: menuOverride ? row.menuTemplateVersion || "" : "",
     paymentLineEnabled, paymentRequestLineEnabled, financeTransferLineEnabled, paymentConfirmationLineEnabled
   };
 }
@@ -208,10 +212,13 @@ export async function saveTenantLineChannel(schoolId, status, actor) {
   // Menu IDs belong to one official account. Reverification may rotate a token,
   // but changing the official account must never inherit its predecessor's menu.
   if (old?.menuBotUserId && old.menuBotUserId === old.botUserId && old.botUserId === row.botUserId) {
-    for (const key of ["menuBotUserId", "menuAppOrigin", "parentMenuId", "staffMenuId", "menuUpdatedBy", "menuUpdatedAt"]) {
+    for (const key of ["menuBotUserId", "menuAppOrigin", "parentMenuId", "staffMenuId", "menuUpdatedBy", "menuUpdatedAt", "menuTemplateVersion", "menuApplyOperationId"]) {
       if (old[key] !== undefined) row[key] = old[key];
     }
   }
+  // The school community address is not a credential or official-account ID.
+  // Preserve it for this school even when its LINE channel is replaced.
+  if (typeof old?.facebookUrl === "string") row.facebookUrl = old.facebookUrl;
   actions.push(old ? ["update", row, "Replace", {etag: old.etag}] : ["create", row]);
   try {
     await client.submitTransaction(actions);
@@ -226,9 +233,16 @@ export async function saveTenantLineChannel(schoolId, status, actor) {
 const richMenuIdPattern = /^richmenu-[a-f0-9]{32}$/;
 
 function menuValidationError(menu, channel, audience = "staff") {
-  const areaCount = audience === "parent" ? 4 : 6;
-  if (!Array.isArray(menu?.areas) || menu.areas.length !== areaCount) {
-    return audience === "parent" ? "已登入家長選單須使用四宮格" : "幹部與老師選單須使用六宮格";
+  const allowedCounts = audience === "parent" ? [4, 5] : [6];
+  if (!Array.isArray(menu?.areas) || !allowedCounts.includes(menu.areas.length)) {
+    return audience === "parent" ? "家長選單須使用原有四宮格或含 Facebook 的五個入口" : "幹部與老師選單須使用六宮格";
+  }
+  if (audience === "parent" && menu.areas.length === 5) {
+    const facebook = menu.areas[4]?.action;
+    if (!tenantFacebookUrl(channel.facebookUrl) || facebook?.type !== "uri" || facebook.uri !== tenantFacebookMenuUrl(channel) ||
+        facebook.altUri && facebook.altUri.desktop !== tenantFacebookMenuUrl(channel)) {
+      return "家長第五個入口須連到此校已啟用的 Facebook 活動影音";
+    }
   }
   for (const area of menu.areas) {
     const action = area?.action;
@@ -293,7 +307,7 @@ async function availableMenuChoices(channel) {
 export async function listTenantLineMenus(schoolId) {
   const {id, channel} = await managedMenuChannel(schoolId);
   return {
-    schoolId: id, parentMenuId: channel.parentMenuId, staffMenuId: channel.staffMenuId,
+    schoolId: id, parentMenuId: channel.parentMenuId, staffMenuId: channel.staffMenuId, facebookUrl: channel.facebookUrl,
     menus: await availableMenuChoices(channel)
   };
 }
@@ -306,6 +320,10 @@ export async function saveTenantLineMenus(schoolId, selection, actor) {
   }
   if (parentMenuId === staffMenuId) throw new LineConfigError("家長與幹部選單必須使用不同的選單");
   const {id, client, row, channel} = await managedMenuChannel(schoolId);
+  const applyLease = await read(client, "menu-apply-" + id);
+  if (applyLease && (!Number.isFinite(Date.parse(applyLease.leaseExpiresAt || "")) || Date.parse(applyLease.leaseExpiresAt) > Date.now())) {
+    throw new LineConfigError("此校新版選單正在套用，請稍後再調整版型設定");
+  }
   await Promise.all([["parent", parentMenuId], ["staff", staffMenuId]].filter(([, richMenuId]) => richMenuId).map(async ([audience, richMenuId]) => {
     let menu;
     try {
@@ -330,7 +348,15 @@ export async function saveTenantLineMenus(schoolId, selection, actor) {
     if ([404, 409, 412].includes(error.statusCode)) throw new LineConfigError("設定已變更，請重新載入再試");
     throw error;
   }
-  return {schoolId: id, parentMenuId, staffMenuId, menus};
+  return {schoolId: id, parentMenuId, staffMenuId, facebookUrl: channel.facebookUrl, menus};
+}
+
+export async function applyTenantLineMenuTemplates(schoolId, facebookUrl, actor) {
+  const validatedUrl = tenantFacebookUrl(facebookUrl);
+  if (!validatedUrl) throw new LineConfigError("請輸入有效的 HTTPS Facebook 粉專或社團網址");
+  const {id, client, row, channel} = await managedMenuChannel(schoolId);
+  if (!row.etag || !channel.appOrigin) throw new LineConfigError("請先重新驗證此校 LINE 設定，再套用新版選單");
+  return applyTenantLineMenus({schoolId: id, facebookUrl: validatedUrl, actor, channel, configRow: row, configClient: client});
 }
 
 export function lineTargetMatchesChannel(target, channel) {
