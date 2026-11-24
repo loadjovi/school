@@ -83,7 +83,7 @@ async function handleLineWebhook(request,schoolId,legacyRoute){
         if(staffKind){
           if(userId){
             const account=await getTenantLineAccount(schoolId,botUserId,userId);
-            await replyLineMessage(event.replyToken,await tenantLineStaffReply(staffKind,schoolId,account),options);
+            await replyLineMessage(event.replyToken,await tenantLineStaffReply(staffKind,schoolId,account,undefined,{cards:true}),options);
             // Re-check the current roster even when a former administrator taps
             // an old staff menu. The reply above keeps its independent auth gate.
             await reconcileLineMenu(channel,account,userId);
@@ -93,7 +93,7 @@ async function handleLineWebhook(request,schoolId,legacyRoute){
         const replyKind=channel.loginConfigured && tenantLineReplyKind(event.message.text);
         if(replyKind){
           const account=userId?await getTenantLineAccount(schoolId,botUserId,userId):null;
-          const text=userId?await tenantLineParentReply(replyKind,schoolId,account):"請到此校 LINE 官方帳號的一對一聊天室查詢。";
+          const text=userId?await tenantLineParentReply(replyKind,schoolId,account,undefined,{cards:true}):"請到此校 LINE 官方帳號的一對一聊天室查詢。";
           await replyLineMessage(event.replyToken,text,options);
           if(userId)await refreshTenantLineMenu(channel,account,userId);
           continue;

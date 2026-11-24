@@ -55,10 +55,31 @@ export async function lineApi(path,{method="POST",body,accessToken,retryKey,time
   try{return JSON.parse(responseText)}catch{return {}}
 }
 
+export function normalizeLineReplyMessage(value){
+  if(value?.type!=="flex")return {type:"text",text:String(value||"").slice(0,5000)};
+  const fallback={type:"text",text:String(value.fallbackText||value.altText||"請重新查詢目前資料。").slice(0,5000)};
+  const contents=value.contents,bubbles=contents?.type==="bubble"?[contents]:contents?.type==="carousel"?contents.contents:null;
+  if(!Array.isArray(bubbles)||!bubbles.length||bubbles.length>12||bubbles.some(bubble=>bubble?.type!=="bubble"||!bubble.body))return fallback;
+  try{
+    if(bubbles.some(bubble=>Buffer.byteLength(JSON.stringify(bubble),"utf8")>30000))return fallback;
+    if(Buffer.byteLength(JSON.stringify(contents),"utf8")>48000)return fallback;
+  }catch{return fallback}
+  const altText=Array.from(String(value.altText||"").trim()).slice(0,400).join("");
+  return altText?{type:"flex",altText,contents}:fallback;
+}
+
 export async function replyLineMessage(replyToken,text,{accessToken}={}){
   const token=String(replyToken||"").trim();
   if(!token)return {skipped:true};
-  return lineApi("/v2/bot/message/reply",{accessToken,body:{replyToken:token,messages:[{type:"text",text:String(text||"").slice(0,5000)}]}});
+  const message=normalizeLineReplyMessage(text);
+  const send=value=>lineApi("/v2/bot/message/reply",{accessToken,body:{replyToken:token,messages:[value]}});
+  try{return await send(message)}
+  catch(error){
+    // A rejected card may use its readable text fallback. Never retry an
+    // unknown delivery outcome, which could already have consumed the token.
+    if(message.type==="flex"&&error.status===400&&text.fallbackText)return send({type:"text",text:String(text.fallbackText).slice(0,5000)});
+    throw error;
+  }
 }
 
 export async function pushLineMessage(to,text,{accessToken,retryKey,quickReply}={}){

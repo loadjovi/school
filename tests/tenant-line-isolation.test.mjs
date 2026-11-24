@@ -72,7 +72,7 @@ test("staff commands never fetch school data from a group chat and use the verif
     resolveTenantLineChannel: async () => ({...channelA,loginConfigured:true}),
     tenantLineStaffReplyKind: () => "today",
     getTenantLineAccount: async (school,bot,user) => {reads.push([school,bot,user]);return {};},
-    tenantLineStaffReply: async (kind,school) => `${school}:${kind}`
+    tenantLineStaffReply: async (kind,school,_account,now,display) => {assert.equal(now,undefined);assert.equal(display.cards,true);return `${school}:${kind}`}
   });
   const msg={type:"message",message:{type:"text",text:"#幹部今日課程"},replyToken:"reply-test"};
   await handlers.tenantLineWebhook(signedRequest("school-a",channelA,botId,{...msg,source:{type:"group",groupId:"group-a"}}));
@@ -82,6 +82,21 @@ test("staff commands never fetch school data from a group chat and use the verif
   assert.deepEqual(reads,[["school-a",botId,"test-user"]]);
   assert.equal(replies[1][1],"school-a:today");
   assert.equal(replies[1][2].accessToken,"token-a");
+});
+
+test("parent menu cards are requested only in the private verified-school chat",async()=>{
+ const reads=[],message={type:"flex",altText:"活動行事曆",contents:{type:"bubble",body:{type:"box",layout:"vertical",contents:[{type:"text",text:"已授權活動"}]}}};
+ const {handlers,replies}=webhookFixture({
+  resolveTenantLineChannel:async()=>({...channelA,loginConfigured:true}),tenantLineStaffReplyKind:()=>"",tenantLineReplyKind:()=>"calendar",
+  getTenantLineAccount:async(school,bot,user)=>{reads.push([school,bot,user]);return {parentEmail:"approved-parent@example.invalid"}},
+  tenantLineParentReply:async(kind,school,_account,now,display)=>{assert.equal(kind,"calendar");assert.equal(school,"school-a");assert.equal(now,undefined);assert.equal(display.cards,true);return message},
+  refreshTenantLineMenu:async()=>{}
+ });
+ const event={type:"message",message:{type:"text",text:"活動行事曆"},replyToken:"reply"};
+ await handlers.tenantLineWebhook(signedRequest("school-a",channelA,botId,{...event,source:{type:"group",groupId:"group-a"}}));
+ assert.equal(reads.length,0);assert.match(replies[0][1],/一對一聊天室/);
+ await handlers.tenantLineWebhook(signedRequest("school-a",channelA,botId,{...event,source:{type:"user",userId:"parent-line-user"}}));
+ assert.deepEqual(reads,[["school-a",botId,"parent-line-user"]]);assert.equal(replies[1][1],message);assert.equal(replies[1][2].accessToken,"token-a");
 });
 
 test("group binding checks school partition, bot and conditional update for a one-use code", async () => {
