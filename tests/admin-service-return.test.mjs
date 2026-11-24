@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 const source=readFileSync(new URL("../app/school-admin-workspace.js",import.meta.url),"utf8"),origin="https://school.example.invalid";
-function harness({capabilities={lineAccount:true,feeCollections:true,financeVerifier:true},sessionSchool="school-a"}={}){
+function harness({capabilities={lineAccount:true,feeCollections:true,financeVerifier:true},sessionSchool="school-a",search="",pathname="/"}={}){
  const workspaceServices=runInNewContext(source.slice(source.indexOf(" const workspaceServices="),source.indexOf(" const accountTasks="))+";workspaceServices",{});
- const opens=[],errors=[],indicators={},frames={},rootClicks=[],messages=[],session=new Map(sessionSchool?[["school_context_id",sessionSchool]]:[]);
+ const opens=[],errors=[],indicators={},frames={},rootClicks=[],messages=[],historyUpdates=[],session=new Map(sessionSchool?[["school_context_id",sessionSchool]]:[]);
  const state={page:"admin",adminWorkspaceSection:"home",me:{role:"admin",email:"admin@example.test",schoolId:"school-a",capabilities},master:[{studentId:"one"}],registrations:[{id:"pending"}]};
  function frame(id,path){
   let src=path;const loads=[],assignments=[];
@@ -17,9 +17,12 @@ function harness({capabilities={lineAccount:true,feeCollections:true,financeVeri
  const document={getElementById:id=>frames[id],querySelector:selector=>{const key=selector.includes('"line"')?"line":selector.includes('"finance"')?"finance":"fees";return indicators[key]||=( {hidden:true})},addEventListener(type,handler){if(type==="click")rootClicks.push(handler)}};
  const scopeKey=()=>state.me.email+"|"+state.me.schoolId;
  const window={openSchoolAdminWorkspace:async group=>{opens.push(group);state.adminWorkspaceSection=group},addEventListener(type,handler){if(type==="message")messages.push(handler)}};
- const context={window,document,state,workspaceServices,scopeKey,sessionStorage:{getItem:key=>session.get(key)||"",setItem:(key,value)=>session.set(key,value)},URL,URLSearchParams,location:{origin},toast:value=>errors.push(value),api(){throw Error("return must not initialize APIs")},render(){throw Error("return must not rebuild app")},go(){throw Error("return must not reload app")}};
+ const location={origin,pathname,search,hash:"",href:origin+pathname+search},history={state:{current:"admin"},replaceState(value,_title,path){historyUpdates.push({value,path});const url=new URL(path,origin);Object.assign(location,{href:url.href,pathname:url.pathname,search:url.search,hash:url.hash})}};
+ const context={window,document,state,workspaceServices,scopeKey,sessionStorage:{getItem:key=>session.get(key)||"",setItem:(key,value)=>session.set(key,value)},URL,URLSearchParams,location,history,inScope:()=>state.me?.role==="admin"&&state.page==="admin"&&!state.teacherAdminOpen,toast:value=>errors.push(value),api(){throw Error("return must not initialize APIs")},render(){throw Error("return must not rebuild app")},go(){throw Error("return must not reload app")}};
  const begin=source.indexOf(" function schoolServiceAllowed("),end=source.indexOf(" window.openSchoolAdminWorkspace=",begin);
  const helpers=runInNewContext(source.slice(begin,end)+";({schoolServiceAllowed,serviceEntryUrl,bindSchoolServiceFrame})",context);
+ const entryStart=source.indexOf(" let lineAccountEntryPending="),entryEnd=source.indexOf(" let activityEntryHandled=",entryStart);
+ const entry=runInNewContext(source.slice(entryStart,entryEnd)+";({parse:lineAccountWorkspaceEntry,open:openLineAccountWorkspaceEntry})",context);
  const clickStart=source.indexOf(" document.addEventListener('click',event=>{\n  if(event.defaultPrevented"),clickEnd=source.indexOf(" document.addEventListener('click',async e=>{",clickStart);
  runInNewContext(source.slice(clickStart,clickEnd),context);
  const messageStart=source.indexOf(" window.addEventListener('message',event=>{\n  const data=event.data,config=workspaceServices"),messageEnd=source.indexOf(" window.refreshSchoolAdminWorkspaceView=",messageStart);
@@ -31,7 +34,7 @@ function harness({capabilities={lineAccount:true,feeCollections:true,financeVeri
   const link={href:origin+workspaceServices[service].path,target:"",hasAttribute:()=>false,closest:()=>({dataset:{adminService:service}})};
   const event={button:0,prevented:false,preventDefault(){this.prevented=true},target:{closest:()=>link},...extra};rootClicks[0](event);return event;
  };
- return {window,state,line,fees,finance,uniform,opens,errors,indicators,session,scopeKey,helpers,message,click,context,uniformClick:()=>uniformClick};
+ return {window,state,line,fees,finance,uniform,opens,errors,indicators,session,scopeKey,helpers,entry,location,historyUpdates,message,click,context,uniformClick:()=>uniformClick};
 }
 
 test("opening and returning from finance, LINE or fees reuses the current workspace and frame without reloading main data",async()=>{
@@ -123,4 +126,53 @@ test("LINE settings deep links stay in the existing school workspace and reject 
  const assignments=h.line.assignments.length;
  assert.equal(await h.window.openSchoolAdminService("line","/line-announcement.html?tab=unknown"),false);
  assert.equal(h.line.assignments.length,assignments);
+});
+
+test("an authenticated LINE binding return opens the account tab inside the existing administrator shell",async()=>{
+ const h=harness({search:"?adminLineAccount=school-a&line_link=confirm&keep=value"}),me=h.state.me,contexts=[{type:"schoolAdmin",schoolId:"school-a"},{type:"globalAdmin"}];me.contexts=contexts;
+ const entry=h.entry.parse();assert.ok(entry);assert.equal(await h.entry.open(entry),true);
+ const url=new URL(h.line.item.src);assert.equal(url.pathname,"/line-announcement.html");assert.equal(url.searchParams.get("embedded"),"school");assert.equal(url.searchParams.get("workspaceSchool"),"school-a");assert.equal(url.searchParams.get("tab"),"account");assert.equal(url.searchParams.get("line_link"),"confirm");
+ assert.deepEqual(h.opens,["lineNotice"]);assert.equal(h.state.me,me);assert.equal(h.state.me.contexts,contexts);assert.equal(h.session.get("school_context_id"),"school-a");
+ assert.equal(h.location.search,"?keep=value");assert.equal(h.historyUpdates.length,1);assert.equal(h.historyUpdates[0].value,h.context.history.state);assert.equal(h.entry.parse(),null);assert.equal(h.errors.length,0);
+ assert.match(source,/if\(lineAccountEntry\)state\.adminWorkspaceSection='lineNotice'/);assert.match(source,/if\(lineAccountEntry\)void openLineAccountWorkspaceEntry\(lineAccountEntry\)/);
+});
+
+test("safe OAuth errors reach the embedded account panel before root callback parameters are removed",async()=>{
+ for(const error of ["configuration","authorization","verification","conflict"]){
+  const h=harness({search:"?adminLineAccount=school-a&line_error="+error});assert.equal(await h.entry.open(h.entry.parse()),true);
+  const url=new URL(h.line.item.src);assert.equal(url.searchParams.get("tab"),"account");assert.equal(url.searchParams.get("line_error"),error);assert.equal(h.location.search,"");
+ }
+});
+
+test("binding return markers cannot select another school, change roles, or forward arbitrary OAuth data",async()=>{
+ for(const search of ["?adminLineAccount=school-b&line_link=confirm","?adminLineAccount=School-A&line_link=confirm","?adminLineAccount=school-a&adminLineAccount=school-b&line_link=confirm","?adminLineAccount=school-a&line_link=complete","?adminLineAccount=school-a&line_link=confirm&line_error=conflict","?adminLineAccount=school-a&line_error=private-provider-response","?adminLineAccount=school-a&line_error=configuration&line_error=conflict"]){
+  const h=harness({search});assert.equal(h.entry.parse(),null);assert.equal(h.line.assignments.length,0);assert.equal(h.historyUpdates.length,0);
+ }
+ for(const patch of [{role:"parent"},{role:"globalAdmin"},{schoolId:"school-b"},{capabilities:{}}]){
+  const h=harness({search:"?adminLineAccount=school-a&line_link=confirm"});Object.assign(h.state.me,patch);assert.equal(h.entry.parse(),null);assert.equal(h.opens.length,0);
+ }
+ const otherPage=harness({pathname:"/line-account.html",search:"?adminLineAccount=school-a&line_link=confirm"});assert.equal(otherPage.entry.parse(),null);
+ const absent=harness();assert.equal(absent.entry.parse(),null);
+ const ordinary=harness({search:"?adminLineAccount=school-a&line_link=confirm&redirect_uri=https%3A%2F%2Fevil.example&token=private-marker"});assert.equal(await ordinary.entry.open(ordinary.entry.parse()),true);
+ const url=new URL(ordinary.line.item.src);assert.equal(url.searchParams.has("redirect_uri"),false);assert.equal(url.searchParams.has("token"),false);assert.doesNotMatch(ordinary.line.item.src,/private-marker|evil\.example/);
+});
+
+test("repeated workspace renders open a binding return once and identity changes cannot consume it",async()=>{
+ const h=harness({search:"?adminLineAccount=school-a&line_link=confirm"}),entry=h.entry.parse(),first=h.entry.open(entry),duplicate=h.entry.open(entry);
+ assert.equal(await duplicate,false);assert.equal(await first,true);assert.equal(h.line.assignments.length,1);assert.equal(h.historyUpdates.length,1);
+ const changed=harness({search:"?adminLineAccount=school-a&line_link=confirm"});let release;
+ changed.window.openSchoolAdminWorkspace=()=>new Promise(resolve=>{release=resolve});
+ const waiting=changed.entry.open(changed.entry.parse());changed.state.me.email="different@example.test";release();
+ assert.equal(await waiting,false);assert.equal(changed.line.assignments.length,0);assert.equal(changed.historyUpdates.length,0);assert.equal(changed.location.search,"?adminLineAccount=school-a&line_link=confirm");
+ const mismatched=harness({sessionSchool:"school-b",search:"?adminLineAccount=school-a&line_link=confirm"});assert.equal(await mismatched.entry.open(mismatched.entry.parse()),false);assert.equal(mismatched.line.assignments.length,0);assert.equal(mismatched.historyUpdates.length,0);
+});
+
+test("the OAuth return waits for the existing initial-data shell render and rechecks its identity",async()=>{
+ for(const changeIdentity of [false,true]){
+  const h=harness({search:"?adminLineAccount=school-a&line_link=confirm"});let release;
+  h.window.__adminInitialDataTask=new Promise(resolve=>{release=resolve});
+  const waiting=h.entry.open(h.entry.parse());assert.equal(h.opens.length,0);assert.equal(h.line.assignments.length,0);assert.equal(h.historyUpdates.length,0);
+  if(changeIdentity)h.state.me.email="different@example.test";release();
+  assert.equal(await waiting,!changeIdentity);assert.equal(h.line.assignments.length,changeIdentity?0:1);assert.equal(h.historyUpdates.length,changeIdentity?0:1);
+ }
 });

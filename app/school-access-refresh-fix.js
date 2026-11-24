@@ -112,7 +112,7 @@
 
   if(!document.querySelector('script[data-global-tenant-admin="1"]')){
     const s=document.createElement("script");
-    s.src="/global-tenant-admin.js?v=20261115-line-workflows-mail-webhook";
+    s.src="/global-tenant-admin.js?v=20261124-line-menu-settings";
     s.defer=true;
     s.dataset.globalTenantAdmin="1";
     document.body.appendChild(s);

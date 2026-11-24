@@ -185,6 +185,12 @@
    let source;try{source=new URL(href,location.origin)}catch{return null}
    if(source.origin!==location.origin||source.pathname!==config.path)return null;
    if(service==='line'&&source.searchParams.has('tab')){const tab=source.searchParams.get('tab');if(!['send','settings','account'].includes(tab))return null;query.set('tab',tab);}
+   if(service==='line'&&(source.searchParams.has('line_link')||source.searchParams.has('line_error'))){
+    const link=source.searchParams.get('line_link'),error=source.searchParams.get('line_error');
+    if(query.get('tab')!=='account'||source.searchParams.getAll('line_link').length>1||source.searchParams.getAll('line_error').length>1||link&&error)return null;
+    if(source.searchParams.has('line_link')){if(link!=='confirm')return null;query.set('line_link',link)}
+    if(source.searchParams.has('line_error')){if(!['configuration','authorization','verification','conflict'].includes(error))return null;query.set('line_error',error)}
+   }
    if(service==='finance'){
     if(source.searchParams.get('workspace')!=='finance')return null;
     const task=source.searchParams.get('task');if(task&&!['finance','accounts','notifications','activity-fees'].includes(task))return null;if(task)query.set('task',task);
@@ -218,9 +224,9 @@
   const storedSchool=sessionStorage.getItem('school_context_id');
   if(storedSchool&&storedSchool!==state.me.schoolId)return false;
   if(!storedSchool)sessionStorage.setItem('school_context_id',state.me.schoolId);
-  const config=workspaceServices[service];
+  const config=workspaceServices[service],scope=scopeKey();
   await window.openSchoolAdminWorkspace(config.group);
-  if(!schoolServiceAllowed(service)||url.searchParams.get('workspaceSchool')!==state.me.schoolId)return false;
+  if(!schoolServiceAllowed(service)||scopeKey()!==scope||url.searchParams.get('workspaceSchool')!==state.me.schoolId)return false;
   const frame=document.getElementById(config.frameId);if(!frame)return false;
   bindSchoolServiceFrame(frame,service);
   if(frame.dataset.workspaceScope!==scopeKey()||frame.dataset.serviceEntry!==url.href||frame.dataset.currentPath&&frame.dataset.currentPath!==config.path){
@@ -315,6 +321,35 @@
    table.before(wrap);wrap.append(table);
   }
  }
+ let lineAccountEntryPending='';
+ function lineAccountWorkspaceEntry(){
+  if(!inScope()||!schoolServiceAllowed('line')||!['/','/index.html'].includes(location.pathname))return null;
+  const query=new URLSearchParams(location.search),school=query.get('adminLineAccount');
+  if(query.getAll('adminLineAccount').length!==1||!/^[a-z0-9-]{2,60}$/.test(school||'')||school!==state.me.schoolId)return null;
+  const target=new URL(workspaceServices.line.path,location.origin);target.searchParams.set('tab','account');
+  for(const name of ['line_link','line_error'])for(const value of query.getAll(name))target.searchParams.append(name,value);
+  const url=serviceEntryUrl('line',target.href);if(!url)return null;
+  return {href:url.href,scope:scopeKey(),search:location.search,key:scopeKey()+'|'+location.search};
+ }
+ async function openLineAccountWorkspaceEntry(entry){
+  if(!entry||lineAccountEntryPending===entry.key)return false;
+  lineAccountEntryPending=entry.key;
+  try{
+   // Initial school data can trigger one final shell render. Let that existing
+   // read finish so it cannot replace the account frame after consuming return data.
+   if(window.__adminInitialDataTask)await window.__adminInitialDataTask;
+   if(scopeKey()!==entry.scope||lineAccountWorkspaceEntry()?.key!==entry.key)return false;
+   const opened=await window.openSchoolAdminService('line',entry.href);
+   // The URL only selects a tool. It never changes the signed-in identity or
+   // school, and a context change while opening must leave the return unused.
+   if(!opened||scopeKey()!==entry.scope||lineAccountWorkspaceEntry()?.key!==entry.key)return false;
+   const url=new URL(location.href);
+   for(const name of ['adminLineAccount','line_link','line_error'])url.searchParams.delete(name);
+   history.replaceState(history.state,'',url.pathname+url.search+url.hash);
+   return true;
+  }catch(error){toast('LINE 綁定狀態開啟失敗：'+(error?.message||error));return false}
+  finally{if(lineAccountEntryPending===entry.key)lineAccountEntryPending=''}
+ }
  let activityEntryHandled=false;
  function activityWorkspaceEntry(){
   if(activityEntryHandled||state.me?.role!=='admin'||state.page!=='admin')return null;
@@ -327,7 +362,8 @@
   if(state.me?.role==='admin'){const host=document.querySelector('.main');if(host)mountGuide(host)}
   if(!inScope())return;
   const main=document.querySelector('.main');if(!main)return;
-  const activityEntry=activityWorkspaceEntry();if(activityEntry)state.adminWorkspaceSection='uniformAdmin';
+  const lineAccountEntry=lineAccountWorkspaceEntry(),activityEntry=lineAccountEntry?null:activityWorkspaceEntry();
+  if(lineAccountEntry)state.adminWorkspaceSection='lineNotice';else if(activityEntry)state.adminWorkspaceSection='uniformAdmin';
   state.adminWorkspaceSection=({tasks:'home',more:'settings'})[state.adminWorkspaceSection]||state.adminWorkspaceSection;
   const requestedService=Object.keys(workspaceServices).find(key=>workspaceServices[key].group===state.adminWorkspaceSection);
   if(requestedService&&!schoolServiceAllowed(requestedService))state.adminWorkspaceSection='home';
@@ -448,6 +484,7 @@
   for(const b of document.querySelectorAll('.desktop-menu-item[data-desktop-action]')){
    const selected=b.dataset.desktopAction==='workspace:'+group;b.classList.toggle('is-active',selected);if(selected)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');
   }
+  if(lineAccountEntry)void openLineAccountWorkspaceEntry(lineAccountEntry);
  }
  document.addEventListener('click',async e=>{
   const b=e.target.closest?.('[data-admin-todo],[data-admin-todo-reload],[data-admin-guide],[data-admin-guide-skip],[data-admin-guide-reopen],[data-admin-guide-close]');if(!b)return;e.preventDefault();

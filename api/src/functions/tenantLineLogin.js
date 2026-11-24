@@ -133,8 +133,9 @@ app.http("tenantLineLoginCallback", {
       // The destination is a fixed enum stored during the authenticated start.
       // Never accept a redirect path or destination from the callback query.
       if (txn?.googleSub && txn.returnTo === "notification-center") {
-        resultUrl.pathname = "/line-announcement.html";
-        resultUrl.searchParams.set("tab", "account");
+        // Restore the authenticated school workspace so the original account
+        // context and Global switch remain available around the account panel.
+        resultUrl.searchParams.set("adminLineAccount", schoolId);
       }
       if (!txn || !code) throw new Error("Expired or invalid authorization");
       failure = "verification";

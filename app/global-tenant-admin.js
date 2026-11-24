@@ -69,6 +69,7 @@
     </div>`;
   }
   window.loadGlobalLineChannel=async function(sid,status){
+    if(!canGlobal())return;
     const panel=document.getElementById("globalLineChannel_"+sid);
     if(!panel)return;
     if(status==="disabled"&&!window.confirm("停用此校 LINE 官方帳號？群組通知會停止。"))return;
@@ -93,10 +94,59 @@
         與 <code>${esc(prefix)}_APP_ORIGIN</code>。
       </div>
       <button class="primary" onclick="loadGlobalLineChannel('${esc(sid)}','active')">驗證並啟用</button>
-      ${channel.status!=="disabled"?`<button class="secondary" onclick="loadGlobalLineChannel('${esc(sid)}','disabled')">停用</button>`:""}`;
+      ${channel.status!=="disabled"?`<button class="secondary" onclick="loadGlobalLineChannel('${esc(sid)}','disabled')">停用</button>`:""}
+      ${channel.messagingConfigured&&!channel.legacy?`<div class="global-inline-admin"><h3>LINE 家長與幹部選單</h3><p class="muted">指定此校官方帳號的家長及幹部六宮格選單。</p><button class="secondary" onclick="loadGlobalLineMenus(${esc(JSON.stringify(String(sid)))})">設定家長與幹部選單</button><div id="globalLineMenus_${esc(sid)}" aria-live="polite"></div></div>`:""}`;
     }catch(e){
       panel.textContent=e.message||"無法讀取 LINE 設定";
     }
+  };
+  const globalLineMenuRequests=new Map();
+  function lineMenuOptions(menus,current,staff){
+    const known=menus.some(menu=>menu.richMenuId===current);
+    return `<option value="">${staff?"請選擇幹部選單":"暫不設定家長選單"}</option>`+
+      (current&&!known?`<option value="${esc(current)}" selected disabled>已儲存選單（目前無法讀取）｜${esc(current)}</option>`:"")+
+      menus.map(menu=>`<option value="${esc(menu.richMenuId)}" ${menu.richMenuId===current?"selected":""} ${menu.areaCount!==6||menu.selectable===false?"disabled":""}>${esc(menu.name||"未命名選單")}｜${Number(menu.areaCount)||0} 格｜${esc(menu.richMenuId)}${menu.validationError?"｜"+esc(menu.validationError):""}</option>`).join("");
+  }
+  function showGlobalLineMenus(panel,sid,result,message=""){
+    const menus=Array.isArray(result.menus)?result.menus:[],parent=String(result.parentMenuId||""),staff=String(result.staffMenuId||"");
+    panel.innerHTML=`${message?`<div class="notice" role="status">${esc(message)}</div>`:""}
+      <p class="muted" style="overflow-wrap:anywhere">目前家長選單：${esc(parent||"尚未設定")}<br>目前幹部選單：${esc(staff||"尚未設定")}</p>
+      ${menus.length?"":'<div class="notice">此官方帳號尚無可選取的 Rich Menu，請先建立家長與幹部六宮格選單。</div>'}
+      <div class="row2"><div style="min-width:0"><label for="globalLineParentMenu_${esc(sid)}">家長選單</label><select style="max-width:100%;min-width:0" id="globalLineParentMenu_${esc(sid)}">${lineMenuOptions(menus,parent,false)}</select></div>
+      <div style="min-width:0"><label for="globalLineStaffMenu_${esc(sid)}">幹部選單</label><select style="max-width:100%;min-width:0" id="globalLineStaffMenu_${esc(sid)}">${lineMenuOptions(menus,staff,true)}</select></div></div>
+      <p class="muted">家長與幹部須使用不同的六宮格選單，且選單連結須指向此校目前的平台。儲存後，請至「我的 LINE 綁定」按「同步我的 LINE 選單」。</p>
+      <button class="primary" onclick="saveGlobalLineMenus(${esc(JSON.stringify(String(sid)))})" ${menus.some(menu=>menu.areaCount===6&&menu.selectable!==false)?"":"disabled"}>儲存選單設定</button>
+      <button class="secondary" onclick="loadGlobalLineMenus(${esc(JSON.stringify(String(sid)))})">重新讀取選單</button>`;
+  }
+  window.loadGlobalLineMenus=async function(sid){
+    if(!canGlobal())return;
+    const panel=document.getElementById("globalLineMenus_"+sid);
+    if(!panel)return;
+    const request=Symbol();globalLineMenuRequests.set(sid,request);panel.textContent="正在讀取此校官方帳號的選單…";
+    const current=()=>canGlobal()&&globalLineMenuRequests.get(sid)===request&&document.getElementById("globalLineMenus_"+sid)===panel;
+    try{
+      const result=await api("/api/line/tenant-config/"+encodeURIComponent(sid)+"/menus");
+      if(!current())return;
+      showGlobalLineMenus(panel,sid,result);
+    }catch(e){if(current())panel.textContent=e.message||"無法讀取 LINE 選單"}
+  };
+  window.saveGlobalLineMenus=async function(sid){
+    if(!canGlobal())return;
+    const panel=document.getElementById("globalLineMenus_"+sid),parent=document.getElementById("globalLineParentMenu_"+sid),staff=document.getElementById("globalLineStaffMenu_"+sid);
+    if(!panel||!parent||!staff||panel.dataset.saving==="true")return;
+    const parentMenuId=String(parent.value||""),staffMenuId=String(staff.value||"");
+    if(!/^richmenu-[0-9a-f]{32}$/i.test(staffMenuId)||parentMenuId&&!/^richmenu-[0-9a-f]{32}$/i.test(parentMenuId)){
+      window.alert("請選擇幹部選單；家長選單可稍後設定。");return;
+    }
+    if(parentMenuId===staffMenuId){window.alert("家長與幹部須使用不同的選單。");return}
+    const request=Symbol();globalLineMenuRequests.set(sid,request);panel.dataset.saving="true";
+    const buttons=Array.from(panel.querySelectorAll("button,select"));buttons.forEach(button=>button.disabled=true);
+    const current=()=>canGlobal()&&globalLineMenuRequests.get(sid)===request&&document.getElementById("globalLineMenus_"+sid)===panel;
+    try{
+      const result=await api("/api/line/tenant-config/"+encodeURIComponent(sid)+"/menus",{method:"PATCH",body:JSON.stringify({parentMenuId,staffMenuId})});
+      if(current())showGlobalLineMenus(panel,sid,result,"已儲存此校選單設定。請回「我的 LINE 綁定」同步個人選單。");
+    }catch(e){if(current())window.alert(e.message||"無法儲存 LINE 選單")}
+    finally{if(current()){panel.dataset.saving="false";buttons.forEach(button=>button.disabled=false)}}
   };
   function inlineAdminPanel(x){
     const sid=String(x.schoolId||"");

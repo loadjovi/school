@@ -94,7 +94,10 @@ function openPaidActivity(entry,profile){
 async function boot(){
   const query=new URLSearchParams(location.search);
   const lineError=query.get("line_error");
-  if(lineError){
+  // The school workspace forwards this result to its embedded account panel
+  // after checking the authenticated role and school. Do not consume it here.
+  const lineAccountReturn=/^[a-z0-9-]{2,60}$/.test(query.get("adminLineAccount")||"");
+  if(lineError&&!lineAccountReturn){
     query.delete("line_error");
     history.replaceState({}, "", location.pathname+(query.size?"?"+query:""));
     if(!state.token){renderLogin(lineError==="conflict"?"此校帳號已有綁定，請聯絡管理員確認。":"LINE 驗證未完成，請重新登入。");return}

@@ -117,6 +117,7 @@ function resolveChannel(id, tenant, row) {
       row.tokenFingerprint === fingerprint(accessToken)))
   );
   const loginConfigured = Boolean(configured && row?.botUserId && loginFingerprint && loginFingerprint === row?.loginFingerprint);
+  const menuOverride = Boolean(row?.menuBotUserId && row.menuBotUserId === row.botUserId && row.menuAppOrigin === appOrigin);
   return {
     schoolId: id, status, configured, legacy, acceptsLegacy: legacy || (id === defaultTenantId() && row?.acceptsLegacy === true),
     platformName: tenant?.systemName || tenant?.schoolName || "學校平台", botUserId: row?.botUserId || "",
@@ -126,7 +127,9 @@ function resolveChannel(id, tenant, row) {
     loginConfigured, loginId: loginConfigured ? loginId : "",
     loginSecret: loginConfigured ? loginSecret : "", appOrigin: configured ? appOrigin : "",
     oauthVersion: loginConfigured ? fingerprint(row.botUserId + loginFingerprint) : "",
-    parentMenuId, staffMenuId, paymentLineEnabled, paymentRequestLineEnabled, financeTransferLineEnabled, paymentConfirmationLineEnabled
+    parentMenuId: menuOverride ? row.parentMenuId || "" : parentMenuId,
+    staffMenuId: menuOverride ? row.staffMenuId || "" : staffMenuId,
+    paymentLineEnabled, paymentRequestLineEnabled, financeTransferLineEnabled, paymentConfirmationLineEnabled
   };
 }
 
@@ -202,6 +205,13 @@ export async function saveTenantLineChannel(schoolId, status, actor) {
       if (!owner) actions.push(["create", {partitionKey, rowKey, schoolId: id}]);
     }
   }
+  // Menu IDs belong to one official account. Reverification may rotate a token,
+  // but changing the official account must never inherit its predecessor's menu.
+  if (old?.menuBotUserId && old.menuBotUserId === old.botUserId && old.botUserId === row.botUserId) {
+    for (const key of ["menuBotUserId", "menuAppOrigin", "parentMenuId", "staffMenuId", "menuUpdatedBy", "menuUpdatedAt"]) {
+      if (old[key] !== undefined) row[key] = old[key];
+    }
+  }
   actions.push(old ? ["update", row, "Replace", {etag: old.etag}] : ["create", row]);
   try {
     await client.submitTransaction(actions);
@@ -211,6 +221,109 @@ export async function saveTenantLineChannel(schoolId, status, actor) {
     }
     throw error;
   }
+}
+
+const richMenuIdPattern = /^richmenu-[a-f0-9]{32}$/;
+
+function menuValidationError(menu, channel) {
+  if (!Array.isArray(menu?.areas) || menu.areas.length !== 6) return "請選擇六宮格的家長與幹部選單";
+  for (const area of menu.areas) {
+    const action = area?.action;
+    if (action?.type === "message" && typeof action.text === "string" && action.text) continue;
+    if (action?.type !== "uri") return "選單包含此平台尚未支援的動作，請選擇平台六宮格選單";
+    if (!channel.appOrigin) return "請先設定此校 APP_ORIGIN，再驗證選單連結";
+    const destinations = [action.uri];
+    if (action.altUri?.desktop !== undefined) destinations.push(action.altUri.desktop);
+    for (const destination of destinations) {
+      let url;
+      try { url = new URL(destination); } catch { return "選單包含無效連結，請重新設定選單"; }
+      if (url.username || url.password || url.origin !== channel.appOrigin) {
+        return "選單連結指向其他環境或網站，請選擇此校目前平台的選單";
+      }
+      if (url.searchParams.getAll("schoolId").some(id => id !== channel.schoolId)) {
+        return "選單連結屬於其他學校，請選擇此校的選單";
+      }
+    }
+  }
+  return "";
+}
+
+async function managedMenuChannel(schoolId) {
+  const id = tenantSchoolPartition(schoolId), client = table();
+  const [tenant, row] = await Promise.all([getTenantDirectory(id), read(client, schoolRow(id))]);
+  const channel = resolveChannel(id, tenant, row);
+  if (!row || channel.legacy || !channel.configured || !channel.botUserId) {
+    throw new LineConfigError("請先驗證並啟用該校 LINE 官方帳號，再設定選單");
+  }
+  return {id, client, row, channel};
+}
+
+async function availableMenuChoices(channel) {
+  let result;
+  try {
+    result = await lineApi("/v2/bot/richmenu/list", {method: "GET", accessToken: channel.accessToken});
+  } catch {
+    throw new LineConfigError("無法讀取此校官方帳號的選單，請確認 LINE 連線後再試");
+  }
+  if (!Array.isArray(result?.richmenus)) throw new LineConfigError("LINE 選單清單格式不正確，請稍後再試");
+  // Expose only display metadata. Menu actions and credentials remain server-side.
+  return result.richmenus.filter(menu => richMenuIdPattern.test(menu?.richMenuId || "")).map(menu => {
+    const validationError = menuValidationError(menu, channel);
+    return {
+      richMenuId: menu.richMenuId,
+      name: typeof menu.name === "string" ? menu.name.slice(0, 300) : "",
+      chatBarText: typeof menu.chatBarText === "string" ? menu.chatBarText.slice(0, 300) : "",
+      size: {
+        width: Number.isInteger(menu.size?.width) ? menu.size.width : 0,
+        height: Number.isInteger(menu.size?.height) ? menu.size.height : 0
+      },
+      areaCount: Array.isArray(menu.areas) ? menu.areas.length : 0,
+      selectable: !validationError, validationError
+    };
+  });
+}
+
+export async function listTenantLineMenus(schoolId) {
+  const {id, channel} = await managedMenuChannel(schoolId);
+  return {
+    schoolId: id, parentMenuId: channel.parentMenuId, staffMenuId: channel.staffMenuId,
+    menus: await availableMenuChoices(channel)
+  };
+}
+
+export async function saveTenantLineMenus(schoolId, selection, actor) {
+  const {parentMenuId, staffMenuId} = selection || {};
+  if (typeof parentMenuId !== "string" || typeof staffMenuId !== "string" ||
+      (parentMenuId && !richMenuIdPattern.test(parentMenuId)) || !richMenuIdPattern.test(staffMenuId)) {
+    throw new LineConfigError("請選擇有效的幹部選單；家長選單可暫不設定");
+  }
+  if (parentMenuId === staffMenuId) throw new LineConfigError("家長與幹部選單必須使用不同的選單");
+  const {id, client, row, channel} = await managedMenuChannel(schoolId);
+  await Promise.all([parentMenuId, staffMenuId].filter(Boolean).map(async richMenuId => {
+    let menu;
+    try {
+      menu = await lineApi(`/v2/bot/richmenu/${richMenuId}`, {method: "GET", accessToken: channel.accessToken});
+    } catch {
+      throw new LineConfigError("選單不存在或不屬於此校官方帳號，請重新載入選單");
+    }
+    const validationError = menuValidationError(menu, channel);
+    if (validationError) throw new LineConfigError(validationError);
+  }));
+  const menus = await availableMenuChoices(channel);
+  if (![parentMenuId, staffMenuId].filter(Boolean).every(id => menus.some(menu => menu.richMenuId === id))) {
+    throw new LineConfigError("選單已變更，請重新載入選單後再試");
+  }
+  if (!row.etag) throw new LineConfigError("設定已變更，請重新載入再試");
+  try {
+    await client.updateEntity({
+      partitionKey, rowKey: schoolRow(id), menuBotUserId: channel.botUserId, menuAppOrigin: channel.appOrigin,
+      parentMenuId, staffMenuId, menuUpdatedBy: actor, menuUpdatedAt: new Date().toISOString()
+    }, "Merge", {etag: row.etag});
+  } catch (error) {
+    if ([404, 409, 412].includes(error.statusCode)) throw new LineConfigError("設定已變更，請重新載入再試");
+    throw error;
+  }
+  return {schoolId: id, parentMenuId, staffMenuId, menus};
 }
 
 export function lineTargetMatchesChannel(target, channel) {

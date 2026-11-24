@@ -122,7 +122,7 @@
       "/school-access.js?v=20261027-school-followup",
       "/school-access-audit-admin.js?v=20261017-simple-records",
       "/school-admin-activity.js?v=20261025-restore",
-      "/school-access-refresh-fix.js?v=20261015-finance-role-tenant-line-20261115",
+      "/school-access-refresh-fix.js?v=20261124-line-menu-settings",
       "/training-attendance.js?v=20261102-activity-boundary"
     ];
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(role)||cap.teacherSettings)return [
@@ -142,7 +142,7 @@
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20261027-school-followup",
-      "/school-access-refresh-fix.js?v=20261015-finance-role-tenant-line-20261115"
+      "/school-access-refresh-fix.js?v=20261124-line-menu-settings"
     ];
     if(role==="school")return ["/school-access.js?v=20261027-school-followup"];
     if(role==="parent")return [
@@ -159,7 +159,7 @@
     if(role==="globalAdmin")return [
       "/school-access.js?v=20261027-school-followup",
       "/school-access-audit-admin.js?v=20261017-simple-records",
-      "/school-access-refresh-fix.js?v=20261015-finance-role-tenant-line-20261115"
+      "/school-access-refresh-fix.js?v=20261124-line-menu-settings"
     ];
     return [];
   }
@@ -170,7 +170,7 @@
     }
   }
   function roleScriptList(){
-    return [...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261123-account-navigation","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
+    return [...roleModules(),"/desktop-ui.js?v=20261102-learning-workspace",...(state.me?.role==="admin"?["/school-admin-workspace.js?v=20261124-line-account-shell","/student-admin-workspace.js?v=20261102-student-workflow"]:[])];
   }
   window.preloadRoleModules=()=>{
     if(typeof state!=="undefined"&&["parent","admin"].includes(state.me?.role))preloadScripts(roleScriptList());
@@ -241,7 +241,7 @@
   window.resumeLineStaffEntry=()=>{if(sessionStorage.getItem(staffEntryKey))loadRoleModules()};
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity-school-admin-teacher-binding-20261119-home-priorities-notification-center-parent-login-ready-parent-login-fast-practice-goal-progress-20261122-admin-quick-workspace-account-navigation-production-cutover-login-copy");
+    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity-school-admin-teacher-binding-20261119-home-priorities-notification-center-parent-login-ready-parent-login-fast-practice-goal-progress-20261122-admin-quick-workspace-account-navigation-production-cutover-login-copy-20261124-line-account-shell");
   }
   function installIOSRedirectMode(){let tries=0;const timer=setInterval(()=>{tries++;if(window.google?.accounts?.id?.initialize){clearInterval(timer);const nativeInitialize=window.google.accounts.id.initialize.bind(window.google.accounts.id);window.google.accounts.id.initialize=(config={})=>{const {callback,...rest}=config;return nativeInitialize({...rest,ux_mode:"redirect",login_uri:`${location.origin}/api/google-login`})};loadApp()}else if(tries>120){clearInterval(timer);loadApp()}},50)}
   document.addEventListener("click",async e=>{const btn=e.target.closest?.(".logout");if(!btn)return;e.preventDefault();e.stopImmediatePropagation();await Promise.allSettled([fetch("/api/google-logout",{method:"POST"}),fetch("/api/line/session/logout",{method:"POST"})]);sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");location.href="/"},true);

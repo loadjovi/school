@@ -42,7 +42,7 @@ test("same-school admin link stores a fixed center destination and returns there
  assert.equal(h.transactions[0].args[3].returnTo,"notification-center");
  assert.equal([...h.store.rows.values()][0].returnTo,"notification-center");
  const result=await h.callback(started),url=new URL(result.headers.Location);
- assert.equal(url.origin,origin);assert.equal(url.pathname,"/line-announcement.html");assert.equal(url.searchParams.get("tab"),"account");assert.equal(url.searchParams.get("line_link"),"confirm");
+ assert.equal(url.origin,origin);assert.equal(url.pathname,"/");assert.equal(url.searchParams.get("adminLineAccount"),"school-a");assert.equal(url.searchParams.has("tab"),false);assert.equal(url.searchParams.get("line_link"),"confirm");
  assert.ok(result.cookies.some(cookie=>cookie.value==="opaque-confirmation"));assert.equal(h.store.rows.size,0);
  assert.equal(result.headers["Cache-Control"],"no-store");assert.equal(result.headers["Referrer-Policy"],"no-referrer");
 });
@@ -60,7 +60,7 @@ test("login mode and arbitrary redirect targets are refused before an OAuth tran
 test("a valid center transaction returns errors and cancelled authorization to the same fixed account tab",async()=>{
  for(const options of [{oauthFailure:true},{conflict:true},{}]){
   const h=harness(options),started=await h.start(),result=await h.callback(started,options.oauthFailure||options.conflict?{}:{code:null});
-  const url=new URL(result.headers.Location);assert.equal(url.pathname,"/line-announcement.html");assert.equal(url.searchParams.get("tab"),"account");assert.equal(url.searchParams.get("line_error"),options.conflict?"conflict":options.oauthFailure?"verification":"authorization");
+  const url=new URL(result.headers.Location);assert.equal(url.pathname,"/");assert.equal(url.searchParams.get("adminLineAccount"),"school-a");assert.equal(url.searchParams.has("tab"),false);assert.equal(url.searchParams.get("line_error"),options.conflict?"conflict":options.oauthFailure?"verification":"authorization");
  }
 });
 
@@ -76,17 +76,17 @@ test("OAuth failures distinguish channel configuration from expired authorizatio
   [{endpoint:"verify",status:401,code:"invalid_client",description:sensitive},"verification"]
  ]){
   const h=harness({oauthError:error}),started=await h.start(),result=await h.callback(started),url=new URL(result.headers.Location);
-  assert.equal(url.searchParams.get("line_error"),expected);assert.equal(url.pathname,"/line-announcement.html");
+  assert.equal(url.searchParams.get("line_error"),expected);assert.equal(url.pathname,"/");assert.equal(url.searchParams.get("adminLineAccount"),"school-a");
   assert.deepEqual(h.effects,[]);assert.equal(result.cookies.some(cookie=>cookie.name==="__Host-school-line-link"),false);
   assert.doesNotMatch(JSON.stringify({location:result.headers.Location,warnings:h.warnings}),new RegExp(sensitive));
  }
 });
 test("callback query destinations cannot replace a legacy return or bypass the state cookie",async()=>{
  const h=harness({role:"privateTeacher"}),started=await h.start({mode:"link"});
- const returned=await h.callback(started,{extra:{returnTo:"notification-center",redirect_uri:"https://evil.example"}}),url=new URL(returned.headers.Location);
- assert.equal(url.pathname,"/line-account.html");assert.equal(url.searchParams.get("line_link"),"confirm");assert.equal(url.searchParams.has("tab"),false);
+ const returned=await h.callback(started,{extra:{returnTo:"notification-center",redirect_uri:"https://evil.example",adminLineAccount:"school-b"}}),url=new URL(returned.headers.Location);
+ assert.equal(url.pathname,"/line-account.html");assert.equal(url.searchParams.get("line_link"),"confirm");assert.equal(url.searchParams.has("tab"),false);assert.equal(url.searchParams.has("adminLineAccount"),false);
  const invalid=harness(),fresh=await invalid.start(),denied=await invalid.callback(fresh,{cookie:false,extra:{returnTo:"notification-center"}});
- assert.equal(new URL(denied.headers.Location).pathname,"/");assert.equal(new URL(denied.headers.Location).searchParams.has("tab"),false);
+ assert.equal(new URL(denied.headers.Location).pathname,"/");assert.equal(new URL(denied.headers.Location).searchParams.has("tab"),false);assert.equal(new URL(denied.headers.Location).searchParams.has("adminLineAccount"),false);
 });
 test("center transactions remain bound to school, channel version and one-time state consumption",async()=>{
  const store=identityStore(),config={oauthVersion:"v1"},created=await store.createTenantLineOAuth("school-a",config,google,{returnTo:"notification-center"});
@@ -103,4 +103,19 @@ test("ordinary LINE login and legacy linking keep their original destinations",a
  assert.equal(url.pathname,"/");assert.equal(url.searchParams.get("line_session"),"school-a");assert.equal(url.searchParams.has("tab"),false);
  const teacher=harness({role:"privateTeacher"}),linked=await teacher.start({mode:"link"});assert.equal(linked.status,200);assert.equal([...teacher.store.rows.values()][0].returnTo,undefined);
  assert.equal(new URL((await teacher.callback(linked)).headers.Location).pathname,"/line-account.html");
+});
+
+
+test("main bootstrap preserves school account callback errors for the capability-gated workspace",async()=>{
+ const app=read("app/app-v3.js"),bootSource=app.slice(app.indexOf("async function boot(){"),app.indexOf("const schoolViewScript="));
+ for(const error of ["configuration","authorization","verification","conflict"]){
+  const histories=[],logins=[],loads=[];
+  const boot=runInNewContext(bootSource+";boot",{URLSearchParams,location:{pathname:"/",search:"?adminLineAccount=school-a&line_error="+error},state:{token:"existing-session"},history:{replaceState:(...args)=>histories.push(args)},window:{},paidActivityEntry:()=>null,loadProfile:async profile=>loads.push(profile),renderLogin:message=>logins.push(message)});
+  await boot();assert.equal(histories.length,0);assert.equal(logins.length,0);assert.equal(loads.length,1);
+ }
+ for(const search of ["?line_error=configuration","?adminLineAccount=https://evil.example&line_error=configuration"]){
+  const histories=[],logins=[];
+  const boot=runInNewContext(bootSource+";boot",{URLSearchParams,location:{pathname:"/",search},state:{token:""},history:{replaceState:(...args)=>histories.push(args)},renderLogin:message=>logins.push(message)});
+  await boot();assert.equal(histories.length,1);assert.equal(logins.length,1);assert.doesNotMatch(histories[0][2],/line_error/);
+ }
 });
