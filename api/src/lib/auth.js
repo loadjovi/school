@@ -244,6 +244,23 @@ export async function getStudentIdAliases(studentId,schoolId=defaultTenantId()){
   return (await getStudentAliasInfo(studentId,schoolId)).aliases;
 }
 
+function teacherDirectoryDisplayName(directory,fallback){
+  const name=directory?.status==="active"?String(directory.teacherName||"").trim():"";
+  return name||fallback;
+}
+
+async function schoolTeacherDisplayName(identity,schoolId,directory){
+  try{
+    // Display names belong to the selected school; never search another tenant
+    // or let a name-only lookup change the authenticated identity or permissions.
+    const teacher=directory===undefined?await getTeacherDirectory(identity.email,schoolId):directory;
+    return teacherDirectoryDisplayName(teacher,identity.displayName);
+  }catch(error){
+    console.warn("school teacher display-name lookup failed",error?.message||String(error));
+    return identity.displayName;
+  }
+}
+
 async function teacherAccessForIdentity(identity,directory,roleSchoolId,roleTenant){
   if(directory?.status!=="active")return null;
   const email=identity.email,roleTenantOnboarding=roleTenant?.status==="onboarding";
@@ -264,7 +281,7 @@ async function teacherAccessForIdentity(identity,directory,roleSchoolId,roleTena
     const privateMatch=privateStudentIds.includes(v.studentId);
     if(sectionMatch||ensembleMatch||comprehensiveMatch||privateMatch)byId.set(v.studentId,v);
   }
-  return {authenticated:true,...identity,displayName:directory.teacherName||identity.displayName,role,schoolId:roleSchoolId,schoolName:String(roleTenant?.schoolName||roleSchoolId),systemName:String(roleTenant?.systemName||roleTenant?.schoolName||roleSchoolId),capabilities,sectionAssignments,assignments:sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,students:[...byId.values()]};
+  return {authenticated:true,...identity,displayName:teacherDirectoryDisplayName(directory,identity.displayName),role,schoolId:roleSchoolId,schoolName:String(roleTenant?.schoolName||roleSchoolId),systemName:String(roleTenant?.systemName||roleTenant?.schoolName||roleSchoolId),capabilities,sectionAssignments,assignments:sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,students:[...byId.values()]};
 }
 
 async function lineParentAccess(request, includeContexts = false) {
@@ -292,11 +309,11 @@ async function lineParentAccess(request, includeContexts = false) {
     }
   }
   const canUseAdmin = isAdmin && (!requestedRole || requestedRole === "schoolAdmin");
-  let teacher = null;
+  let teacher = null,teacherDirectory;
   if(verifiedGoogle&&(requestedRole==="teacher"||!requestedRole&&!isAdmin||includeContexts)){
-    const directory=await getTeacherDirectory(account.googleEmail,schoolId);
+    teacherDirectory=await getTeacherDirectory(account.googleEmail,schoolId);
     teacher=await teacherAccessForIdentity({sub:account.googleSub,email:account.googleEmail,
-      displayName:account.displayName||"LINE 使用者",authProvider:"line",contactEmail:account.googleEmail},directory,schoolId,tenant);
+      displayName:account.displayName||"LINE 使用者",authProvider:"line",contactEmail:account.googleEmail},teacherDirectory,schoolId,tenant);
   }
   const canUseTeacher=!!teacher&&(!requestedRole||requestedRole==="teacher")&&!canUseAdmin;
   const mapped = requestedRole!=="teacher"&&!canUseAdmin&&!canUseTeacher || includeContexts ? await tenantLineParentStudents(schoolId,account.parentEmail) : [];
@@ -316,7 +333,7 @@ async function lineParentAccess(request, includeContexts = false) {
   ];
   if ((requestedRole === "schoolAdmin" && !isAdmin)||(requestedRole === "teacher" && !teacher)) return {...denied,...common,contexts};
   if (canUseAdmin) {
-    return {...common,role:"admin",email:account.googleEmail,contexts,activeContextKey:"schoolAdmin:"+schoolId,
+    return {...common,displayName:await schoolTeacherDisplayName({email:account.googleEmail,displayName:common.displayName},schoolId,teacherDirectory),role:"admin",email:account.googleEmail,contexts,activeContextKey:"schoolAdmin:"+schoolId,
       capabilities:{admin:true,tenantAdmin:true,tenantOnboarding:tenant.status==="onboarding",
         financeVerifier:await financeAssigned(schoolId,account.googleEmail)}};
   }
@@ -368,7 +385,7 @@ export async function getAccess(request,{includeContexts=false}={}){
         if(selectedRole){
           const tenant=await getTenantDirectory(selectedRole.schoolId)||defaultTenant;
           const tenantOnboarding=String(tenant?.status||"")==="onboarding";
-          return {authenticated:true,...identity,role:"admin",schoolId:String(selectedRole.schoolId),schoolName:String(tenant?.schoolName||selectedRole.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selectedRole.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,tenantOnboarding,globalAdmin:false,identityGlobalAdmin:true,financeVerifier:await financeAssigned(String(selectedRole.schoolId),email)}};
+          return {authenticated:true,...identity,displayName:await schoolTeacherDisplayName(identity,String(selectedRole.schoolId)),role:"admin",schoolId:String(selectedRole.schoolId),schoolName:String(tenant?.schoolName||selectedRole.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selectedRole.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,tenantOnboarding,globalAdmin:false,identityGlobalAdmin:true,financeVerifier:await financeAssigned(String(selectedRole.schoolId),email)}};
         }
         return {authenticated:true,...identity,role:"contextDenied",schoolId:requestedSchoolId||null,schoolName:"",systemName:"",memberships,capabilities:{globalAdmin:true,contextDenied:true}};
       }
@@ -382,7 +399,7 @@ export async function getAccess(request,{includeContexts=false}={}){
       if(selected){
         const tenant=await getTenantDirectory(selected.schoolId)||defaultTenant;
         const tenantOnboarding=String(tenant?.status||"")==="onboarding";
-        return {authenticated:true,...identity,role:"admin",schoolId:String(selected.schoolId),schoolName:String(tenant?.schoolName||selected.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selected.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,tenantOnboarding,globalAdmin:false,financeVerifier:await financeAssigned(String(selected.schoolId),email)}};
+        return {authenticated:true,...identity,displayName:await schoolTeacherDisplayName(identity,String(selected.schoolId)),role:"admin",schoolId:String(selected.schoolId),schoolName:String(tenant?.schoolName||selected.schoolId),systemName:String(tenant?.systemName||tenant?.schoolName||selected.schoolId),memberships,capabilities:{admin:true,tenantAdmin:true,tenantOnboarding,globalAdmin:false,financeVerifier:await financeAssigned(String(selected.schoolId),email)}};
       }
       if(wantsSchoolAdmin)return {authenticated:true,...identity,role:"contextDenied",schoolId:requestedSchoolId||null,schoolName:"",systemName:"",memberships,capabilities:{contextDenied:true}};
     }

@@ -26,6 +26,13 @@ test("absence LINE message states its narrow notification rule and course contex
   assert.match(text,/點名人員：幹部老師/);
 });
 
+test("absence LINE message preserves the supplied canonical name, including legitimate repeated characters",()=>{
+  for(const actorName of ["陳宣文","陳宣文文","林文文","王明明"]){
+    const text=lineAbsenceMessage({actorName,items:[absent()]});
+    assert.equal(text.split("\n").find(line=>line.startsWith("點名人員：")),`點名人員：${actorName}`);
+  }
+});
+
 test("all group attendance writes notify only after a new absent transition and isolate LINE failures",()=>{
   for(const name of ["sectionAttendance","ensembleAttendance","comprehensiveAttendance"]){
     const source=read(`api/src/functions/${name}.js`);
