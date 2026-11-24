@@ -626,7 +626,7 @@ test("staff LINE queries require an active administrator of the selected school 
   assert.equal(tenantLineStaffReplyKind("#幹部活動行事曆"), "calendar");
   assert.equal(tenantLineStaffReplyKind("#幹部最新公告"), "announcements");
   for (roles of [[], [{schoolId:"school-a",role:"teacher"}], [{schoolId:"school-b",role:"schoolAdmin"}], [{schoolId:"*",role:"globalAdmin"}]]) {
-    assert.match(await tenantLineStaffReply("today","school-a",request,date), /限本校/);
+    assert.match(await tenantLineStaffReply("today","school-a",request,date), /尚無本校學校管理員權限/);
   }
   assert.equal(reads.length,0);
   roles = [{schoolId:"school-a",role:"schoolAdmin"}];

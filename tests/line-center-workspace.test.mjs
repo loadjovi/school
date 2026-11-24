@@ -4,14 +4,14 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const source=readFileSync(new URL('../app/line-announcement.js',import.meta.url),'utf8');
 function harness({role='admin',optionsError=false,search='?tab=settings'}={}){
- const calls=[],settingsLoads=[],accountLoads=[],active=[],events={},nodes={};
+ const calls=[],settingsLoads=[],accountLoads=[],active=[],events={},nodes={},panels=[];
  for(const id of ['lineSendPanel','lineSettingsPanel','lineSendTab','lineSettingsTab','lineSettingsAuthStatus','lineAccountPanel','lineAccountTab'])nodes[id]={hidden:['lineSettingsPanel','lineAccountPanel'].includes(id),disabled:['lineSettingsTab','lineAccountTab'].includes(id),textContent:'',dataset:{lineCenterTab:id==='lineSendTab'?'send':id==='lineAccountTab'?'account':'settings'},attrs:{},setAttribute(k,v){this.attrs[k]=v},addEventListener(k,fn){this[k]=fn}};
  const status={textContent:''};let busy=false;
- const scope={centerAdminReady:false,centerTab:'send',accountPanel:null,accountReturnHandled:false,createLineAccountPanel:()=>({isBusy:()=>busy,load:async params=>accountLoads.push(params?.get('line_link')||'load'),destroy(){}}),history:{replaceState(){}},groupSettings:{isBusy:()=>busy,setActive:value=>active.push(value),load:async()=>settingsLoads.push(calls.length)},$:id=>nodes[id],document:{querySelectorAll:()=>[nodes.lineSendTab,nodes.lineSettingsTab,nodes.lineAccountTab]},window:{addEventListener:(type,fn)=>events[type]=fn},location:{search},URLSearchParams,status,
+ const scope={centerAdminReady:false,centerTab:'send',accountPanel:null,accountReturnHandled:false,centerVersion:0,loadingVersion:0,createLineAccountPanel:()=>{const panel={destroyed:false,isBusy:()=>busy,load:async params=>{accountLoads.push(params?.get('line_link')||'load');return {configured:true,bound:false}},destroy(){this.destroyed=true}};panels.push(panel);return panel},history:{replaceState(){}},groupSettings:{isBusy:()=>busy,setActive:value=>active.push(value),load:async()=>settingsLoads.push(calls.length)},$:id=>nodes[id],document:{querySelectorAll:()=>[nodes.lineSendTab,nodes.lineSettingsTab,nodes.lineAccountTab]},window:{addEventListener:(type,fn)=>events[type]=fn},location:{search},URLSearchParams,status,
   centerApi:async path=>{calls.push(path);return {role}},loadOptions:async()=>{if(optionsError)throw Error('尚未啟用公告功能')}};
  const code=source.slice(source.indexOf('async function selectCenterTab('),source.indexOf('function clearPreview()'));
  runInNewContext(code+';this.initialize=initializeCenter;this.select=selectCenterTab',scope);
- return {scope,nodes,status,calls,active,settingsLoads,accountLoads,events,setBusy:value=>busy=value};
+ return {scope,nodes,status,calls,active,settingsLoads,accountLoads,events,panels,setBusy:value=>busy=value};
 }
 test('settings are accessible after administrator verification even when announcement loading fails',async()=>{
  const h=harness({optionsError:true});await h.scope.initialize();
@@ -45,4 +45,19 @@ test('the personal LINE account panel is handled locally and a binding return op
 test('nonadministrators cannot load the personal account tab through the administrator notification center',async()=>{
  const h=harness({role:'parent',search:'?tab=account'});await h.scope.initialize();
  assert.equal(h.accountLoads.length,0);assert.equal(h.nodes.lineAccountTab.disabled,true);assert.equal(h.nodes.lineAccountPanel.hidden,true);
+});
+
+test('a notification-center page restored from browser cache rechecks identity and automatically recreates and reads its account panel',async()=>{
+ const h=harness({search:'?tab=account'});await h.scope.initialize();assert.equal(h.panels.length,1);assert.equal(h.accountLoads.length,1);
+ h.events.pagehide();assert.equal(h.panels[0].destroyed,true);assert.equal(h.scope.centerAdminReady,false);assert.equal(h.nodes.lineAccountTab.disabled,true);
+ h.events.pageshow({persisted:false});await new Promise(setImmediate);assert.equal(h.calls.length,1);
+ h.events.pageshow({persisted:true});await new Promise(setImmediate);
+ assert.equal(h.calls.length,2);assert.equal(h.panels.length,2);assert.equal(h.accountLoads.length,2);assert.equal(h.nodes.lineAccountPanel.hidden,false);assert.equal(h.nodes.lineAccountTab.disabled,false);
+});
+
+test('a cached notification center cannot restore an account panel after the returned identity loses its administrator role',async()=>{
+ const h=harness({search:'?tab=account'});await h.scope.initialize();h.events.pagehide();
+ h.scope.centerApi=async path=>{h.calls.push(path);return {role:'parent'}};
+ h.events.pageshow({persisted:true});await new Promise(setImmediate);
+ assert.equal(h.panels.length,1);assert.equal(h.accountLoads.length,1);assert.equal(h.scope.centerAdminReady,false);assert.equal(h.nodes.lineAccountTab.disabled,true);assert.match(h.nodes.lineSettingsAuthStatus.textContent,/僅限本校管理員/);
 });

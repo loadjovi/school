@@ -34,7 +34,18 @@ async function lineOAuthRequest(endpoint, fields) {
   const response = await fetch(loginApi + endpoint, {
     method: "POST", body: new URLSearchParams(fields), signal: AbortSignal.timeout(10000)
   });
-  if (!response.ok) throw new Error("LINE OAuth response " + response.status);
+  if (!response.ok) {
+    // Classify provider failures without returning or logging OAuth credentials,
+    // authorization codes, tokens, or the provider's raw response text.
+    const detail = await response.json().catch(() => ({}));
+    const code = String(detail?.error || "");
+    const description = String(detail?.error_description || "").slice(0, 300);
+    const configuration = endpoint === "token" && (response.status === 401 || code === "invalid_client" ||
+      code === "invalid_request" && /client[_\s-]?(?:id|secret)|redirect[_\s-]?uri/i.test(description));
+    const error = new Error("LINE OAuth response " + response.status);
+    error.lineFailure = configuration ? "configuration" : endpoint === "token" && code === "invalid_grant" ? "authorization" : "verification";
+    throw error;
+  }
   return response.json();
 }
 
@@ -116,6 +127,7 @@ app.http("tenantLineLoginCallback", {
     const resultUrl = new URL("/", channel.appOrigin);
     const cookies = [clearOAuthCookie()];
     const state = request.query.get("state"), code = request.query.get("code");
+    let failure = "authorization";
     try {
       const txn = await useTenantLineOAuth(request, schoolId, state, channel);
       // The destination is a fixed enum stored during the authenticated start.
@@ -125,6 +137,7 @@ app.http("tenantLineLoginCallback", {
         resultUrl.searchParams.set("tab", "account");
       }
       if (!txn || !code) throw new Error("Expired or invalid authorization");
+      failure = "verification";
       if(txn.googleSub && txn.returnTo !== "notification-center")resultUrl.pathname="/line-account.html";
       const tokens = await lineOAuthRequest("token", {
         grant_type: "authorization_code", code, redirect_uri: callbackUrl(channel), client_id: channel.loginId,
@@ -150,7 +163,10 @@ app.http("tenantLineLoginCallback", {
       }
       await Promise.all([txn.googleSub ? undefined : tryMenuSync(channel, account), checkFriendship(channel, userId, tokens.access_token)]);
     } catch (error) {
-      resultUrl.searchParams.set("line_error", error instanceof LineAccountConflict ? "conflict" : "verification");
+      const reason = error instanceof LineAccountConflict ? "conflict" :
+        ["configuration", "authorization", "verification"].includes(error?.lineFailure) ? error.lineFailure : failure;
+      resultUrl.searchParams.set("line_error", reason);
+      console.warn("LINE authorization callback failed", {schoolId, reason});
     }
     return redirect(resultUrl, cookies);
   }

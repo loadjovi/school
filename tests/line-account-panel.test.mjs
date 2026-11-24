@@ -17,8 +17,9 @@ const bound={configured:true,bound:true,googleLinked:true,authProvider:'google',
 const unbound={configured:true,bound:false,googleLinked:false,authProvider:'google',lineDisplayName:''};
 function fixture({line=bound,role='admin',capability=true,returnTo='account',onChanged=async()=>{},apiOverride,google=false}={}){
  const host=new Element();host.connected=true;const calls=[],navigation=[],changes=[],storage=new Map([['school_context_id','school-a'],['role_context','schoolAdmin'],['google_id_token','token-a']]);let current={...line},confirmed=true,googleConfig;
- const document={head:new Element('head'),createElement:tag=>new Element(tag)};document.head.connected=true;
- const window={confirm:()=>confirmed,...(google?{google:{accounts:{id:{initialize:config=>{googleConfig=config},renderButton:node=>node.append(new Element('google-button'))}}}}:{})};
+ const events={},documentEvents={};
+ const document={head:new Element('head'),visibilityState:'visible',createElement:tag=>new Element(tag),addEventListener:(type,fn)=>documentEvents[type]=fn,removeEventListener:(type,fn)=>{if(documentEvents[type]===fn)delete documentEvents[type]}};document.head.connected=true;
+ const window={addEventListener:(type,fn)=>events[type]=fn,removeEventListener:(type,fn)=>{if(events[type]===fn)delete events[type]},confirm:()=>confirmed,...(google?{google:{accounts:{id:{initialize:config=>{googleConfig=config},renderButton:node=>node.append(new Element('google-button'))}}}}:{})};
  const factory=runInNewContext(source+';createLineAccountPanel',{window,document,sessionStorage:{getItem:key=>storage.get(key)||''},location:{assign:url=>navigation.push(url)},navigator:{userAgent:'Test Chrome'},URL,Set,Promise});
  const api=async(path,options)=>{
   const body=options?.body?JSON.parse(options.body):undefined;calls.push({path,method:options?.method||'GET',body});
@@ -35,7 +36,7 @@ function fixture({line=bound,role='admin',capability=true,returnTo='account',onC
  };
  const panel=factory({host,api,me:{role,schoolId:'school-a',capabilities:{lineAccount:capability}},returnTo,navigate:url=>navigation.push(url),onChanged:async change=>{changes.push(change.action);await onChanged(change)}});
  const button=text=>nodes(host).find(n=>n.tag==='button'&&n.ownText===text);
- return {host,panel,calls,navigation,changes,storage,button,click:async text=>{const node=button(text);assert.ok(node,'button '+text);return node.handlers.click()},setConfirmed:value=>confirmed=value,googleConfig:()=>googleConfig,setLine:value=>current=value};
+ return {host,panel,calls,navigation,changes,storage,events,documentEvents,document,button,click:async text=>{const node=button(text);assert.ok(node,'button '+text);return node.handlers.click()},setConfirmed:value=>confirmed=value,googleConfig:()=>googleConfig,setLine:value=>current=value};
 }
 test('personal binding construction does no work and authorized entry reads only its own account',async()=>{
  for(const role of ['admin','parent','privateTeacher']){
@@ -93,6 +94,32 @@ test('callback errors are shown locally and successful binding is not mislabeled
  const h=fixture({onChanged:async()=>{throw Error('unavailable')}});await h.panel.load();await h.click('解除 LINE 綁定');assert.match(h.host.textContent,/已解除此校 LINE 綁定.*頁面更新未完成/);assert.doesNotMatch(h.host.textContent,/操作未完成/);
 });
 
+test('returning to the page after an initiated authorization automatically reads the pending pair without confirming it',async()=>{
+ const h=fixture({line:unbound});await h.panel.load();h.events.focus();await new Promise(setImmediate);assert.equal(h.calls.length,1);
+ await h.click('使用 LINE 授權並綁定');
+ h.setLine({...unbound,pendingLink:{confirmationId:'returned-pair',googleEmail:'parent@example.test',lineDisplayName:'授權後 LINE'}});
+ h.events.focus();await new Promise(setImmediate);
+ assert.equal(h.calls.filter(call=>call.method==='GET').length,2);assert.match(h.host.textContent,/授權後 LINE/);assert.ok(h.button('確認綁定'));
+ assert.equal(h.calls.filter(call=>call.method==='POST').length,1);assert.equal(h.calls.some(call=>call.body?.action==='confirm-link'),false);
+ h.events.focus();await new Promise(setImmediate);assert.equal(h.calls.filter(call=>call.method==='GET').length,2,'a resolved return must not keep refreshing');
+});
+
+test('authorization return refresh skips hidden panels and is removed or rejected after identity changes',async()=>{
+ const h=fixture({line:unbound});await h.panel.load();await h.click('使用 LINE 授權並綁定');
+ h.document.visibilityState='hidden';h.documentEvents.visibilitychange();await new Promise(setImmediate);assert.equal(h.calls.length,2);
+ h.document.visibilityState='visible';h.storage.set('school_context_id','school-b');h.documentEvents.visibilitychange();await new Promise(setImmediate);
+ assert.equal(h.calls.length,2);assert.match(h.host.textContent,/身分已變更/);
+ h.panel.destroy();assert.equal(h.events.focus,undefined);assert.equal(h.documentEvents.visibilitychange,undefined);
+});
+
+test('status refresh preserves the real failed authorization, including when an older binding still exists',async()=>{
+ for(const line of [unbound,bound])for(const error of ['verification','configuration','authorization','conflict']){
+  const h=fixture({line});await h.panel.load(new URLSearchParams('line_error='+error));
+  const first=h.host.textContent;assert.match(first,error==='configuration'?/登入設定未通過/:error==='authorization'?/授權已逾時/:error==='conflict'?/已有其他綁定/:/授權未完成/);
+  await h.click('更新綁定狀態');assert.equal(h.host.textContent,first);assert.equal(h.calls.every(call=>call.method==='GET'),true);assert.doesNotMatch(h.host.textContent,/已完成此校 Gmail 與 LINE 綁定/);
+ }
+});
+
 test('an initial read failure can be retried without leaving the inline panel',async()=>{
  let first=true;const h=fixture({apiOverride:async(_path,options)=>{if(!options?.method&&first){first=false;throw Error('暫時無法讀取')}}});
  await h.panel.load();assert.match(h.host.textContent,/暫時無法讀取/);assert.ok(h.button('重新讀取綁定狀態'));
@@ -106,4 +133,35 @@ test('the actual standalone account entry reuses this panel without loading fina
  const feeSource=readFileSync(new URL('../app/fee-collections.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('if(!legacyLineEntry)load();','this.standaloneLoad=load;');
  runInNewContext(source+'\n'+feeSource,scope);await scope.standaloneLoad();
  assert.deepEqual(calls,['/api/me','/api/line/school-account']);assert.match(elements.lineBinding.textContent,/已連結 測試家長/);assert.equal(elements.status.hidden,true);assert.equal(elements.roleTitle.textContent,'LINE 通知設定');
+});
+
+function standaloneFixture(){
+ const elements=Object.fromEntries(['siteName','roleTitle','roleIntro','status','lineBinding'].map(id=>{const node=new Element();node.connected=true;return [id,node]}));
+ const events={},calls=[],storage=new Map([['school_context_id','school-a'],['role_context','parent'],['google_id_token','token-a']]);
+ let account={...unbound},profile={role:'parent',schoolId:'school-a',systemName:'甲校',capabilities:{lineAccount:true}},override;
+ const scope={document:{documentElement:{hasAttribute:()=>true},visibilityState:'visible',getElementById:id=>elements[id]||null,createElement:tag=>new Element(tag),addEventListener(){}},window:{addEventListener:(type,fn)=>events[type]=fn,removeEventListener:(type,fn)=>{if(events[type]===fn)delete events[type]}},location:{hash:'',search:'',pathname:'/line-account.html'},history:{replaceState(){}},sessionStorage:{getItem:key=>storage.get(key)||''},URLSearchParams,URL,navigator:{userAgent:'Test'},console,
+  fetch:async(url,options)=>{calls.push({url,method:options?.method||'GET'});const custom=await override?.(url,options);return {ok:true,json:async()=>custom??(url==='/api/me'?profile:account)}}};
+ const feeSource=readFileSync(new URL('../app/fee-collections.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('if(!legacyLineEntry)load();','this.standaloneLoad=load;');
+ runInNewContext(source+'\n'+feeSource,scope);
+ return {scope,elements,events,calls,storage,setLine:value=>account=value,setProfile:value=>profile=value,setOverride:value=>override=value};
+}
+
+test('the standalone account page automatically fetches a returned pending pair after BFCache restore without linking it',async()=>{
+ const h=standaloneFixture();await h.scope.standaloneLoad();assert.match(h.elements.lineBinding.textContent,/使用 LINE 授權並綁定/);
+ h.events.pagehide();assert.equal(h.elements.lineBinding.textContent,'');
+ h.setLine({...unbound,pendingLink:{confirmationId:'latest-pair',googleEmail:'parent@example.test',lineDisplayName:'返回後的 LINE'}});
+ h.events.pageshow({persisted:true});await new Promise(setImmediate);
+ assert.deepEqual(h.calls.map(call=>call.url),['/api/me','/api/line/school-account','/api/me','/api/line/school-account']);
+ assert.match(h.elements.lineBinding.textContent,/返回後的 LINE/);assert.match(h.elements.lineBinding.textContent,/確認綁定/);assert.equal(h.calls.every(call=>call.method==='GET'),true);
+});
+
+test('a stale standalone profile response cannot overwrite the restored account in a new school',async()=>{
+ const h=standaloneFixture();let resolve;const old=new Promise(done=>resolve=done);let first=true;
+ h.setOverride(async url=>{if(url==='/api/me'&&first){first=false;return old}});
+ const pending=h.scope.standaloneLoad();h.events.pagehide();h.storage.set('school_context_id','school-b');h.storage.set('google_id_token','token-b');
+ h.setProfile({role:'parent',schoolId:'school-b',systemName:'乙校',capabilities:{lineAccount:true}});h.setLine({...bound,lineDisplayName:'乙校 LINE'});
+ h.events.pageshow({persisted:true});await new Promise(setImmediate);
+ assert.equal(h.elements.siteName.textContent,'乙校');assert.match(h.elements.lineBinding.textContent,/乙校 LINE/);
+ resolve({role:'parent',schoolId:'school-a',systemName:'過期甲校',capabilities:{lineAccount:true}});await pending;
+ assert.equal(h.elements.siteName.textContent,'乙校');assert.doesNotMatch(h.elements.lineBinding.textContent,/過期甲校/);assert.equal(h.calls.filter(call=>call.url==='/api/line/school-account').length,1);
 });

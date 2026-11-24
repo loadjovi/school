@@ -1,7 +1,7 @@
-import {createLineAccountPanel} from "./line-account-panel.js?v=20261123-account-navigation";
+import {createLineAccountPanel} from "./line-account-panel.js?v=20261124-binding-return-status";
 import {createLineNotificationSettings} from "./line-notification-settings.js?v=20261123-notification-settings";
 const $=id=>document.getElementById(id),form=$("announcement"),status=$("result"),preview=$("preview"),send=$("send");
-let centerAdminReady=false,centerTab="send",accountPanel=null,accountReturnHandled=false;
+let centerAdminReady=false,centerTab="send",accountPanel=null,accountReturnHandled=false,centerVersion=0;
 let confirmed=null,revision=0,activities=[],schoolGroups=[],optionsLoaded=false,loadingVersion=0,busy=false;
 const mode=()=>form.querySelector('[name="audience"]:checked')?.value||"members";
 const selectedActivity=()=>activities.find(x=>x.key===$("activityKey").value);
@@ -64,24 +64,31 @@ async function selectCenterTab(tab){
   groupSettings.setActive(centerTab==="settings");
   if(centerTab==="settings")await groupSettings.load();
   if(centerTab==="account"&&accountPanel){
-    const params=new URLSearchParams(location.search);await accountPanel.load(accountReturnHandled?undefined:params);accountReturnHandled=true;
+    const panel=accountPanel,params=new URLSearchParams(location.search),loaded=await panel.load(accountReturnHandled?undefined:params);
+    if(!loaded||panel!==accountPanel||!centerAdminReady)return;
+    accountReturnHandled=true;
     if(params.has("line_link")||params.has("line_error")){params.delete("line_link");params.delete("line_error");params.set("tab","account");history.replaceState({},"",location.pathname+"?"+params)}
   }
 }
+function centerIdentityScope(){try{return ['school_context_id','role_context','google_id_token'].map(key=>sessionStorage.getItem(key)||'').join('|')}catch{return ''}}
 async function initializeCenter(){
-  const options=loadOptions().catch(error=>{status.textContent=error.message});
+  const version=++centerVersion,scope=centerIdentityScope();
+  const current=()=>version===centerVersion&&scope===centerIdentityScope();
+  const options=loadOptions().catch(error=>{if(current())status.textContent=error.message});
   try{
-    const me=await centerApi("/api/me");if(me.role!=="admin")throw Error("僅限本校管理員使用群組與通知設定");
+    const me=await centerApi("/api/me");if(!current())return;if(me.role!=="admin")throw Error("僅限本校管理員使用群組與通知設定");
+    accountPanel?.destroy();accountReturnHandled=false;
     accountPanel=createLineAccountPanel({host:$("lineAccountPanel"),api:centerApi,me,returnTo:"notification-center",navigate:url=>{if(window.parent!==window)window.parent.location.assign(url);else location.assign(url)},onChanged:async()=>{revision++;clearPreview();try{await loadOptions()}catch{}}});
     centerAdminReady=true;$("lineSettingsTab").disabled=false;$("lineAccountTab").disabled=false;
-    const params=new URLSearchParams(location.search);const tab=params.has("line_link")||params.has("line_error")?"account":params.get("tab");if(["settings","account"].includes(tab))await selectCenterTab(tab);
-  }catch(error){$("lineSettingsAuthStatus").textContent=error.message;status.textContent=error.message}
+    const params=new URLSearchParams(location.search);const tab=params.has("line_link")||params.has("line_error")?"account":params.get("tab")||centerTab;if(["settings","account"].includes(tab))await selectCenterTab(tab);
+  }catch(error){if(current()){$("lineSettingsAuthStatus").textContent=error.message;status.textContent=error.message}}
   await options;
 }
 $("lineSendTab").addEventListener("click",()=>selectCenterTab("send"));
 $("lineSettingsTab").addEventListener("click",()=>selectCenterTab("settings"));
 $("lineAccountTab").addEventListener("click",()=>selectCenterTab("account"));
-window.addEventListener("pagehide",()=>{groupSettings.setActive(false);accountPanel?.destroy()});
+window.addEventListener("pagehide",()=>{centerVersion++;loadingVersion++;centerAdminReady=false;$("lineSettingsTab").disabled=true;$("lineAccountTab").disabled=true;groupSettings.setActive(false);accountPanel?.destroy()});
+window.addEventListener("pageshow",event=>{if(event.persisted)void initializeCenter()});
 function clearPreview(){confirmed=null;$("recipientPreview").hidden=true;$("deliveryReport").hidden=true;status.textContent=""}
 function drawRecipients(host,items){
   host.replaceChildren();

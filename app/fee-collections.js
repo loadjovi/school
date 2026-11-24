@@ -1,4 +1,4 @@
-import {createLineAccountPanel} from "./line-account-panel.js?v=20261123-inline-account";
+import {createLineAccountPanel} from "./line-account-panel.js?v=20261124-binding-return-status";
 import "./payment-resolution.js?v=20261122-single-parent-message";
 const accountOnly=document.documentElement.hasAttribute("data-line-account");
 const legacyLineEntry=!accountOnly&&(location.hash==="#lineBinding"||new URLSearchParams(location.search).has("line_link")||new URLSearchParams(location.search).has("line_error"));
@@ -21,7 +21,8 @@ async function api(path,options={}){
 function showStatus(message,type=""){$("status").textContent=message;$("status").hidden=!message;$('status').className=`notice ${type}`.trim()}
 function statusClass(status){return status==="REPORTED_UNVERIFIED"?"reported":status==="VERIFIED"?"":"closed"}
 
-let lineAccountPanel;
+let lineAccountPanel,accountEntryVersion=0;
+function accountEntryScope(){return ['school_context_id','role_context','google_id_token'].map(key=>sessionStorage.getItem(key)||'').join('|')}
 async function loadLineBinding(params){
   if(!accountOnly)return null;
   lineAccountPanel?.destroy();
@@ -126,8 +127,10 @@ async function requestCorrection(event){
 
 async function loadProjects(){const data=await api("fee-collections/projects");state.projects=data.items||[];state.activities=data.dinnerActivities||state.activities;renderProjects()}
 async function load(){
+  const version=accountOnly?++accountEntryVersion:0,scope=accountOnly?accountEntryScope():'';
+  const current=()=>!accountOnly||version===accountEntryVersion&&scope===accountEntryScope();
   try{
-    state.me=await api("me");
+    const me=await api("me");if(!current())return;state.me=me;
     if(!["admin","parent","unassigned","teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me.role))throw new Error("請切換至此校已授權的身分。");
     $("siteName").textContent=state.me.systemName||state.me.schoolName||"學校平台";
     $("roleTitle").textContent=accountOnly?"LINE 通知設定":state.me.role==="admin"?"收費專案與匯款核帳":"繳費與核帳紀錄";
@@ -137,9 +140,14 @@ async function load(){
       billing&&state.me.role==="admin"?api("uniform-events/payment-account-templates"):null,
       billing?api("fee-collections/projects"):null
     ]);
+    if(!current())return;
     state.templates=templates?.items||[];state.projects=projects?.items||[];
     state.activities=projects?.dinnerActivities||[];
-    if(accountOnly)state.line=await loadLineBinding(new URLSearchParams(location.search));
+    if(accountOnly){
+      const line=await loadLineBinding(new URLSearchParams(location.search));
+      if(!current())return;state.line=line;
+    }
+    if(!current())return;
     if(billing){renderAdminCreate();renderProjects()}
     else if($("projects"))$("projects").textContent="";
     const params=new URLSearchParams(location.search);
@@ -147,7 +155,7 @@ async function load(){
     const message=lineError==="conflict"?"這個 Gmail 或 LINE 已有其他綁定，請聯絡學校管理員核對。":lineError?"LINE 授權未完成，請從本頁重新授權。":"";
     if(accountOnly)showStatus("");else showStatus(message||(params.get("line_link")==="confirm"?(state.line?.pendingLink?"請核對 Gmail 與 LINE 名稱，再確認綁定。":"綁定確認已逾時，請重新開始。"):billing?`已載入 ${state.projects.length} 個收費專案。`:""),message?"error":"");
     if(params.has("line_link")||lineError)history.replaceState({},"",location.pathname);
-  }catch(error){showStatus(error.message,"error");if($("projects"))$("projects").innerHTML=""}
+  }catch(error){if(current()){showStatus(error.message,"error");if($("projects"))$("projects").innerHTML=""}}
 }
 
 document.addEventListener("click",async event=>{
@@ -171,4 +179,8 @@ document.addEventListener("click",async event=>{
 
 });
 
+if(accountOnly){
+ window.addEventListener?.('pagehide',()=>{accountEntryVersion++;lineAccountPanel?.destroy();lineAccountPanel=null;state.line=null});
+ window.addEventListener?.('pageshow',event=>{if(event.persisted)void load()});
+}
 if(!legacyLineEntry)load();

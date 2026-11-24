@@ -12,7 +12,8 @@ async function googleClient(){
 
 // Reused by the standalone account page and the notification center. Entry is read-only.
 export function createLineAccountPanel({host,api,me,returnTo='account',navigate=url=>location.assign(url),onChanged=async()=>{},confirm=message=>window.confirm(message)}){
- let line=null,busy=false,destroyed=false,generation=0,message='',failed=false;
+ let line=null,busy=false,destroyed=false,generation=0,message='',failed=false,authorizationPending=false;
+ let callbackError='',callbackLink='';
  const scope=()=>[me?.schoolId||'',...['school_context_id','role_context','google_id_token'].map(key=>sessionStorage.getItem(key)||'')].join('|');
  const originalScope=scope();
  const sameIdentity=()=>scope()===originalScope&&(!sessionStorage.getItem('school_context_id')||sessionStorage.getItem('school_context_id')===me?.schoolId);
@@ -24,7 +25,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
  }
  const permitted=()=>accountRoles.has(me?.role)&&me?.capabilities?.lineAccount===true;
  function button(text,action,secondary=false){const node=make('button',text);node.type='button';node.disabled=busy;node.className=secondary?'secondary':'';node.addEventListener('click',action);return node}
- const callbackMessage=params=>params?.get('line_error')==='conflict'?'這個 Gmail 或 LINE 已有其他綁定，請聯絡學校管理員核對。':params?.get('line_error')?'LINE 授權未完成，請重新授權。':params?.get('line_link')==='confirm'?(line?.pendingLink?'請核對 Gmail 與 LINE 名稱，再確認綁定。':'綁定確認已逾時，請重新開始。'):'';
+ const callbackMessage=()=>callbackError==='conflict'?'這個 Gmail 或 LINE 已有其他綁定，請聯絡學校管理員核對。':callbackError==='configuration'?'LINE 登入設定未通過驗證，請由學校管理員核對設定後重新授權。':callbackError==='authorization'?'LINE 授權已逾時或未完成，請重新授權。':callbackError?'LINE 授權未完成，請重新授權。':callbackLink==='confirm'?(line?.pendingLink?'請核對 Gmail 與 LINE 名稱，再確認綁定。':line?.bound?'已讀取目前的 LINE 綁定狀態。':'綁定確認已逾時，請重新開始。'):'';
  async function changed(action){
   try{await onChanged({line,action})}catch{message+=' 頁面更新未完成，請重新讀取狀態確認。';failed=true}
  }
@@ -33,12 +34,13 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
   busy=true;const version=++generation;message='正在處理…';failed=false;render();
   try{
    if(action==='link'){
+    callbackError='';callbackLink='';
     const payload={mode:'link',...(returnTo==='notification-center'?{returnTo:'notification-center'}:{})};
     const result=await api('/api/line/tenant-login/'+encodeURIComponent(me.schoolId)+'/start',{method:'POST',body:JSON.stringify(payload)});
     if(!valid()||version!==generation)return;
     const url=new URL(result.url);
     if(url.origin!=='https://access.line.me'||url.pathname!=='/oauth2/v2.1/authorize')throw Error('LINE 授權網址不正確，請重新開啟此頁。');
-    navigate(url.href);return;
+    authorizationPending=true;navigate(url.href);return;
    }
    const result=await api('/api/line/school-account',{method:action==='unbind'?'DELETE':'POST',...(body?{body:JSON.stringify(body)}:{})});
    if(!valid()||version!==generation)return;
@@ -49,6 +51,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
     message=result.audience==='parent'?'已同步家長選單。':result.audience==='staff'?(result.chatActionsVerified?'LINE 已確認套用幹部六宮格。上排三格在聊天室回覆，下排三格開啟後台。':'LINE 已確認套用幹部選單。'):result.audience==='default'?'目前使用通用選單。':'目前無法同步 LINE 選單。';
    }else{
     line=await api('/api/line/school-account');if(!valid()||version!==generation)return;
+    callbackError='';callbackLink='';
     message=action==='confirm'?'已完成此校 Gmail 與 LINE 綁定。':action==='cancel'?'已取消此次綁定。':'已解除此校 LINE 綁定。';
    }
    await changed(action);
@@ -95,14 +98,22 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
  }
  async function load(params){
   if(busy||!valid())return line;
+  if(params!==undefined){callbackError=params?.get('line_error')||'';callbackLink=params?.get('line_link')||''}
   const version=++generation;busy=true;message='正在讀取 LINE 綁定狀態…';failed=false;render();
   try{
    line=permitted()?await api('/api/line/school-account'):{configured:false,bound:false};
    if(!valid()||version!==generation)return null;
-   message=callbackMessage(params);failed=Boolean(params?.get('line_error'));
+   if(line?.pendingLink||line?.bound)authorizationPending=false;
+   message=callbackMessage();failed=Boolean(callbackError);
   }catch(error){if(valid()&&version===generation){line=null;message=error.message;failed=true}}
   finally{busy=false;if(valid()&&version===generation)render()}
   return line;
  }
- return {load,isBusy:()=>busy,destroy(){destroyed=true;generation++;line=null;host.replaceChildren()}};
+ // Some browsers resume the original page after returning from an external app
+ // instead of navigating a new document. Re-read only after this panel initiated
+ // authorization; entry and refresh remain read-only and never confirm a pair.
+ const resumeAuthorization=()=>{if(authorizationPending&&!busy&&!host.hidden&&document.visibilityState!=='hidden'&&valid())void load()};
+ window.addEventListener?.('focus',resumeAuthorization);
+ document.addEventListener?.('visibilitychange',resumeAuthorization);
+ return {load,isBusy:()=>busy,destroy(){destroyed=true;generation++;line=null;authorizationPending=false;window.removeEventListener?.('focus',resumeAuthorization);document.removeEventListener?.('visibilitychange',resumeAuthorization);host.replaceChildren()}};
 }

@@ -27,9 +27,12 @@ export function tenantLineStaffReplyKind(text) {
 }
 
 export async function tenantLineStaffReply(kind, schoolId, account, now = new Date()) {
-  const roles = account?.googleEmail ? await listTenantRolesByEmail(account.googleEmail, "active") : [];
+  if (!account?.googleEmail) {
+    return "此 LINE 帳號尚未完成本校 LINE 與 Gmail 配對。\n請點「開啟幹部平台」，以原本的 Gmail 登入，再到「LINE 通知中心 → 我的 LINE 綁定」，完成授權後核對帳號並按「確認綁定」。";
+  }
+  const roles = await listTenantRolesByEmail(account.googleEmail, "active");
   if (!roles.some(role => role.role === "schoolAdmin" && role.schoolId === schoolId)) {
-    return "此功能限本校已綁定 LINE 的學校管理員使用。";
+    return "目前綁定的 Gmail 尚無本校學校管理員權限。\n請由 Global 管理員核對綁定的 Gmail 與本校 School Admin 指派。";
   }
   const date = taipeiDate(now);
   if (kind === "today") {
