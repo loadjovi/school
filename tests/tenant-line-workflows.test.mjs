@@ -167,6 +167,18 @@ test("ambiguous links with both accounts holding school history do not change ei
   assert.equal(await store.getTenantGoogleLink("school-a", google.sub), null);
 });
 
+test("an approved Gmail family's existing students remain authoritative when linking a fresh LINE identity",async()=>{
+ const students=new Map([["school-a|"+google.email,[{studentId:"100001",status:"approved"},{studentId:"100002",status:"approved"}]]]);
+ const before=JSON.stringify([...students]),store=identities(students),line=await store.getOrCreateTenantLineAccount("school-a",botId,userId,"家長 LINE");
+ const linked=await store.linkTenantGoogle("school-a",line,google);
+ assert.equal(linked.parentEmail,google.email);assert.equal(linked.googleSub,google.sub);
+ assert.equal((await store.getTenantLineRecipient("school-a",google.email,botId)).lineUserId,userId);
+ const token=await store.createTenantLineSession("school-a",linked),session=await store.tenantLineSession({headers:new Headers({cookie:"__Host-school-line-session="+token})});
+ assert.equal(session.account.parentEmail,google.email);assert.equal(session.schoolId,"school-a");
+ assert.deepEqual(students.get(session.schoolId+"|"+session.account.parentEmail).map(student=>student.studentId),["100001","100002"]);
+ assert.equal(JSON.stringify([...students]),before);assert.equal(await store.getTenantLineRecipient("school-b",google.email,botId),null);
+});
+
 test("verified dual enrollment keeps Gmail primary and preserves historical LINE ownership", async () => {
   const students = new Map(), store = identities(students);
   const school = "school-a";
@@ -443,7 +455,7 @@ test("student LINE coverage preserves binding and uses the latest friendship for
 });
 
 test("parent account tools explain automatic menus without a manual sync step", async () => {
-  const state = {me: {role: "parent", capabilities: {lineAccount: true, feeCollections: true}}, page: "home"};
+  const state = {me: {role: "parent", schoolId:"school-a", capabilities: {lineAccount: true, feeCollections: true}}, page: "home"};
   const calls = [];
   const file = source("app/app-v3.js");
   const {tenantServicesEntry} = runInNewContext(
@@ -456,6 +468,8 @@ test("parent account tools explain automatic menus without a manual sync step", 
   assert.doesNotMatch(tenantServicesEntry(), /<details[^>]* open/);
   assert.match(tenantServicesEntry(), /管理我的 LINE 通知設定/);
   assert.match(tenantServicesEntry(), /line-account.html/);
+  assert.match(tenantServicesEntry(), /parentLineAccount=school-a/);
+  assert.match(tenantServicesEntry(), /不需重新輸入學生姓名或學號/);
   assert.match(tenantServicesEntry(), /自動啟用家長選單，不需另外同步/);
   assert.doesNotMatch(tenantServicesEntry(), /重新同步我的 LINE 選單|syncOwnLineMenu|data-line-menu-result/);
   assert.equal(calls.length,0);
@@ -570,7 +584,7 @@ test("a new staff tab resumes a verified Google or LINE session only for the req
     const storage = new Map(), requests = [], profiles = [], loginScreens = [];
     const state = {token};
     const boot = runInNewContext(bootScript + ";boot", {
-      teacherLineAccountEntry:()=>"",state, URLSearchParams, location:{search:""}, window:{getLineStaffEntry:()=>pending},
+      parentLineAccountEntry:()=>"",teacherLineAccountEntry:()=>"",state, URLSearchParams, location:{search:""}, window:{getLineStaffEntry:()=>pending},
       sessionStorage:{setItem:(key,value)=>storage.set(key,value)},
       fetch:async (url, options) => {
         requests.push({url, options});

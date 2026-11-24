@@ -115,10 +115,11 @@ app.http("tenantLineLoginStart", {
     if (!allowedOrigin(request, channel.appOrigin)) return json({error: "來源不符"}, 403);
     const input = await request.json().catch(() => null);
     if (!["login", "link"].includes(input?.mode)) return json({error: "操作不正確"}, 400);
-    if (Object.hasOwn(input, "returnTo") && !["notification-center", "teacher-account"].includes(input.returnTo)) return json({error: "返回位置不正確"}, 400);
+    if (Object.hasOwn(input, "returnTo") && !["notification-center", "teacher-account", "parent-account"].includes(input.returnTo)) return json({error: "返回位置不正確"}, 400);
     const returnToCenter = input.returnTo === "notification-center";
     const returnToTeacher = input.returnTo === "teacher-account";
-    if ((returnToCenter || returnToTeacher) && input.mode !== "link") return json({error: "此返回位置僅適用於綁定帳號"}, 400);
+    const returnToParent = input.returnTo === "parent-account";
+    if ((returnToCenter || returnToTeacher || returnToParent) && input.mode !== "link") return json({error: "此返回位置僅適用於綁定帳號"}, 400);
     let google;
     if (input.mode === "link") {
       google = await verifyGoogle(request);
@@ -130,8 +131,9 @@ app.http("tenantLineLoginStart", {
       }
       if (returnToCenter && context.access.role !== "admin") return json({error: "僅學校管理員可返回 LINE 通知中心"}, 403);
       if (returnToTeacher && !teacherAccountRoles.has(context.access.role)) return json({error: "僅同校老師可返回老師 LINE 綁定"}, 403);
+      if (returnToParent && context.access.role !== "parent") return json({error: "僅同校已核准家長可返回家長 LINE 綁定"}, 403);
     }
-    const txn = await createTenantLineOAuth(schoolId, channel, google, returnToCenter || returnToTeacher ? {returnTo: input.returnTo} : undefined);
+    const txn = await createTenantLineOAuth(schoolId, channel, google, returnToCenter || returnToTeacher || returnToParent ? {returnTo: input.returnTo} : undefined);
     const url = new URL(startUrl);
     url.search = new URLSearchParams({
       response_type: "code", client_id: channel.loginId, redirect_uri: callbackUrl(channel),
@@ -140,7 +142,7 @@ app.http("tenantLineLoginStart", {
       code_challenge_method: "S256", bot_prompt: "normal"
     });
     const cookies = [txn.cookie, clearTenantLineLinkConfirmation()];
-    if (returnToTeacher) {
+    if (returnToTeacher || returnToParent) {
       // iOS may return from LINE in a new browser tab without sessionStorage.
       // Persist only the exact Google credential verified for this transaction;
       // an existing cookie may otherwise have taken precedence over the header.
@@ -175,9 +177,10 @@ app.http("tenantLineLoginCallback", {
         resultUrl.searchParams.set("adminLineAccount", schoolId);
       }
       if (txn?.googleSub && txn.returnTo === "teacher-account") resultUrl.searchParams.set("teacherLineAccount", schoolId);
+      if (txn?.googleSub && txn.returnTo === "parent-account") resultUrl.searchParams.set("parentLineAccount", schoolId);
       if (!txn || !code) throw new Error("Expired or invalid authorization");
       failure = "verification";
-      if(txn.googleSub && !["notification-center", "teacher-account"].includes(txn.returnTo))resultUrl.pathname="/line-account.html";
+      if(txn.googleSub && !["notification-center", "teacher-account", "parent-account"].includes(txn.returnTo))resultUrl.pathname="/line-account.html";
       const tokens = await lineOAuthRequest("token", {
         grant_type: "authorization_code", code, redirect_uri: callbackUrl(channel), client_id: channel.loginId,
         client_secret: channel.loginSecret, code_verifier: txn.verifier

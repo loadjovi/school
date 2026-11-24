@@ -1,6 +1,13 @@
-import {createLineAccountPanel} from "./line-account-panel.js?v=20261124-teacher-account-return";
+import {createLineAccountPanel} from "./line-account-panel.js?v=20261124-parent-account-return";
 import "./payment-resolution.js?v=20261122-single-parent-message";
 const accountOnly=document.documentElement.hasAttribute("data-line-account");
+const requestedParentAccount=new URLSearchParams(location.search).get('parentLineAccount')||'';
+const parentAccountSchool=accountOnly&&/^[a-z0-9-]{2,60}$/.test(requestedParentAccount)?requestedParentAccount:'';
+if(parentAccountSchool){
+ sessionStorage.setItem('school_context_id',parentAccountSchool);sessionStorage.setItem('role_context','parent');
+ sessionStorage.setItem('parent_line_account_return',parentAccountSchool);sessionStorage.removeItem('teacher_line_account_return');
+ if(sessionStorage.getItem('google_id_token')==='line-session')sessionStorage.setItem('google_id_token','cookie-session');
+}
 const legacyLineEntry=!accountOnly&&(location.hash==="#lineBinding"||new URLSearchParams(location.search).has("line_link")||new URLSearchParams(location.search).has("line_error"));
 if(legacyLineEntry)location.replace("/line-account.html"+location.search+"#lineBinding");
 const $=id=>document.getElementById(id);
@@ -30,8 +37,12 @@ async function loadLineBinding(params){
   if(!accountOnly)return null;
   lineAccountPanel?.destroy();
   lineAccountPanel=createLineAccountPanel({host:$("lineBinding"),api:(path,options)=>api(path.replace(/^\/api\//,""),options),me:state.me,
-    returnTo:teacherAccountRoles.has(state.me.role)?'teacher-account':'account',
-    navigate:url=>{if(teacherEmbedded&&window.parent!==window){sessionStorage.setItem('teacher_line_account_return',state.me.schoolId);window.parent.location.assign(url)}else location.assign(url)},
+    returnTo:teacherAccountRoles.has(state.me.role)?'teacher-account':state.me.role==='parent'?'parent-account':'account',
+    navigate:url=>{
+      if(state.me.role==='parent'){sessionStorage.setItem('parent_line_account_return',state.me.schoolId);sessionStorage.removeItem('teacher_line_account_return')}
+      if(teacherAccountRoles.has(state.me.role)){sessionStorage.setItem('teacher_line_account_return',state.me.schoolId);sessionStorage.removeItem('parent_line_account_return')}
+      if(teacherEmbedded&&window.parent!==window)window.parent.location.assign(url);else location.assign(url);
+    },
     onChanged:async()=>teacherAccountMessage('teacher-line-account-changed')});
   return lineAccountPanel.load(params);
 }
@@ -137,6 +148,7 @@ async function load(){
   const current=()=>!accountOnly||version===accountEntryVersion&&scope===accountEntryScope();
   try{
     const me=await api("me");if(!current())return;state.me=me;
+    if(parentAccountSchool&&(me.role!=='parent'||me.authProvider!=='google'||me.schoolId!==parentAccountSchool))throw Error('請以原本已綁定學生的 Gmail 登入後繼續 LINE 綁定；不需重填學生資料。');
     if(teacherEmbedded){
       if(!teacherAccountRoles.has(me.role)||me.schoolId!==new URLSearchParams(location.search).get('schoolId'))throw Error('請以此校老師身分重新開啟 LINE 綁定。');
       document.body.classList.add('teacher-account-embedded');
@@ -156,6 +168,7 @@ async function load(){
     if(accountOnly){
       const line=await loadLineBinding(new URLSearchParams(location.search));
       if(!current())return;state.line=line;
+      if(parentAccountSchool&&line)sessionStorage.removeItem('parent_line_account_return');
     }
     if(!current())return;
     if(billing){renderAdminCreate();renderProjects()}
@@ -165,7 +178,7 @@ async function load(){
     const message=lineError==="conflict"?"這個 Gmail 或 LINE 已有其他綁定，請聯絡學校管理員核對。":lineError?"LINE 授權未完成，請從本頁重新授權。":"";
     if(accountOnly)showStatus("");else showStatus(message||(params.get("line_link")==="confirm"?(state.line?.pendingLink?"請核對 Gmail 與 LINE 名稱，再確認綁定。":"綁定確認已逾時，請重新開始。"):billing?`已載入 ${state.projects.length} 個收費專案。`:""),message?"error":"");
     if(params.has("line_link")||lineError)history.replaceState({},"",location.pathname);
-  }catch(error){if(current()){showStatus(error.message,"error");if($("projects"))$("projects").innerHTML=""}}
+  }catch(error){if(current()){showStatus(parentAccountSchool?'無法確認原本的 Gmail 家長身分，請返回平台以原 Gmail 登入後繼續 LINE 綁定；不需重新填寫學生資料。':error.message,"error");if($("projects"))$("projects").innerHTML=""}}
 }
 
 document.addEventListener("click",async event=>{

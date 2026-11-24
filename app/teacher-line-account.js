@@ -78,6 +78,7 @@
         if(target.origin!=="https://access.line.me"||target.pathname!=="/oauth2/v2.1/authorize")throw Error("LINE 授權網址不正確，請重試。");
         if(key===identity()){
           sessionStorage.setItem("teacher_line_account_return",schoolId);
+          sessionStorage.removeItem("parent_line_account_return");
           location.assign(target.href);
         }
       }catch(e){if(key===identity())error=e?.message||"LINE 授權啟動失敗，請重試。"}

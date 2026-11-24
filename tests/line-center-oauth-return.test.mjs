@@ -176,17 +176,90 @@ test("ordinary LINE login and legacy linking keep their original destinations",a
  assert.equal(new URL((await teacher.callback(linked)).headers.Location).pathname,"/line-account.html");
 });
 
+test("an approved Gmail parent returns directly to LINE account confirmation without a new student enrollment",async()=>{
+ const parent={sub:"parent-sub",email:"parent@example.test"},h=harness({role:"parent",identity:parent});
+ const started=await h.start({mode:"link",returnTo:"parent-account"});assert.equal(started.status,200);
+ const transaction=[...h.store.rows.values()][0];assert.equal(transaction.googleSub,parent.sub);assert.equal(transaction.googleEmail,parent.email);assert.equal(transaction.returnTo,"parent-account");
+ const result=await h.callback(started),url=new URL(result.headers.Location);
+ assert.equal(url.origin,origin);assert.equal(url.pathname,"/");assert.equal(url.searchParams.get("parentLineAccount"),"school-a");assert.equal(url.searchParams.get("line_link"),"confirm");
+ for(const name of ["teacherLineAccount","adminLineAccount","line_session","studentId","studentName"])assert.equal(url.searchParams.has(name),false);
+ assert.deepEqual(h.effects,["account","pending"]);assert.equal(h.store.rows.size,0);
+ assert.ok(result.cookies.some(cookie=>cookie.value==="opaque-confirmation"));
+ assert.equal(result.cookies.some(cookie=>["__Host-school-line-session","orchestra_google_id_token"].includes(cookie.name)),false);
+});
+test("the fixed parent return requires a verified same-school approved Gmail parent",async()=>{
+ for(const role of ["unassigned","admin","teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher","contextDenied"]){
+  const h=harness({role});assert.equal((await h.start({mode:"link",returnTo:"parent-account"})).status,403);assert.equal(h.transactions.length,0);
+ }
+ for(const options of [{identity:null},{contextSchool:"school-b"}]){
+  const h=harness({...options,role:"parent"});assert.equal((await h.start({mode:"link",returnTo:"parent-account"})).status,options.identity===null?401:403);assert.equal(h.transactions.length,0);
+ }
+ const login=harness({role:"parent"});assert.equal((await login.start({mode:"login",returnTo:"parent-account"})).status,400);assert.equal(login.transactions.length,0);
+ const unassigned=harness({role:"unassigned"});assert.equal((await unassigned.start({mode:"link"})).status,200);assert.equal([...unassigned.store.rows.values()][0].returnTo,undefined);
+});
+test("parent authorization bridges only the exact verified Gmail credential across browser tabs",async()=>{
+ const credential="parent-private-google-credential",authSessionId=createHash("sha256").update(credential).digest("hex");
+ const h=harness({role:"parent",identity:{sub:"parent-sub",email:"parent@example.test",authSessionId}}),started=await h.start({mode:"link",returnTo:"parent-account"},"school-a",{"x-google-id-token":credential});
+ assert.equal(started.status,200);
+ const session=started.cookies.find(cookie=>cookie.name==="orchestra_google_id_token");
+ assert.deepEqual(JSON.parse(JSON.stringify(session)),{name:"orchestra_google_id_token",value:credential,maxAge:3600,sameSite:"Lax",path:"/",secure:true,httpOnly:true});
+ assert.doesNotMatch(JSON.stringify({url:started.data.url,transactions:[...h.store.rows.values()],warnings:h.warnings}),new RegExp(credential));
+ for(const candidate of ["different-header-credential","cookie-session","line-session",""]){
+  const other=harness({role:"parent",identity:{...google,authSessionId}}),result=await other.start({mode:"link",returnTo:"parent-account"},"school-a",{"x-google-id-token":candidate});
+  assert.equal(result.cookies.some(cookie=>cookie.name==="orchestra_google_id_token"),false);
+ }
+ const noHash=harness({role:"parent"}),unproven=await noHash.start({mode:"link",returnTo:"parent-account"},"school-a",{"x-google-id-token":credential});assert.equal(unproven.cookies.some(cookie=>cookie.name==="orchestra_google_id_token"),false);
+ for(const mode of ["login","link"]){
+  const legacy=harness({role:"parent",identity:{...google,authSessionId}}),result=await legacy.start({mode},"school-a",{"x-google-id-token":credential});assert.equal(result.cookies.some(cookie=>cookie.name==="orchestra_google_id_token"),false);
+ }
+});
+test("parent callbacks preserve the account screen for cancellation, conflict and provider errors",async()=>{
+ for(const [options,callback,reason] of [
+  [{},{code:null},"authorization"],
+  [{oauthFailure:true},{},"verification"],
+  [{conflict:true},{},"conflict"],
+  [{oauthError:{status:400,code:"invalid_client"}},{},"configuration"]
+ ]){
+  const h=harness({...options,role:"parent"}),started=await h.start({mode:"link",returnTo:"parent-account"});
+  const result=await h.callback(started,callback),url=new URL(result.headers.Location);
+  assert.equal(url.pathname,"/");assert.equal(url.searchParams.get("parentLineAccount"),"school-a");assert.equal(url.searchParams.get("line_error"),reason);assert.equal(url.searchParams.has("teacherLineAccount"),false);
+  assert.equal(result.cookies.some(cookie=>cookie.name==="__Host-school-line-link"&&cookie.value),false);
+ }
+});
+test("parent callback markers cannot be forged or replayed without the consumed same-school OAuth state",async()=>{
+ const h=harness({role:"parent"}),started=await h.start({mode:"link",returnTo:"parent-account"});
+ const returned=await h.callback(started,{extra:{parentLineAccount:"school-b",returnTo:"https://evil.example",teacherLineAccount:"school-b",adminLineAccount:"school-b"}}),url=new URL(returned.headers.Location);
+ assert.equal(url.origin,origin);assert.equal(url.searchParams.get("parentLineAccount"),"school-a");assert.equal(url.searchParams.has("teacherLineAccount"),false);assert.equal(url.searchParams.has("adminLineAccount"),false);
+ const replay=await h.callback(started,{extra:{parentLineAccount:"school-a",returnTo:"parent-account"}}),replayUrl=new URL(replay.headers.Location);
+ assert.equal(replayUrl.searchParams.get("line_error"),"authorization");assert.equal(replayUrl.searchParams.has("parentLineAccount"),false);assert.equal(replayUrl.searchParams.has("line_link"),false);
+ const missing=harness({role:"parent"}),fresh=await missing.start({mode:"link",returnTo:"parent-account"});
+ const denied=await missing.callback(fresh,{cookie:false,extra:{parentLineAccount:"school-a",returnTo:"parent-account"}}),deniedUrl=new URL(denied.headers.Location);
+ assert.equal(deniedUrl.searchParams.get("line_error"),"authorization");assert.equal(deniedUrl.searchParams.has("parentLineAccount"),false);assert.deepEqual(missing.effects,[]);
+ const legacy=harness({role:"parent"}),old=await legacy.start({mode:"link"}),unchanged=new URL((await legacy.callback(old,{extra:{parentLineAccount:"school-a",returnTo:"parent-account"}})).headers.Location);
+ assert.equal(unchanged.pathname,"/line-account.html");assert.equal(unchanged.searchParams.has("parentLineAccount"),false);
+});
+test("stored parent destinations preserve school, configuration, expiration and one-time state validation",async()=>{
+ const store=identityStore(),config={oauthVersion:"v1"},created=await store.createTenantLineOAuth("school-a",config,google,{returnTo:"parent-account"});
+ const request={headers:new Headers({cookie:created.cookie.name+"="+created.cookie.value})};
+ assert.equal(await store.useTenantLineOAuth(request,"school-b",created.state,config),null);assert.equal(await store.useTenantLineOAuth(request,"school-a",created.state,{oauthVersion:"v2"}),null);
+ const first=await store.useTenantLineOAuth(request,"school-a",created.state,config);assert.equal(first.returnTo,"parent-account");assert.equal(first.googleSub,google.sub);
+ assert.equal(await store.useTenantLineOAuth(request,"school-a",created.state,config),null);
+ const expired=await store.createTenantLineOAuth("school-a",config,google,{returnTo:"parent-account"});store.rows.values().next().value.expires=Date.now()-1;
+ assert.equal(await store.useTenantLineOAuth({headers:new Headers({cookie:expired.cookie.name+"="+expired.cookie.value})},"school-a",expired.state,config),null);
+ await assert.rejects(store.createTenantLineOAuth("school-a",config,undefined,{returnTo:"parent-account"}),/Invalid LINE account return/);
+});
+
 
 test("main bootstrap preserves school account callback errors for the capability-gated workspace",async()=>{
  const app=read("app/app-v3.js"),bootSource=app.slice(app.indexOf("async function boot(){"),app.indexOf("const schoolViewScript="));
  for(const error of ["configuration","authorization","verification","conflict"]){
   const histories=[],logins=[],loads=[];
-  const boot=runInNewContext(bootSource+";boot",{teacherLineAccountEntry:()=>"",URLSearchParams,location:{pathname:"/",search:"?adminLineAccount=school-a&line_error="+error},state:{token:"existing-session"},history:{replaceState:(...args)=>histories.push(args)},window:{},paidActivityEntry:()=>null,loadProfile:async profile=>loads.push(profile),renderLogin:message=>logins.push(message)});
+  const boot=runInNewContext(bootSource+";boot",{teacherLineAccountEntry:()=>"",parentLineAccountEntry:()=>"",URLSearchParams,location:{pathname:"/",search:"?adminLineAccount=school-a&line_error="+error},state:{token:"existing-session"},history:{replaceState:(...args)=>histories.push(args)},window:{},paidActivityEntry:()=>null,loadProfile:async profile=>loads.push(profile),renderLogin:message=>logins.push(message)});
   await boot();assert.equal(histories.length,0);assert.equal(logins.length,0);assert.equal(loads.length,1);
  }
  for(const search of ["?line_error=configuration","?adminLineAccount=https://evil.example&line_error=configuration"]){
   const histories=[],logins=[];
-  const boot=runInNewContext(bootSource+";boot",{teacherLineAccountEntry:()=>"",URLSearchParams,location:{pathname:"/",search},state:{token:""},history:{replaceState:(...args)=>histories.push(args)},renderLogin:message=>logins.push(message)});
+  const boot=runInNewContext(bootSource+";boot",{teacherLineAccountEntry:()=>"",parentLineAccountEntry:()=>"",URLSearchParams,location:{pathname:"/",search},state:{token:""},history:{replaceState:(...args)=>histories.push(args)},renderLogin:message=>logins.push(message)});
   await boot();assert.equal(histories.length,1);assert.equal(logins.length,1);assert.doesNotMatch(histories[0][2],/line_error/);
  }
 });

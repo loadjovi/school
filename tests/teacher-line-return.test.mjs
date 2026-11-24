@@ -11,7 +11,7 @@ function fixture({search="?teacherLineAccount=school-a&line_link=confirm",token=
  const requests=[],profiles=[],logins=[],histories=[],storage=new Map(pending?[["teacher_line_account_return",pending]]:[]),state={token,me:null};
  const location={pathname:"/",search,hash:""};
  const scope={state,URLSearchParams,location,window:{},history:{replaceState:(_state,_title,url)=>{histories.push(url);location.search=new URL(url,"https://example.invalid").search}},
-  sessionStorage:{getItem:key=>storage.get(key)||"",setItem:(key,value)=>storage.set(key,value)},
+  sessionStorage:{getItem:key=>storage.get(key)||"",setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
   fetch:async(url,options)=>{requests.push({url,options});return {ok:status===200,status,json:async()=>profile}},
   loadProfile:async value=>profiles.push(value),renderLogin:message=>logins.push(message)};
  runInNewContext(entrySource+"\n"+bootSource+";this.start=boot;this.restore=restoreTeacherLineAccountSession;this.entry=teacherLineAccountEntry;",scope);
@@ -74,6 +74,6 @@ test("the actual Gmail retry callback repeats teacher return verification before
  const callback=app.slice(app.indexOf("callback:async res=>{state.token=res.credential;"),app.indexOf("google.accounts.id.renderButton($(\"googleBtn\")"));
  const body=callback.slice("callback:".length,callback.lastIndexOf("});"));
  const storage=new Map(),calls=[],state={me:{role:"parent"}},fail=new Error("請使用老師 Gmail");
- const retry=runInNewContext("("+body+")",{state,sessionStorage:{setItem:(k,v)=>storage.set(k,v)},teacherLineAccountEntry:()=>"school-a",restoreTeacherLineAccountSession:async sid=>{calls.push(sid);throw fail},loadProfile:async()=>calls.push("loaded"),renderLogin:message=>calls.push(message)});
+ const retry=runInNewContext("("+body+")",{state,sessionStorage:{setItem:(k,v)=>storage.set(k,v)},teacherLineAccountEntry:()=>"school-a",parentLineAccountEntry:()=>"",restoreTeacherLineAccountSession:async sid=>{calls.push(sid);throw fail},loadProfile:async()=>calls.push("loaded"),renderLogin:message=>calls.push(message)});
  await retry({credential:"new-google-token"});assert.deepEqual(calls,["school-a",fail.message]);assert.equal(state.me,null);
 });

@@ -49,7 +49,7 @@ test('an unsupported role or missing account capability cannot start account req
  for(const options of [{role:'teacherUnknown'},{capability:false}]){const h=fixture(options);await h.panel.load();assert.equal(h.calls.length,0);assert.match(h.host.textContent,/尚未開啟|已授權的身分/);assert.equal(h.button('使用 LINE 授權並綁定'),undefined)}
 });
 test('OAuth starts only on action and requests the fixed notification-center destination when selected',async()=>{
- for(const returnTo of ['account','notification-center','teacher-account']){
+ for(const returnTo of ['account','notification-center','teacher-account','parent-account']){
   const h=fixture({line:unbound,returnTo});await h.panel.load();await h.click('使用 LINE 授權並綁定');
   const call=h.calls.find(x=>x.method==='POST');assert.equal(call.path,'/api/line/tenant-login/school-a/start');
   assert.deepEqual(call.body,returnTo!=='account'?{mode:'link',returnTo}:{mode:'link'});
@@ -198,7 +198,7 @@ test('the embedded teacher account reads the pending Gmail pair, confirms explic
  const scope={document:{body:{classList:{add(){}}},documentElement:{hasAttribute:()=>true},getElementById:id=>elements[id]||null,createElement:tag=>new Element(tag),addEventListener(){}},
   window:{addEventListener(){},parent:{postMessage:(data,origin)=>messages.push({data,origin}),location:{assign:url=>navigation.push(url)}}},
   location:{origin:'https://school-a.example.test',hash:'',search:'?embedded=teacher&schoolId=school-a&line_link=confirm',pathname:'/line-account.html'},history:{replaceState(){}},
-  sessionStorage:{getItem:key=>storage.get(key)||'',setItem:(key,value)=>storage.set(key,value)},URLSearchParams,URL,navigator:{userAgent:'Test'},console,
+  sessionStorage:{getItem:key=>storage.get(key)||'',setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},URLSearchParams,URL,navigator:{userAgent:'Test'},console,
   fetch:async(url,options)=>{const body=options.body&&JSON.parse(options.body);calls.push({url,method:options.method||'GET',body});
    if(body?.action==='confirm-link'){account={...bound,lineDisplayName:'Wen'};return {ok:true,json:async()=>({...account,menuSync:{status:'synced',audience:'staff',areaCount:6}})}}
    return {ok:true,json:async()=>url==='/api/me'?profile:url.includes('/tenant-login/')?{url:'https://access.line.me/oauth2/v2.1/authorize?state=teacher'}:account};
@@ -215,16 +215,54 @@ test('the embedded teacher account reads the pending Gmail pair, confirms explic
  assert.deepEqual(calls.at(-1).body,{mode:'link',returnTo:'teacher-account'});assert.equal(storage.get('teacher_line_account_return'),'school-a');assert.equal(navigation.length,1);
 });
 
-function standaloneFixture(){
+function standaloneFixture({parentReturn=false}={}){
  const elements=Object.fromEntries(['siteName','roleTitle','roleIntro','status','lineBinding'].map(id=>{const node=new Element();node.connected=true;return [id,node]}));
- const events={},calls=[],storage=new Map([['school_context_id','school-a'],['role_context','parent'],['google_id_token','token-a']]);
- let account={...unbound},profile={role:'parent',schoolId:'school-a',systemName:'甲校',capabilities:{lineAccount:true}},override;
- const scope={document:{documentElement:{hasAttribute:()=>true},visibilityState:'visible',getElementById:id=>elements[id]||null,createElement:tag=>new Element(tag),addEventListener(){}},window:{addEventListener:(type,fn)=>events[type]=fn,removeEventListener:(type,fn)=>{if(events[type]===fn)delete events[type]}},location:{hash:'',search:'',pathname:'/line-account.html'},history:{replaceState(){}},sessionStorage:{getItem:key=>storage.get(key)||''},URLSearchParams,URL,navigator:{userAgent:'Test'},console,
+ const events={},calls=[],navigation=[],storage=new Map([['school_context_id','school-a'],['role_context','parent'],['google_id_token','token-a']]);
+ let account={...unbound},profile={authProvider:'google',role:'parent',schoolId:'school-a',systemName:'甲校',capabilities:{lineAccount:true}},override;
+ const scope={document:{documentElement:{hasAttribute:()=>true},visibilityState:'visible',getElementById:id=>elements[id]||null,createElement:tag=>new Element(tag),addEventListener(){}},window:{addEventListener:(type,fn)=>events[type]=fn,removeEventListener:(type,fn)=>{if(events[type]===fn)delete events[type]}},location:{hash:'',search:parentReturn?'?parentLineAccount=school-a&line_link=confirm':'',pathname:'/line-account.html',assign:url=>navigation.push(url)},history:{replaceState(){}},sessionStorage:{getItem:key=>storage.get(key)||'',setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},URLSearchParams,URL,navigator:{userAgent:'Test'},console,
   fetch:async(url,options)=>{calls.push({url,method:options?.method||'GET'});const custom=await override?.(url,options);return {ok:true,json:async()=>custom??(url==='/api/me'?profile:account)}}};
  const feeSource=readFileSync(new URL('../app/fee-collections.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('if(!legacyLineEntry)load();','this.standaloneLoad=load;');
  runInNewContext(source+'\n'+feeSource,scope);
- return {scope,elements,events,calls,storage,setLine:value=>account=value,setProfile:value=>profile=value,setOverride:value=>override=value};
+ return {scope,elements,events,calls,storage,navigation,setLine:value=>account=value,setProfile:value=>profile=value,setOverride:value=>override=value};
 }
+
+test('an approved Gmail parent return needs only explicit LINE confirmation and automatically applies five entries',async()=>{
+ const h=standaloneFixture({parentReturn:true});
+ h.setLine({...unbound,pendingLink:{confirmationId:'parent-pair',googleEmail:'parent@example.test',lineDisplayName:'家長 LINE'}});
+ h.setOverride(async(_url,options)=>{
+  if(options.body&&JSON.parse(options.body).action==='confirm-link'){
+   h.setLine(bound);return {...bound,menuSync:{status:'synced',audience:'parent',areaCount:5}};
+  }
+ });
+ await h.scope.standaloneLoad();
+ assert.deepEqual(h.calls.map(call=>call.url),['/api/me','/api/line/school-account']);assert.equal(h.calls.every(call=>call.method==='GET'),true);
+ assert.match(h.elements.lineBinding.textContent,/parent@example.test/);assert.match(h.elements.lineBinding.textContent,/確認綁定/);
+ assert.equal(nodes(h.elements.lineBinding).some(node=>node.tag==='input'),false);
+ assert.equal(h.storage.has('parent_line_account_return'),false);
+ await nodes(h.elements.lineBinding).find(node=>node.ownText==='確認綁定').handlers.click();
+ assert.match(h.elements.lineBinding.textContent,/已沿用原 Gmail 核准的學生關係/);assert.match(h.elements.lineBinding.textContent,/自動啟用五格選單/);
+ assert.equal(h.calls.filter(call=>call.method==='POST').length,1);
+ assert.equal(h.calls.some(call=>/student-registration|student-master|parent-links/.test(call.url)),false);
+ assert.equal(nodes(h.elements.lineBinding).some(node=>node.ownText==='同步我的 LINE 選單'),false);
+});
+
+test('the parent account return refuses a stale LINE or unapproved Gmail identity before reading any account or student details',async()=>{
+ for(const profile of [{authProvider:'line',role:'unassigned',schoolId:'school-a'},{authProvider:'google',role:'unassigned',schoolId:'school-a'},{authProvider:'google',role:'parent',schoolId:'school-b'}]){
+  const h=standaloneFixture({parentReturn:true});h.setProfile(profile);await h.scope.standaloneLoad();
+  assert.deepEqual(h.calls.map(call=>call.url),['/api/me']);assert.match(h.elements.status.textContent,/原 Gmail/);
+  assert.match(h.elements.status.textContent,/不需重新填寫學生資料/);assert.equal(h.elements.lineBinding.textContent,'');
+  assert.equal(h.storage.get('parent_line_account_return'),'school-a');
+ }
+});
+
+test('a Gmail parent starts the dedicated parent OAuth path without requesting student identifiers',async()=>{
+ const h=standaloneFixture({parentReturn:true});await h.scope.standaloneLoad();
+ assert.match(h.elements.lineBinding.textContent,/不需再輸入學生姓名或學號/);
+ h.setOverride(async(url,options)=>{if(!url.includes('/tenant-login/'))return;assert.deepEqual(JSON.parse(options.body),{mode:'link',returnTo:'parent-account'});return {url:'https://access.line.me/oauth2/v2.1/authorize?state=parent'}});
+ await nodes(h.elements.lineBinding).find(node=>node.ownText==='使用 LINE 授權並綁定').handlers.click();
+ assert.equal(h.navigation.length,1);assert.equal(h.storage.get('parent_line_account_return'),'school-a');
+ assert.equal(h.calls.at(-1).url,'/api/line/tenant-login/school-a/start');
+});
 
 test('the standalone account page automatically fetches a returned pending pair after BFCache restore without linking it',async()=>{
  const h=standaloneFixture();await h.scope.standaloneLoad();assert.match(h.elements.lineBinding.textContent,/使用 LINE 授權並綁定/);

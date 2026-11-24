@@ -37,7 +37,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
   try{
    if(action==='link'){
     callbackError='';callbackLink='';
-    const payload={mode:'link',...(['notification-center','teacher-account'].includes(returnTo)?{returnTo}:{})};
+    const payload={mode:'link',...(['notification-center','teacher-account','parent-account'].includes(returnTo)?{returnTo}:{})};
     const result=await api('/api/line/tenant-login/'+encodeURIComponent(me.schoolId)+'/start',{method:'POST',body:JSON.stringify(payload)});
     if(!valid()||version!==generation)return;
     const url=new URL(result.url);
@@ -55,6 +55,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
     line=await api('/api/line/school-account');if(!valid()||version!==generation)return;
     callbackError='';callbackLink='';
     message=action==='confirm'?'已完成此校 Gmail 與 LINE 綁定。':action==='cancel'?'已取消此次綁定。':'已解除此校 LINE 綁定。';
+    if(action==='confirm'&&me.role==='parent')message+=' 已沿用原 Gmail 核准的學生關係，不需重新註冊學生。';
     if(action==='confirm'&&result.menuSync?.status==='synced')menuStatus=result.menuSync.audience==='parent'?(result.menuSync.areaCount===5?'已依核准家長身分自動啟用五格選單。':'已依核准家長身分自動套用家長選單。'):result.menuSync.audience==='staff'?'已依同校幹部與老師名冊自動套用六宮格。':'目前使用預設三宮格；學生資料須完成家長／學生核准後開放。';
     if(action==='confirm'&&result.menuSync?.status==='pending')menuStatus=canSyncMenu()?'帳號綁定已完成，選單尚未同步。'+(result.menuSync.message||'可按「同步我的 LINE 選單」重試。'):'帳號綁定已完成，家長選單由系統自動處理；若畫面尚未更新，請聯絡學校管理員確認設定。';
    }
@@ -94,6 +95,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
    actions.append(button('確認綁定',()=>run('confirm',{action:'confirm-link',confirmationId:pending.confirmationId})),button('取消',()=>run('cancel',{action:'cancel-link',confirmationId:pending.confirmationId}),true));host.append(actions);return;
   }
   host.append(make('p',(line.bound?'已連結 '+(line.lineDisplayName||'LINE'):'連結自己的 LINE，方便登入與接收通知。')+(line.googleLinked?' · 已連結 Gmail':'')));
+  if(me.role==='parent'&&line.authProvider==='google')host.append(make('p','此 Gmail 已核准的學生關係會直接沿用，LINE 綁定不需再輸入學生姓名或學號。'));
   const actions=make('div');actions.className='actions';
   if(line.authProvider==='google'&&!line.bound)actions.append(button('使用 LINE 授權並綁定',()=>run('link')));
   host.append(make('p',canSyncMenu()?'選單依同校身分自動判定：尚未綁定平台為預設三宮格，已核准家長啟用 Facebook 後為五格，幹部／啟用中的老師為六宮格。學生資料僅依已核准關係開放；幹部需要時可手動更新選單。':'完成學生核准與 LINE 綁定後，系統會自動啟用家長選單，不需另外同步；啟用 Facebook 後為五格。學生資料僅依已核准關係開放。'));
