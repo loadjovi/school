@@ -1,5 +1,5 @@
 (()=>{const q=new URLSearchParams(location.search),sid=String(q.get("onboardingSchoolId")||"").trim().toLowerCase(),role=String(q.get("onboardingRole")||"").trim();if(/^[a-z0-9-]{2,60}$/.test(sid)&&["schoolAdmin","teacher","parent"].includes(role)){sessionStorage.setItem("school_context_id",sid);sessionStorage.setItem("role_context",role)}})();
-const state={me:null,students:[],student:null,page:"home",summary:null,practice:[],token:sessionStorage.getItem("google_id_token")||"",registrations:[],master:[],schoolOptions:[],parentSelfBind:{schoolId:"",schoolName:"",students:[],loading:false}};
+const state={me:null,students:[],student:null,page:"home",summary:null,practice:[],token:sessionStorage.getItem("google_id_token")||"",registrations:[],master:[],schoolOptions:[],parentLineBinding:null,parentSelfBind:{schoolId:"",schoolName:"",students:[],loading:false}};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
 const grades=["一年級","二年級","三年級","四年級","五年級","六年級"],groups=["A","B","C","儲備"],instruments=["小提琴","中提琴","大提琴","低音提琴","其他"];
@@ -35,7 +35,7 @@ async function api(url,options={}){
   try{return JSON.parse(JSON.stringify(await pending))}
   finally{if(pendingApiGets.get(key)===pending)pendingApiGets.delete(key)}
 }
-function logout(reload=true){apiRequestEpoch++;pendingApiGets.clear();state.token="";state.me=null;state.students=[];state.student=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");sessionStorage.removeItem("teacher_line_account_return");sessionStorage.removeItem("parent_line_account_return");if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}
+function logout(reload=true){apiRequestEpoch++;pendingApiGets.clear();state.token="";state.me=null;state.students=[];state.student=null;state.parentLineBinding=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");sessionStorage.removeItem("teacher_line_account_return");sessionStorage.removeItem("parent_line_account_return");if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}
 function teacherLineAccountEntry(){
   const query=new URLSearchParams(location.search),schoolId=query.get("teacherLineAccount");
   if(/^[a-z0-9-]{2,60}$/.test(schoolId||""))return schoolId;
@@ -207,6 +207,7 @@ async function loadSchoolViewModule(){
 }
 window.retrySchoolView=()=>{state.schoolViewerLoadError="";render();return loadSchoolViewModule()};
 async function loadProfile(profile){
+  state.parentLineBinding=null;
   const entry=window.getLineStaffEntry?.()?null:paidActivityEntry();
   if(entry&&!sessionStorage.getItem("role_context"))choosePaidActivityContext(entry);
   state.me=profile??await api("/api/me?includeStudentProfiles=1");
@@ -269,6 +270,7 @@ async function loadProfile(profile){
     state.student=state.students[0]||null;
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me.role)||state.me?.capabilities?.teacherSettings)state.page="teacherHome";
     else state.page="home";
+    if(state.me.role==="parent"&&state.me.capabilities?.lineAccount&&typeof refreshParentLineBindingStatus==="function")void refreshParentLineBindingStatus();
     if(state.me.role==="parent"&&state.student){
       render();
       state.summaryLoadError="";
@@ -316,6 +318,29 @@ async function renderLineLogin(){
   }catch(error){console.warn("LINE school list unavailable")}
 }
 
+let parentLineBindingRequest=0;
+function parentLineBindingKey(){
+  return JSON.stringify([state.token,state.me?.identityId||state.me?.email||"",state.me?.schoolId||"",state.me?.role||"",sessionStorage.getItem("school_context_id")||"",sessionStorage.getItem("role_context")||""]);
+}
+async function refreshParentLineBindingStatus(){
+  if(state.me?.role!=="parent"||!state.me.capabilities?.lineAccount)return;
+  const request=++parentLineBindingRequest,scope=apiReadScope(),key=parentLineBindingKey();
+  const wasBound=state.parentLineBinding?.bound===true;
+  state.parentLineBinding={key,bound:null};
+  if(wasBound&&state.page==="home")render();
+  try{
+    const account=await api("/api/line/school-account");
+    if(request!==parentLineBindingRequest||scope!==apiReadScope()||key!==parentLineBindingKey())return;
+    state.parentLineBinding={key,bound:account.configured===true&&account.bound===true&&account.googleLinked===true};
+    if(state.page==="home")render();
+  }catch{
+    // An unavailable status leaves the account entry visible at the top.
+  }
+}
+window.addEventListener("pageshow",event=>{if(event.persisted)void refreshParentLineBindingStatus()});
+function parentServicesAtTop(){
+  return state.me?.role==="parent"&&state.me.capabilities?.lineAccount===true&&state.page==="home"&&!(state.parentLineBinding?.key===parentLineBindingKey()&&state.parentLineBinding.bound===true);
+}
 function tenantServicesEntry(){
   const me=state.me, options=me?.capabilities||{};
   if(!["admin","parent","unassigned"].includes(me?.role)||!["home","admin","uniformEvents"].includes(state.page))return "";
@@ -341,7 +366,7 @@ async function renderLogin(error=""){document.getElementById("app").innerHTML=`<
 function roleText(){return({parent:"家長／學生",teacher:"老師",sectionTeacher:"分部老師",ensembleTeacher:"合奏老師",comprehensiveTeacher:"綜合課老師",privateTeacher:"個別課老師",admin:"學校管理員",school:"校方查詢",globalAdmin:"Global 管理員",tenantPending:"學校建置中",contextSelector:"選擇身分",contextDenied:"請重新選擇身分",unassigned:"尚未綁定"}[state.me?.role]||"使用者")}
 function navBtn(p,i,l){return `<button class="${state.page===p?"active":""}" onclick="go('${p}')"><span>${i}</span>${l}</button>`}
 function nav(){const r=state.me.role;if(state.page==="contextSelect")return `<nav class="nav"><button></button><button></button><button></button><button></button></nav>`;if(r==="parent")return `<nav class="nav">${navBtn("home","🏠","首頁")}${navBtn("practice","⏱️","自主打卡")}${navBtn("record","📊","紀錄")}${navBtn("uniformEvents","🎻","活動團服")}</nav>`;if(r==="sectionTeacher")return `<nav class="nav">${navBtn("section","🎼","分部點名")}${navBtn("help","ℹ️","說明")}<button></button><button></button></nav>`;if(r==="privateTeacher")return `<nav class="nav">${navBtn("private","🎻","個別課")}${navBtn("help","ℹ️","說明")}<button></button><button></button></nav>`;if(r==="admin")return `<nav class="nav">${navBtn("admin","🏠","工作首頁")}${navBtn("students","👥","學生主檔")}${navBtn("scores","🧮","學期考核")}${navBtn("help","ℹ️","說明")}</nav>`;return `<nav class="nav">${navBtn("home","🏠","登記")}${navBtn("help","ℹ️","說明")}<button></button><button></button></nav>`}
-function shell(content){const multi=(state.me?.contexts||[]).length>1;const roleBadge=multi?`<button class="role" style="border:0;cursor:pointer" onclick="showContextSelector()" title="切換使用身分">${roleText()} ▾</button>`:`<span class="role">${roleText()}</span>`;const onboarding=state.me?.capabilities?.tenantOnboarding===true?`<div class="card" style="border:2px solid #f59e0b"><div class="notice"><b>🟠 Phase 4 隔離驗證模式</b><br>目前只操作「${esc(state.me?.schoolName||"第二校")}」的 Tenant 資料。這不是正式營運狀態，請依 Global Onboarding 清單完成角色隔離測試。</div></div>`:"";return `<div class="shell"><header class="top"><div class="brand">🎻 ${esc(state.me?.systemName||state.me?.schoolName||"聖心小學弦樂團")}</div><div class="sub">${state.me?.schoolName?esc(state.me.schoolName)+"｜":""}${state.me?.authProvider==="line"?"LINE 登入":"Google 登入"}</div><div class="userrow"><div><small>${esc(state.me.displayName||state.me.email)}</small>${roleBadge}</div><button class="logout" onclick="logout()">登出</button></div></header><main class="main">${onboarding}${state.me?.role==="parent"?content+tenantServicesEntry():tenantServicesEntry()+content}</main>${nav()}</div>`}
+function shell(content){const multi=(state.me?.contexts||[]).length>1;const roleBadge=multi?`<button class="role" style="border:0;cursor:pointer" onclick="showContextSelector()" title="切換使用身分">${roleText()} ▾</button>`:`<span class="role">${roleText()}</span>`;const onboarding=state.me?.capabilities?.tenantOnboarding===true?`<div class="card" style="border:2px solid #f59e0b"><div class="notice"><b>🟠 Phase 4 隔離驗證模式</b><br>目前只操作「${esc(state.me?.schoolName||"第二校")}」的 Tenant 資料。這不是正式營運狀態，請依 Global Onboarding 清單完成角色隔離測試。</div></div>`:"";return `<div class="shell"><header class="top"><div class="brand">🎻 ${esc(state.me?.systemName||state.me?.schoolName||"聖心小學弦樂團")}</div><div class="sub">${state.me?.schoolName?esc(state.me.schoolName)+"｜":""}${state.me?.authProvider==="line"?"LINE 登入":"Google 登入"}</div><div class="userrow"><div><small>${esc(state.me.displayName||state.me.email)}</small>${roleBadge}</div><button class="logout" onclick="logout()">登出</button></div></header><main class="main">${onboarding}${state.me?.role==="parent"&&!parentServicesAtTop()?content+tenantServicesEntry():tenantServicesEntry()+content}</main>${nav()}</div>`}
 function parentSelfBindPanel(){
   const b=state.parentSelfBind||{};
   if(!b.schoolId)return "";

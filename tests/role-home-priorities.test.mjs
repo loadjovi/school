@@ -56,12 +56,14 @@ test("parent home prioritizes courses, upcoming activities, important news and a
  assert.ok(order.every((x,i)=>html.includes(x)&&(!i||html.indexOf(x)>html.indexOf(order[i-1]))));
  assert.match(html,/交流活動/);assert.match(html,/攜帶物品提醒/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);
  assert.match(html,/記錄練習/);assert.match(html,/<details[^>]*><summary><b>查看學習進度與出勤/);
- const app=read("app/app-v3.js"),start=app.indexOf("function tenantServicesEntry()"),end=app.indexOf("async function renderLogin",start);
+ const app=read("app/app-v3.js"),start=app.indexOf("let parentLineBindingRequest="),end=app.indexOf("async function renderLogin",start);
  runInNewContext(app.slice(start,end)+";window.service=tenantServicesEntry",ctx);
  ctx.state.me.capabilities={lineAccount:true,feeCollections:true};
  assert.match(ctx.service(),/^<details/);assert.doesNotMatch(ctx.service(),/<details[^>]* open/);
- const shell=runInNewContext(app.slice(app.indexOf("function shell("),app.indexOf("function parentSelfBindPanel("))+";shell",{state:ctx.state,esc,roleText:()=>"家長",nav:()=>"",tenantServicesEntry:ctx.service});
- const page=shell(html);assert.ok(page.indexOf('id="parentAccountSettings"')>page.indexOf("本月自主練習"));
+ const shell=runInNewContext(app.slice(app.indexOf("function shell("),app.indexOf("function parentSelfBindPanel("))+";shell",{state:ctx.state,esc,roleText:()=>"家長",nav:()=>"",tenantServicesEntry:ctx.service,parentServicesAtTop:ctx.parentServicesAtTop});
+ const unbound=shell(html);assert.ok(unbound.indexOf('id="parentAccountSettings"')<unbound.indexOf("今日課程"));
+ ctx.state.parentLineBinding={key:ctx.parentLineBindingKey(),bound:true};
+ const bound=shell(html);assert.ok(bound.indexOf('id="parentAccountSettings"')>bound.indexOf("本月自主練習"));
 });
 
 test("today's parent course card includes that child's private lessons and excludes a sibling's lesson",async()=>{
