@@ -28,14 +28,16 @@ function harness({production=false}={}){
  return {...functions,scope,notice,records,lines,mails,bindings,contacts,failLine,failMail,setConfigured:value=>{configured=value},setFinishFailure:value=>{finishFailure=value},setMailUnknown:value=>{mailUnknown=value},env};
 }
 test("accepted LINE suppresses Email and repeated delivery preserves the first chosen channel",async()=>{
- const h=harness();h.bindings.set("school-a:alice@example.test","user-a");const result=await h.deliverLabNotice(h.notice);
+ const h=harness(),lineMessage={type:"flex",altText:"個課練習進度",contents:{type:"bubble",body:{type:"box",layout:"vertical",contents:[{type:"text",text:"練習紀錄"}]}}};h.bindings.set("school-a:alice@example.test","user-a");const result=await h.deliverLabNotice({...h.notice,lineMessage});
  assert.equal(result.status,"sent");assert.equal(result.channel,"line");assert.equal(h.lines.length,1);assert.equal(h.mails.length,0);
+ assert.equal(h.lines[0].text,lineMessage);
  const again=await h.deliverLabNotice(h.notice);assert.equal(again.channel,"line");assert.equal(h.lines.length,1);assert.equal(h.mails.length,0);
  assert.equal(h.lines[0].options.accessToken,"token-school-a");assert.ok(h.lines[0].options.retryKey);
 });
 test("an unbound recipient gets one Email fallback and does not get a second channel after later binding",async()=>{
- const h=harness();const result=await h.deliverLabNotice(h.notice);assert.equal(result.channel,"email");assert.equal(result.mailAcceptedCount,1);
+ const h=harness();const result=await h.deliverLabNotice({...h.notice,lineMessage:{type:"flex",altText:"不應放進 Email"}});assert.equal(result.channel,"email");assert.equal(result.mailAcceptedCount,1);
  assert.equal(h.lines.length,0);assert.equal(h.mails.length,1);assert.equal(h.mails[0].recipients.to[0].address,"alice@example.test");
+ assert.equal(h.mails[0].content.plainText,h.notice.text);
  h.bindings.set("school-a:alice@example.test","user-a");await h.deliverLabNotice(h.notice);assert.equal(h.lines.length,0);assert.equal(h.mails.length,1);
 });
 test("mixed recipients are decided individually: only missing or failed LINE deliveries fall back to Email",async()=>{
@@ -68,7 +70,7 @@ test("an accepted LINE response followed by a ledger failure cannot cause an Ema
 });
 test("obsolete payment notifications stop both transports, including after LINE setup",async()=>{
  const h=harness();assert.equal((await h.deliverLabNotice({...h.notice,stillDue:async()=>false})).status,"obsolete");assert.equal(h.lines.length,0);assert.equal(h.mails.length,0);
- const later=await h.deliverLabNotice({...h.notice,eventId:"event-two",lineSender:async()=>"ineligible"});assert.equal(later.status,"obsolete");assert.equal(h.mails.length,0);
+ const later=await h.deliverLabNotice({...h.notice,eventId:"event-two",lineMessage:{type:"flex",altText:"不得繞過自訂發送"},lineSender:async()=>"ineligible"});assert.equal(later.status,"obsolete");assert.equal(h.lines.length,0);assert.equal(h.mails.length,0);
 });
 test("school-scoped configuration, recipient lookup and delivery records cannot cross tenants",async()=>{
  const h=harness();h.bindings.set("school-b:alice@example.test","user-b");

@@ -52,7 +52,7 @@ async function mail(schoolId,recipient,subject,text){
   return {status:"accepted"};
  }catch(error){return {status:error.statusCode>=400&&error.statusCode<500?"failed":"unconfirmed"}}
 }
-async function one({schoolId,eventId,recipient,text,subject,lineSender,stillDue,mailAllowed}){
+async function one({schoolId,eventId,recipient,text,subject,lineSender,lineMessage,stillDue,mailAllowed}){
  const db=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,"TenantNotificationDelivery");
  await db.createTable().catch(error=>{if(error.statusCode!==409)throw error});
  const rowKey=keyFor(eventId,await deliveryRecipient(schoolId,recipient)),old=await get(db,schoolId,rowKey);
@@ -73,7 +73,7 @@ async function one({schoolId,eventId,recipient,text,subject,lineSender,stillDue,
      const account=usable?(typeof getTenantLineDeliveryRecipient==="function"?await getTenantLineDeliveryRecipient(schoolId,recipient,channel):await getTenantLineRecipient(schoolId,recipient,channel.botUserId)):null;
      if(!usable)line={status:"not_configured"};
      else if(!account?.lineUserId)line={status:"not_bound"};
-     else{await pushLineMessage(account.lineUserId,text,{accessToken:channel.accessToken,retryKey:retryKey([schoolId,eventId,account.lineUserId])});line={status:"accepted"}}
+     else{await pushLineMessage(account.lineUserId,lineMessage||text,{accessToken:channel.accessToken,retryKey:retryKey([schoolId,eventId,account.lineUserId])});line={status:"accepted"}}
     }
    }catch{line={status:"failed"}}
    if(accepted(line))result={status:"accepted",channel:"line",lineStatus:statusOf(line),mailStatus:"skipped_line_accepted"};
@@ -89,7 +89,7 @@ async function one({schoolId,eventId,recipient,text,subject,lineSender,stillDue,
   return result;
  }catch{return {status:"unconfirmed",channel:result.channel||"none",lineStatus:statusOf(line)}}
 }
-export async function deliverLabNotice({schoolId,eventId,recipients=[],text,subject="平台通知",lineSender,stillDue,mailAllowed=true}){
+export async function deliverLabNotice({schoolId,eventId,recipients=[],text,subject="平台通知",lineSender,lineMessage,stillDue,mailAllowed=true}){
  if(!lineFirstLabEnabled())return {status:"disabled",recipientCount:0,results:[]};
  if(!notificationAppUrl(schoolId))return {status:"not_configured",recipientCount:0,results:[]};
  text=productionText(text);subject=productionText(subject);
@@ -98,7 +98,7 @@ export async function deliverLabNotice({schoolId,eventId,recipients=[],text,subj
  const addresses=[...identities.values()];
  const id=eventId||hash([subject,text]),results=[];
  for(let i=0;i<addresses.length;i+=8){
-  const batch=await Promise.allSettled(addresses.slice(i,i+8).map(recipient=>one({schoolId,eventId:id,recipient,text,subject,lineSender,stillDue,mailAllowed})));
+  const batch=await Promise.allSettled(addresses.slice(i,i+8).map(recipient=>one({schoolId,eventId:id,recipient,text,subject,lineSender,lineMessage,stillDue,mailAllowed})));
   results.push(...batch.map((r,index)=>({recipient:addresses[i+index],...(r.status==="fulfilled"?r.value:{status:"failed",channel:"none"})})));
  }
  const lineAcceptedCount=results.filter(r=>r.status==="accepted"&&r.channel==="line").length,mailAcceptedCount=results.filter(r=>r.status==="accepted"&&r.channel==="email").length;

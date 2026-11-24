@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 import {createHash} from "node:crypto";
+import {buildPrivateLessonNoticeCard} from "../api/src/lib/privateLessonLineCards.mjs";
 const read=path=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
 const strip=source=>source.replace(/^import\s+[\s\S]*?;\r?\n/gm,"").replace(/^export /gm,"");
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[c]);
@@ -197,7 +198,7 @@ test("a verified LINE teacher retains their Gmail teaching scope and loses it af
 test("parent lesson status changes reach only that lesson's bound teacher LINE in the same school",async()=>{
  const calls=[],lookups=[];let linked=true;
  const notifier=runInNewContext(strip(read("api/src/lib/linePrivateLesson.js"))+";notifyPrivateLessonLine",{
-  process:{env:{}},console,workflowLineEnabled:()=>true,workflowLineRetryKey:()=>"retry",
+  process:{env:{}},console,workflowLineEnabled:()=>true,workflowLineRetryKey:()=>"retry",buildPrivateLessonNoticeCard,
   resolveTenantLineChannel:async school=>{assert.equal(school,"school-a");return {loginConfigured:true,botUserId:"bot-a",appOrigin:"https://school-a.example.invalid",accessToken:"test"}},
   getTenantLineRecipient:async(school,email,bot)=>{lookups.push({school,email,bot});return linked&&school==="school-a"&&email==="teacher@example.invalid"&&bot==="bot-a"?{lineUserId:"line-teacher"}:null},
   pushLineMessage:async(userId,text)=>calls.push({userId,text})
@@ -213,6 +214,7 @@ test("parent lesson status changes reach only that lesson's bound teacher LINE i
   assert.equal(result.lineStatus,"accepted");
  }
  assert.equal(calls.length,4);
+ assert.ok(calls.every(x=>x.text.type==="flex"&&JSON.stringify(x.text.contents).includes("授權老師")));
  assert.ok(calls.every(x=>x.userId==="line-teacher"));
  assert.ok(lookups.every(x=>x.email==="teacher@example.invalid"&&x.school==="school-a"&&x.bot==="bot-a"));
  linked=false;

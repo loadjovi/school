@@ -4,6 +4,7 @@ import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
 import {normalizeWeeklyGoals,readWeeklyGoals,isPublishedLesson} from "../api/src/lib/musicLearningGoals.mjs";
 import {validateParentLessonReview} from "../api/src/lib/privateLessonReview.mjs";
+import {buildPrivateLessonNoticeCard} from "../api/src/lib/privateLessonLineCards.mjs";
 
 const read=path=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
 const strip=source=>source.replace(/^import\s+[\s\S]*?;\r?\n/gm,"").replace(/^export /gm,"");
@@ -18,11 +19,11 @@ function booking({emailEnabled=false,teacherEmail="teacher@example.invalid",pare
  );
  const recipients=new Map(parents.map((email,index)=>[email,unbound.includes(email)?null:{lineUserId:"U"+String(index+1).repeat(32)}]));
  const notifyPrivateLessonLine=runInNewContext(strip(read("api/src/lib/linePrivateLesson.js"))+";notifyPrivateLessonLine",{
-  workflowLineEnabled:()=>true,workflowLineRetryKey:()=> "retry",
+  workflowLineEnabled:()=>true,workflowLineRetryKey:()=> "retry",buildPrivateLessonNoticeCard,
   process:{env:{LAB_ENVIRONMENT:"functional-uat"}},console,
   resolveTenantLineChannel:async school=>{assert.equal(school,schoolId);return {loginConfigured:true,botUserId:"school-bot",appOrigin:"https://school-a.example.invalid",accessToken:"test"}},
   getTenantLineRecipient:async(school,email,bot)=>{assert.equal(school,schoolId);assert.equal(bot,"school-bot");return recipients.get(email)},
-  pushLineMessage:async(id,text)=>messages.push({id,text})
+  pushLineMessage:async(id,message)=>messages.push({id,message,text:typeof message==="string"?message:message.fallbackText})
  });
  let handler;
  runInNewContext(strip(read("api/src/functions/privateLesson.js")),{
@@ -58,7 +59,11 @@ test("a teacher booking notifies only both linked parents even when Email is dis
  assert.equal(h.messages.length,2);
  assert.equal(h.mail.length,0);
  assert.equal(h.staff.length,0);
- for(const {text} of h.messages){
+ for(const {message,text} of h.messages){
+  assert.equal(message.type,"flex");
+  const visible=JSON.stringify(message.contents);
+  for(const value of ["測試同學","測試老師","2099-11-20","18:00","18:50"])assert.ok(visible.includes(value),value);
+  assert.ok(visible.includes('"type":"uri"'));assert.ok(visible.includes('school-a.example.invalid'));
   assert.match(text,/個別課預約通知/);
   assert.match(text,/測試同學/);
   assert.match(text,/測試老師/);

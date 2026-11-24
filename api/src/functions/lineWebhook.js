@@ -72,7 +72,7 @@ async function handleLineWebhook(request,schoolId,legacyRoute){
           continue;
         }
         if(channel.loginConfigured&&/^#個課評鑑(?:\s|$)/u.test(event.message.text)){
-          const result=await receivePrivateLessonReview(channel,userId,event.message.text);
+          const result=await receivePrivateLessonReview(channel,userId,event.message.text,{cards:true});
           await replyLineMessage(event.replyToken,result,options);
           continue;
         }

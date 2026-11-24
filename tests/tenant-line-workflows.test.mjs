@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {createHash, randomBytes, randomUUID} from "node:crypto";
 import {readFileSync} from "node:fs";
 import {runInNewContext} from "node:vm";
+import {buildPrivateLessonNoticeCard} from "../api/src/lib/privateLessonLineCards.mjs";
 
 const source = path => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const load = (path, globals, result = "") => runInNewContext(
@@ -50,7 +51,7 @@ test("legacy private-lesson delivery sends a platform link but never creates an 
  for(const loginConfigured of [false,true]){
   const h=deliveryCompatibility({channel:{loginConfigured}}),pushes=[],reviewWrites=[];
   const current=load("api/src/lib/linePrivateLesson.js",{
-   process:{env:{LAB_ENVIRONMENT:"production"}},workflowLineEnabled:()=>true,
+   process:{env:{LAB_ENVIRONMENT:"production"}},workflowLineEnabled:()=>true,buildPrivateLessonNoticeCard,
    resolveTenantLineChannel:async()=>h.channel,getTenantLineRecipient:h.api.getTenantLineRecipient,getTenantLineDeliveryRecipient:h.api.getTenantLineDeliveryRecipient,
    labNoticeUrl:schoolId=>"https://lively-field-09afddc00.6.azurestaticapps.net/?schoolId="+schoolId,
    workflowLineRetryKey:()=>"same-provider-retry-key",pushLineMessage:async(...args)=>pushes.push(args),
@@ -59,7 +60,9 @@ test("legacy private-lesson delivery sends a platform link but never creates an 
   },";notifyPrivateLessonLine");
   const now=new Date().toISOString(),result=await current("sacred-heart",{recipients:[google.email],entity:{rowKey:"lesson-one",partitionKey:"sacred-heart|student|one",completedAt:now,updatedAt:now},eventType:"completed",format:origin=>"個課已完成，請登入平台確認。\n"+origin});
   assert.equal(result,"accepted");assert.equal(pushes.length,1);assert.equal(pushes[0][0],userId);
-  assert.match(pushes[0][1],/lively-field.*schoolId=sacred-heart/);assert.doesNotMatch(pushes[0][1],/【LAB|lineuat|#個課評鑑/);
+  const message=pushes[0][1];assert.equal(message.type,"flex");
+  assert.match(message.fallbackText,/lively-field.*schoolId=sacred-heart/);assert.doesNotMatch(message.fallbackText,/【LAB|lineuat|#個課評鑑/);
+  const visible=JSON.stringify(message.contents);assert.match(visible,/lively-field/);assert.doesNotMatch(visible,/lesson-review:|#個課評鑑/);
   assert.equal(pushes[0][2].quickReply,undefined);assert.equal(reviewWrites.length,0);assert.equal(h.writes.length,0);
  }
 });

@@ -165,13 +165,13 @@ async function notifyWorkflow({request,schoolId,schoolName,entity,studentName,te
     };
     if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled()){
       const routed=await sendPrivateLessonWorkflowEmail({...notice,mailAllowed:notifyEmail&&settings.emailNotificationsEnabled===true,notificationId:["private",entity.rowKey,eventType,entity.updatedAt,lineDeliveryId].join(":"),
-       lineSender:notifyLine?email=>notifyPrivateLessonLine(schoolId,{recipients:[email],entity,eventType,deliveryId:lineDeliveryId,format:origin=>formatPrivateLessonNotice({...notice,appUrl:origin}).plainText}):async()=>({status:"disabled"})});
+       lineSender:notifyLine?email=>notifyPrivateLessonLine(schoolId,{recipients:[email],entity,eventType,notice,deliveryId:lineDeliveryId,format:origin=>formatPrivateLessonNotice({...notice,appUrl:origin}).plainText}):async()=>({status:"disabled"})});
       return {...routed,status:routed.status==="sent"?(routed.mailAcceptedCount?"accepted":"skipped_line_accepted"):routed.status,recipientCount:routed.results?.filter(r=>r.channel==="email").length||0,acceptedCount:routed.mailAcceptedCount||0};
     }
     const [mail,lineStatus]=await Promise.all([
       notifyEmail&&settings.emailNotificationsEnabled?sendPrivateLessonWorkflowEmail(notice):{status:"disabled",recipientCount:0,sentCount:0,failedCount:0},
       notifyLine?notifyPrivateLessonLine(schoolId,{
-        recipients:unique,entity,eventType,deliveryId:lineDeliveryId,format:origin=>formatPrivateLessonNotice({...notice,appUrl:origin}).plainText
+        recipients:unique,entity,eventType,notice,deliveryId:lineDeliveryId,format:origin=>formatPrivateLessonNotice({...notice,appUrl:origin}).plainText
       }):undefined
     ]);
     return {...mail,lineStatus};

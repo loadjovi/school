@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {normalizeLineReplyMessage,replyLineMessage} from "../api/src/lib/lineMessaging.mjs";
+import {normalizeLineReplyMessage,replyLineMessage,pushLineMessage} from "../api/src/lib/lineMessaging.mjs";
 
 const card=()=>({type:"flex",altText:"今日課程｜11/24",contents:{type:"bubble",body:{type:"box",layout:"vertical",contents:[{type:"text",text:"12:30–13:20 合奏課",wrap:true}]}},fallbackText:"今日課程\n12:30–13:20 合奏課"});
 test("query cards are sent as native Flex messages without internal fallback fields",async t=>{
@@ -36,4 +36,30 @@ test("empty or excessive card payloads become bounded plain text before contacti
 test("an absent reply token never sends a card or a plain notification",async t=>{
  t.mock.method(globalThis,"fetch",async()=>{throw Error("Unexpected send")});
  assert.deepEqual(await replyLineMessage("",card(),{accessToken:"school-token"}),{skipped:true});
+});
+
+test("private notification pushes retain the recipient, retry identity and rating shortcuts without leaking fallback fields",async t=>{
+ const requests=[];t.mock.method(globalThis,"fetch",async(url,options)=>{requests.push({url,options,body:JSON.parse(options.body)});return {ok:true,status:200,text:async()=>"{}"}});
+ const quickReply={items:[{type:"action",action:{type:"postback",label:"5 星",data:"review-code",inputOption:"openKeyboard",fillInText:"review draft"}}]};
+ await pushLineMessage("own-parent",card(),{accessToken:"school-a-token",retryKey:"same-private-event",quickReply});
+ assert.equal(requests.length,1);const {url,options,body}=requests[0];
+ assert.equal(url,"https://api.line.me/v2/bot/message/push");assert.equal(body.to,"own-parent");
+ assert.equal(options.headers["X-Line-Retry-Key"],"same-private-event");
+ assert.equal(options.headers.Authorization,"Bearer school-a-token");
+ assert.equal(body.messages[0].type,"flex");assert.deepEqual(body.messages[0].quickReply,quickReply);
+ assert.equal(Object.hasOwn(body.messages[0],"fallbackText"),false);
+});
+
+test("a rejected notification card falls back once using the same recipient and retry key",async t=>{
+ const requests=[];t.mock.method(globalThis,"fetch",async(_url,options)=>{requests.push({options,body:JSON.parse(options.body)});const first=requests.length===1;return {ok:!first,status:first?400:200,text:async()=>"{}"}});
+ await pushLineMessage("own-parent",card(),{accessToken:"school-token",retryKey:"same-event"});
+ assert.equal(requests.length,2);assert.equal(requests[0].body.messages[0].type,"flex");
+ assert.deepEqual(requests[1].body.messages,[{type:"text",text:card().fallbackText}]);
+ for(const request of requests){assert.equal(request.body.to,"own-parent");assert.equal(request.options.headers["X-Line-Retry-Key"],"same-event")}
+});
+
+test("uncertain notification delivery does not send a second card or fallback",async t=>{
+ let requests=0;t.mock.method(globalThis,"fetch",async()=>{requests++;return {ok:false,status:503,text:async()=>"{}"}});
+ await assert.rejects(pushLineMessage("own-parent",card(),{accessToken:"school-token",retryKey:"same-event"}),error=>error.status===503);
+ assert.equal(requests,1);
 });

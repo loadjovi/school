@@ -85,7 +85,15 @@ export async function replyLineMessage(replyToken,text,{accessToken}={}){
 export async function pushLineMessage(to,text,{accessToken,retryKey,quickReply}={}){
   const target=String(to||"").trim();
   if(!target)throw new Error("LINE 通知群組尚未綁定");
-  return lineApi("/v2/bot/message/push",{accessToken,retryKey,body:{to:target,messages:[{type:"text",text:String(text||"").slice(0,5000),...(quickReply?{quickReply}:{})}]}});
+  const message=normalizeLineReplyMessage(text);
+  const send=value=>lineApi("/v2/bot/message/push",{accessToken,retryKey,body:{to:target,messages:[{...value,...(quickReply?{quickReply}:{})}]}});
+  try{return await send(message)}
+  catch(error){
+    // A definite payload rejection can use plain text with the same delivery
+    // key. Unknown outcomes retain the existing no-resend behavior.
+    if(message.type==="flex"&&error.status===400&&text.fallbackText)return send({type:"text",text:String(text.fallbackText).slice(0,5000)});
+    throw error;
+  }
 }
 
 export async function getLineGroupSummary(groupId,{accessToken}={}){

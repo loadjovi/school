@@ -8,6 +8,7 @@ import {getTenantLineRecipient,getTenantLineDeliveryRecipient} from "./tenantLin
 import {labNoticeUrl} from "./labNoticeDelivery.mjs";
 import {pushLineMessage} from "./lineMessaging.mjs";
 import {validateParentLessonReview} from "./privateLessonReview.mjs";
+import {buildPrivateLessonNoticeCard,buildPrivateReviewResponseCard} from "./privateLessonLineCards.mjs";
 
 const reviewLifetime=7*24*60*60*1000;
 function reviewQuickReply(code){
@@ -46,7 +47,7 @@ async function reserveReview(channel,entity,email,userId){
   return key;
 }
 
-export async function notifyPrivateLessonLine(schoolId,{recipients,entity,eventType,format,deliveryId=""}){
+export async function notifyPrivateLessonLine(schoolId,{recipients,entity,eventType,format,notice={},deliveryId=""}){
   if(!workflowLineEnabled()||!recipients.length)return "disabled";
   try{
     const channel=await resolveTenantLineChannel(schoolId);
@@ -54,7 +55,8 @@ export async function notifyPrivateLessonLine(schoolId,{recipients,entity,eventT
     if(!messagingReady)return "not_configured";
     const appUrl=channel.appOrigin||(typeof labNoticeUrl==="function"?labNoticeUrl(schoolId):"");
     if(!appUrl)return "not_configured";
-    const text=(process.env.LAB_ENVIRONMENT==="functional-uat"?"【LAB】\n":"")+format(appUrl);
+    const lab=process.env.LAB_ENVIRONMENT==="functional-uat";
+    const text=(lab?"【LAB】\n":"")+format(appUrl);
     const eventId=["private",entity.rowKey,eventType,entity.updatedAt,...(deliveryId?[deliveryId]:[])].join(":");
     const seen=new Set();
     const accounts=await Promise.all(recipients.map(email=>typeof getTenantLineDeliveryRecipient==="function"?getTenantLineDeliveryRecipient(schoolId,email,channel):getTenantLineRecipient(schoolId,email,channel.botUserId)));
@@ -66,7 +68,9 @@ export async function notifyPrivateLessonLine(schoolId,{recipients,entity,eventT
         const canReview=channel.loginConfigured===true&&!account.deliveryOnly&&eventType==="completed"&&entity.completedAt&&Date.now()<Date.parse(entity.completedAt)+reviewLifetime;
         const code=canReview?await reserveReview(channel,entity,recipients[index],userId):"";
         const review=code?reviewInstructions(code,Date.parse(entity.completedAt)+reviewLifetime):"";
-        await pushLineMessage(userId,text+review,{accessToken:channel.accessToken,retryKey:workflowLineRetryKey(schoolId,eventId,userId),...(code?{quickReply:reviewQuickReply(code)}:{})});
+        const message=buildPrivateLessonNoticeCard({notice:{...notice,eventType},entity,appUrl,reviewCode:code,
+          reviewExpiresAt:code?Date.parse(entity.completedAt)+reviewLifetime:null,fallbackText:text+review,lab});
+        await pushLineMessage(userId,message,{accessToken:channel.accessToken,retryKey:workflowLineRetryKey(schoolId,eventId,userId),...(code?{quickReply:reviewQuickReply(code)}:{})});
       })()];
     });
     if(!tasks.length)return "not_bound";
@@ -78,30 +82,38 @@ export async function notifyPrivateLessonLine(schoolId,{recipients,entity,eventT
   }
 }
 
-export async function receivePrivateLessonReview(channel,userId,text){
+export async function receivePrivateLessonReview(channel,userId,text,{cards=false}={}){
   if(!/^#個課評鑑(?:\s|$)/u.test(text))return null;
+  const respond=(message,receipt)=>{
+    if(!cards)return message;
+    try{return buildPrivateReviewResponseCard({text:message,receipt,schoolId:channel.schoolId,
+      appUrl:channel.appOrigin||(typeof labNoticeUrl==="function"?labNoticeUrl(channel.schoolId):""),
+      lab:process.env.LAB_ENVIRONMENT==="functional-uat"})}
+    catch{return message}
+  };
   const match=text.match(/^#個課評鑑\s+([a-f\d]{14})\s+([1-5])\s+([\s\S]+)$/iu);
-  if(!match)return reviewFormatHint(text);
-  if(!userId)return "請在學校官方帳號的一對一聊天室填寫評鑑。";
-  if(!workflowLineEnabled())return "此環境尚未開啟 LINE 評鑑。";
+  if(!match)return respond(reviewFormatHint(text));
+  if(!userId)return respond("請在學校官方帳號的一對一聊天室填寫評鑑。");
+  if(!workflowLineEnabled())return respond("此環境尚未開啟 LINE 評鑑。");
   const {schoolId,botUserId}=channel;
   const validation=validateParentLessonReview(match[2],match[3]);
-  if(validation.error||validation.review==="請填寫您的想法")return reviewFormatHint(text);
+  if(validation.error||validation.review==="請填寫您的想法")return respond(reviewFormatHint(text));
   const expired="評鑑代碼已失效，請由平台的個課紀錄查看。";
   try{
     const db=await reviewTable(),record=await db.getEntity(scope(schoolId,botUserId),match[1].toUpperCase());
-    if(record.userId!==userId||Date.now()>=record.expiresAt)return expired;
+    if(record.userId!==userId||Date.now()>=record.expiresAt)return respond(expired);
     const currentAccount=await getTenantLineRecipient(schoolId,record.email,botUserId);
-    if(currentAccount?.lineUserId!==userId)return expired;
+    if(currentAccount?.lineUserId!==userId)return respond(expired);
     const mappings=await getMappedStudentsByEmail(record.email,schoolId);
     const canonical=await Promise.all(mappings.map(row=>getStudentAliasInfo(row.studentId,schoolId)));
-    if(!canonical.some(info=>String(info.canonicalStudentId)===record.studentId))return expired;
+    const ownedStudentIndex=canonical.findIndex(info=>String(info.canonicalStudentId)===record.studentId);
+    if(ownedStudentIndex<0)return respond(expired);
     await ensureTenantTables();
     const lessons=table("tenantPrivateLesson");
     const partitionKey=tenantStudentPartition(schoolId,record.studentId);
     const lesson=await lessons.getEntity(partitionKey,record.lessonId);
-    if(lesson.completedAt!==record.completedAt||lesson.parentConfirmation==="issue"||!["teacher_completed","present","late"].includes(lesson.status))return expired;
-    if(lesson.teacherRatedAt&&!(lesson.parentConfirmation==="pending"&&lesson.teacherRatedBy===record.email&&Number(lesson.teacherRating)===validation.rating&&lesson.teacherReview===validation.review))return "這堂個課已收到評鑑，可在平台查看。";
+    if(lesson.completedAt!==record.completedAt||lesson.parentConfirmation==="issue"||!["teacher_completed","present","late"].includes(lesson.status))return respond(expired);
+    if(lesson.teacherRatedAt&&!(lesson.parentConfirmation==="pending"&&lesson.teacherRatedBy===record.email&&Number(lesson.teacherRating)===validation.rating&&lesson.teacherReview===validation.review))return respond("這堂個課已收到評鑑，可在平台查看。");
     const timestamp=new Date().toISOString();
     const attendance=["present","late"].includes(lesson.actualAttendanceStatus)?lesson.actualAttendanceStatus:["present","late"].includes(lesson.status)?lesson.status:"present";
     const patch={partitionKey,rowKey:record.lessonId};
@@ -112,11 +124,13 @@ export async function receivePrivateLessonReview(channel,userId,text){
       parentNote:"",finalizedAt:timestamp});
     patch.updatedAt=timestamp;
     await lessons.updateEntity(patch,"Merge",{etag:lesson.etag});
-    return `✅ 已確認 ${lesson.eventDate} 個課完成上課，並已記錄 ${validation.rating} 星與文字回饋。\n教學星級：${"★".repeat(validation.rating)}（${validation.rating}/5）\n您的評語：${validation.review}\n\n本堂個課已結案，星級與評語已同步平台，不需再到網頁確認。家長網頁約 30 秒更新，也可點「重新整理」。`;
+    return respond(`✅ 已確認 ${lesson.eventDate} 個課完成上課，並已記錄 ${validation.rating} 星與文字回饋。\n教學星級：${"★".repeat(validation.rating)}（${validation.rating}/5）\n您的評語：${validation.review}\n\n本堂個課已結案，星級與評語已同步平台，不需再到網頁確認。家長網頁約 30 秒更新，也可點「重新整理」。`,
+      {studentName:mappings[ownedStudentIndex]?.name||mappings[ownedStudentIndex]?.studentName||"學生",teacherName:lesson.teacherName,
+       date:lesson.eventDate,startTime:lesson.startTime,endTime:lesson.endTime,rating:validation.rating,review:validation.review});
   }catch(error){
-    if(error.statusCode===404)return expired;
-    if(error.statusCode===412)return "個課資料剛更新。請重新送出評鑑，系統會核對最新狀態。";
+    if(error.statusCode===404)return respond(expired);
+    if(error.statusCode===412)return respond("個課資料剛更新。請重新送出評鑑，系統會核對最新狀態。");
     console.warn("Private lesson LINE review could not be saved",{schoolId,status:error?.status||error?.statusCode});
-    return "評鑑暫時無法送出，請稍後重試。";
+    return respond("評鑑暫時無法送出，請稍後重試。");
   }
 }
