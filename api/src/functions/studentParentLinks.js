@@ -3,6 +3,7 @@ import { getTenantContext, getStudentAliasInfo, json } from "../lib/auth.js";
 import { ensureTenantTables, table, getStudentMaster, rowKey, tenantParentPartition, tenantSchoolPartition, tenantStudentPartition } from "../lib/storage.js";
 import { resolveTenantLineChannel } from "../lib/lineTenantConfig.js";
 import { listTenantLineRecipientStatuses } from "../lib/tenantLineAccounts.js";
+import { reconcileParentLineMenus } from "../lib/parentLineMenu.js";
 
 function clean(v,max=200){return String(v||"").trim().slice(0,max)}
 
@@ -51,7 +52,8 @@ app.http("studentParentLinks",{
           oldValue:JSON.stringify({parentEmail:originalParentEmail,studentId:originalStudentId,relationship:String(old.relationship||""),parentName:String(old.parentName||"")}),
           newValue:JSON.stringify(null),registrationId:String(old.registrationId||"")
         });
-        return json({ok:true,removed:true,parentEmail:originalParentEmail,studentId,removedAt:now,removedBy:access.email});
+        const menuSync=await reconcileParentLineMenus(schoolId,[originalParentEmail]);
+        return json({ok:true,removed:true,parentEmail:originalParentEmail,studentId,removedAt:now,removedBy:access.email,menuSync});
       }
 
       const parentEmail=clean(body.parentEmail,320).toLowerCase();
@@ -113,7 +115,8 @@ app.http("studentParentLinks",{
         registrationId:String(old.registrationId||"")
       });
 
-      return json({ok:true,item:{
+      const menuSync=await reconcileParentLineMenus(schoolId,[originalParentEmail,parentEmail]);
+      return json({ok:true,menuSync,item:{
         studentId:targetStudentId,sourceStudentId:targetStudentId,parentEmail,
         parentName:newValue.parentName,relationship,status:"active",
         registrationId:String(old.registrationId||""),correctedAt:now,correctedBy:access.email

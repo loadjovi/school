@@ -1,6 +1,4 @@
-import {getTenantLineRecipient} from "../lib/tenantLineAccounts.js";
-import {resolveTenantLineChannel} from "../lib/lineTenantConfig.js";
-import {refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
+import {reconcileParentLineMenus} from "../lib/parentLineMenu.js";
 import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
 import { ensureTenantTables, table, rowKey, getRegistrationsByEmail, listRegistrations, getStudentMaster, listStudentMaster, tenantParentPartition, tenantSchoolPartition, tenantStudentPartition } from "../lib/storage.js";
@@ -146,12 +144,8 @@ app.http("studentRegistration",{
     reg.status="approved";reg.studentId=studentId;reg.studentName=studentName;reg.grade=grade;reg.groupName=groupName;reg.instrument=instrument;reg.schoolYear=schoolYear;reg.reviewedAt=now;reg.reviewedBy=access.email;reg.note=note;reg.notificationStatus="pending";reg.notificationError="";
     await regClient.updateEntity(reg,"Merge");
 
+    const menuSync=await reconcileParentLineMenus(schoolId,[reg.parentEmail]);
     let notification;
-    try{
-      const channel=await resolveTenantLineChannel(schoolId);
-      const lineAccount=channel.loginConfigured&&await getTenantLineRecipient(schoolId,reg.parentEmail,channel.botUserId);
-      if(lineAccount)await refreshTenantLineMenu(channel,lineAccount);
-    }catch{console.warn("Approved parent LINE menu sync deferred",{schoolId})}
     try{
       notification=await sendParentApprovalEmail({schoolId,schoolName:context.tenant?.systemName||context.tenant?.schoolName,
         recipient:reg.parentEmail,parentName:reg.parentName,studentName,grade,groupName,instrument
@@ -166,7 +160,7 @@ app.http("studentRegistration",{
     reg.notificationMessageId=String(notification?.messageId||"").slice(0,200);
     await regClient.updateEntity(reg,"Merge");
 
-    return json({ok:true,status:"approved",studentId,linkedExisting:true,notification:{
+    return json({ok:true,status:"approved",studentId,linkedExisting:true,menuSync,notification:{
       status:reg.notificationStatus,sentAt:reg.notificationSentAt||null,error:reg.notificationError||"",messageId:reg.notificationMessageId||""
     }});
   }

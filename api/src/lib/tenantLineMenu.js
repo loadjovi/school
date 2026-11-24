@@ -15,7 +15,7 @@ export async function tenantLineParentStudents(schoolId, parentEmail) {
 
 export class LineMenuSyncError extends Error {}
 
-export async function refreshTenantLineMenu(channel, account, userId = account?.lineUserId, {verify = false, expectStaff = false} = {}) {
+export async function refreshTenantLineMenu(channel, account, userId = account?.lineUserId, {verify = false, expectStaff = false, details = false} = {}) {
   if (!channel.configured || !/^U[0-9a-f]{32}$/i.test(userId || "")) return "unavailable";
   const {accessToken, schoolId} = channel;
   // A menu is presentation, not a role grant. Global school assignments and
@@ -106,7 +106,9 @@ export async function refreshTenantLineMenu(channel, account, userId = account?.
     if (verify) throw new LineMenuSyncError("已確認家長學生關係，但家長選單版型尚未準備完成；不需重新綁定帳號。");
     return "unavailable";
   }
-  if (!verify || !menuId) return menuId ? role : "default";
+  if (!verify || !menuId) return details && menuId
+    ? {audience: role, areaCount: definition.areas.length, chatActionsVerified}
+    : menuId ? role : "default";
   try {
     const assigned = await lineApi(resource, {accessToken, method: "GET"});
     if (assigned.richMenuId === menuId) return {audience: role, areaCount: definition.areas?.length || 0, chatActionsVerified};

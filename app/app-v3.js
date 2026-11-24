@@ -234,27 +234,6 @@ async function renderLineLogin(){
   }catch(error){console.warn("LINE school list unavailable")}
 }
 
-async function syncOwnLineMenu(button){
-  const output=button.closest("section, details")?.querySelector("[data-line-menu-result]");
-  if(!output||button.disabled)return;
-  button.disabled=true;
-  output.textContent="正在同步 LINE 選單…";
-  try{
-    const result=await api("/api/line/school-account",{method:"POST",body:JSON.stringify({action:"sync-menu"})});
-    const messages={
-      parent:"已同步為家長選單，請重新開啟 LINE 聊天室查看。",
-      staff:result.chatActionsVerified?"LINE 已確認套用幹部六宮格。上排三格在聊天室回覆，下排三格開啟後台。請重新開啟聊天室查看。":`LINE 已確認套用幹部選單${result.areaCount===6?"（六宮格）":""}。請重新開啟 LINE 聊天室查看。`,
-      default:"目前使用通用選單。若已完成綁定，請確認此校的角色選單設定。",
-      unavailable:"目前無法同步，請聯絡學校管理員確認 LINE 選單設定。"
-    };
-    output.textContent=result.configured===false?"此校的 LINE 服務尚未開啟。":messages[result.audience]||"目前無法同步，請稍後再試。";
-  }catch(error){
-    output.textContent=error.message||"LINE 選單同步失敗，請稍後再試。";
-  }finally{
-    button.disabled=false;
-  }
-}
-
 function tenantServicesEntry(){
   const me=state.me, options=me?.capabilities||{};
   if(!["admin","parent","unassigned"].includes(me?.role)||!["home","admin","uniformEvents"].includes(state.page))return "";
@@ -270,12 +249,9 @@ function tenantServicesEntry(){
   }
   if(!options.lineAccount&&!billing)return "";
   if(options.lineAccount&&["parent","unassigned"].includes(me.role)){
-    const description="綁定自己的 LINE，接收課程、個課與活動通知。";
+    const description="完成學生核准與 LINE 綁定後，系統會自動啟用家長選單，不需另外同步；啟用 Facebook 後為五個入口。";
     const button="管理我的 LINE 通知設定 →";
-    const sync=me.role==="parent"
-      ?'<button type="button" class="secondary" style="width:100%;margin-top:8px" onclick="syncOwnLineMenu(this)">重新同步我的 LINE 選單</button><div class="muted" role="status" data-line-menu-result></div>'
-      :"";
-    return `<details class="card" id="parentAccountSettings"><summary><b>⚙️ 帳號與通知設定</b></summary><h2 id="parentLineServicesTitle">LINE 通知設定</h2><div class="notice">${description}</div><button type="button" class="secondary" style="width:100%" onclick="location.href='/line-account.html'">${button}</button>${sync}${billing?'<a href="/fee-collections.html" style="display:block;margin-top:12px">查看我的繳費紀錄</a>':""}</details>`;
+    return `<details class="card" id="parentAccountSettings"><summary><b>⚙️ 帳號與通知設定</b></summary><h2 id="parentLineServicesTitle">LINE 通知設定</h2><div class="notice">${description}</div><button type="button" class="secondary" style="width:100%" onclick="location.href='/line-account.html'">${button}</button>${billing?'<a href="/fee-collections.html" style="display:block;margin-top:12px">查看我的繳費紀錄</a>':""}</details>`;
   }
   return billing?'<div class="card"><a href="/fee-collections.html">查看費用資訊</a></div>':"";
 }

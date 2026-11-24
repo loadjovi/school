@@ -52,6 +52,14 @@ test("an approved same-school parent mapping selects and verifies the four-butto
  assert.deepEqual(lineOnly.reads,[["students",parentEmail,"school-a"]]);
 });
 
+test("automatic menu updates return the actual validated button count without an extra assignment readback",async()=>{
+ const h=fixture();h.roster.students=[{studentId:"student-a"}];
+ const result=await h.sync(h.account,{details:true});
+ assert.equal(result.audience,"parent");assert.equal(result.areaCount,4);
+ assert.equal(h.calls.length,2);assert.equal(h.calls[0].method,"GET");assert.equal(h.calls[1].method,undefined);
+ assert.equal(h.calls.some(call=>call.path===resource&&call.method==="GET"),false);
+});
+
 test("the current school's Global assignments and active teacher roster automatically select staff six-buttons without parent approval",async()=>{
  for(const roster of [
   {roles:[{role:"schoolAdmin",schoolId:"school-a"}],teacher:null},

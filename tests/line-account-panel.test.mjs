@@ -83,7 +83,7 @@ test('bound teachers can retry automatic menu sync without receiving an addition
  }
 });
 test('confirmation keeps binding success separate from automatic menu sync success or a retryable pending result',async()=>{
- for(const menuSync of [{status:'synced',audience:'staff'},{status:'synced',audience:'parent'},{status:'synced',audience:'default'},{status:'pending',message:'選單服務暫時忙碌，可稍後重試。'}]){
+ for(const menuSync of [{status:'synced',audience:'staff'},{status:'synced',audience:'parent',areaCount:5},{status:'synced',audience:'default'},{status:'pending',message:'選單服務暫時忙碌，可稍後重試。'}]){
   let h;h=fixture({line:{...unbound,pendingLink:{confirmationId:'confirmation',googleEmail:'admin@example.test'}},apiOverride:(_path,_options,body)=>{
    if(body?.action==='confirm-link'){h.setLine(bound);return {...bound,menuSync}}
   }});
@@ -91,14 +91,43 @@ test('confirmation keeps binding success separate from automatic menu sync succe
   assert.match(h.host.textContent,/已完成此校 Gmail 與 LINE 綁定/);assert.ok(h.button('同步我的 LINE 選單'));assert.ok(h.button('解除 LINE 綁定'));
   assert.doesNotMatch(h.host.textContent,/操作未完成|重新授權|重新綁定/);
   if(menuSync.status==='pending')assert.match(h.host.textContent,/帳號綁定已完成，選單尚未同步。選單服務暫時忙碌/);
-  else assert.match(h.host.textContent,menuSync.audience==='parent'?/依核准家長身分自動套用家長選單/:menuSync.audience==='staff'?/依同校幹部與老師名冊自動套用六宮格/:/目前使用預設三宮格；學生資料須完成家長／學生核准後開放/);
+  else assert.match(h.host.textContent,menuSync.audience==='parent'?/依核准家長身分自動啟用五格選單/:menuSync.audience==='staff'?/依同校幹部與老師名冊自動套用六宮格/:/目前使用預設三宮格；學生資料須完成家長／學生核准後開放/);
  }
 });
-test('sync feedback distinguishes approved-parent functions from the default three-grid',async()=>{
- for(const audience of ['parent','default']){
-  const h=fixture({role:'parent',apiOverride:(_path,_options,body)=>body?.action==='sync-menu'?{audience}:undefined});
-  await h.panel.load();await h.click('同步我的 LINE 選單');
-  assert.match(h.host.textContent,audience==='parent'?/已同步已核准家長選單/:/目前使用預設三宮格；學生資料須完成家長／學生核准後開放/);
+test('parents and unassigned accounts have no manual sync step and entry or status viewing remains read-only',async()=>{
+ for(const role of ['parent','unassigned']){
+  const h=fixture({role});await h.panel.load();
+  assert.equal(h.button('同步我的 LINE 選單'),undefined);
+  assert.match(h.host.textContent,/自動啟用家長選單，不需另外同步/);
+  assert.doesNotMatch(h.host.textContent,/可重試同步|手動更新|更新綁定狀態/);
+  await h.click('查看綁定狀態');
+  assert.equal(h.calls.length,2);assert.equal(h.calls.every(call=>call.method==='GET'),true);
+ }
+});
+
+test('parent confirmation automatically reports five entries and never asks for a sync click when menu delivery is pending',async()=>{
+ for(const status of ['synced','pending']){
+  let h;h=fixture({role:'parent',line:{...unbound,pendingLink:{confirmationId:'confirmation',googleEmail:'parent@example.test'}},apiOverride:(_path,_options,body)=>{
+   if(body?.action==='confirm-link'){h.setLine(bound);return {...bound,menuSync:{status,audience:'parent',areaCount:5,message:'請按同步我的 LINE 選單後重新綁定'}}}
+  }});
+  await h.panel.load(new URLSearchParams('line_link=confirm'));assert.ok(h.button('確認綁定'));
+  await h.click('確認綁定');
+  assert.match(h.host.textContent,/已完成此校 Gmail 與 LINE 綁定/);
+  assert.equal(h.button('同步我的 LINE 選單'),undefined);assert.ok(h.button('解除 LINE 綁定'));
+  assert.equal(h.calls.filter(call=>call.method==='POST').length,1);
+  assert.doesNotMatch(h.host.textContent,/重新綁定|請按同步|更新綁定狀態/);
+  assert.match(h.host.textContent,status==='synced'?/自動啟用五格選單/:/家長選單由系統自動處理.*學校管理員/);
+ }
+});
+
+test('a legacy parent template is not described as five entries without the server count',async()=>{
+ for(const areaCount of [undefined,4]){
+  let h;h=fixture({role:'parent',line:{...unbound,pendingLink:{confirmationId:'confirmation',googleEmail:'parent@example.test'}},apiOverride:(_path,_options,body)=>{
+   if(body?.action==='confirm-link'){h.setLine(bound);return {...bound,menuSync:{status:'synced',audience:'parent',areaCount}}}
+  }});
+  await h.panel.load();await h.click('確認綁定');
+  assert.match(h.host.textContent,/依核准家長身分自動套用家長選單/);
+  assert.doesNotMatch(h.host.textContent,/自動啟用五格選單/);assert.equal(h.button('同步我的 LINE 選單'),undefined);
  }
 });
 test('an in-flight mutation cannot be submitted twice and late scope changes clear private identity text',async()=>{

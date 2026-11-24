@@ -442,13 +442,13 @@ test("student LINE coverage preserves binding and uses the latest friendship for
   assert.equal((await lookup("school-a", "U" + "c".repeat(32))).size, 0);
 });
 
-test("parent account tools are collapsed and can still sync with the active school account", async () => {
+test("parent account tools explain automatic menus without a manual sync step", async () => {
   const state = {me: {role: "parent", capabilities: {lineAccount: true, feeCollections: true}}, page: "home"};
   const calls = [];
   const file = source("app/app-v3.js");
-  const {tenantServicesEntry, syncOwnLineMenu} = runInNewContext(
-    file.slice(file.indexOf("async function syncOwnLineMenu("), file.indexOf("async function renderLogin(")) +
-    ";({tenantServicesEntry,syncOwnLineMenu})", {
+  const {tenantServicesEntry} = runInNewContext(
+    file.slice(file.indexOf("function tenantServicesEntry("), file.indexOf("async function renderLogin(")) +
+    ";({tenantServicesEntry})", {
       state, window: {}, api: async (url, options) => {calls.push({url, options});return {audience: "parent"};}
     }
   );
@@ -456,14 +456,9 @@ test("parent account tools are collapsed and can still sync with the active scho
   assert.doesNotMatch(tenantServicesEntry(), /<details[^>]* open/);
   assert.match(tenantServicesEntry(), /管理我的 LINE 通知設定/);
   assert.match(tenantServicesEntry(), /line-account.html/);
-  assert.match(tenantServicesEntry(), /重新同步我的 LINE 選單/);
-  const output = {};
-  const button = {disabled: false, closest: () => ({querySelector: () => output})};
-  await syncOwnLineMenu(button);
-  assert.equal(calls[0].url, "/api/line/school-account");
-  assert.equal(JSON.parse(calls[0].options.body).action, "sync-menu");
-  assert.match(output.textContent, /已同步為家長選單/);
-  assert.equal(button.disabled, false);
+  assert.match(tenantServicesEntry(), /自動啟用家長選單，不需另外同步/);
+  assert.doesNotMatch(tenantServicesEntry(), /重新同步我的 LINE 選單|syncOwnLineMenu|data-line-menu-result/);
+  assert.equal(calls.length,0);
   state.me.role = "unassigned";
   assert.doesNotMatch(tenantServicesEntry(), /重新同步我的 LINE 選單/);
   state.me.role = "admin";

@@ -50,13 +50,33 @@ async function lineOAuthRequest(endpoint, fields) {
 }
 
 async function tryMenuSync(channel, account, userId) {
-  try {
-    const audience = await refreshTenantLineMenu(channel, account, userId);
-    if (["staff", "parent", "default"].includes(audience)) return {status: "synced", audience};
-    return {status: "pending", message: "帳號綁定已完成，選單版型尚未準備完成；不需重新綁定或指派人員。"};
-  } catch (error) {
-    console.warn("LINE menu sync deferred", {schoolId: channel.schoolId});
-    return {status: "pending", message: error instanceof LineMenuSyncError ? error.message : "帳號綁定已完成，選單暫時無法更新；可稍後重試，不需重新綁定。"};
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const result = await refreshTenantLineMenu(channel, account, userId, {details: true});
+      const audience = typeof result === "string" ? result : result?.audience;
+      if (["staff", "parent", "default"].includes(audience)) return {status: "synced", audience,
+        ...(Number.isInteger(result?.areaCount) ? {areaCount: result.areaCount} : {})};
+      return {status: "pending", message: "帳號綁定已完成，選單版型尚未準備完成；學校管理員確認後，下次 LINE 操作會自動更新，不需重新綁定或手動同步。"};
+    } catch (error) {
+      const transient = !(error instanceof LineMenuSyncError) &&
+        ([500, 502, 503, 504].includes(Number(error?.status || error?.statusCode)) || ["AbortError", "TimeoutError"].includes(error?.name) || ["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN"].includes(error?.code || error?.cause?.code));
+      if (attempt === 0 && transient && account && channel.botUserId) {
+        try {
+          // A retry must use the live identity, not a captured link that may
+          // have been removed or paired with another Gmail in the meantime.
+          const target = userId || account.lineUserId;
+          const current = await getTenantLineAccount(channel.schoolId, channel.botUserId, target);
+          if (current?.botUserId === channel.botUserId && current.lineUserId === target &&
+              (!current.partitionKey || current.partitionKey === channel.schoolId) && (!current.schoolId || current.schoolId === channel.schoolId) &&
+              current.googleSub === account.googleSub && current.parentEmail === account.parentEmail) {
+            account = current;
+            continue;
+          }
+        } catch { /* Keep the completed identity link; a later LINE interaction can retry. */ }
+      }
+      console.warn("LINE menu sync deferred", {schoolId: channel.schoolId});
+      return {status: "pending", message: error instanceof LineMenuSyncError ? error.message : "帳號綁定已完成，選單暫時無法更新；下次 LINE 操作會自動再試，不需重新綁定或手動同步。"};
+    }
   }
 }
 

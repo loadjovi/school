@@ -1,6 +1,7 @@
 import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
 import { listStudentMaster, getStudentMaster, ensureTenantTables, table, rowKey, tenantParentPartition, tenantStudentPartition } from "../lib/storage.js";
+import { reconcileParentLineMenus } from "../lib/parentLineMenu.js";
 
 function clean(v,max=200){return String(v||"").trim().slice(0,max)}
 app.http("parentSelfBind",{
@@ -49,6 +50,7 @@ app.http("parentSelfBind",{
       newValue:JSON.stringify({parentEmail:email,parentName,relationship,studentId,schoolId,bindingSource:"school_admin_self_bind"})
     });
 
-    return json({ok:true,schoolId,studentId,parentEmail:email,parentName,relationship,createdAt:now});
+    const menuSync=await reconcileParentLineMenus(schoolId,[email]);
+    return json({ok:true,schoolId,studentId,parentEmail:email,parentName,relationship,createdAt:now,menuSync});
   }
 });

@@ -1,4 +1,5 @@
 const accountRoles=new Set(['admin','parent','unassigned','teacher','sectionTeacher','ensembleTeacher','comprehensiveTeacher','privateTeacher']);
+const staffMenuRoles=new Set(['admin','teacher','sectionTeacher','ensembleTeacher','comprehensiveTeacher','privateTeacher']);
 let googleScript;
 async function googleClient(){
  if(window.google?.accounts?.id)return window.google.accounts.id;
@@ -24,6 +25,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
   generation++;line=null;host.replaceChildren(make('p','學校或登入身分已變更，請重新開啟我的 LINE 綁定。'));return false;
  }
  const permitted=()=>accountRoles.has(me?.role)&&me?.capabilities?.lineAccount===true;
+ const canSyncMenu=()=>staffMenuRoles.has(me?.role);
  function button(text,action,secondary=false){const node=make('button',text);node.type='button';node.disabled=busy;node.className=secondary?'secondary':'';node.addEventListener('click',action);return node}
  const callbackMessage=()=>callbackError==='conflict'?'這個 Gmail 或 LINE 已有其他綁定，請聯絡學校管理員核對。':callbackError==='configuration'?'LINE 登入設定未通過驗證，請由學校管理員核對設定後重新授權。':callbackError==='authorization'?'LINE 授權已逾時或未完成，請重新授權。':callbackError?'LINE 授權未完成，請重新授權。':callbackLink==='confirm'?(line?.pendingLink?'請核對 Gmail 與 LINE 名稱，再確認綁定。':line?.bound?'已讀取目前的 LINE 綁定狀態。':'綁定確認已逾時，請重新開始。'):'';
  async function changed(action){
@@ -53,8 +55,8 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
     line=await api('/api/line/school-account');if(!valid()||version!==generation)return;
     callbackError='';callbackLink='';
     message=action==='confirm'?'已完成此校 Gmail 與 LINE 綁定。':action==='cancel'?'已取消此次綁定。':'已解除此校 LINE 綁定。';
-    if(action==='confirm'&&result.menuSync?.status==='synced')menuStatus=result.menuSync.audience==='parent'?'已依核准家長身分自動套用家長選單。':result.menuSync.audience==='staff'?'已依同校幹部與老師名冊自動套用六宮格。':'目前使用預設三宮格；學生資料須完成家長／學生核准後開放。';
-    if(action==='confirm'&&result.menuSync?.status==='pending')menuStatus='帳號綁定已完成，選單尚未同步。'+(result.menuSync.message||'可按「同步我的 LINE 選單」重試。');
+    if(action==='confirm'&&result.menuSync?.status==='synced')menuStatus=result.menuSync.audience==='parent'?(result.menuSync.areaCount===5?'已依核准家長身分自動啟用五格選單。':'已依核准家長身分自動套用家長選單。'):result.menuSync.audience==='staff'?'已依同校幹部與老師名冊自動套用六宮格。':'目前使用預設三宮格；學生資料須完成家長／學生核准後開放。';
+    if(action==='confirm'&&result.menuSync?.status==='pending')menuStatus=canSyncMenu()?'帳號綁定已完成，選單尚未同步。'+(result.menuSync.message||'可按「同步我的 LINE 選單」重試。'):'帳號綁定已完成，家長選單由系統自動處理；若畫面尚未更新，請聯絡學校管理員確認設定。';
    }
    await changed(action);
   }catch(error){
@@ -94,10 +96,10 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
   host.append(make('p',(line.bound?'已連結 '+(line.lineDisplayName||'LINE'):'連結自己的 LINE，方便登入與接收通知。')+(line.googleLinked?' · 已連結 Gmail':'')));
   const actions=make('div');actions.className='actions';
   if(line.authProvider==='google'&&!line.bound)actions.append(button('使用 LINE 授權並綁定',()=>run('link')));
-  host.append(make('p','選單依同校身分自動判定：尚未綁定平台為預設三宮格，已核准家長啟用 Facebook 後為五格，幹部／啟用中的老師為六宮格。學生資料僅依已核准關係開放；需要時可重試同步。'));
-  if(line.bound)actions.append(button('同步我的 LINE 選單',()=>run('sync',{action:'sync-menu'}),true));
+  host.append(make('p',canSyncMenu()?'選單依同校身分自動判定：尚未綁定平台為預設三宮格，已核准家長啟用 Facebook 後為五格，幹部／啟用中的老師為六宮格。學生資料僅依已核准關係開放；幹部需要時可手動更新選單。':'完成學生核准與 LINE 綁定後，系統會自動啟用家長選單，不需另外同步；啟用 Facebook 後為五格。學生資料僅依已核准關係開放。'));
+  if(line.bound&&canSyncMenu())actions.append(button('同步我的 LINE 選單',()=>run('sync',{action:'sync-menu'}),true));
   if(line.authProvider==='google'&&line.bound)actions.append(button('解除 LINE 綁定',()=>run('unbind',null,'確定解除此校 LINE 綁定？'),true));
-  actions.append(button('更新綁定狀態',()=>load(),true));host.append(actions);
+  actions.append(button(canSyncMenu()?'更新綁定狀態':'查看綁定狀態',()=>load(),true));host.append(actions);
   if(line.authProvider==='line'&&!line.googleLinked){const google=make('div');host.append(google);if(!busy)renderGoogle(google,generation)}
  }
  async function load(params){

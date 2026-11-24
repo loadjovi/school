@@ -1,4 +1,4 @@
-import {createLineAccountPanel} from "./line-account-panel.js?v=20261124-facebook-menus";
+import {createLineAccountPanel} from "./line-account-panel.js?v=20261124-parent-auto-menu";
 import "./payment-resolution.js?v=20261122-single-parent-message";
 const accountOnly=document.documentElement.hasAttribute("data-line-account");
 const legacyLineEntry=!accountOnly&&(location.hash==="#lineBinding"||new URLSearchParams(location.search).has("line_link")||new URLSearchParams(location.search).has("line_error"));

@@ -8,10 +8,11 @@ const source = path => readFileSync(new URL("../" + path, import.meta.url), "utf
 const schoolId = "school-a", origin = "https://school-a.example.test";
 const userId = "U" + "a".repeat(32), botUserId = "U" + "b".repeat(32);
 
-function confirmation(outcome) {
+function confirmation(outcome, {reread} = {}) {
   const handlers = {}, effects = [], warnings = [];
   const google = {sub: "verified-sub", email: "verified@example.test"};
-  const account = {lineUserId: userId, botUserId, displayName: "本人"};
+  const account = {lineUserId: userId, botUserId, displayName: "本人", parentEmail: "approved@example.test"};
+  let current = account, reads = 0, attempts = 0;
   class LineMenuSyncError extends Error {}
   const scope = {
     app: {http: (name, options) => handlers[name] = options.handler},
@@ -22,19 +23,19 @@ function confirmation(outcome) {
     verifyGoogle: async () => google, getTenantGoogleLink: async () => null,
     readTenantLineLinkConfirmation: async () => ({rowKey: "pending", googleSub: google.sub, googleEmail: google.email, lineUserId: userId}),
     clearTenantLineLinkConfirmation: () => ({name: "pending", value: ""}),
-    getTenantLineAccount: async () => account,
+    getTenantLineAccount: async () => {reads++;return reads > 1 && reread ? reread(current) : current;},
     linkTenantGoogle: async (id, line, identity) => {
       assert.equal(id, schoolId); assert.equal(line, account); assert.equal(identity.sub, google.sub);
-      effects.push("linked"); return {...account, googleEmail: identity.email, googleSub: identity.sub};
+      effects.push("linked");current = {...account, googleEmail: identity.email, googleSub: identity.sub}; return current;
     },
     refreshTenantLineMenu: async (channel, linked) => {
       assert.equal(channel.schoolId, schoolId); assert.equal(linked.googleEmail, google.email);
-      effects.push("menu"); if (outcome instanceof Error) throw outcome; return outcome;
+      effects.push("menu");attempts++;if (typeof outcome === "function") return outcome(attempts);if (outcome instanceof Error) throw outcome; return outcome;
     }, LineMenuSyncError
   };
   runInNewContext(source("api/src/functions/tenantLineLogin.js"), scope);
   return {
-    effects, warnings,
+    effects, warnings, reads: () => reads,
     confirm: () => handlers.tenantLineAccount({method: "POST", headers: new Headers({origin}), json: async () => ({action: "confirm-link", confirmationId: "pending"})})
   };
 }
@@ -46,6 +47,28 @@ test("confirmed LINE/Gmail pairing automatically applies the existing roster's m
     assert.equal(result.data.googleLinked, true); assert.equal(result.data.menuSync.status, "synced");
     assert.equal(result.data.menuSync.audience, audience); assert.deepEqual(h.effects, ["linked", "menu"]);
   }
+});
+
+test("parent binding retries one transient menu failure automatically and returns the validated five-entry result", async () => {
+  const h = confirmation(attempt => {
+    if (attempt === 1) throw Object.assign(Error("temporary-private-provider-body"), {status: 503});
+    return {audience: "parent", areaCount: 5};
+  });
+  const result = await h.confirm();
+  assert.equal(result.data.bound, true); assert.equal(result.data.menuSync.status, "synced");
+  assert.equal(result.data.menuSync.audience, "parent"); assert.equal(result.data.menuSync.areaCount, 5);
+  assert.equal(h.reads(), 2); assert.deepEqual(h.effects, ["linked", "menu", "menu"]);
+  assert.doesNotMatch(JSON.stringify({result, warnings: h.warnings}), /private-provider-body/);
+});
+
+test("automatic retry stops when the live LINE/Gmail link changed or the failure is permanent", async () => {
+  for (const reread of [account => ({...account, googleSub: "different-user"}), () => null, account => ({...account, botUserId: "other-bot"})]) {
+    const h = confirmation(Object.assign(Error("transient"), {status: 503}), {reread}), result = await h.confirm();
+    assert.equal(result.data.bound, true); assert.equal(result.data.menuSync.status, "pending");
+    assert.deepEqual(h.effects, ["linked", "menu"]); assert.equal(h.reads(), 2);
+  }
+  const h = confirmation(Object.assign(Error("permanent"), {status: 400})), result = await h.confirm();
+  assert.equal(result.data.menuSync.status, "pending"); assert.equal(h.reads(), 1); assert.deepEqual(h.effects, ["linked", "menu"]);
 });
 
 test("menu setup and provider failures never undo a successful pairing or request another identity binding", async () => {
