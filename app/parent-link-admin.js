@@ -39,7 +39,7 @@
   const originalLoadAdmin=loadAdmin;
   loadAdmin=async function(){await originalLoadAdmin();await loadParentLinks()};
 
-  const lineLabels={all:"全部",friend:"曾確認為好友",pending:"好友待確認",not_friend:"未加入或已封鎖",unbound:"LINE 未綁定",no_parent:"尚無家長",unknown:"狀態無法確認"};
+  const lineLabels={all:"全部",friend:"已確認為好友",pending:"尚未確認好友",not_friend:"需確認好友狀態",unbound:"LINE 未綁定",no_parent:"尚無家長",unknown:"狀態無法確認"};
   window.studentLineStatus=function(student){
     if(!state.studentLineLoaded)return "unknown";
     const parents=student.parents||[],bound=parents.filter(parent=>parent.lineBound===true);
@@ -66,9 +66,10 @@
       <div class="student-line-heading"><h3>LINE 通知綁定</h3><button type="button" class="secondary" onclick="reloadStudentLineCoverage()">重新讀取</button></div>
       ${state.studentLineLoaded?`<div class="student-line-counts">
         <div><b>${counts.active}</b><span>在團學生</span></div><div><b>${counts.bound}</b><span>LINE 綁定涵蓋學生</span></div>
-        <div><b>${counts.unique}</b><span>已綁定家長（去重）</span></div><div><b>${counts.confirmed}</b><span>有家長曾確認為好友</span></div></div>`:'<p class="muted">LINE 綁定資料尚未載入，請重新讀取。</p>'}
-      <p class="muted">統計限在團學生。同一家長有多名子女時只計一次。好友狀態以最後確認為準。</p>
+        <div><b>${counts.unique}</b><span>已綁定家長（去重）</span></div><div><b>${counts.confirmed}</b><span>有家長已確認為好友</span></div></div>`:'<p class="muted">LINE 綁定資料尚未載入，請重新讀取。</p>'}
+      <p class="muted">統計限在團學生。同一家長有多名子女時只計一次。好友狀態以最後確認時間為準，並非即時查詢。</p>
       <div class="student-line-filters" role="group" aria-label="依 LINE 狀態篩選">${filters}</div>
+      ${state.studentLineFilter==="not_friend"?'<p class="notice">LINE 已綁定，但最後一次檢查尚未確認為本校官方帳號好友。請家長開啟官方帳號，確認已加入好友且未封鎖。</p>':state.studentLineFilter==="pending"?'<p class="muted">LINE 已綁定，但尚未取得好友確認紀錄。此狀態不代表家長已封鎖官方帳號。</p>':""}
       <small class="muted">符合目前條件 ${visible} 位學生</small></section>`;
   };
 
@@ -89,10 +90,11 @@
       const oldId=p.sourceStudentId&&p.sourceStudentId!==s.studentId?`<small style="display:block;margin-top:2px">歷史學生 ID：${esc(p.sourceStudentId)}</small>`:"";
       const parentEmail=String(p.parentEmail||"");
       const contact=p.lineGoogleEmail?esc(p.lineGoogleEmail):parentEmail.endsWith("@line.invalid")?"LINE 建立的家長帳號":esc(parentEmail);
-      const friendStatus=p.lineFriendStatus==="friend"?"曾確認為好友":p.lineFriendStatus==="not_friend"?"未加入或已封鎖":"好友狀態待確認";
+      const friendStatus=p.lineFriendStatus==="friend"?lineLabels.friend:p.lineFriendStatus==="not_friend"?lineLabels.not_friend:lineLabels.pending;
       const lineStatus=p.lineBound===true?`LINE 已綁定｜${friendStatus}`:p.lineBound===false?"LINE 未綁定":"LINE 狀態無法確認";
-      const checkedAt=p.lineFriendCheckedAt?`<small style="display:block">最後確認 ${esc(new Date(p.lineFriendCheckedAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}))}</small>`:"";
-      return `<div style="padding:5px 0"><b>✅ ${rel}${name}</b><br><span>${contact}</span><br><span>${lineStatus}</span>${checkedAt}${oldId}</div>`;
+      const checkedAt=p.lineFriendCheckedAt?`<small style="display:block">最後確認時間 ${esc(new Date(p.lineFriendCheckedAt).toLocaleString("zh-TW",{timeZone:"Asia/Taipei",hour12:false}))}</small>`:"";
+      const friendHelp=p.lineBound===true&&p.lineFriendStatus==="not_friend"?'<small style="display:block;margin-top:6px">請家長確認已加入本校官方帳號好友；若曾封鎖，請先解除封鎖。不需重新綁定平台。</small>':"";
+      return `<div style="padding:5px 0"><b>✅ ${rel}${name}</b><br><span>${contact}</span><br><span>${lineStatus}</span>${checkedAt}${friendHelp}${oldId}</div>`;
     }).join("");
     return `<div class="notice" style="margin:10px 0"><b>👪 家長帳號綁定</b>${pendingRows}${rows}</div>`;
   }
