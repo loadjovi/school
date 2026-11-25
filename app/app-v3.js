@@ -51,6 +51,16 @@ function accountReturnIdentityScope(){
 function accountReturnCancelled(){
   const error=Error("登入身分已變更，請重新開啟帳號綁定。");error.staleAccountReturn=true;return error;
 }
+function teacherAccountRestoreError(status){
+  const http=Number.isInteger(status)&&status>=100&&status<=599?status:null;
+  const code=http?"TCH-HTTP-"+http:status==="network"?"TCH-NETWORK":"TCH-RESPONSE";
+  const message=http===401?"此瀏覽器的 Gmail 登入已失效，請重新登入原 Gmail；已完成綁定者可選擇 LINE 登入。":
+    http===403?"Gmail 登入請求未獲允許，請聯絡學校管理員協助。":
+    http===429||http>=500?"Gmail 登入服務暫時無法回應，請稍後重試。":
+    status==="network"?"網路連線中斷，未能確認 Gmail 登入，請檢查連線後重試。":
+    "暫時無法確認老師的 Gmail 登入，請重新開啟登入頁。";
+  const error=Error(message+"（檢查碼："+code+"）");error.teacherAccountRestoreError=true;return error;
+}
 async function restoreTeacherLineAccountSession(schoolId){
   const token=state.token,headers={"X-School-Id":schoolId,"X-Role-Context":"teacher"};
   sessionStorage.setItem("teacher_line_account_return",schoolId);
@@ -60,16 +70,23 @@ async function restoreTeacherLineAccountSession(schoolId){
   const query=new URLSearchParams(location.search);query.set("teacherLineAccount",schoolId);
   history.replaceState({},"",location.pathname+"?"+query+(location.hash||""));
   if(token&&!["line-session","cookie-session"].includes(token))headers["X-Google-ID-Token"]=token;
-  const scope=accountReturnIdentityScope();let profile;
+  const scope=accountReturnIdentityScope();let profile,response;
   try{
-    const response=await fetch("/api/me",{credentials:"same-origin",cache:"no-store",headers});
+    response=await fetch("/api/me",{credentials:"same-origin",cache:"no-store",headers});
     if(scope!==accountReturnIdentityScope())throw accountReturnCancelled();
-    if(!response.ok)throw Error("請以原 Gmail 繼續核對綁定；若已完成綁定，可直接使用 LINE 登入。");
+    if(!response.ok)throw teacherAccountRestoreError(response.status);
     profile=await response.json();
-  }catch(error){if(scope!==accountReturnIdentityScope())throw accountReturnCancelled();throw error}
+    if(!profile||typeof profile!=="object"||Array.isArray(profile))throw teacherAccountRestoreError("response");
+  }catch(error){
+    if(scope!==accountReturnIdentityScope())throw accountReturnCancelled();
+    if(error?.staleAccountReturn||error?.teacherAccountRestoreError)throw error;
+    throw teacherAccountRestoreError(response?"response":"network");
+  }
   if(scope!==accountReturnIdentityScope())throw accountReturnCancelled();
-  if(profile.schoolId!==schoolId||profile.authProvider!=="google"||!["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(profile.role)){
-    throw Error("請使用此校老師名冊中的 Gmail 登入後，繼續核對 LINE 綁定；老師不需綁定學生。");
+  if(profile.authProvider!=="google")throw Error("目前未取得 Gmail 登入身分，請使用原 Gmail 繼續核對 LINE 綁定；老師不需綁定學生。（檢查碼：TCH-PROVIDER）");
+  if(profile.schoolId!==schoolId)throw Error("Gmail 登入學校不符，請使用此校老師名冊中的 Gmail 登入；老師不需綁定學生。（檢查碼：TCH-SCHOOL）");
+  if(!["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(profile.role)){
+    throw Error("此 Gmail 尚未取得本校老師身分，請聯絡學校管理員核對名冊與啟用狀態；老師不需綁定學生。（檢查碼：TCH-ROLE）");
   }
   state.token=token&&!["line-session","cookie-session"].includes(token)?token:"cookie-session";
   sessionStorage.setItem("google_id_token",state.token);

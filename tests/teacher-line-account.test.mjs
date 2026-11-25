@@ -8,9 +8,9 @@ const read=path=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
 const strip=source=>source.replace(/^import\s+[\s\S]*?;\r?\n/gm,"").replace(/^export /gm,"");
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[c]);
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
-function screen({role="privateTeacher",configured=true,reply={configured:true,bound:false,authProvider:"google"},search="",loader=false,legacyRedirect=false}={}){
+function screen({role="privateTeacher",configured=true,reply={configured:true,bound:false,authProvider:"google"},search="",loader=false,legacyRedirect=false,storageEntries=[]}={}){
  const state={me:{role,schoolId:"school-a",identityId:"teacher-sub",email:"teacher@example.invalid",capabilities:{lineAccount:configured}},page:"teacherHome"};
- let html="";const calls=[],assigned=[],events={},storage=new Map(),app={innerHTML:""},frame={contentWindow:{},style:{}};
+ let html="";const calls=[],assigned=[],events={},storage=new Map(storageEntries),app={innerHTML:""},frame={contentWindow:{},style:{}};
  const document={visibilityState:"visible",getElementById:id=>id==="app"?app:id==="teacherLineAccountFrame"&&app.innerHTML.includes("teacherLineAccountFrame")?frame:id==="teacherLineAccount"&&html?{remove(){html=""}}:null,querySelector:()=>({insertAdjacentHTML(_,value){html+=value}}),addEventListener(name,fn){events[name]=fn}};
  const window={__roleLoaderActive:loader,__roleModulesReady:!loader,addEventListener(name,fn){events[name]=fn}};
  const context={state,document,window,URL,URLSearchParams,history:{replaceState(){}},sessionStorage:{getItem:key=>storage.get(key)||"",setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},location:{search,pathname:"/",hash:"",origin:"https://school-a.example.invalid",assign:url=>assigned.push(url)},shell:content=>"<header>老師身分選單</header>"+content,esc,render(){html="";if(legacyRedirect)state.page="private"},api:async(path,options)=>{calls.push({path,options});return typeof reply==="function"?reply(path,options):reply}};
@@ -133,6 +133,42 @@ test("returning from account management refreshes status without reloading teach
  const h=screen({reply:()=>({configured:true,bound,googleLinked:bound,authProvider:"google"})});
  await settle();bound=true;h.events.visibilitychange();await settle();
  assert.equal(h.html(),"");h.state.page="teacherSettings";h.context.render();assert.match(h.html(),/✅ LINE 已綁定/);assert.equal(h.calls.length,2);
+});
+
+test("only a current fully paired teacher readback clears its matching school return hint",async()=>{
+ for(const options of [
+  {reply:{configured:true,bound:true,googleLinked:true},expected:false},
+  {reply:{configured:true,bound:true,googleLinked:false},expected:true},
+  {reply:{configured:true,bound:false,googleLinked:false},expected:true},
+  {reply:{configured:true,bound:true,googleLinked:true,pendingLink:{confirmationId:'pending'}},expected:true},
+  {reply:()=>{throw Error('read unavailable')},expected:true},
+  {reply:{configured:true,bound:true,googleLinked:true},hint:'school-b',expected:true},
+  {reply:{configured:true,bound:true,googleLinked:true},schoolContext:'school-b',expected:true}
+ ]){
+  const hint=options.hint||'school-a',h=screen({reply:options.reply,storageEntries:[['teacher_line_account_return',hint],['parent_line_account_return','parent-school'],...(options.schoolContext?[['school_context_id',options.schoolContext]]:[])]});await settle();
+  assert.equal(h.storage.has('teacher_line_account_return'),options.expected);assert.equal(h.storage.get('parent_line_account_return'),'parent-school');assert.equal(h.calls.length,1);assert.equal(h.calls[0].options,undefined);
+  if(options.expected)assert.equal(h.storage.get('teacher_line_account_return'),hint);
+ }
+});
+
+test("a stale paired response cannot clear a teacher hint after the account or selected school changes",async()=>{
+ for(const change of [h=>{h.state.me.email='another@example.invalid';h.state.me.identityId='other-sub'},h=>{h.storage.set('school_context_id','school-b')},h=>{h.state.me.schoolId='school-b'},h=>{h.storage.set('google_id_token','new-token')}]){
+  let release;const h=screen({storageEntries:[['teacher_line_account_return','school-a']],reply:()=>new Promise(resolve=>{release=resolve})});change(h);release({configured:true,bound:true,googleLinked:true});await settle();
+  assert.equal(h.storage.get('teacher_line_account_return'),'school-a');assert.doesNotMatch(h.html(),/✅ LINE 已綁定/);
+ }
+});
+
+test("original-page BFCache recovery and successful iframe confirmation clear the old hint without another pairing write",async()=>{
+ let stage='unbound';
+ const h=screen({reply:async(_path,options)=>options?{url:'https://access.line.me/oauth2/v2.1/authorize?state=link'}:stage==='unbound'?{configured:true,bound:false,authProvider:'google'}:stage==='pending'?{configured:true,bound:false,authProvider:'google',pendingLink:{confirmationId:'pending'}}:{configured:true,bound:true,googleLinked:true,authProvider:'google'}});
+ await settle();await h.window.teacherLineAccount.bind();assert.equal(h.storage.get('teacher_line_account_return'),'school-a');assert.equal(h.context.location.search,'');
+ stage='pending';h.events.pageshow();await settle();assert.match(h.html(),/核對並確認綁定/);assert.equal(h.storage.get('teacher_line_account_return'),'school-a');h.window.teacherLineAccount.open();
+ stage='bound';h.events.message({origin:h.context.location.origin,source:h.frame.contentWindow,data:{type:'teacher-line-account-changed'}});await settle();
+ assert.equal(h.storage.has('teacher_line_account_return'),false);assert.equal(h.state.page,'teacherLineAccount');assert.equal(h.calls.filter(call=>call.options?.method==='POST').length,1);assert.equal(h.calls.filter(call=>call.path==='/api/line/school-account').every(call=>!call.options),true);
+ // A subsequent ordinary LINE session must not be interpreted as another
+ // Gmail-only account return when it opens the root URL without markers.
+ const entrySource=read('app/app-v3.js').slice(read('app/app-v3.js').indexOf('function teacherLineAccountEntry(){'),read('app/app-v3.js').indexOf('async function restoreLineStaffSession(){'));
+ const entry=runInNewContext(entrySource+';teacherLineAccountEntry',h.context);assert.equal(entry(),'');
 });
 
 function endpoints({role="privateTeacher",schoolId="school-a",link=null,lineSession=null,google={sub:"teacher-sub",email:"teacher@example.invalid"}}={}){

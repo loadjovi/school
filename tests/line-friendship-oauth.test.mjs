@@ -190,6 +190,7 @@ test("LINE-origin checks retain the LINE session and never use a residual Google
     const url = new URL(result.headers.Location);
     assert.equal(url.pathname, "/line-account.html"); assert.equal(url.searchParams.get("schoolId"), "school-a");
     assert.equal(url.searchParams.get("line_friend"), "checked");
+    assert.equal(url.searchParams.has("google_redirect"), false);
     assert.equal([...url.searchParams.keys()].some(key => /LineAccount|line_session/.test(key)), false);
     assertNoIdentityMutation(h, result);
   }
@@ -208,6 +209,7 @@ test("Google-origin checks preserve fixed role destinations and the exact verifi
     const result = await h.callback(started), url = new URL(result.headers.Location);
     assert.equal(url.pathname, marker ? "/" : "/line-account.html");
     if (marker) assert.equal(url.searchParams.get(marker), "school-a");
+    assert.equal(url.searchParams.get("google_redirect"), ["teacher-account", "parent-account"].includes(returnTo) ? "1" : null);
     assert.equal(url.searchParams.get("line_friend"), "checked"); assertNoIdentityMutation(h, result);
   }
   for (const candidate of ["unverified-header-token", "cookie-session", "line-session", ""]) {
@@ -230,6 +232,21 @@ test("same LINE account checks update only a verified boolean friendship result 
     assert.equal(h.requests.length, 3); assert.equal(h.store.rows.size, 1);
     assert.doesNotMatch(JSON.stringify([...h.store.rows.values()]), /short-lived-line-user-token|verified-id-token|valid-code/);
     assertNoIdentityMutation(h, result);
+  }
+});
+
+test("verified Google parent and teacher checks retain their original cookie handoff when LINE verification fails", async () => {
+  for (const [role, returnTo, marker] of [["teacher", "teacher-account", "teacherLineAccount"], ["parent", "parent-account", "parentLineAccount"]]) {
+    for (const failure of ["provider", "mismatch", "cancel"]) {
+      const h = harness({role}), started = await h.start({mode: "friendship", returnTo});
+      if (failure === "provider") h.state.tokenHttp = 401;
+      if (failure === "mismatch") h.state.lineSub = otherUserId;
+      const result = await h.callback(started, failure === "cancel" ? {code: null} : {}), url = new URL(result.headers.Location);
+      assert.equal(url.pathname, "/"); assert.equal(url.searchParams.get(marker), "school-a");
+      assert.equal(url.searchParams.get("google_redirect"), "1");
+      assert.equal(url.searchParams.get("line_friend"), failure === "mismatch" ? "mismatch" : "unavailable");
+      assertNoIdentityMutation(h, result);
+    }
   }
 });
 
@@ -290,6 +307,7 @@ test("cancelled friendship authorization returns to the server-stored destinatio
     const url = new URL(result.headers.Location);
     assert.equal(url.origin, origin); assert.equal(url.searchParams.get("line_friend"), "unavailable");
     assert.equal(url.pathname, provider === "google" ? "/" : "/line-account.html");
+    assert.equal(url.searchParams.get("google_redirect"), provider === "google" ? "1" : null);
     assert.equal(url.searchParams.has("parentLineAccount"), provider === "google");
     assert.equal(h.requests.length, 0); assertNoIdentityMutation(h, result);
   }

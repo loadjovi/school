@@ -58,6 +58,10 @@
       const result=await api("/api/line/school-account");
       if(request!==version||key!==identity())return;
       account=result;
+      const schoolId=state.me.schoolId,schoolContext=sessionStorage.getItem("school_context_id")||"";
+      if(result?.bound===true&&result.googleLinked===true&&!result.pendingLink&&(!schoolContext||schoolContext===schoolId)&&sessionStorage.getItem("teacher_line_account_return")===schoolId){
+        sessionStorage.removeItem("teacher_line_account_return");
+      }
     }catch(e){
       if(request!==version||key!==identity())return;
       account=null;error=e?.message||"無法確認 LINE 綁定狀態，請稍後重試。";

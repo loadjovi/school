@@ -230,6 +230,12 @@ app.http("tenantLineLoginCallback", {
       }
       if (googleReturn && txn.returnTo === "teacher-account") {resultUrl.pathname = "/";resultUrl.searchParams.delete("schoolId");resultUrl.searchParams.set("teacherLineAccount", schoolId);}
       if (googleReturn && txn.returnTo === "parent-account") {resultUrl.pathname = "/";resultUrl.searchParams.delete("schoolId");resultUrl.searchParams.set("parentLineAccount", schoolId);}
+      if (googleReturn && (!txn.purpose || txn.purpose === "friendship") && ["teacher-account", "parent-account"].includes(txn.returnTo)) {
+        // The verified start preserved this Gmail credential in an HttpOnly
+        // cookie. A resumed tab may still hold an older raw token; let the
+        // existing first-boot handoff select the cookie for this fixed return.
+        resultUrl.searchParams.set("google_redirect", "1");
+      }
       if (!txn || !code) throw new Error("Expired or invalid authorization");
       if (txn.purpose && txn.purpose !== "friendship") throw new Error("Invalid authorization purpose");
       failure = "verification";

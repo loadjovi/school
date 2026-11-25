@@ -53,6 +53,7 @@ test("same-school teaching roles return to their own account confirmation withou
   assert.equal([...h.store.rows.values()][0].returnTo,"teacher-account");
   const result=await h.callback(started),url=new URL(result.headers.Location);
   assert.equal(url.origin,origin);assert.equal(url.pathname,"/");assert.equal(url.searchParams.get("teacherLineAccount"),"school-a");
+  assert.equal(url.searchParams.get("google_redirect"),"1");
   assert.equal(url.searchParams.get("line_link"),"confirm");assert.equal(url.searchParams.has("adminLineAccount"),false);assert.equal(url.searchParams.has("line_session"),false);
   assert.deepEqual(h.effects,["account","pending"]);assert.equal(h.store.rows.size,0);
   assert.ok(result.cookies.some(cookie=>cookie.value==="opaque-confirmation"));
@@ -86,11 +87,44 @@ test("teacher authorization carries only the exact verified Gmail session across
   assert.equal(result.cookies.some(cookie=>cookie.name==="orchestra_google_id_token"),false);
  }
 });
+test("a verified teacher or parent OAuth return explicitly resumes the credential bridged at start",async()=>{
+ const credential="fresh-bridged-google-credential",authSessionId=createHash("sha256").update(credential).digest("hex");
+ for(const [role,returnTo,marker] of [["teacher","teacher-account","teacherLineAccount"],["parent","parent-account","parentLineAccount"]]){
+  const h=harness({role,identity:{...google,authSessionId}}),started=await h.start({mode:"link",returnTo},"school-a",{"x-google-id-token":credential});
+  assert.equal(started.cookies.find(cookie=>cookie.name==="orchestra_google_id_token")?.value,credential);
+  const response=await h.callback(started,{extra:{google_redirect:"forged",returnTo:"notification-center"}}),url=new URL(response.headers.Location);
+  assert.equal(url.pathname,"/");assert.equal(url.searchParams.get(marker),"school-a");assert.equal(url.searchParams.get("google_redirect"),"1");
+  assert.equal(url.searchParams.get("line_link"),"confirm");assert.equal(url.searchParams.has("line_session"),false);
+  assert.equal(response.cookies.some(cookie=>cookie.name==="orchestra_google_id_token"||cookie.name==="__Host-school-line-session"),false);
+  assert.doesNotMatch(response.headers.Location,new RegExp(credential));
+ }
+});
+test("the Google-cookie handoff is never accepted from callback parameters or an invalid OAuth transaction",async()=>{
+ for(const [input,role] of [[{mode:"login"},"teacher"],[{mode:"link"},"teacher"],[{mode:"link",returnTo:"notification-center"},"admin"]]){
+  const h=harness({role}),started=await h.start(input),response=await h.callback(started,{extra:{google_redirect:"1",returnTo:"teacher-account",teacherLineAccount:"school-a"}});
+  assert.equal(new URL(response.headers.Location).searchParams.has("google_redirect"),false);
+ }
+ for(const role of ["teacher","parent"]){
+  const returnTo=role==="teacher"?"teacher-account":"parent-account";
+  for(const invalid of ["cookie","school","expired","config","purpose","replay"]){
+   const h=harness({role}),started=await h.start({mode:"link",returnTo}),options={extra:{google_redirect:"1",returnTo,teacherLineAccount:"school-a",parentLineAccount:"school-a"}};
+   if(invalid==="cookie")options.cookie=false;
+   if(invalid==="school")options.schoolId="school-b";
+   if(invalid==="expired")[...h.store.rows.values()][0].expires=Date.now()-1;
+   if(invalid==="config")h.channel.oauthVersion="changed";
+   if(invalid==="purpose")[...h.store.rows.values()][0].purpose="untrusted-purpose";
+   if(invalid==="replay")await h.callback(started);
+   const response=await h.callback(started,options);assert.equal(new URL(response.headers.Location).searchParams.has("google_redirect"),false);
+  }
+  const rejected=harness({role});assert.equal((await rejected.start({mode:"link",returnTo:"unknown"})).status,400);assert.equal(rejected.transactions.length,0);
+ }
+});
 test("verified teacher transactions keep their account destination on cancellation or provider failure",async()=>{
  for(const options of [{oauthFailure:true},{conflict:true},{}]){
   const h=harness({...options,role:"teacher"}),started=await h.start({mode:"link",returnTo:"teacher-account"});
   const result=await h.callback(started,options.oauthFailure||options.conflict?{}:{code:null}),url=new URL(result.headers.Location);
   assert.equal(url.pathname,"/");assert.equal(url.searchParams.get("teacherLineAccount"),"school-a");assert.equal(url.searchParams.has("adminLineAccount"),false);
+  assert.equal(url.searchParams.get("google_redirect"),"1");
   assert.equal(url.searchParams.get("line_error"),options.conflict?"conflict":options.oauthFailure?"verification":"authorization");
   assert.equal(result.cookies.some(cookie=>cookie.name==="__Host-school-line-link"&&cookie.value),false);
  }
@@ -223,6 +257,7 @@ test("parent callbacks preserve the account screen for cancellation, conflict an
   const h=harness({...options,role:"parent"}),started=await h.start({mode:"link",returnTo:"parent-account"});
   const result=await h.callback(started,callback),url=new URL(result.headers.Location);
   assert.equal(url.pathname,"/");assert.equal(url.searchParams.get("parentLineAccount"),"school-a");assert.equal(url.searchParams.get("line_error"),reason);assert.equal(url.searchParams.has("teacherLineAccount"),false);
+  assert.equal(url.searchParams.get("google_redirect"),"1");
   assert.equal(result.cookies.some(cookie=>cookie.name==="__Host-school-line-link"&&cookie.value),false);
  }
 });
