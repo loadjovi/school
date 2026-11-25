@@ -1,4 +1,4 @@
-import {createLineAccountPanel} from "./line-account-panel.js?v=20261124-parent-account-return";
+import {createLineAccountPanel} from "./line-account-panel.js?v=20261125-friendship-recheck";
 import "./payment-resolution.js?v=20261122-single-parent-message";
 const accountOnly=document.documentElement.hasAttribute("data-line-account");
 const requestedParentAccount=new URLSearchParams(location.search).get('parentLineAccount')||'';
@@ -8,7 +8,7 @@ if(parentAccountSchool){
  sessionStorage.setItem('parent_line_account_return',parentAccountSchool);sessionStorage.removeItem('teacher_line_account_return');
  if(sessionStorage.getItem('google_id_token')==='line-session')sessionStorage.setItem('google_id_token','cookie-session');
 }
-const legacyLineEntry=!accountOnly&&(location.hash==="#lineBinding"||new URLSearchParams(location.search).has("line_link")||new URLSearchParams(location.search).has("line_error"));
+const legacyLineEntry=!accountOnly&&(location.hash==="#lineBinding"||["line_link","line_error","line_friend"].some(name=>new URLSearchParams(location.search).has(name)));
 if(legacyLineEntry)location.replace("/line-account.html"+location.search+"#lineBinding");
 const $=id=>document.getElementById(id);
 const esc=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[char]);
@@ -38,9 +38,11 @@ async function loadLineBinding(params){
   lineAccountPanel?.destroy();
   lineAccountPanel=createLineAccountPanel({host:$("lineBinding"),api:(path,options)=>api(path.replace(/^\/api\//,""),options),me:state.me,
     returnTo:teacherAccountRoles.has(state.me.role)?'teacher-account':state.me.role==='parent'?'parent-account':'account',
-    navigate:url=>{
-      if(state.me.role==='parent'){sessionStorage.setItem('parent_line_account_return',state.me.schoolId);sessionStorage.removeItem('teacher_line_account_return')}
-      if(teacherAccountRoles.has(state.me.role)){sessionStorage.setItem('teacher_line_account_return',state.me.schoolId);sessionStorage.removeItem('parent_line_account_return')}
+    navigate:(url,authorization)=>{
+      if(authorization?.authProvider==='google'){
+       if(state.me.role==='parent'){sessionStorage.setItem('parent_line_account_return',state.me.schoolId);sessionStorage.removeItem('teacher_line_account_return')}
+       if(teacherAccountRoles.has(state.me.role)){sessionStorage.setItem('teacher_line_account_return',state.me.schoolId);sessionStorage.removeItem('parent_line_account_return')}
+      }
       if(teacherEmbedded&&window.parent!==window)window.parent.location.assign(url);else location.assign(url);
     },
     onChanged:async()=>teacherAccountMessage('teacher-line-account-changed')});
@@ -177,7 +179,7 @@ async function load(){
     const lineError=params.get("line_error");
     const message=lineError==="conflict"?"這個 Gmail 或 LINE 已有其他綁定，請聯絡學校管理員核對。":lineError?"LINE 授權未完成，請從本頁重新授權。":"";
     if(accountOnly)showStatus("");else showStatus(message||(params.get("line_link")==="confirm"?(state.line?.pendingLink?"請核對 Gmail 與 LINE 名稱，再確認綁定。":"綁定確認已逾時，請重新開始。"):billing?`已載入 ${state.projects.length} 個收費專案。`:""),message?"error":"");
-    if(params.has("line_link")||lineError)history.replaceState({},"",location.pathname);
+    if(params.has("line_link")||lineError||params.has("line_friend")){for(const name of ["line_link","line_error","line_friend"])params.delete(name);history.replaceState({},"",location.pathname+(params.size?"?"+params:"")+location.hash)}
   }catch(error){if(current()){showStatus(parentAccountSchool?'無法確認原本的 Gmail 家長身分，請返回平台以原 Gmail 登入後繼續 LINE 綁定；不需重新填寫學生資料。':error.message,"error");if($("projects"))$("projects").innerHTML=""}}
 }
 

@@ -254,12 +254,12 @@ test("main bootstrap preserves school account callback errors for the capability
  const app=read("app/app-v3.js"),bootSource=app.slice(app.indexOf("async function boot(){"),app.indexOf("const schoolViewScript="));
  for(const error of ["configuration","authorization","verification","conflict"]){
   const histories=[],logins=[],loads=[];
-  const boot=runInNewContext(bootSource+";boot",{teacherLineAccountEntry:()=>"",parentLineAccountEntry:()=>"",URLSearchParams,location:{pathname:"/",search:"?adminLineAccount=school-a&line_error="+error},state:{token:"existing-session"},history:{replaceState:(...args)=>histories.push(args)},window:{},paidActivityEntry:()=>null,loadProfile:async profile=>loads.push(profile),renderLogin:message=>logins.push(message)});
+  const boot=runInNewContext(bootSource+";boot",{adminFriendAccountEntry:()=>"",teacherLineAccountEntry:()=>"",parentLineAccountEntry:()=>"",URLSearchParams,location:{pathname:"/",search:"?adminLineAccount=school-a&line_error="+error},state:{token:"existing-session"},history:{replaceState:(...args)=>histories.push(args)},window:{},paidActivityEntry:()=>null,loadProfile:async profile=>loads.push(profile),renderLogin:message=>logins.push(message)});
   await boot();assert.equal(histories.length,0);assert.equal(logins.length,0);assert.equal(loads.length,1);
  }
  for(const search of ["?line_error=configuration","?adminLineAccount=https://evil.example&line_error=configuration"]){
   const histories=[],logins=[];
-  const boot=runInNewContext(bootSource+";boot",{teacherLineAccountEntry:()=>"",parentLineAccountEntry:()=>"",URLSearchParams,location:{pathname:"/",search},state:{token:""},history:{replaceState:(...args)=>histories.push(args)},renderLogin:message=>logins.push(message)});
+  const boot=runInNewContext(bootSource+";boot",{adminFriendAccountEntry:()=>"",teacherLineAccountEntry:()=>"",parentLineAccountEntry:()=>"",URLSearchParams,location:{pathname:"/",search},state:{token:""},history:{replaceState:(...args)=>histories.push(args)},renderLogin:message=>logins.push(message)});
   await boot();assert.equal(histories.length,1);assert.equal(logins.length,1);assert.doesNotMatch(histories[0][2],/line_error/);
  }
 });

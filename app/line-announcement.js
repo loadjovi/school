@@ -1,4 +1,4 @@
-import {createLineAccountPanel} from "./line-account-panel.js?v=20261124-parent-auto-menu";
+import {createLineAccountPanel} from "./line-account-panel.js?v=20261125-friendship-recheck";
 import {createLineNotificationSettings} from "./line-notification-settings.js?v=20261123-notification-settings";
 const $=id=>document.getElementById(id),form=$("announcement"),status=$("result"),preview=$("preview"),send=$("send");
 let centerAdminReady=false,centerTab="send",accountPanel=null,accountReturnHandled=false,centerVersion=0;
@@ -67,7 +67,7 @@ async function selectCenterTab(tab){
     const panel=accountPanel,params=new URLSearchParams(location.search),loaded=await panel.load(accountReturnHandled?undefined:params);
     if(!loaded||panel!==accountPanel||!centerAdminReady)return;
     accountReturnHandled=true;
-    if(params.has("line_link")||params.has("line_error")){params.delete("line_link");params.delete("line_error");params.set("tab","account");history.replaceState({},"",location.pathname+"?"+params)}
+    if(["line_link","line_error","line_friend"].some(name=>params.has(name))){for(const name of ["line_link","line_error","line_friend"])params.delete(name);params.set("tab","account");history.replaceState({},"",location.pathname+"?"+params)}
   }
 }
 function centerIdentityScope(){try{return ['school_context_id','role_context','google_id_token'].map(key=>sessionStorage.getItem(key)||'').join('|')}catch{return ''}}
@@ -80,7 +80,7 @@ async function initializeCenter(){
     accountPanel?.destroy();accountReturnHandled=false;
     accountPanel=createLineAccountPanel({host:$("lineAccountPanel"),api:centerApi,me,returnTo:"notification-center",navigate:url=>{if(window.parent!==window)window.parent.location.assign(url);else location.assign(url)},onChanged:async()=>{revision++;clearPreview();try{await loadOptions()}catch{}}});
     centerAdminReady=true;$("lineSettingsTab").disabled=false;$("lineAccountTab").disabled=false;
-    const params=new URLSearchParams(location.search);const tab=params.has("line_link")||params.has("line_error")?"account":params.get("tab")||centerTab;if(["settings","account"].includes(tab))await selectCenterTab(tab);
+    const params=new URLSearchParams(location.search);const tab=["line_link","line_error","line_friend"].some(name=>params.has(name))?"account":params.get("tab")||centerTab;if(["settings","account"].includes(tab))await selectCenterTab(tab);
   }catch(error){if(current()){$("lineSettingsAuthStatus").textContent=error.message;status.textContent=error.message}}
   await options;
 }

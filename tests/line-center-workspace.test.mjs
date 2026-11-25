@@ -7,7 +7,7 @@ function harness({role='admin',optionsError=false,search='?tab=settings'}={}){
  const calls=[],settingsLoads=[],accountLoads=[],active=[],events={},nodes={},panels=[];
  for(const id of ['lineSendPanel','lineSettingsPanel','lineSendTab','lineSettingsTab','lineSettingsAuthStatus','lineAccountPanel','lineAccountTab'])nodes[id]={hidden:['lineSettingsPanel','lineAccountPanel'].includes(id),disabled:['lineSettingsTab','lineAccountTab'].includes(id),textContent:'',dataset:{lineCenterTab:id==='lineSendTab'?'send':id==='lineAccountTab'?'account':'settings'},attrs:{},setAttribute(k,v){this.attrs[k]=v},addEventListener(k,fn){this[k]=fn}};
  const status={textContent:''};let busy=false;
- const scope={centerAdminReady:false,centerTab:'send',accountPanel:null,accountReturnHandled:false,centerVersion:0,loadingVersion:0,createLineAccountPanel:()=>{const panel={destroyed:false,isBusy:()=>busy,load:async params=>{accountLoads.push(params?.get('line_link')||'load');return {configured:true,bound:false}},destroy(){this.destroyed=true}};panels.push(panel);return panel},history:{replaceState(){}},groupSettings:{isBusy:()=>busy,setActive:value=>active.push(value),load:async()=>settingsLoads.push(calls.length)},$:id=>nodes[id],document:{querySelectorAll:()=>[nodes.lineSendTab,nodes.lineSettingsTab,nodes.lineAccountTab]},window:{addEventListener:(type,fn)=>events[type]=fn},location:{search},URLSearchParams,status,
+ const scope={centerAdminReady:false,centerTab:'send',accountPanel:null,accountReturnHandled:false,centerVersion:0,loadingVersion:0,createLineAccountPanel:()=>{const panel={destroyed:false,isBusy:()=>busy,load:async params=>{accountLoads.push(params?.get('line_link')||params?.get('line_friend')||'load');return {configured:true,bound:false}},destroy(){this.destroyed=true}};panels.push(panel);return panel},history:{replaceState(){}},groupSettings:{isBusy:()=>busy,setActive:value=>active.push(value),load:async()=>settingsLoads.push(calls.length)},$:id=>nodes[id],document:{querySelectorAll:()=>[nodes.lineSendTab,nodes.lineSettingsTab,nodes.lineAccountTab]},window:{addEventListener:(type,fn)=>events[type]=fn},location:{search},URLSearchParams,status,
   centerApi:async path=>{calls.push(path);return {role}},loadOptions:async()=>{if(optionsError)throw Error('尚未啟用公告功能')}};
  const code=source.slice(source.indexOf('async function selectCenterTab('),source.indexOf('function clearPreview()'));
  runInNewContext(code+';this.initialize=initializeCenter;this.select=selectCenterTab',scope);
@@ -45,6 +45,12 @@ test('the personal LINE account panel is handled locally and a binding return op
 test('nonadministrators cannot load the personal account tab through the administrator notification center',async()=>{
  const h=harness({role:'parent',search:'?tab=account'});await h.scope.initialize();
  assert.equal(h.accountLoads.length,0);assert.equal(h.nodes.lineAccountTab.disabled,true);assert.equal(h.nodes.lineAccountPanel.hidden,true);
+});
+test('a friendship check return opens and reads only the local account tab once',async()=>{
+ for(const result of ['checked','unavailable','mismatch']){
+  const h=harness({search:'?line_friend='+result});await h.scope.initialize();assert.equal(h.nodes.lineAccountPanel.hidden,false);assert.deepEqual(h.accountLoads,[result]);
+  assert.equal(h.settingsLoads.length,0);await h.scope.select('send');await h.scope.select('account');assert.deepEqual(h.accountLoads,[result,'load']);
+ }
 });
 
 test('a notification-center page restored from browser cache rechecks identity and automatically recreates and reads its account panel',async()=>{

@@ -15,8 +15,8 @@ class Element{
 function nodes(host){return [host,...host.children.flatMap(nodes)]}
 const bound={configured:true,bound:true,googleLinked:true,authProvider:'google',lineDisplayName:'測試家長'};
 const unbound={configured:true,bound:false,googleLinked:false,authProvider:'google',lineDisplayName:''};
-function fixture({line=bound,role='admin',capability=true,returnTo='account',onChanged=async()=>{},apiOverride,google=false}={}){
- const host=new Element();host.connected=true;const calls=[],navigation=[],changes=[],storage=new Map([['school_context_id','school-a'],['role_context','schoolAdmin'],['google_id_token','token-a']]);let current={...line},confirmed=true,googleConfig;
+function fixture({line=bound,role='admin',capability=true,returnTo='account',onChanged=async()=>{},apiOverride,google=false,token='token-a',roleContext='schoolAdmin'}={}){
+ const host=new Element();host.connected=true;const calls=[],navigation=[],changes=[],storage=new Map([['school_context_id','school-a'],['role_context',roleContext],['google_id_token',token]]);let current={...line},confirmed=true,googleConfig;
  const events={},documentEvents={};
  const document={head:new Element('head'),visibilityState:'visible',createElement:tag=>new Element(tag),addEventListener:(type,fn)=>documentEvents[type]=fn,removeEventListener:(type,fn)=>{if(documentEvents[type]===fn)delete documentEvents[type]}};document.head.connected=true;
  const window={addEventListener:(type,fn)=>events[type]=fn,removeEventListener:(type,fn)=>{if(events[type]===fn)delete events[type]},confirm:()=>confirmed,...(google?{google:{accounts:{id:{initialize:config=>{googleConfig=config},renderButton:node=>node.append(new Element('google-button'))}}}}:{})};
@@ -58,6 +58,43 @@ test('OAuth starts only on action and requests the fixed notification-center des
 });
 test('an invalid authorization URL never navigates away from the verified application',async()=>{
  const h=fixture({line:unbound,apiOverride:path=>path.includes('/tenant-login/')?{url:'https://evil.test/'}:undefined});await h.panel.load();await h.click('使用 LINE 授權並綁定');assert.equal(h.navigation.length,0);assert.match(h.host.textContent,/授權網址不正確/);
+});
+test('bound accounts show the saved official friendship result and time separately from account linking',async()=>{
+ for(const [friendStatus,label] of [['friend','已確認為好友'],['not_friend','需確認好友狀態'],['unknown','尚未取得確認結果']]){
+  const h=fixture({line:{...bound,friendStatus,friendCheckedAt:Date.parse('2026-11-25T01:20:00Z')}});await h.panel.load();
+  assert.match(h.host.textContent,/已連結 測試家長/);assert.ok(h.host.textContent.includes('本校官方帳號好友：'+label));assert.match(h.host.textContent,/最後確認時間：2026/);
+  assert.match(h.host.textContent,/帳號綁定與平台身分核准是不同項目/);assert.ok(h.button('重新確認好友'));assert.equal(h.calls.every(call=>call.method==='GET'),true);
+ }
+ const empty=fixture({line:{...bound,friendStatus:'unknown',friendCheckedAt:null}});await empty.panel.load();assert.match(empty.host.textContent,/尚無好友確認時間/);
+});
+test('friendship recheck starts only for a bound account and preserves Gmail role returns without relinking',async()=>{
+ for(const returnTo of ['account','notification-center','teacher-account','parent-account']){
+  const h=fixture({line:bound,returnTo});await h.panel.load();const before=[...h.storage];await h.click('重新確認好友');
+  assert.deepEqual(h.calls.map(call=>call.method),['GET','POST']);assert.equal(h.calls[1].path,'/api/line/tenant-login/school-a/start');
+  assert.deepEqual(h.calls[1].body,returnTo==='account'?{mode:'friendship'}:{mode:'friendship',returnTo});assert.deepEqual([...h.storage],before);
+  assert.equal(h.button('確認綁定'),undefined);assert.deepEqual(h.changes,[]);assert.equal(h.navigation.length,1);
+ }
+ for(const line of [unbound,{...unbound,pendingLink:{confirmationId:'pending'}}]){const h=fixture({line});await h.panel.load();assert.equal(h.button('重新確認好友'),undefined)}
+});
+test('a LINE-origin friendship recheck never requests a Gmail role return or changes its original identity',async()=>{
+ const h=fixture({line:{...bound,authProvider:'line'},returnTo:'parent-account',role:'parent',token:'line-session',roleContext:'parent'});await h.panel.load();
+ const identity=[...h.storage];await h.click('重新確認好友');assert.deepEqual(h.calls.at(-1).body,{mode:'friendship'});assert.deepEqual([...h.storage],identity);assert.equal(h.button('解除 LINE 綁定'),undefined);
+});
+test('a checked callback only displays the authenticated GET friendship result and cannot promote a stored nonfriend',async()=>{
+ for(const friendStatus of ['friend','not_friend','unknown']){
+  const h=fixture({line:{...bound,friendStatus}});await h.panel.load(new URLSearchParams('line_friend=checked'));
+  assert.equal(h.calls.length,1);assert.equal(h.calls[0].method,'GET');assert.equal(h.button('確認綁定'),undefined);
+  assert.match(h.host.textContent,friendStatus==='friend'?/您是本校官方帳號好友/:friendStatus==='not_friend'?/目前未確認為本校官方帳號好友/:/尚未取得可確認的好友結果/);
+  if(friendStatus!=='friend')assert.doesNotMatch(h.host.textContent,/您是本校官方帳號好友|本校官方帳號好友：已確認為好友/);
+ }
+});
+test('friendship mismatch and unavailable callbacks preserve the existing pair without requiring confirmation',async()=>{
+ for(const result of ['mismatch','unavailable']){
+  const h=fixture({line:{...bound,friendStatus:'friend'}});await h.panel.load(new URLSearchParams('line_friend='+result));
+  assert.match(h.host.textContent,result==='mismatch'?/與原綁定帳號不同/:/未能取得官方帳號好友狀態/);assert.match(h.host.textContent,/已連結 測試家長/);assert.ok(h.button('重新確認好友'));assert.equal(h.button('確認綁定'),undefined);
+  await h.click('更新綁定狀態');assert.equal(h.calls.every(call=>call.method==='GET'),true);assert.deepEqual(h.changes,[]);
+ }
+ const invalid=fixture();await invalid.panel.load(new URLSearchParams('line_friend=friend'));assert.doesNotMatch(invalid.host.textContent,/已更新好友確認紀錄/);
 });
 test('the pending Gmail and LINE pair is shown as text and linked only by explicit confirmation',async()=>{
  const h=fixture({line:{...unbound,pendingLink:{confirmationId:'confirmation',googleEmail:'<img src=x>',lineDisplayName:'測試 LINE'}}});await h.panel.load(new URLSearchParams('line_link=confirm'));
@@ -262,6 +299,16 @@ test('a Gmail parent starts the dedicated parent OAuth path without requesting s
  await nodes(h.elements.lineBinding).find(node=>node.ownText==='使用 LINE 授權並綁定').handlers.click();
  assert.equal(h.navigation.length,1);assert.equal(h.storage.get('parent_line_account_return'),'school-a');
  assert.equal(h.calls.at(-1).url,'/api/line/tenant-login/school-a/start');
+});
+
+test('the real LINE-origin account page rechecks friendship without writing Gmail return hints or changing its session',async()=>{
+ const h=standaloneFixture();h.scope.location.search='?schoolId=school-a&line_friend=checked';h.storage.set('google_id_token','line-session');
+ h.setProfile({authProvider:'line',role:'parent',schoolId:'school-a',systemName:'甲校',capabilities:{lineAccount:true}});h.setLine({...bound,authProvider:'line',friendStatus:'friend',friendCheckedAt:Date.parse('2026-11-25T01:20:00Z')});
+ const before=[...h.storage];await h.scope.standaloneLoad();assert.match(h.elements.lineBinding.textContent,/您是本校官方帳號好友/);assert.equal(h.calls.every(call=>call.method==='GET'),true);
+ h.setOverride(async(url,options)=>{if(url.includes('/tenant-login/')){assert.deepEqual(JSON.parse(options.body),{mode:'friendship'});return {url:'https://access.line.me/oauth2/v2.1/authorize?state=friend'}}});
+ await nodes(h.elements.lineBinding).find(node=>node.ownText==='重新確認好友').handlers.click();
+ assert.deepEqual([...h.storage],before);assert.equal(h.storage.has('parent_line_account_return'),false);assert.equal(h.storage.has('teacher_line_account_return'),false);assert.equal(h.navigation.length,1);
+ assert.equal(h.calls.some(call=>/student-registration|student-master|parent-links/.test(call.url)),false);
 });
 
 test('the standalone account page automatically fetches a returned pending pair after BFCache restore without linking it',async()=>{

@@ -50,6 +50,15 @@ test("teacher binding rejects an unexpected authorization destination",async()=>
  const h=screen({reply:async(_path,options)=>options?{url:'https://evil.invalid/'}:{configured:true,bound:false,authProvider:'google'}});
  await settle();await h.window.teacherLineAccount.bind();assert.equal(h.assigned.length,0);assert.equal(h.storage.has('teacher_line_account_return'),false);
 });
+test("teacher friendship callbacks stay in the teacher shell and forward only known check results",()=>{
+ for(const result of ['checked','unavailable','mismatch','confirm','https://evil.invalid']){
+  const h=screen({search:'?teacherLineAccount=school-a&line_friend='+encodeURIComponent(result)});
+  assert.equal(h.state.page,'teacherLineAccount');assert.match(h.app.innerHTML,/老師身分選單/);
+  const src=h.app.innerHTML.match(/src="([^"]+)"/)[1].replaceAll('&amp;','&'),query=new URL(src,'https://school-a.example.invalid').searchParams;
+  assert.equal(query.get('line_friend'),['checked','unavailable','mismatch'].includes(result)?result:null);assert.equal(query.get('line_link'),null);
+  assert.equal(h.calls.length,0);assert.doesNotMatch(h.app.innerHTML,/學生姓名|送出綁定申請/);
+ }
+});
 
 test("teacher callback survives role-module loading without legacy render redirecting it to attendance",()=>{
  const h=screen({search:'?teacherLineAccount=school-a&line_link=confirm',loader:true,legacyRedirect:true});

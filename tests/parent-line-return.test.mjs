@@ -64,10 +64,20 @@ test("parent account navigation forwards only known callback results and never u
  await h.boot();const url=new URL(h.navigation[0],"https://example.invalid");
  assert.deepEqual([...url.searchParams.keys()],["parentLineAccount","line_link"]);assert.equal(url.searchParams.get("parentLineAccount"),"school-a");
 });
+test("friendship callbacks return a verified Gmail parent to the account page without student registration",async()=>{
+ for(const result of ['checked','unavailable','mismatch']){
+  const h=fixture({search:'?parentLineAccount=school-a&line_friend='+result});await h.boot();
+  const url=new URL(h.navigation[0],'https://example.invalid');assert.equal(url.pathname,'/line-account.html');assert.equal(url.searchParams.get('line_friend'),result);
+  assert.equal(h.profiles.length,0);assert.equal(h.logins.length,0);assert.equal(h.requests.length,1);assert.equal(h.requests[0].url,'/api/me');
+ }
+ for(const result of ['friend','confirm','https://evil.invalid']){
+  const h=fixture({search:'?parentLineAccount=school-a&line_friend='+result});await h.boot();assert.equal(new URL(h.navigation[0],'https://example.invalid').searchParams.has('line_friend'),false);
+ }
+});
 
 test("the Gmail retry callback keeps a parent with missing authorization out of the first-time student form",async()=>{
  const callback=app.slice(app.indexOf("callback:async res=>{state.token=res.credential;"),app.indexOf("google.accounts.id.renderButton($(\"googleBtn\")"));
  const body=callback.slice("callback:".length,callback.lastIndexOf("});")),calls=[],state={};
- const retry=runInNewContext("("+body+")",{state,sessionStorage:{setItem(){}},teacherLineAccountEntry:()=>"",parentLineAccountEntry:()=>"school-a",restoreParentLineAccountSession:async()=>{throw Error("請使用原 Gmail，不需重填學生資料")},openParentLineAccount:()=>calls.push("account"),loadProfile:()=>calls.push("student-form"),renderLogin:message=>calls.push(message)});
+ const retry=runInNewContext("("+body+")",{state,sessionStorage:{setItem(){}},adminFriendAccountEntry:()=>"",teacherLineAccountEntry:()=>"",parentLineAccountEntry:()=>"school-a",restoreParentLineAccountSession:async()=>{throw Error("請使用原 Gmail，不需重填學生資料")},openParentLineAccount:()=>calls.push("account"),loadProfile:()=>calls.push("student-form"),renderLogin:message=>calls.push(message)});
  await retry({credential:"gmail-token"});assert.equal(calls.length,1);assert.match(calls[0],/原 Gmail/);assert.equal(state.me,null);
 });

@@ -139,3 +139,25 @@ test("parent links from the previous school cannot replace current links, mark t
  h.requests[1].resolve({items:[{studentId:"student-b",parentEmail:"correct-parent@example.test"}]});await load;assert.equal(h.state.studentLineLoaded,true);assert.equal(h.state.master[0].parents[0].parentEmail,"correct-parent@example.test");
  h.setEpoch(1);h.scope.applyAdminParentLinks();assert.match(h.state.parentLinksScope,/school-b/);
 });
+
+test("administrator records separate approved parent identity, LINE linking and saved friendship without changing any mapping or status",async()=>{
+ const h=parentLinks(),records=[{studentId:'student-a',parentEmail:'parent@example.test',parentName:'家長甲',lineBound:true,lineFriendStatus:'not_friend',lineFriendCheckedAt:'2026-11-25T01:20:00Z'},{studentId:'student-a',parentEmail:'second@example.test',lineBound:false}];
+ const original=JSON.stringify(records);h.state.master=[{studentId:'student-a',name:'學生甲',status:'active'}];h.requests[0].resolve({items:records});await settle();
+ const student=h.state.master[0],details=h.scope.studentEdit(student),coverage=h.scope.studentLineCoverage(h.state.master,1);
+ assert.match(details,/家長身分已核准/);assert.match(details,/LINE 已綁定/);assert.match(details,/LINE 未綁定/);assert.match(details,/官方好友最後結果：需確認好友狀態/);assert.match(details,/最後確認時間/);
+ assert.match(details,/我的 LINE 綁定 → 重新確認好友/);assert.match(details,/不需重新註冊、審核或綁定學生/);
+ assert.match(coverage,/審核通過不代表已確認好友/);assert.match(coverage,/重新讀取已存紀錄/);assert.match(coverage,/只更新本頁顯示/);
+ assert.equal(h.scope.studentLineStatus(student),'not_friend');assert.equal(JSON.stringify(records),original);
+ const renderStudents=appSource.slice(appSource.indexOf('function studentsPage(){'),appSource.indexOf('window.selectStudentMasterGroup='));
+ runInNewContext(renderStudents,h.scope);const page=h.scope.studentsPage();assert.match(page,/已核准 2 位家長/);assert.doesNotMatch(page,/已綁定 2 位/);assert.match(page,/data-line-status="not_friend"/);
+ h.scope.setStudentLineFilter('not_friend');assert.equal(h.state.studentLineFilter,'not_friend');assert.equal(JSON.stringify(records),original);
+ const reload=h.scope.reloadStudentLineCoverage();assert.equal(h.requests.length,2);assert.equal(h.requests[1].url,'/api/student-parent-links?includeLineStatus=1');
+ h.requests[1].resolve({items:records});await reload;assert.equal(JSON.stringify(records),original);assert.equal(h.scope.studentLineStatus(student),'not_friend');
+});
+
+test("an approved parent with no friendship record remains pending and is directed to their own check instead of another application",async()=>{
+ const h=parentLinks();h.state.master=[{studentId:'student-a',name:'學生甲',status:'active'}];h.requests[0].resolve({items:[{studentId:'student-a',parentEmail:'parent@example.test',lineBound:true,lineFriendStatus:'unknown'}]});await settle();
+ const student=h.state.master[0];assert.equal(h.scope.studentLineStatus(student),'pending');h.scope.setStudentLineFilter('pending');
+ const details=h.scope.studentEdit(student),coverage=h.scope.studentLineCoverage(h.state.master,1);assert.match(details,/家長身分已核准/);assert.match(details,/官方好友最後結果：尚未確認好友/);assert.match(details,/重新確認好友/);assert.match(coverage,/不能據此判定是否已加好友或封鎖/);
+ assert.equal(h.state.registrations.length,0);assert.equal(student.parents[0].lineFriendStatus,'unknown');
+});

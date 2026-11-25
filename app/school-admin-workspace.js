@@ -180,16 +180,17 @@
  }
  function serviceEntryUrl(service,href){
   const config=workspaceServices[service];if(!config||!schoolServiceAllowed(service))return null;
-  const url=new URL(config.path,location.origin),query=new URLSearchParams({embedded:'school',workspaceService:service,workspaceSchool:state.me.schoolId,v:'20261124-parent-auto-menu'});
+  const url=new URL(config.path,location.origin),query=new URLSearchParams({embedded:'school',workspaceService:service,workspaceSchool:state.me.schoolId,v:'20261125-friendship-recheck'});
   if(href){
    let source;try{source=new URL(href,location.origin)}catch{return null}
    if(source.origin!==location.origin||source.pathname!==config.path)return null;
    if(service==='line'&&source.searchParams.has('tab')){const tab=source.searchParams.get('tab');if(!['send','settings','account'].includes(tab))return null;query.set('tab',tab);}
-   if(service==='line'&&(source.searchParams.has('line_link')||source.searchParams.has('line_error'))){
-    const link=source.searchParams.get('line_link'),error=source.searchParams.get('line_error');
-    if(query.get('tab')!=='account'||source.searchParams.getAll('line_link').length>1||source.searchParams.getAll('line_error').length>1||link&&error)return null;
+   if(service==='line'&&['line_link','line_error','line_friend'].some(name=>source.searchParams.has(name))){
+    const link=source.searchParams.get('line_link'),error=source.searchParams.get('line_error'),friend=source.searchParams.get('line_friend');
+    if(query.get('tab')!=='account'||['line_link','line_error','line_friend'].some(name=>source.searchParams.getAll(name).length>1)||[link,error,friend].filter(Boolean).length>1)return null;
     if(source.searchParams.has('line_link')){if(link!=='confirm')return null;query.set('line_link',link)}
     if(source.searchParams.has('line_error')){if(!['configuration','authorization','verification','conflict'].includes(error))return null;query.set('line_error',error)}
+    if(source.searchParams.has('line_friend')){if(!['checked','unavailable','mismatch'].includes(friend))return null;query.set('line_friend',friend)}
    }
    if(service==='finance'){
     if(source.searchParams.get('workspace')!=='finance')return null;
@@ -327,7 +328,7 @@
   const query=new URLSearchParams(location.search),school=query.get('adminLineAccount');
   if(query.getAll('adminLineAccount').length!==1||!/^[a-z0-9-]{2,60}$/.test(school||'')||school!==state.me.schoolId)return null;
   const target=new URL(workspaceServices.line.path,location.origin);target.searchParams.set('tab','account');
-  for(const name of ['line_link','line_error'])for(const value of query.getAll(name))target.searchParams.append(name,value);
+  for(const name of ['line_link','line_error','line_friend'])for(const value of query.getAll(name))target.searchParams.append(name,value);
   const url=serviceEntryUrl('line',target.href);if(!url)return null;
   return {href:url.href,scope:scopeKey(),search:location.search,key:scopeKey()+'|'+location.search};
  }
@@ -344,7 +345,7 @@
    // school, and a context change while opening must leave the return unused.
    if(!opened||scopeKey()!==entry.scope||lineAccountWorkspaceEntry()?.key!==entry.key)return false;
    const url=new URL(location.href);
-   for(const name of ['adminLineAccount','line_link','line_error'])url.searchParams.delete(name);
+   for(const name of ['adminLineAccount','line_link','line_error','line_friend'])url.searchParams.delete(name);
    history.replaceState(history.state,'',url.pathname+url.search+url.hash);
    return true;
   }catch(error){toast('LINE 綁定狀態開啟失敗：'+(error?.message||error));return false}

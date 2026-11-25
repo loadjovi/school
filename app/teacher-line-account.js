@@ -14,9 +14,10 @@
     const key=identity();
     if(accountViewKey===key&&document.getElementById("teacherLineAccountFrame"))return;
     const query=new URLSearchParams({embedded:"teacher",schoolId:state.me.schoolId});
-    for(const name of ["line_link","line_error"]){
+    for(const name of ["line_link","line_error","line_friend"]){
       const value=state.teacherLineAccountParams?.get(name);
-      if(value&&["confirm","conflict","configuration","authorization","verification"].includes(value))query.set(name,value);
+      const allowed=name==="line_friend"?["checked","unavailable","mismatch"]:name==="line_link"?["confirm"]:["conflict","configuration","authorization","verification"];
+      if(allowed.includes(value))query.set(name,value);
     }
     document.getElementById("app").innerHTML=shell(`<button type="button" class="secondary" onclick="go('teacherHome')">← 返回教學首頁</button><iframe id="teacherLineAccountFrame" title="老師 Gmail 與 LINE 綁定" src="/line-account.html?${esc(query.toString())}" style="display:block;width:100%;min-height:650px;border:0;margin-top:12px" scrolling="no"></iframe>`);
     accountViewKey=key;
@@ -109,7 +110,7 @@
   if(teacher()&&returned.get("teacherLineAccount")===state.me.schoolId){
     sessionStorage.removeItem("teacher_line_account_return");
     openAccount(returned);
-    for(const name of ["teacherLineAccount","line_link","line_error"])returned.delete(name);
+    for(const name of ["teacherLineAccount","line_link","line_error","line_friend"])returned.delete(name);
     history.replaceState({},"",location.pathname+(returned.size?"?"+returned:"")+location.hash);
   }else mount();
 })();

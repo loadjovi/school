@@ -117,6 +117,15 @@ export async function recordTenantLineFriendship(schoolId, botUserId, userId, fr
   }
 }
 
+export async function getTenantLineFriendship(schoolId, botUserId, userId) {
+  if (!botUserId || !/^U[0-9a-f]{32}$/i.test(userId || "")) return {status: "unknown", checkedAt: null};
+  const row = await read(tenantSchoolPartition(schoolId), friendshipKey(botUserId, userId));
+  if (!row || row.botUserId !== botUserId || typeof row.friend !== "boolean" || !Number.isFinite(row.checkedAt)) {
+    return {status: "unknown", checkedAt: null};
+  }
+  return {status: row.friend ? "friend" : "not_friend", checkedAt: row.checkedAt};
+}
+
 export async function listTenantLineRecipientStatuses(schoolId, botUserId) {
   const partition = tenantSchoolPartition(schoolId).replaceAll("'", "''");
   const bot = botUserId.replaceAll("'", "''");
@@ -326,13 +335,18 @@ export async function clearTenantLineSession(request) {
 }
 
 const oauthCookieName = "__Host-school-line-oauth";
-export async function createTenantLineOAuth(schoolId, config, google, {returnTo} = {}) {
+export async function createTenantLineOAuth(schoolId, config, google, {returnTo, purpose, expectedLineUserId, expectedParentEmail, expectedGoogleSub, friendshipInitiator} = {}) {
+  const friendship = purpose === "friendship";
+  if (purpose !== undefined && !friendship) throw new Error("Invalid LINE OAuth purpose");
+  if (friendship && (!/^U[0-9a-f]{32}$/i.test(expectedLineUserId || "") || !expectedParentEmail ||
+      !["google", "line"].includes(friendshipInitiator) || friendshipInitiator === "google" && !google?.sub)) throw new Error("Invalid LINE friendship identity");
   if (returnTo !== undefined && (!["notification-center", "teacher-account", "parent-account"].includes(returnTo) || !google?.sub)) throw new Error("Invalid LINE account return destination");
   const state = lineRandom(), verifier = lineRandom(), nonce = lineRandom();
   await (await writableStore()).createEntity({
     partitionKey: "oauth-" + tenantSchoolPartition(schoolId), rowKey: lineHash(state),
     verifier, nonce, configVersion: config.oauthVersion,
     googleSub: google?.sub || "", googleEmail: google?.email || "", expires: Date.now() + 600000,
+    ...(friendship ? {purpose, expectedLineUserId, expectedParentEmail, expectedGoogleSub: expectedGoogleSub || "", friendshipInitiator} : {}),
     ...(["notification-center", "teacher-account", "parent-account"].includes(returnTo) ? {returnTo} : {})
   });
   return {state, verifier, nonce, cookie: lineCookie(oauthCookieName, state, 600)};

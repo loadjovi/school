@@ -143,6 +143,16 @@ test("safe OAuth errors reach the embedded account panel before root callback pa
   const url=new URL(h.line.item.src);assert.equal(url.searchParams.get("tab"),"account");assert.equal(url.searchParams.get("line_error"),error);assert.equal(h.location.search,"");
  }
 });
+test("friendship check callbacks preserve the authenticated administrator and Global contexts inside the account panel",async()=>{
+ for(const result of ['checked','unavailable','mismatch']){
+  const h=harness({search:'?adminLineAccount=school-a&line_friend='+result+'&keep=value'}),me=h.state.me;me.contexts=[{type:'schoolAdmin',schoolId:'school-a'},{type:'globalAdmin'}];const contexts=me.contexts;
+  assert.equal(await h.entry.open(h.entry.parse()),true);const query=new URL(h.line.item.src).searchParams;
+  assert.equal(query.get('line_friend'),result);assert.equal(query.get('tab'),'account');assert.equal(h.state.me,me);assert.equal(h.state.me.contexts,contexts);assert.equal(h.location.search,'?keep=value');
+ }
+ for(const suffix of ['line_friend=friend','line_friend=confirm','line_friend=checked&line_link=confirm','line_friend=checked&line_friend=mismatch']){
+  const h=harness({search:'?adminLineAccount=school-a&'+suffix});assert.equal(h.entry.parse(),null);assert.equal(h.line.assignments.length,0);
+ }
+});
 
 test("binding return markers cannot select another school, change roles, or forward arbitrary OAuth data",async()=>{
  for(const search of ["?adminLineAccount=school-b&line_link=confirm","?adminLineAccount=School-A&line_link=confirm","?adminLineAccount=school-a&adminLineAccount=school-b&line_link=confirm","?adminLineAccount=school-a&line_link=complete","?adminLineAccount=school-a&line_link=confirm&line_error=conflict","?adminLineAccount=school-a&line_error=private-provider-response","?adminLineAccount=school-a&line_error=configuration&line_error=conflict"]){

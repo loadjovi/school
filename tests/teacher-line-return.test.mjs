@@ -74,6 +74,6 @@ test("the actual Gmail retry callback repeats teacher return verification before
  const callback=app.slice(app.indexOf("callback:async res=>{state.token=res.credential;"),app.indexOf("google.accounts.id.renderButton($(\"googleBtn\")"));
  const body=callback.slice("callback:".length,callback.lastIndexOf("});"));
  const storage=new Map(),calls=[],state={me:{role:"parent"}},fail=new Error("請使用老師 Gmail");
- const retry=runInNewContext("("+body+")",{state,sessionStorage:{setItem:(k,v)=>storage.set(k,v)},teacherLineAccountEntry:()=>"school-a",parentLineAccountEntry:()=>"",restoreTeacherLineAccountSession:async sid=>{calls.push(sid);throw fail},loadProfile:async()=>calls.push("loaded"),renderLogin:message=>calls.push(message)});
+ const retry=runInNewContext("("+body+")",{state,sessionStorage:{setItem:(k,v)=>storage.set(k,v)},adminFriendAccountEntry:()=>"",teacherLineAccountEntry:()=>"school-a",parentLineAccountEntry:()=>"",restoreTeacherLineAccountSession:async sid=>{calls.push(sid);throw fail},loadProfile:async()=>calls.push("loaded"),renderLogin:message=>calls.push(message)});
  await retry({credential:"new-google-token"});assert.deepEqual(calls,["school-a",fail.message]);assert.equal(state.me,null);
 });

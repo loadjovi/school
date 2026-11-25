@@ -28,6 +28,21 @@ LINE 與 Gmail 的一次身分配對仍需本人核對確認；名冊決定權�
 - 聖心以原有 LINE 群組與寄件設定相容既有流程。新校未設定的通道不會套用聖心帳號或郵件服務。兩種通知各自啟停。
 - 收件人與帳務資料取自所屬學校。若家長先以 LINE 建立資料、後來連結 Gmail，Email 會送到該校驗證過的 Gmail。解除 LINE 連結也可保留 Gmail 登入及 Email 收件設定。
 
+## 家長核准與 LINE 好友確認
+
+家長身分審核、Gmail／LINE 配對及官方帳號好友關係分別管理。核准學生關係或套用五格選單，不會將好友紀錄改為 `friend`。
+
+- 一般 LINE 登入與帳號配對使用獨立的加入好友提示畫面，仍由本人選擇加入或解除封鎖。
+- 已綁定者在「我的 LINE 綁定」按「重新確認好友」，以同一個 LINE 帳號完成 OAuth 核對。此流程只更新本人的好友紀錄，不重新配對帳號、不重新審核學生，也不切換原本的 Google／LINE 登入方式。
+- 只根據本次 user access token 的 `friendFlag` 或已驗證簽章的 follow／unfollow 事件更新好友結果。未取得有效結果時保留原紀錄；後台「重新讀取已存紀錄」只載入目前儲存的紀錄。
+- 既有非好友紀錄可由本人完成一次新的好友確認；加入好友、解除封鎖或封鎖的已驗證事件亦會自動更新。一般未認證官方帳號不能讓管理員透過 Messaging API 任意查詢每位家長的好友關係；取得使用者 profile、訊息互動或推播受理，都不等同已加好友。
+
+若本人確認已加好友，但重新確認仍得到非好友結果，請在 LINE Developers 的 **LINE Login Channel → Basic settings → Linked LINE Official Account** 核對其連結的是本校 Messaging API 官方帳號。兩個 Channel 須屬於同一 Provider。好友 API 回傳的是 Login Channel 連結的帳號，不能只憑 Channel 憑證啟用成功就略過此設定。
+
+驗收須包括：原家長已核准資料保留、好友確認成功更新時間、取消授權保留舊紀錄、錯誤 LINE 帳號無法改綁、Google 與 LINE 原登入方式均保留、跨校與未登入請求遭拒絕。
+
+官方規格：[LINE Login 的加入好友選項](https://developers.line.biz/en/docs/line-login/link-a-bot/)、[LINE Login 好友狀態 API](https://developers.line.biz/en/reference/line-login/#get-friendship-status)。
+
 ## 聖心 DEMO 驗收
 
 1. 使用 `lineuat` 的獨立 LAB Storage。以既有聖心 DEMO 資料驗證家長登入、學生核准、LINE／Gmail 綁定、群組和圖文選單流程。辦理實際 LINE 驗收時只用獨立測試 LINE 官方帳號與測試收件人。
