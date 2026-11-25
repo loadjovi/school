@@ -10,9 +10,10 @@ const loginSource=app.slice(app.indexOf('function googleAccountReturnState(){'),
 const lineLoginSource=app.slice(app.indexOf('async function renderLineLogin(){'),app.indexOf('let parentLineBindingRequest='));
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 function loginFixture({search='',embedded=false,pending=[],userAgent='Chrome'}={}){
- const storage=new Map(pending),nodes=Object.fromEntries(['app','googleBtn','tenantLineSignIn'].map(id=>[id,{innerHTML:'',textContent:'',clientWidth:280,isConnected:true}]));
- const requests=[],initializations=[],buttons=[],intervals=[],profiles=[],logins=[];
+ const storage=new Map(pending),nodes=Object.fromEntries(['app','googleBtn','tenantLineSignIn','teacherLineSignIn','teacherLineSignInError'].map(id=>[id,{innerHTML:'',textContent:'',clientWidth:280,isConnected:true}]));
+ const requests=[],initializations=[],buttons=[],intervals=[],profiles=[],logins=[],navigation=[];
  const location=new URL('https://school.example.invalid/'+search),state={token:'',me:null};
+ location.assign=url=>navigation.push(url);
  const context={state,URL,URLSearchParams,location,navigator:{userAgent},document:{getElementById:id=>nodes[id]||null},$:id=>nodes[id],esc,
   sessionStorage:{getItem:key=>storage.get(key)||'',setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
   history:{replaceState:(_state,_title,target)=>{location.href=new URL(target,location).href}},
@@ -22,8 +23,36 @@ function loginFixture({search='',embedded=false,pending=[],userAgent='Chrome'}={
   loadProfile:async profile=>profiles.push(profile),paidActivityEntry:()=>null};
  context.google=context.window.google;
  runInNewContext(entrySource+'\n'+lineLoginSource+'\n'+loginSource,context);
- return {context,state,storage,nodes,requests,initializations,buttons,intervals,profiles,logins,login:()=>context.renderLogin(),tick:()=>{for(const fn of [...intervals])if(fn)fn()}};
+ return {context,state,storage,nodes,requests,initializations,buttons,intervals,profiles,logins,navigation,login:()=>context.renderLogin(),tick:()=>{for(const fn of [...intervals])if(fn)fn()}};
 }
+
+test('a teacher recovery screen offers explicit LINE login alongside first-time Gmail pairing and only clears old intents before valid login navigation',async()=>{
+ const h=loginFixture({search:'?teacherLineAccount=school-a&line_error=authorization',embedded:true,pending:[['teacher_line_account_return','school-a'],['parent_line_account_return','school-b'],['line_staff_entry','old-staff-menu']]});
+ await h.login();assert.match(h.nodes.tenantLineSignIn.innerHTML,/首次連結.*Gmail/);assert.match(h.nodes.tenantLineSignIn.innerHTML,/已完成綁定，使用 LINE 登入/);assert.equal(h.requests.length,0);
+ let release;h.context.fetch=(url,options)=>{h.requests.push({url,options});return new Promise(resolve=>{release=resolve})};
+ const scope=JSON.stringify(h.state),action=h.nodes.teacherLineSignIn.onclick();await h.nodes.teacherLineSignIn.onclick();assert.equal(h.requests.length,1);assert.equal(h.nodes.teacherLineSignIn.disabled,true);
+ const request=h.requests[0];assert.equal(request.url,'/api/line/tenant-login/school-a/start');assert.equal(request.options.credentials,'same-origin');assert.equal(request.options.cache,'no-store');assert.deepEqual(JSON.parse(request.options.body),{mode:'login'});assert.equal(request.options.headers['X-Google-ID-Token'],undefined);assert.equal(h.storage.get('teacher_line_account_return'),'school-a');
+ const url='https://access.line.me/oauth2/v2.1/authorize?state=normal-login';release({ok:true,json:async()=>({url})});await action;
+ assert.deepEqual(h.navigation,[url]);for(const key of ['teacher_line_account_return','parent_line_account_return','line_staff_entry'])assert.equal(h.storage.has(key),false);
+ assert.equal(JSON.stringify(h.state),scope);assert.equal(h.storage.has('google_id_token'),false);await h.nodes.teacherLineSignIn.onclick();assert.equal(h.requests.length,1);
+});
+
+test('teacher LINE login rejects invalid authorization URLs, keeps pairing recovery available and permits a failed request to retry',async()=>{
+ for(const url of ['https://evil.invalid/','http://access.line.me/oauth2/v2.1/authorize','https://access.line.me/other','https://user@access.line.me/oauth2/v2.1/authorize','https://user:password@access.line.me/oauth2/v2.1/authorize','/oauth2/v2.1/authorize']){
+  const h=loginFixture({search:'?teacherLineAccount=school-a',embedded:true,pending:[['teacher_line_account_return','school-a']]});await h.login();h.context.fetch=async()=>({ok:true,json:async()=>({url})});await h.nodes.teacherLineSignIn.onclick();
+  assert.equal(h.navigation.length,0);assert.match(h.nodes.teacherLineSignInError.textContent,/LINE 登入網址不正確/);assert.equal(h.nodes.teacherLineSignIn.disabled,false);assert.equal(h.storage.get('teacher_line_account_return'),'school-a');
+ }
+ const h=loginFixture({search:'?teacherLineAccount=school-a',embedded:true});await h.login();let attempt=0;h.context.fetch=async()=>{if(!attempt++)throw Error('暫時離線');return {ok:true,json:async()=>({url:'https://access.line.me/oauth2/v2.1/authorize?state=retry'})}};
+ await h.nodes.teacherLineSignIn.onclick();assert.match(h.nodes.teacherLineSignInError.textContent,/暫時離線/);assert.equal(h.nodes.teacherLineSignIn.disabled,false);await h.nodes.teacherLineSignIn.onclick();assert.equal(h.navigation.length,1);
+});
+
+test('a late teacher LINE login response cannot clear return hints, replace errors or navigate an obsolete login screen',async()=>{
+ for(const change of [h=>{h.state.token='new-token';h.state.me={role:'teacher',schoolId:'school-b',email:'new@example.invalid'}},h=>h.storage.set('google_id_token','new-token'),h=>h.storage.set('school_context_id','school-b'),h=>{h.context.location.search='?teacherLineAccount=school-b'},h=>{h.nodes.tenantLineSignIn.isConnected=false},h=>{h.nodes.teacherLineSignIn={disabled:false,onclick:null}}]){
+  const h=loginFixture({search:'?teacherLineAccount=school-a',embedded:true,pending:[['teacher_line_account_return','school-a'],['line_staff_entry','old-staff-menu']]});await h.login();let release;h.context.fetch=()=>new Promise(resolve=>{release=resolve});const action=h.nodes.teacherLineSignIn.onclick();change(h);
+  const next=JSON.stringify(h.state);h.nodes.teacherLineSignInError.textContent='新畫面狀態';release({ok:true,json:async()=>({url:'https://access.line.me/oauth2/v2.1/authorize?state=old'})});await action;
+  assert.equal(h.navigation.length,0);assert.equal(h.storage.get('teacher_line_account_return'),'school-a');assert.equal(h.storage.get('line_staff_entry'),'old-staff-menu');assert.equal(h.nodes.teacherLineSignInError.textContent,'新畫面狀態');assert.equal(JSON.stringify(h.state),next);
+ }
+});
 
 test('GIS places only a fixed teacher or parent return hint in renderButton state, independently of session storage',async()=>{
  for(const [search,expected] of [['?teacherLineAccount=school-a','teacher-account:school-a'],['?parentLineAccount=school-b','parent-account:school-b'],['?teacherLineAccount=school-a&returnTo=https://evil.invalid&studentId=other','teacher-account:school-a']]){

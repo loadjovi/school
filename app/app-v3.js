@@ -64,7 +64,7 @@ async function restoreTeacherLineAccountSession(schoolId){
   try{
     const response=await fetch("/api/me",{credentials:"same-origin",cache:"no-store",headers});
     if(scope!==accountReturnIdentityScope())throw accountReturnCancelled();
-    if(!response.ok)throw Error("老師 LINE 綁定尚未完成，請使用原本的 Gmail 重新登入後再試。");
+    if(!response.ok)throw Error("請以原 Gmail 繼續核對綁定；若已完成綁定，可直接使用 LINE 登入。");
     profile=await response.json();
   }catch(error){if(scope!==accountReturnIdentityScope())throw accountReturnCancelled();throw error}
   if(scope!==accountReturnIdentityScope())throw accountReturnCancelled();
@@ -274,6 +274,9 @@ async function loadProfile(profile){
     }catch(e){console.warn("school access lookup failed",e?.message||e)}
   }
   if(!chosen&&state.me.role==="unassigned"&&!contexts.length){
+    if(state.me.authProvider==="line"&&/^[a-z0-9-]{2,60}$/.test(state.me.schoolId||"")){
+      state.students=[];state.student=null;state.page="home";render();return;
+    }
     try{const d=await api("/api/school-options");state.schoolOptions=Array.isArray(d.items)?d.items:[]}catch{state.schoolOptions=[]}
     state.students=[];state.student=null;state.page="schoolSelect";render();return;
   }
@@ -332,8 +335,32 @@ async function renderLineLogin(){
     mount.innerHTML='<div class="notice">請使用原本的管理員 Gmail 登入，繼續確認 LINE 好友狀態。原綁定與學校權限會保留。</div>';
     return;
   }
-  if(teacherLineAccountEntry()){
-    mount.innerHTML='<div class="notice">老師請使用原本的 Gmail 登入，繼續核對 LINE 綁定；不需填寫學生資料。</div>';
+  const teacherSchool=teacherLineAccountEntry();
+  if(teacherSchool){
+    mount.innerHTML='<div class="notice">首次連結請使用原本已建檔的 Gmail 核對帳號；老師不需填寫學生資料。若您已完成 Gmail 與 LINE 綁定，可直接使用 LINE 登入。</div><button type="button" class="primary" id="teacherLineSignIn">已完成綁定，使用 LINE 登入</button><p id="teacherLineSignInError" role="status"></p>';
+    const button=$("teacherLineSignIn"),status=$("teacherLineSignInError"),scope=accountReturnIdentityScope(),search=location.search;
+    let busy=false,navigating=false;
+    const current=()=>mount.isConnected&&$("teacherLineSignIn")===button&&scope===accountReturnIdentityScope()&&location.search===search&&teacherLineAccountEntry()===teacherSchool;
+    button.onclick=async()=>{
+      if(busy||!current())return;
+      busy=true;button.disabled=true;status.textContent="正在開啟 LINE 登入…";
+      try{
+        const response=await fetch("/api/line/tenant-login/"+encodeURIComponent(teacherSchool)+"/start",{
+          method:"POST",credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"login"})
+        });
+        const data=await response.json();
+        if(!current())return;
+        if(!response.ok)throw Error(data.error||"LINE 登入暫時無法使用，請稍後再試。");
+        let target;try{target=new URL(data.url)}catch{throw Error("LINE 登入網址不正確，請稍後重試。")}
+        if(target.origin!=="https://access.line.me"||target.pathname!=="/oauth2/v2.1/authorize"||target.username||target.password)throw Error("LINE 登入網址不正確，請稍後重試。");
+        if(!current())return;
+        // This is an explicit login choice. A successful login callback selects
+        // the LINE session; it must not resume an earlier Gmail pairing screen.
+        for(const key of ["teacher_line_account_return","parent_line_account_return","line_staff_entry"])sessionStorage.removeItem(key);
+        navigating=true;location.assign(target.href);
+      }catch(error){if(current())status.textContent=error.message||"LINE 登入暫時無法使用，請稍後再試。"}
+      finally{if(current()&&!navigating){busy=false;button.disabled=false}}
+    };
     return;
   }
   if(parentLineAccountEntry()){
@@ -430,7 +457,7 @@ function googleAccountExternalEntry(){
   return "/?"+query;
 }
 async function renderLogin(error=""){
-  document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>家長、老師與管理員共用入口</p>${error?`<div class="error">${esc(error)}</div>`:""}<div id="googleBtn" style="display:flex;justify-content:center;margin-top:18px"></div><div id="tenantLineSignIn"></div><div class="notice" style="margin-top:16px">${adminFriendAccountEntry()?"請使用原本的管理員 Gmail 登入，繼續確認官方帳號好友狀態。":teacherLineAccountEntry()?"老師請使用已建檔的 Gmail 登入，授權 LINE 後核對並確認綁定。":parentLineAccountEntry()?"已核准的學生關係會沿用原 Gmail，LINE 綁定不需重填學生姓名或學號。":"家長第一次登入若尚未綁定學生，可填寫學生資料送交管理員確認。"}</div></div></div>`;
+  document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>家長、老師與管理員共用入口</p>${error?`<div class="error">${esc(error)}</div>`:""}<div id="googleBtn" style="display:flex;justify-content:center;margin-top:18px"></div><div id="tenantLineSignIn"></div><div class="notice" style="margin-top:16px">${adminFriendAccountEntry()?"請使用原本的管理員 Gmail 登入，繼續確認官方帳號好友狀態。":teacherLineAccountEntry()?"老師首次綁定請使用名冊中已建檔的 Gmail；完成綁定後，請使用上方的 LINE 登入按鈕。":parentLineAccountEntry()?"已核准的學生關係會沿用原 Gmail，LINE 綁定不需重填學生姓名或學號。":"家長第一次登入若尚未綁定學生，可填寫學生資料送交管理員確認。"}</div></div></div>`;
   renderLineLogin();
   if(window.__lineEmbedded){
     const external=googleAccountExternalEntry();

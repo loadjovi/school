@@ -20,3 +20,13 @@
 沒有更動正式學生、家長或老師資料，也沒有使用真人帳號發送測試通知。
 
 發布前檢查：Node 功能測試 1,177／1,177 通過；LAB 隔離測試 24／24 通過；異動 JavaScript 語法與 `git diff --check` 通過。
+
+## 已綁定老師的 LINE 登入
+
+首次用 Gmail 配對 LINE 與日後使用 LINE 登入是兩種操作。老師綁定恢復頁只提供 Gmail、且手機保留舊返回提示時，日後成功取得 LINE session 仍可能被帶回 Gmail 頁。Google session 過期也不能被解讀為 LINE 綁定尚未完成。
+
+恢復頁另外提供「已完成綁定，使用 LINE 登入」。這個按鈕啟動正常 `mode: login`，不夾帶綁定的 `returnTo`，也不自動建立 Gmail 配對。正常 LINE 登入回傳的 `line_session` 會清除舊老師／家長綁定返回提示；真正的 `line_link: confirm` 返回仍須使用已驗證 Gmail 核對帳號後確認。
+
+老師只要已完成同校 Gmail 與 LINE 的正式配對、且老師名冊仍啟用，即可使用 LINE session 進入教學功能，不需要再次輸入 Google 帳密。未配對、已撤銷配對、停用老師、其他學校或其他官方帳號不會因此取得老師權限。所有角色仍由伺服器核對目前的正式配對與名冊。
+
+此修正的發布前檢查：Node 功能測試 1,191／1,191 通過；LAB 隔離測試 24／24 通過；異動 JavaScript 語法與 `git diff --check` 通過。OAuth、session、正式配對及名冊測試均使用隔離資料與模擬外部服務，沒有使用真人帳號發送測試通知。
