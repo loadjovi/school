@@ -70,6 +70,5 @@
 .student-line-filters button{border:1px solid #a6bdb0;border-radius:20px;background:#fff;color:#24503e}
 .student-line-filters button[aria-pressed="true"]{background:#245c47;color:#fff}
 .student-master-row summary .student-line-row{margin-top:4px;padding:2px 5px;border-radius:5px;background:#ecf0ed;color:#35473f;white-space:normal}
-.student-master-row summary .student-line-row[data-line-status="friend"]{background:#ddf3e6;color:#185638}
-.student-master-row summary .student-line-row:is([data-line-status="not_friend"],[data-line-status="pending"]){background:#fff1d1;color:#684806}
+.student-master-row summary .student-line-row[data-line-status="bound"]{background:#ddf3e6;color:#185638}
 @media(max-width:700px){.student-line-counts{grid-template-columns:repeat(2,minmax(0,1fr))}}
