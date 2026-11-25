@@ -44,7 +44,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
     const result=await api('/api/line/tenant-login/'+encodeURIComponent(me.schoolId)+'/start',{method:'POST',body:JSON.stringify(payload)});
     if(!valid()||version!==generation)return;
     const url=new URL(result.url);
-    if(url.origin!=='https://access.line.me'||url.pathname!=='/oauth2/v2.1/authorize')throw Error('LINE 授權網址不正確，請重新開啟此頁。');
+    if(url.origin!=='https://access.line.me'||url.pathname!=='/oauth2/v2.1/authorize'||url.username||url.password)throw Error('LINE 授權網址不正確，請重新開啟此頁。');
     authorizationPending=true;navigate(url.href,{action,authProvider:line.authProvider});return;
    }
    const result=await api('/api/line/school-account',{method:action==='unbind'?'DELETE':'POST',...(body?{body:JSON.stringify(body)}:{})});

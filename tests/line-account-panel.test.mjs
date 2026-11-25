@@ -57,7 +57,9 @@ test('OAuth starts only on action and requests the fixed notification-center des
  }
 });
 test('an invalid authorization URL never navigates away from the verified application',async()=>{
- const h=fixture({line:unbound,apiOverride:path=>path.includes('/tenant-login/')?{url:'https://evil.test/'}:undefined});await h.panel.load();await h.click('使用 LINE 授權並綁定');assert.equal(h.navigation.length,0);assert.match(h.host.textContent,/授權網址不正確/);
+ for(const url of ['https://evil.test/','https://user:password@access.line.me/oauth2/v2.1/authorize','https://user@access.line.me/oauth2/v2.1/authorize']){
+  const h=fixture({line:unbound,apiOverride:path=>path.includes('/tenant-login/')?{url}:undefined});await h.panel.load();await h.click('使用 LINE 授權並綁定');assert.equal(h.navigation.length,0);assert.match(h.host.textContent,/授權網址不正確/);
+ }
 });
 test('bound accounts show the saved official friendship result and time separately from account linking',async()=>{
  for(const [friendStatus,label] of [['friend','已確認為好友'],['not_friend','需確認好友狀態'],['unknown','尚未取得確認結果']]){

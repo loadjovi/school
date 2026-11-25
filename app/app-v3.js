@@ -45,6 +45,12 @@ function teacherLineAccountEntry(){
   const pending=sessionStorage.getItem("teacher_line_account_return")||"";
   return /^[a-z0-9-]{2,60}$/.test(pending)?pending:"";
 }
+function accountReturnIdentityScope(){
+  return JSON.stringify([state.token,state.me?.identityId||state.me?.email||"",state.me?.schoolId||"",state.me?.role||"",state.me?.authProvider||"",...["google_id_token","school_context_id","role_context"].map(key=>sessionStorage.getItem(key)||"")]);
+}
+function accountReturnCancelled(){
+  const error=Error("登入身分已變更，請重新開啟帳號綁定。");error.staleAccountReturn=true;return error;
+}
 async function restoreTeacherLineAccountSession(schoolId){
   const token=state.token,headers={"X-School-Id":schoolId,"X-Role-Context":"teacher"};
   sessionStorage.setItem("teacher_line_account_return",schoolId);
@@ -53,14 +59,19 @@ async function restoreTeacherLineAccountSession(schoolId){
   sessionStorage.setItem("role_context","teacher");
   const query=new URLSearchParams(location.search);query.set("teacherLineAccount",schoolId);
   history.replaceState({},"",location.pathname+"?"+query+(location.hash||""));
-  if(token&&token!=="line-session")headers["X-Google-ID-Token"]=token;
-  const response=await fetch("/api/me",{credentials:"same-origin",cache:"no-store",headers});
-  if(!response.ok)throw Error("老師 LINE 綁定尚未完成，請使用原本的 Gmail 重新登入後再試。");
-  const profile=await response.json();
+  if(token&&!["line-session","cookie-session"].includes(token))headers["X-Google-ID-Token"]=token;
+  const scope=accountReturnIdentityScope();let profile;
+  try{
+    const response=await fetch("/api/me",{credentials:"same-origin",cache:"no-store",headers});
+    if(scope!==accountReturnIdentityScope())throw accountReturnCancelled();
+    if(!response.ok)throw Error("老師 LINE 綁定尚未完成，請使用原本的 Gmail 重新登入後再試。");
+    profile=await response.json();
+  }catch(error){if(scope!==accountReturnIdentityScope())throw accountReturnCancelled();throw error}
+  if(scope!==accountReturnIdentityScope())throw accountReturnCancelled();
   if(profile.schoolId!==schoolId||profile.authProvider!=="google"||!["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(profile.role)){
     throw Error("請使用此校老師名冊中的 Gmail 登入後，繼續核對 LINE 綁定；老師不需綁定學生。");
   }
-  state.token=token&&token!=="line-session"?token:"cookie-session";
+  state.token=token&&!["line-session","cookie-session"].includes(token)?token:"cookie-session";
   sessionStorage.setItem("google_id_token",state.token);
   return profile;
 }
@@ -79,14 +90,19 @@ async function restoreParentLineAccountSession(schoolId){
   sessionStorage.setItem("role_context","parent");
   const query=new URLSearchParams(location.search);query.set("parentLineAccount",schoolId);
   history.replaceState({},"",location.pathname+"?"+query+(location.hash||""));
-  if(token&&token!=="line-session")headers["X-Google-ID-Token"]=token;
-  const response=await fetch("/api/me",{credentials:"same-origin",cache:"no-store",headers});
-  if(!response.ok)throw Error("請以原本已綁定學生的 Gmail 重新登入，繼續 LINE 綁定；不需重填學生資料。");
-  const profile=await response.json();
+  if(token&&!["line-session","cookie-session"].includes(token))headers["X-Google-ID-Token"]=token;
+  const scope=accountReturnIdentityScope();let profile;
+  try{
+    const response=await fetch("/api/me",{credentials:"same-origin",cache:"no-store",headers});
+    if(scope!==accountReturnIdentityScope())throw accountReturnCancelled();
+    if(!response.ok)throw Error("請以原本已綁定學生的 Gmail 重新登入，繼續 LINE 綁定；不需重填學生資料。");
+    profile=await response.json();
+  }catch(error){if(scope!==accountReturnIdentityScope())throw accountReturnCancelled();throw error}
+  if(scope!==accountReturnIdentityScope())throw accountReturnCancelled();
   if(profile.schoolId!==schoolId||profile.authProvider!=="google"||profile.role!=="parent"){
     throw Error("請使用原本已完成學生核准的 Gmail 登入，繼續 LINE 綁定；不需重新輸入學生姓名或學號。");
   }
-  state.token=token&&token!=="line-session"?token:"cookie-session";
+  state.token=token&&!["line-session","cookie-session"].includes(token)?token:"cookie-session";
   sessionStorage.setItem("google_id_token",state.token);
   return profile;
 }
@@ -176,19 +192,19 @@ async function boot(){
   const adminFriendAccount=adminFriendAccountEntry();
   if(adminFriendAccount){
     try{await loadProfile(await restoreAdminFriendAccountSession(adminFriendAccount))}
-    catch(error){state.me=null;renderLogin(error.message)}
+    catch(error){if(!error?.staleAccountReturn){state.me=null;renderLogin(error.message)}}
     return;
   }
   const teacherAccount=teacherLineAccountEntry();
   if(teacherAccount){
     try{await loadProfile(await restoreTeacherLineAccountSession(teacherAccount))}
-    catch(error){state.me=null;renderLogin(error.message)}
+    catch(error){if(!error?.staleAccountReturn){state.me=null;renderLogin(error.message)}}
     return;
   }
   const parentAccount=parentLineAccountEntry();
   if(parentAccount){
     try{await restoreParentLineAccountSession(parentAccount);openParentLineAccount(parentAccount)}
-    catch(error){state.me=null;renderLogin(error.message)}
+    catch(error){if(!error?.staleAccountReturn){state.me=null;renderLogin(error.message)}}
     return;
   }
   // The school workspace forwards this result to its embedded account panel
@@ -392,13 +408,52 @@ function tenantServicesEntry(){
   }
   if(!options.lineAccount&&!billing)return "";
   if(options.lineAccount&&["parent","unassigned"].includes(me.role)){
-    const description=me.role==="parent"?"LINE 綁定會沿用此 Gmail 已核准的學生關係，不需重新輸入學生姓名或學號；完成後自動啟用家長選單，不需另外同步。":"完成學生核准與 LINE 綁定後，系統會自動啟用家長選單，不需另外同步；啟用 Facebook 後為五個入口。";
+    const description=me.role==="parent"?"LINE 綁定會沿用此 Gmail 已核准的學生關係，不需重新輸入學生姓名或學號；完成後自動啟用家長選單，不需另外同步。":me.authProvider==="line"?"LINE 已登入。連結原本的 Gmail 後，系統會依學校已建檔的身分開放功能。":"完成學生核准與 LINE 綁定後，系統會自動啟用家長選單，不需另外同步；啟用 Facebook 後為五個入口。";
     const button="管理我的 LINE 通知設定 →";
     return `<details class="card" id="parentAccountSettings"><summary><b>⚙️ 帳號與通知設定</b></summary><h2 id="parentLineServicesTitle">LINE 通知設定</h2><div class="notice">${description}</div><button type="button" class="secondary" style="width:100%" onclick="location.href='/line-account.html${me.role==="parent"?"?parentLineAccount="+encodeURIComponent(me.schoolId):""}'">${button}</button>${billing?'<a href="/fee-collections.html" style="display:block;margin-top:12px">查看我的繳費紀錄</a>':""}</details>`;
   }
   return billing?'<div class="card"><a href="/fee-collections.html">查看費用資訊</a></div>':"";
 }
-async function renderLogin(error=""){document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>家長、老師與管理員共用入口</p>${error?`<div class="error">${esc(error)}</div>`:""}<div id="googleBtn" style="display:flex;justify-content:center;margin-top:18px"></div><div id="tenantLineSignIn"></div><div class="notice" style="margin-top:16px">${adminFriendAccountEntry()?"請使用原本的管理員 Gmail 登入，繼續確認官方帳號好友狀態。":teacherLineAccountEntry()?"老師請使用已建檔的 Gmail 登入，授權 LINE 後核對並確認綁定。":parentLineAccountEntry()?"已核准的學生關係會沿用原 Gmail，LINE 綁定不需重填學生姓名或學號。":"家長第一次登入若尚未綁定學生，可填寫學生資料送交管理員確認。"}</div></div></div>`;renderLineLogin();if(window.__lineEmbedded){$("googleBtn").textContent="Google 登入請使用 Safari 或 Chrome";return}try{const cfg=await fetch("/api/config").then(r=>r.json());if(!cfg.googleClientId){$("googleBtn").innerHTML='<div class="error">尚未設定 GOOGLE_CLIENT_ID</div>';return}let n=0;const wait=setInterval(()=>{n++;if(window.google?.accounts?.id){clearInterval(wait);google.accounts.id.initialize({client_id:cfg.googleClientId,callback:async res=>{state.token=res.credential;sessionStorage.setItem("google_id_token",state.token);try{const adminFriendAccount=adminFriendAccountEntry(),teacherAccount=teacherLineAccountEntry(),parentAccount=parentLineAccountEntry();if(adminFriendAccount)await loadProfile(await restoreAdminFriendAccountSession(adminFriendAccount));else if(parentAccount&&!teacherAccount){await restoreParentLineAccountSession(parentAccount);openParentLineAccount(parentAccount)}else await loadProfile(teacherAccount?await restoreTeacherLineAccountSession(teacherAccount):undefined)}catch(e){state.me=null;renderLogin(e.message)}}});google.accounts.id.renderButton($("googleBtn"),{theme:"outline",size:"large",shape:"pill",text:"signin_with",locale:"zh_TW",width:Math.min(280,Math.max(200,document.getElementById("googleBtn").clientWidth||280))})}else if(n>50){clearInterval(wait);$("googleBtn").innerHTML='<div class="error">Google 登入元件載入失敗</div>'}},100)}catch(e){$("googleBtn").innerHTML=`<div class="error">${esc(e.message)}</div>`}}
+function googleAccountReturnState(){
+  const teacher=teacherLineAccountEntry();
+  if(/^[a-z0-9-]{2,60}$/.test(teacher||""))return "teacher-account:"+teacher;
+  const parent=parentLineAccountEntry();
+  return /^[a-z0-9-]{2,60}$/.test(parent||"")?"parent-account:"+parent:"";
+}
+function googleAccountExternalEntry(){
+  const match=/^(teacher|parent)-account:([a-z0-9-]{2,60})$/.exec(googleAccountReturnState());
+  if(!match)return "";
+  const query=new URLSearchParams({[match[1]==="teacher"?"teacherLineAccount":"parentLineAccount"]:match[2],openExternalBrowser:"1"}),returned=new URLSearchParams(location.search);
+  for(const [name,allowed] of [["line_link",["confirm"]],["line_error",["configuration","authorization","verification","conflict"]],["line_friend",["checked","unavailable","mismatch"]]]){
+    if(returned.getAll(name).length===1&&allowed.includes(returned.get(name)))query.set(name,returned.get(name));
+  }
+  return "/?"+query;
+}
+async function renderLogin(error=""){
+  document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>家長、老師與管理員共用入口</p>${error?`<div class="error">${esc(error)}</div>`:""}<div id="googleBtn" style="display:flex;justify-content:center;margin-top:18px"></div><div id="tenantLineSignIn"></div><div class="notice" style="margin-top:16px">${adminFriendAccountEntry()?"請使用原本的管理員 Gmail 登入，繼續確認官方帳號好友狀態。":teacherLineAccountEntry()?"老師請使用已建檔的 Gmail 登入，授權 LINE 後核對並確認綁定。":parentLineAccountEntry()?"已核准的學生關係會沿用原 Gmail，LINE 綁定不需重填學生姓名或學號。":"家長第一次登入若尚未綁定學生，可填寫學生資料送交管理員確認。"}</div></div></div>`;
+  renderLineLogin();
+  if(window.__lineEmbedded){
+    const external=googleAccountExternalEntry();
+    $("googleBtn").innerHTML=external?`<a class="primary" href="${esc(external)}" style="display:block;text-align:center;text-decoration:none">使用 Safari 或 Chrome，以原 Gmail 繼續</a>`:"Google 登入請使用 Safari 或 Chrome";
+    return;
+  }
+  try{
+    const cfg=await fetch("/api/config").then(r=>r.json());
+    if(!cfg.googleClientId){$("googleBtn").innerHTML='<div class="error">尚未設定 GOOGLE_CLIENT_ID</div>';return}
+    let n=0;
+    const wait=setInterval(()=>{
+      n++;
+      if(window.google?.accounts?.id){
+        clearInterval(wait);
+        google.accounts.id.initialize({client_id:cfg.googleClientId,callback:async res=>{state.token=res.credential;sessionStorage.setItem("google_id_token",state.token);try{const adminFriendAccount=adminFriendAccountEntry(),teacherAccount=teacherLineAccountEntry(),parentAccount=parentLineAccountEntry();if(adminFriendAccount)await loadProfile(await restoreAdminFriendAccountSession(adminFriendAccount));else if(parentAccount&&!teacherAccount){await restoreParentLineAccountSession(parentAccount);openParentLineAccount(parentAccount)}else await loadProfile(teacherAccount?await restoreTeacherLineAccountSession(teacherAccount):undefined)}catch(e){if(!e?.staleAccountReturn){state.me=null;renderLogin(e.message)}}}});
+        // GIS returns the rendered button's state in redirect POSTs. It selects
+        // only a fixed account screen; /me still verifies the Gmail and role.
+        const accountState=googleAccountReturnState();
+        google.accounts.id.renderButton($("googleBtn"),{theme:"outline",size:"large",shape:"pill",text:"signin_with",locale:"zh_TW",...(accountState?{state:accountState}:{}),width:Math.min(280,Math.max(200,document.getElementById("googleBtn").clientWidth||280))});
+      }else if(n>50){clearInterval(wait);$("googleBtn").innerHTML='<div class="error">Google 登入元件載入失敗</div>'}
+    },100);
+  }catch(e){$("googleBtn").innerHTML=`<div class="error">${esc(e.message)}</div>`}
+}
 function roleText(){return({parent:"家長／學生",teacher:"老師",sectionTeacher:"分部老師",ensembleTeacher:"合奏老師",comprehensiveTeacher:"綜合課老師",privateTeacher:"個別課老師",admin:"學校管理員",school:"校方查詢",globalAdmin:"Global 管理員",tenantPending:"學校建置中",contextSelector:"選擇身分",contextDenied:"請重新選擇身分",unassigned:"尚未綁定"}[state.me?.role]||"使用者")}
 function navBtn(p,i,l){return `<button class="${state.page===p?"active":""}" onclick="go('${p}')"><span>${i}</span>${l}</button>`}
 function nav(){const r=state.me.role;if(state.page==="contextSelect")return `<nav class="nav"><button></button><button></button><button></button><button></button></nav>`;if(r==="parent")return `<nav class="nav">${navBtn("home","🏠","首頁")}${navBtn("practice","⏱️","自主打卡")}${navBtn("record","📊","紀錄")}${navBtn("uniformEvents","🎻","活動團服")}</nav>`;if(r==="sectionTeacher")return `<nav class="nav">${navBtn("section","🎼","分部點名")}${navBtn("help","ℹ️","說明")}<button></button><button></button></nav>`;if(r==="privateTeacher")return `<nav class="nav">${navBtn("private","🎻","個別課")}${navBtn("help","ℹ️","說明")}<button></button><button></button></nav>`;if(r==="admin")return `<nav class="nav">${navBtn("admin","🏠","工作首頁")}${navBtn("students","👥","學生主檔")}${navBtn("scores","🧮","學期考核")}${navBtn("help","ℹ️","說明")}</nav>`;return `<nav class="nav">${navBtn("home","🏠","登記")}${navBtn("help","ℹ️","說明")}<button></button><button></button></nav>`}
@@ -491,7 +546,12 @@ window.clearParentSchoolSelection=function(){
 };
 function registrationForm(){return `<div class="card"><h2>第一次登入｜綁定學生</h2><div class="notice"><b>綁定學校：${esc(state.me?.schoolName||"未指定學校")}</b><br>登入 Gmail：${esc(state.me.email)}<br>請填寫學生姓名與學號供系統比對。年級、班級、團別與樂器一律以目前學校的學生主檔為準，家長填寫內容不會修改學生資料。</div><button class="secondary" style="width:100%;margin:0 0 12px" onclick="clearParentSchoolSelection()">← 重新選擇學校</button><label>學生姓名</label><input id="rName" autocomplete="off" placeholder="請輸入學生完整姓名"><label>學生學號</label><input id="rStudentNo" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="請輸入 6 碼學生學號"><div class="check"><input id="rConsent" type="checkbox"><div>我確認此 Google 帳號為上述學生之家長／監護人，並同意建立家長存取權限。</div></div><button class="primary" onclick="submitRegistration()">送出綁定申請</button></div>`}
 async function submitRegistration(){if(!$("rConsent").checked){toast("請先確認家長／監護人關係");return}const studentName=$("rName").value.trim(),studentNo=$("rStudentNo").value.trim();if(!studentName){toast("請填寫學生姓名");return}if(!studentNo){toast("請填寫學生學號");return}if(!/^\d{6}$/.test(studentNo)){toast("學號需為 6 碼數字");return}const body={studentName,studentNo,consent:true};try{await api("/api/student-registration",{method:"POST",body:JSON.stringify(body)});toast("✅ 已送出，等待管理員確認");state.page="home";render()}catch(e){toast("❌ "+e.message)}}
-function home(){if(state.me.role==="unassigned")return registrationForm();if(!state.student)return `<div class="card"><div class="notice">目前帳號尚未綁定學生。</div><button class="primary" onclick="go('register')">綁定孩子</button></div>`;const s=state.summary||{},rate=Math.round((s.practiceRate||0)*1000)/10;return `<div class="card hero"><div class="student"><div class="studentleft"><div class="avatar">${esc(state.student.name?.[0]||"學")}</div><div><div class="name">${esc(state.student.name)}</div><div class="muted">${esc(state.student.groupName)}團｜${esc(state.student.instrument)}｜${esc(state.student.grade)}</div></div></div><div class="pill">${new Date().getMonth()+1}月</div></div><div class="grid"><div class="kpi"><b>${s.practiceQualifiedDays||0}</b><span>自主練習達標天數</span></div><div class="kpi"><b>${s.practiceMinutes||0}</b><span>累計練習分鐘</span></div><div class="kpi"><b>${s.sectionPresent||0} / ${s.sectionTotal||0}</b><span>分部團練</span></div><div class="kpi"><b>${s.privatePresent||0} / ${s.privateTotal||0}</b><span>個別課</span></div></div><div style="margin-top:12px;font-size:12px;font-weight:800">自主練習達標率 <span style="float:right">${rate}%</span></div><div class="progress"><i style="width:${Math.min(rate,100)}%"></i></div></div><div class="card"><h2>今天要做什麼？</h2><div class="notice">年級、團別與樂器資料由學生主檔管理，之後異動不會影響既有點名／練習紀錄。</div><button class="primary" onclick="go('practice')">立即自主練習打卡</button></div>`}
+function lineAccountRecoveryPanel(){
+  const schoolId=state.me?.schoolId||"",valid=/^[a-z0-9-]{2,60}$/.test(schoolId);
+  const teacher=valid?"/?"+new URLSearchParams({teacherLineAccount:schoolId,openExternalBrowser:"1"}):"";
+  return `<section class="card"><h2>連結既有平台帳號</h2><p>您已使用 LINE 登入，請選擇要使用的身分。老師請以原本已建檔的 Gmail 繼續，系統會核對學校老師名冊。</p>${teacher?`<a class="primary" href="${esc(teacher)}" style="display:block;padding:14px;text-align:center;text-decoration:none;border-radius:12px">我是老師，使用原 Gmail 繼續</a><p class="muted">在 LINE 內開啟時，請依提示使用 Safari 或 Chrome 完成 Gmail 登入。</p>`:'<p class="notice">請重新選擇所屬學校，再連結原本的 Gmail 帳號。</p>'}<button type="button" class="secondary" style="display:block;width:100%;margin-top:14px" onclick="go('register')">我是家長，申請綁定學生</button></section>`;
+}
+function home(){if(state.me.role==="unassigned")return state.me.authProvider==="line"?lineAccountRecoveryPanel():registrationForm();if(!state.student)return `<div class="card"><div class="notice">目前帳號尚未綁定學生。</div><button class="primary" onclick="go('register')">綁定孩子</button></div>`;const s=state.summary||{},rate=Math.round((s.practiceRate||0)*1000)/10;return `<div class="card hero"><div class="student"><div class="studentleft"><div class="avatar">${esc(state.student.name?.[0]||"學")}</div><div><div class="name">${esc(state.student.name)}</div><div class="muted">${esc(state.student.groupName)}團｜${esc(state.student.instrument)}｜${esc(state.student.grade)}</div></div></div><div class="pill">${new Date().getMonth()+1}月</div></div><div class="grid"><div class="kpi"><b>${s.practiceQualifiedDays||0}</b><span>自主練習達標天數</span></div><div class="kpi"><b>${s.practiceMinutes||0}</b><span>累計練習分鐘</span></div><div class="kpi"><b>${s.sectionPresent||0} / ${s.sectionTotal||0}</b><span>分部團練</span></div><div class="kpi"><b>${s.privatePresent||0} / ${s.privateTotal||0}</b><span>個別課</span></div></div><div style="margin-top:12px;font-size:12px;font-weight:800">自主練習達標率 <span style="float:right">${rate}%</span></div><div class="progress"><i style="width:${Math.min(rate,100)}%"></i></div></div><div class="card"><h2>今天要做什麼？</h2><div class="notice">年級、團別與樂器資料由學生主檔管理，之後異動不會影響既有點名／練習紀錄。</div><button class="primary" onclick="go('practice')">立即自主練習打卡</button></div>`}
 function calcMinutes(s,e){if(!s||!e)return 0;const[a,b]=s.split(":").map(Number),[c,d]=e.split(":").map(Number);let m=(c*60+d)-(a*60+b);if(m<0)m+=1440;return m}
 function practicePage(){const today=new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Taipei"}),logs=state.practice.slice(0,8);const history=logs.length?logs.map(x=>`<div class="item" style="align-items:flex-start"><div style="min-width:0;flex:1"><b>${esc(x.practiceDate)}｜${esc(x.practiceContent||"自主練習")}</b><small>${esc(x.startTime||"")}～${esc(x.endTime||"")}｜本次 ${Number(x.minutes||0)} 分鐘｜當日累計 ${Number(x.dailyMinutes||x.minutes||0)} 分鐘</small>${x.weeklyGoalText?`<small>🎯 老師建議：${esc(x.weeklyGoalText)}</small>`:""}</div><div style="display:flex;align-items:center;gap:8px;flex-shrink:0"><span class="badge ${x.qualified?"ok":"bad"}">${x.qualified?"當日達標":"當日未達"}</span>${x.practiceId?`<button type="button" style="border:1px solid #c94b4b;background:#fff7f7;color:#a52a2a;border-radius:10px;padding:7px 9px;font-weight:800" onclick="deletePracticeRecord('${esc(x.practiceId)}','${esc(x.practiceDate)}','${esc(x.startTime||"")}','${esc(x.endTime||"")}',${Number(x.minutes||0)},'${esc(x.sourceStudentId||"")}')">🗑️</button>`:""}</div></div>`).join(""):`<div class="notice">本月尚無紀錄。</div>`;return `<div class="card"><h2>自主練習打卡</h2><div class="notice">${esc(state.student?.name)}｜${esc(state.student?.groupName)}團｜${esc(state.student?.instrument)}</div><label>練習日期</label><input id="pDate" type="date" value="${today}" onchange="updateMinutes()"><div class="row2"><div><label>開始時間</label><input id="pStart" type="time" value="18:00" oninput="updateMinutes()"></div><div><label>結束時間</label><input id="pEnd" type="time" value="18:20" oninput="updateMinutes()"></div></div><div class="minutes"><div><div class="muted">本次練習時間</div><strong><span id="pMins">20</span> 分鐘</strong></div><span id="pQual" class="badge ok">✅ 已達標</span></div><label>練習內容／曲目</label><textarea id="pContent" rows="3"></textarea><label>練習重點</label><select id="pFocus"><option>音階／基本功</option><option>團練曲目</option><option>考試曲</option><option>節奏／視奏</option><option>其他</option></select><div class="check"><input id="pConfirm" type="checkbox"><div>家長確認：我確認學生已完成上述自主練習。</div></div><button id="savePracticeBtn" class="primary" onclick="savePractice()">送出今天的打卡</button></div><div class="card"><h2>最近打卡</h2><div class="notice" style="margin-bottom:10px">如誤登日期或時間，可由家長移除錯誤紀錄；移除後會重新計算本月練習分鐘與達標天數。</div>${history}</div>`}
 function updateMinutes(){const m=calcMinutes($("pStart").value,$("pEnd").value),date=$("pDate").value,registered=(state.practice||[]).filter(x=>String(x.practiceDate||"")===date).reduce((sum,x)=>sum+Number(x.minutes||0),0),total=registered+m;$("pMins").textContent=m;$("pQual").className=`badge ${m>0&&total>=20?"ok":"bad"}`;$("pQual").textContent=m<=0?"⚠️ 本次尚未練習":total>=20?"✅ 當日累計達標":`⚠️ 當日還差 ${20-total} 分鐘`}

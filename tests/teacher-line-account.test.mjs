@@ -47,8 +47,18 @@ test("teacher callback opens only the same-school account frame and keeps the te
 });
 
 test("teacher binding rejects an unexpected authorization destination",async()=>{
- const h=screen({reply:async(_path,options)=>options?{url:'https://evil.invalid/'}:{configured:true,bound:false,authProvider:'google'}});
- await settle();await h.window.teacherLineAccount.bind();assert.equal(h.assigned.length,0);assert.equal(h.storage.has('teacher_line_account_return'),false);
+ for(const url of ['https://evil.invalid/','https://user:password@access.line.me/oauth2/v2.1/authorize','https://user@access.line.me/oauth2/v2.1/authorize']){
+  const h=screen({reply:async(_path,options)=>options?{url}:{configured:true,bound:false,authProvider:'google'}});
+  await settle();await h.window.teacherLineAccount.bind();assert.equal(h.assigned.length,0);assert.equal(h.storage.has('teacher_line_account_return'),false);
+ }
+});
+
+test("a late teacher OAuth response cannot write return hints or navigate after a token or context switch",async()=>{
+ for(const change of [h=>{h.state.token='new-google-token'},h=>{h.storage.set('google_id_token','new-google-token')},h=>{h.storage.set('school_context_id','school-b')},h=>{h.storage.set('role_context','parent')}]){
+  let release;const h=screen({reply:async(_path,options)=>options?new Promise(resolve=>{release=resolve}):{configured:true,bound:false,authProvider:'google'}});
+  await settle();const request=h.window.teacherLineAccount.bind();change(h);release({url:'https://access.line.me/oauth2/v2.1/authorize?state=stale'});await request;
+  assert.equal(h.assigned.length,0);assert.equal(h.storage.has('teacher_line_account_return'),false);assert.equal(h.calls.filter(call=>call.options?.method==='POST').length,1);
+ }
 });
 test("teacher friendship callbacks stay in the teacher shell and forward only known check results",()=>{
  for(const result of ['checked','unavailable','mismatch','confirm','https://evil.invalid']){

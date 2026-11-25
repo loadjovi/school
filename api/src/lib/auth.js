@@ -23,21 +23,23 @@ function cookieValue(request,name){
   for(const part of raw.split(";")){
     const i=part.indexOf("=");
     if(i<0)continue;
-    if(part.slice(0,i).trim()===name)return decodeURIComponent(part.slice(i+1).trim());
+    if(part.slice(0,i).trim()===name){
+      try{return decodeURIComponent(part.slice(i+1).trim())}catch{return ""}
+    }
   }
   return "";
 }
 
-function googleToken(request){
+function googleCredential(request){
   const custom=String(request.headers.get("x-google-id-token")||"").trim();
-  if(custom==="line-session")return "";
-  const session=cookieValue(request,"orchestra_google_id_token");
-  if(session)return session;
-  if(custom&&custom!=="cookie-session"&&custom!=="line-session")return custom;
-  const auth=String(request.headers.get("authorization")||"");
-  if(!auth.toLowerCase().startsWith("bearer "))return "";
-  return auth.slice(7).trim();
+  if(custom==="line-session")return {token:"",explicit:false};
+  if(custom&&custom!=="cookie-session")return {token:custom,explicit:true};
+  if(custom==="cookie-session")return {token:cookieValue(request,"orchestra_google_id_token"),explicit:true};
+  const auth=String(request.headers.get("authorization")||"").trim();
+  if(/^bearer(?:\s|$)/i.test(auth))return {token:auth.slice(6).trim(),explicit:true};
+  return {token:cookieValue(request,"orchestra_google_id_token"),explicit:false};
 }
+function googleToken(request){return googleCredential(request).token}
 
 export async function verifyGoogleToken(token){
   const audience=String(process.env.GOOGLE_CLIENT_ID||"").trim();
@@ -346,7 +348,9 @@ async function lineParentAccess(request, includeContexts = false) {
 
 export async function getAccess(request,{includeContexts=false}={}){
   const identity=await verifyGoogle(request);
-  if(!identity)return lineParentAccess(request,includeContexts);
+  // Explicit Google authentication must fail as Google. An expired or invalid
+  // credential cannot silently switch the caller to an unrelated LINE cookie.
+  if(!identity)return googleCredential(request).explicit?{authenticated:false}:lineParentAccess(request,includeContexts);
   const email=identity.email;
   const parentMap=parseJsonEnv("STUDENT_MAP_JSON",{});
   const admins=String(process.env.ADMIN_EMAILS||"").split(",").map(x=>x.trim().toLowerCase()).filter(Boolean);

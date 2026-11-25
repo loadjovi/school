@@ -2,7 +2,7 @@
   const roles=new Set(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"]);
   const pages=new Set(["teacherHome","teacherSettings"]);
   const teacher=()=>roles.has(state.me?.role);
-  const identity=()=>teacher()?JSON.stringify([state.me.schoolId,state.me.identityId,state.me.email,state.me.authProvider,state.me.role]):"";
+  const identity=()=>teacher()?JSON.stringify([state.me.schoolId,state.me.identityId,state.me.email,state.me.authProvider,state.me.role,state.token||"",...["google_id_token","school_context_id","role_context"].map(key=>sessionStorage.getItem(key)||"")]):"";
   let currentKey="",account=null,error="",loading=false,busy=false,version=0;
   let accountViewKey="";
   function openAccount(params){
@@ -76,7 +76,7 @@
       try{
         const {url}=await api("/api/line/tenant-login/"+encodeURIComponent(schoolId)+"/start",{method:"POST",body:JSON.stringify({mode:"link",returnTo:"teacher-account"})});
         const target=new URL(url);
-        if(target.origin!=="https://access.line.me"||target.pathname!=="/oauth2/v2.1/authorize")throw Error("LINE 授權網址不正確，請重試。");
+        if(target.origin!=="https://access.line.me"||target.pathname!=="/oauth2/v2.1/authorize"||target.username||target.password)throw Error("LINE 授權網址不正確，請重試。");
         if(key===identity()){
           sessionStorage.setItem("teacher_line_account_return",schoolId);
           sessionStorage.removeItem("parent_line_account_return");

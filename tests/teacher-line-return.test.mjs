@@ -19,13 +19,22 @@ function fixture({search="?teacherLineAccount=school-a&line_link=confirm",token=
 }
 
 test("teacher callback restores a Gmail cookie in a new tab and forces only the verified same-school teaching context",async()=>{
- for(const token of ["","line-session","verified-google-token"]){
+ for(const token of ["","line-session","cookie-session","verified-google-token"]){
   const h=fixture({token});await h.boot();
   assert.equal(h.logins.length,0);assert.deepEqual(h.profiles,[teacher]);assert.equal(h.requests.length,1);
   const {options}=h.requests[0];assert.equal(options.credentials,"same-origin");assert.equal(options.cache,"no-store");
   assert.equal(options.headers["X-School-Id"],"school-a");assert.equal(options.headers["X-Role-Context"],"teacher");
   assert.equal(options.headers["X-Google-ID-Token"],token==="verified-google-token"?token:undefined);
   assert.equal(h.storage.get("role_context"),"teacher");assert.equal(h.storage.get("google_id_token"),token==="verified-google-token"?token:"cookie-session");
+ }
+});
+
+test("late teacher successes and failures cannot replace a newly signed-in identity or redraw its page",async()=>{
+ for(const result of ['success','denied','network'])for(const change of [h=>{h.state.token='new-google-token';h.storage.set('google_id_token','new-google-token')},h=>{h.storage.set('school_context_id','school-b')},h=>{h.storage.set('role_context','parent')}]){
+  const h=fixture({token:'old-google-token'});let release,reject;h.scope.fetch=()=>new Promise((resolve,fail)=>{release=resolve;reject=fail});
+  const pending=h.boot();change(h);const replacement={...teacher,email:'new@example.invalid',identityId:'new-sub'};h.state.me=replacement;h.state.page='teacherHome';
+  if(result==='network')reject(Error('old request unavailable'));else release({ok:result==='success',status:result==='success'?200:403,json:async()=>teacher});await pending;
+  assert.equal(h.profiles.length,0);assert.equal(h.logins.length,0);assert.equal(h.state.me,replacement);assert.equal(h.state.page,'teacherHome');assert.notEqual(h.storage.get('google_id_token'),'old-google-token');
  }
 });
 
