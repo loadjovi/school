@@ -3,6 +3,7 @@ import { app } from "@azure/functions";
 import { getTenantContext, json } from "../lib/auth.js";
 import { ensureTenantTables, table, rowKey, getRegistrationsByEmail, listRegistrations, getStudentMaster, listStudentMaster, tenantParentPartition, tenantSchoolPartition, tenantStudentPartition } from "../lib/storage.js";
 import { sendParentApprovalEmail } from "../lib/email.js";
+import {notifyParentLineApproval} from "../lib/parentLineApprovalNotice.js";
 
 const allowedGroups=new Set(["A","B","C","儲備"]);
 const allowedGrades=new Set(["一年級","二年級","三年級","四年級","五年級","六年級"]);
@@ -144,11 +145,18 @@ app.http("studentRegistration",{
     reg.status="approved";reg.studentId=studentId;reg.studentName=studentName;reg.grade=grade;reg.groupName=groupName;reg.instrument=instrument;reg.schoolYear=schoolYear;reg.reviewedAt=now;reg.reviewedBy=access.email;reg.note=note;reg.notificationStatus="pending";reg.notificationError="";
     await regClient.updateEntity(reg,"Merge");
 
+    let lineNotification;
+    try { lineNotification=await notifyParentLineApproval(schoolId,{parentEmail:reg.parentEmail,studentId}); }
+    catch { lineNotification={status:"pending"}; }
     const menuSync=await reconcileParentLineMenus(schoolId,[reg.parentEmail]);
     let notification;
     try{
       notification=await sendParentApprovalEmail({schoolId,schoolName:context.tenant?.systemName||context.tenant?.schoolName,
-        recipient:reg.parentEmail,parentName:reg.parentName,studentName,grade,groupName,instrument
+        recipient:reg.parentEmail,parentName:reg.parentName,studentName,grade,groupName,instrument,
+        notificationId:"parent-approval:"+registrationId,
+        // Reuse the durable LINE receipt; the existing LINE-first mail route
+        // must not send another generic LINE approval notification.
+        lineSender:async()=>lineNotification
       });
     }catch(e){
       notification={status:"failed",error:String(e?.message||e||"email_send_failed").slice(0,500)};
@@ -160,7 +168,7 @@ app.http("studentRegistration",{
     reg.notificationMessageId=String(notification?.messageId||"").slice(0,200);
     await regClient.updateEntity(reg,"Merge");
 
-    return json({ok:true,status:"approved",studentId,linkedExisting:true,menuSync,notification:{
+    return json({ok:true,status:"approved",studentId,linkedExisting:true,menuSync,lineNotification,notification:{
       status:reg.notificationStatus,sentAt:reg.notificationSentAt||null,error:reg.notificationError||"",messageId:reg.notificationMessageId||""
     }});
   }

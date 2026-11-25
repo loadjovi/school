@@ -1,5 +1,5 @@
 (()=>{const q=new URLSearchParams(location.search),sid=String(q.get("onboardingSchoolId")||"").trim().toLowerCase(),role=String(q.get("onboardingRole")||"").trim();if(/^[a-z0-9-]{2,60}$/.test(sid)&&["schoolAdmin","teacher","parent"].includes(role)){sessionStorage.setItem("school_context_id",sid);sessionStorage.setItem("role_context",role)}})();
-const state={me:null,students:[],student:null,page:"home",summary:null,practice:[],token:sessionStorage.getItem("google_id_token")||"",registrations:[],master:[],schoolOptions:[],parentLineBinding:null,parentSelfBind:{schoolId:"",schoolName:"",students:[],loading:false}};
+const state={me:null,students:[],student:null,page:"home",summary:null,practice:[],token:sessionStorage.getItem("google_id_token")||"",registrations:[],master:[],schoolOptions:[],parentLineBinding:null,parentLineFriendPromptEpoch:0,parentSelfBind:{schoolId:"",schoolName:"",students:[],loading:false}};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
 const grades=["一年級","二年級","三年級","四年級","五年級","六年級"],groups=["A","B","C","儲備"],instruments=["小提琴","中提琴","大提琴","低音提琴","其他"];
@@ -35,7 +35,7 @@ async function api(url,options={}){
   try{return JSON.parse(JSON.stringify(await pending))}
   finally{if(pendingApiGets.get(key)===pending)pendingApiGets.delete(key)}
 }
-function logout(reload=true){apiRequestEpoch++;pendingApiGets.clear();state.token="";state.me=null;state.students=[];state.student=null;state.parentLineBinding=null;sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");sessionStorage.removeItem("teacher_line_account_return");sessionStorage.removeItem("parent_line_account_return");if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}
+function logout(reload=true){apiRequestEpoch++;pendingApiGets.clear();state.token="";state.me=null;state.students=[];state.student=null;state.parentLineBinding=null;state.parentLineFriendPromptEpoch=(state.parentLineFriendPromptEpoch||0)+1;window.parentLineFriendPrompt?.reset();sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");sessionStorage.removeItem("teacher_line_account_return");sessionStorage.removeItem("parent_line_account_return");if(window.google?.accounts?.id)google.accounts.id.disableAutoSelect();if(reload)renderLogin()}
 function teacherLineAccountEntry(){
   const query=new URLSearchParams(location.search),schoolId=query.get("teacherLineAccount");
   if(/^[a-z0-9-]{2,60}$/.test(schoolId||""))return schoolId;
@@ -231,6 +231,7 @@ async function loadSchoolViewModule(){
 window.retrySchoolView=()=>{state.schoolViewerLoadError="";render();return loadSchoolViewModule()};
 async function loadProfile(profile){
   state.parentLineBinding=null;
+  window.parentLineFriendPrompt?.reset();
   const entry=window.getLineStaffEntry?.()?null:paidActivityEntry();
   if(entry&&!sessionStorage.getItem("role_context"))choosePaidActivityContext(entry);
   state.me=profile??await api("/api/me?includeStudentProfiles=1");
@@ -288,7 +289,10 @@ async function loadProfile(profile){
     state.students=Array.isArray(state.master)?state.master:[];
     state.student=state.students[0]||null;
   }else{
-    if(state.me.role==="parent")window.preloadRoleModules?.();
+    if(state.me.role==="parent"){
+      state.summary=null;state.practice=[];state.summaryLoadError="";
+      window.preloadRoleModules?.();
+    }
     state.students=state.me.role==="parent"&&Array.isArray(state.me.studentProfiles)?state.me.studentProfiles:await api("/api/students");
     state.student=state.students[0]||null;
     if(["teacher","sectionTeacher","ensembleTeacher","comprehensiveTeacher","privateTeacher"].includes(state.me.role)||state.me?.capabilities?.teacherSettings)state.page="teacherHome";
@@ -347,19 +351,24 @@ async function renderLineLogin(){
 
 let parentLineBindingRequest=0;
 function parentLineBindingKey(){
-  return JSON.stringify([state.token,state.me?.identityId||state.me?.email||"",state.me?.schoolId||"",state.me?.role||"",sessionStorage.getItem("school_context_id")||"",sessionStorage.getItem("role_context")||""]);
+  return JSON.stringify([state.token,state.me?.identityId||state.me?.email||"",state.me?.schoolId||"",state.me?.role||"",state.me?.authProvider||"",sessionStorage.getItem("school_context_id")||"",sessionStorage.getItem("role_context")||""]);
 }
 async function refreshParentLineBindingStatus(){
   if(state.me?.role!=="parent"||!state.me.capabilities?.lineAccount)return;
   const request=++parentLineBindingRequest,scope=apiReadScope(),key=parentLineBindingKey();
   const wasBound=state.parentLineBinding?.bound===true;
-  state.parentLineBinding={key,bound:null};
+  const pending={key,bound:null};state.parentLineBinding=pending;
   if(wasBound&&state.page==="home")render();
   try{
     const account=await api("/api/line/school-account");
-    if(request!==parentLineBindingRequest||scope!==apiReadScope()||key!==parentLineBindingKey())return;
-    state.parentLineBinding={key,bound:account.configured===true&&account.bound===true&&account.googleLinked===true};
+    if(request!==parentLineBindingRequest||state.parentLineBinding!==pending||scope!==apiReadScope()||key!==parentLineBindingKey())return;
+    const lineBound=account.configured===true&&account.bound===true;
+    state.parentLineBinding={key,bound:lineBound&&account.googleLinked===true,lineBound,
+      friendStatus:["friend","not_friend"].includes(account.friendStatus)?account.friendStatus:"unknown",
+      authProvider:["google","line"].includes(account.authProvider)?account.authProvider:"",
+      friendCheckedAt:account.friendCheckedAt||null};
     if(state.page==="home")render();
+    else window.parentLineFriendPrompt?.refresh();
   }catch{
     // An unavailable status leaves the account entry visible at the top.
   }

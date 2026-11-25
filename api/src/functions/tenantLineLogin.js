@@ -12,6 +12,7 @@ import {
 } from "../lib/tenantLineAccounts.js";
 import {LineMenuSyncError,refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
 import {restoreLabGoogleLineLink} from "../lib/tenantLineLegacyLab.js";
+import {notifyParentLineApproval,flushParentLineApprovalNotices} from "../lib/parentLineApprovalNotice.js";
 
 const loginApi = "https://api.line.me/oauth2/v2.1/";
 const startUrl = "https://access.line.me/oauth2/v2.1/authorize";
@@ -92,7 +93,7 @@ async function checkFriendship(channel, userId, accessToken) {
       const {friendFlag} = await response.json();
       if (typeof friendFlag !== "boolean") return false;
       await recordTenantLineFriendship(channel.schoolId, channel.botUserId, userId, friendFlag, checkedAt);
-      return true;
+      return friendFlag ? "friend" : "not_friend";
     }
   } catch {
     console.warn("LINE friendship check deferred", {schoolId: channel.schoolId});
@@ -251,6 +252,10 @@ app.http("tenantLineLoginCallback", {
           return redirect(resultUrl, cookies);
         }
         const checked = await checkFriendship(channel, userId, tokens.access_token);
+        if (checked === "friend") {
+          try { await flushParentLineApprovalNotices(schoolId, channel.botUserId, userId); }
+          catch { /* Friendship and account identity remain valid if a receipt is deferred. */ }
+        }
         resultUrl.searchParams.set("line_friend", checked ? "checked" : "unavailable");
         return redirect(resultUrl, cookies);
       }
@@ -265,7 +270,12 @@ app.http("tenantLineLoginCallback", {
         cookies.push(lineCookie("orchestra_google_id_token", "", 0));
         resultUrl.searchParams.set("line_session", schoolId);
       }
-      await Promise.all([txn.googleSub ? undefined : tryMenuSync(channel, account), checkFriendship(channel, userId, tokens.access_token)]);
+      await Promise.all([txn.googleSub ? undefined : tryMenuSync(channel, account), checkFriendship(channel, userId, tokens.access_token).then(async checked => {
+        if (checked === "friend") {
+          try { await flushParentLineApprovalNotices(schoolId, channel.botUserId, userId); }
+          catch { /* Only existing approval intents may be deferred after login. */ }
+        }
+      })]);
     } catch (error) {
       const reason = error instanceof LineAccountConflict ? "conflict" :
         ["configuration", "authorization", "verification"].includes(error?.lineFailure) ? error.lineFailure : failure;
@@ -342,8 +352,11 @@ app.http("tenantLineAccount", {
           cleared.push(lineSessionCookie(token));
         }
         const menuSync = await tryMenuSync(channel, linked);
+        let lineNotification;
+        try { lineNotification = await notifyParentLineApproval(schoolId, {parentEmail: linked.parentEmail, expectedLineUserId: linked.lineUserId}); }
+        catch { lineNotification = {status: "pending"}; }
         return {...json({configured: true, bound: true, googleLinked: true, authProvider: line ? "line" : "google",
-          lineDisplayName: linked.displayName, menuSync}), headers: privateHeaders, cookies: cleared};
+          lineDisplayName: linked.displayName, menuSync, lineNotification}), headers: privateHeaders, cookies: cleared};
       }
       if (!line || line.botUserId !== channel.botUserId) return json({error: "請先完成此校 LINE 登入"}, 403);
       const verified = await verifyGoogleToken(body?.credential);

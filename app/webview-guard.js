@@ -151,10 +151,11 @@
       "/practice-timer.js?v=20261004-manual4h",
       "/private-lesson-confirmation.js?v=20261122-practice-goal-progress",
       "/parent-semester-attendance.js?v=20261003-practice20",
-      "/parent-home-summary.js?v=20261103-tshirt-size-reminder-payment-resolution-owner-20261121",
+      "/parent-home-summary.js?v=20261103-tshirt-size-reminder-payment-resolution-owner-20261121-parent-friend-reminder-20261125",
       "/parent-uniform-payment-notice.js?v=20261121-payment-resolution-owner",
       "/parent-practice-history.js?v=20261003-practice-history-toggle",
-      "/special-calendar.js?v=20261102-training-form-home-priorities-20261119"
+      "/special-calendar.js?v=20261102-training-form-home-priorities-20261119",
+      "/parent-line-friend-prompt.js?v=20261125-parent-friend-reminder"
     ];
     if(role==="globalAdmin")return [
       "/school-access.js?v=20261027-school-followup",
@@ -241,7 +242,7 @@
   window.resumeLineStaffEntry=()=>{if(sessionStorage.getItem(staffEntryKey))loadRoleModules()};
   function loadApp(){
     window.__roleLoaderActive=true;window.__roleModulesReady=false;
-    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity-school-admin-teacher-binding-20261119-home-priorities-notification-center-parent-login-ready-parent-login-fast-practice-goal-progress-20261122-admin-quick-workspace-account-navigation-production-cutover-login-copy-20261124-line-account-shell-20261124-parent-auto-menu-teacher-account-return-parent-account-return-20261125-friendship-recheck-binding-status-only");
+    appendScript("/app-v3.js?v=20261102-student-workflow-tenant-line-staff-session-20261116-teacher-line-paid-activity-school-admin-teacher-binding-20261119-home-priorities-notification-center-parent-login-ready-parent-login-fast-practice-goal-progress-20261122-admin-quick-workspace-account-navigation-production-cutover-login-copy-20261124-line-account-shell-20261124-parent-auto-menu-teacher-account-return-parent-account-return-20261125-friendship-recheck-binding-status-only-parent-friend-reminder");
   }
   function installIOSRedirectMode(){let tries=0;const timer=setInterval(()=>{tries++;if(window.google?.accounts?.id?.initialize){clearInterval(timer);const nativeInitialize=window.google.accounts.id.initialize.bind(window.google.accounts.id);window.google.accounts.id.initialize=(config={})=>{const {callback,...rest}=config;return nativeInitialize({...rest,ux_mode:"redirect",login_uri:`${location.origin}/api/google-login`})};loadApp()}else if(tries>120){clearInterval(timer);loadApp()}},50)}
   document.addEventListener("click",async e=>{const btn=e.target.closest?.(".logout");if(!btn)return;e.preventDefault();e.stopImmediatePropagation();await Promise.allSettled([fetch("/api/google-logout",{method:"POST"}),fetch("/api/line/session/logout",{method:"POST"})]);sessionStorage.removeItem("google_id_token");sessionStorage.removeItem("school_context_id");sessionStorage.removeItem("role_context");location.href="/"},true);

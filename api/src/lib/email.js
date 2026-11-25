@@ -183,8 +183,8 @@ export async function sendPrivateLessonParentEmail(options={}){
 }
 
 
-export async function sendParentApprovalEmail({schoolId,schoolName="",recipient="",parentName="",studentName="",grade="",groupName="",instrument=""}={}){
-  if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())return deliverLabNotice({schoolId,recipients:[recipient],subject:"家長帳號認證完成",text:[noticeHeading(schoolName||"學校平台"),`${parentName||"家長"} 您好，${studentName}的家長帳號認證已完成。`,[grade,groupName,instrument].filter(Boolean).join("｜"),"請使用原申請 Gmail 登入平台。",labNoticeUrl(schoolId)].join("\n")});
+export async function sendParentApprovalEmail({schoolId,schoolName="",recipient="",parentName="",studentName="",grade="",groupName="",instrument="",lineSender,notificationId}={}){
+  if(typeof lineFirstLabEnabled==="function"&&lineFirstLabEnabled())return deliverLabNotice({schoolId,recipients:[recipient],eventId:notificationId,lineSender,subject:"家長帳號認證完成",text:[noticeHeading(schoolName||"學校平台"),`${parentName||"家長"} 您好，${studentName}的家長帳號認證已完成。`,[grade,groupName,instrument].filter(Boolean).join("｜"),"請使用原申請 Gmail 登入平台。",labNoticeUrl(schoolId)].join("\n")});
   const address=await recipientEmail(schoolId,recipient);
   if(!address)return {status:"no_recipient",recipientCount:0,sentCount:0,failedCount:0};
   const cfg=tenantEmailConfig(schoolId);

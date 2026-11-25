@@ -3,6 +3,7 @@ import {randomInt} from "node:crypto";
 import {getTenantContext,json} from "../lib/auth.js";
 import {defaultTenantId,tenantIdValue} from "../lib/storage.js";
 import {getTenantLineAccount,recordTenantLineFriendship} from "../lib/tenantLineAccounts.js";
+import {flushParentLineApprovalNotices} from "../lib/parentLineApprovalNotice.js";
 import {refreshTenantLineMenu} from "../lib/tenantLineMenu.js";
 import {parseActivityLineBinding,consumeActivityLineBinding,leaveActivityLineGroup} from "../lib/lineActivityGroups.js";
 import {receivePrivateLessonReview} from "../lib/linePrivateLesson.js";
@@ -52,9 +53,11 @@ async function handleLineWebhook(request,schoolId,legacyRoute){
         const userId=event?.source?.type==="user" ? String(event.source.userId||"") : "";
         if(channel.loginConfigured&&userId&&["follow","unfollow"].includes(event.type)){
           const followed=event.type==="follow";
-          const tasks=[recordTenantLineFriendship(schoolId,botUserId,userId,followed,event.timestamp)];
-          if(followed)tasks.push(getTenantLineAccount(schoolId,botUserId,userId).then(account=>refreshTenantLineMenu(channel,account,userId)));
-          await Promise.all(tasks);
+          await recordTenantLineFriendship(schoolId,botUserId,userId,followed,event.timestamp);
+          if(followed)await Promise.allSettled([
+            getTenantLineAccount(schoolId,botUserId,userId).then(account=>refreshTenantLineMenu(channel,account,userId)),
+            Promise.resolve().then(()=>flushParentLineApprovalNotices(schoolId,botUserId,userId))
+          ]);
           continue;
         }
         if(event.type==="leave"&&event.source?.type==="group"){

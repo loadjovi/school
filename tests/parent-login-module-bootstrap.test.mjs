@@ -109,6 +109,14 @@ test("an authorized login payload skips the duplicate student request and keeps 
  await empty.login({studentProfiles:[]});assert.equal(empty.studentRequests,0);assert.equal(empty.state.student,null);
 });
 
+test("a newly verified parent starts with no previous account's summary while the first student summary is still loading",async()=>{
+ const h=harness();await h.start();h.state.summary={studentId:'previous-student',privateNote:'old account'};h.state.practice=[{studentId:'previous-student'}];h.state.summaryLoadError='old error';
+ let finish;h.context.refreshStudent=()=>new Promise(resolve=>{finish=()=>{h.state.summary={studentId:'current-student'};resolve()}});
+ await h.login({studentProfiles:[{studentId:'current-student',name:'本次學生'}]});
+ assert.equal(h.state.summary,null);assert.equal(h.state.practice.length,0);assert.equal(h.state.summaryLoadError,'');assert.equal(h.state.student.studentId,'current-student');
+ finish();await settle();assert.equal(h.state.summary.studentId,'current-student');
+});
+
 test("parent assets preload during the legacy student request but execute only after the child context is available",async()=>{
  const h=harness();await h.start();let release;
  h.context.api=async path=>{assert.equal(path,"/api/students");return new Promise(resolve=>{release=resolve})};

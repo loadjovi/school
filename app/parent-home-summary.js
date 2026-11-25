@@ -131,6 +131,8 @@
     }
     const shown=shownTasks.get(scope),hasNew=tasks.some(task=>!shown.has(task.key));
     if(!manual&&!hasNew&&!taskDialog?.open)return;
+    const activeDialog=document.querySelector?.("dialog[open]");
+    if(activeDialog&&activeDialog!==taskDialog)return;
     if(!taskDialog){
       taskDialog=document.createElement("dialog");
       taskDialog.className="parent-task-dialog";
@@ -162,6 +164,7 @@
   window.showParentTasks=()=>tasksDialog(parentTasks(),true);
   const renderWithParentHome=render;
   render=function(){const output=renderWithParentHome();syncParentTasks();return output};
+  document.addEventListener?.("close",()=>syncParentTasks(),true);
   window.addEventListener("pageshow",event=>{
     if(!event.persisted||!isParent()||state.page!=="home")return;
     if(taskDialog?.open)taskDialog.close();

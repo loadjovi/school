@@ -9,18 +9,19 @@ const trip=(id,extra={})=>({id,module:"fieldTrip",enabled:true,targetGroups:"A",
 const student={studentId:"1",name:"甲同學",groupName:"A團"};
 
 function setup(){
- const session=new Map(),list={},dialog={open:false,querySelector:()=>list,setAttribute(){},
+ const session=new Map(),list={},documentEvents={},otherDialog={open:false},dialog={open:false,querySelector:()=>list,setAttribute(){},
   showModal(){this.open=true;this.opens=(this.opens||0)+1},close(){this.open=false}};
  const context={
   Date:class extends Date{static now(){return now}},
   sessionStorage:{getItem:key=>session.get(key),setItem:(key,value)=>session.set(key,value)},
   localStorage:{getItem:()=>null,setItem(){}},state:{me:{email:"p@example.invalid",role:"parent"},page:"home",student,students:[student]},
   home:()=>"",render:()=>{},refreshStudent:async()=>{},setTimeout:()=>1,clearTimeout(){},addEventListener(){},esc:value=>String(value).replaceAll("&","&amp;").replaceAll("<","&lt;"),
-  document:{createElement:()=>dialog,body:{append(){}}},getParentActivityRegistrations:()=>[]
+  document:{createElement:()=>dialog,body:{append(){}},querySelector:()=>otherDialog.open?otherDialog:dialog.open?dialog:null,
+   addEventListener:(type,callback)=>documentEvents[type]=callback},getParentActivityRegistrations:()=>[]
  };
  context.window=context;
  for(const name of ["parent-activity-notice.js","parent-home-summary.js"])runInNewContext(read(name),context);
- return {context,dialog,list};
+ return {context,dialog,list,otherDialog,documentEvents,session};
 }
 
 test("registration tasks follow the configured group, deadline, opening time and actual family registration",()=>{
@@ -55,6 +56,14 @@ test("one home dialog links to each actionable item, survives renders, and can b
  context.state.parentTshirtSizes=[];
  context.render();assert.equal(dialog.open,false);
  context.state.me.role="admin";context.showParentTasks();assert.equal(dialog.open,false);
+});
+
+test("activity tasks wait for another open modal without marking unseen tasks handled, then open after it closes",()=>{
+ const {context,dialog,otherDialog,documentEvents,session}=setup();
+ context.state.parentActivityConfigs=[trip("open",{title:"待報名活動"})];context.state.parentTshirtSizes=[];
+ otherDialog.open=true;context.render();assert.equal(dialog.open,false);assert.equal(dialog.opens,undefined);assert.equal(session.size,0);
+ otherDialog.open=false;documentEvents.close({target:otherDialog});assert.equal(dialog.open,true);assert.equal(dialog.opens,1);assert.equal(session.size,1);
+ dialog.close();documentEvents.close({target:dialog});context.render();assert.equal(dialog.opens,1);
 });
 
 test("a direct activity link opens its rendered registration form even when the activity was read before",()=>{
