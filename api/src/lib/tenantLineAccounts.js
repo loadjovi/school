@@ -68,16 +68,47 @@ export async function getTenantLineDeliveryRecipient(schoolId, email, channel) {
   const partitionKey=tenantSchoolPartition(schoolId),address=String(email||"").trim().toLowerCase();
   if(!address||channel?.schoolId!==partitionKey||!channel.botUserId)return null;
   const current=await read(partitionKey,emailKey(address));
-  if(current)return current.botUserId===channel.botUserId&&current.lineUserId?current:null;
+  if(current){
+    // This marker is a computed delivery proof, never authority stored in an
+    // email index (including a historical alias or an explicit unlink row).
+    const {verifiedGoogleEmail,...account}=current;
+    return current.botUserId===channel.botUserId&&current.lineUserId?account:null;
+  }
+  const safe=address.replaceAll("'","''"),modern=[];
+  for await(const row of store().listEntities({queryOptions:{filter:`PartitionKey eq '${partitionKey.replaceAll("'","''")}' and googleEmail eq '${safe}'`}})){
+    if(String(row.googleEmail||"").trim().toLowerCase()===address)modern.push(row);
+  }
+  if(modern.length){
+    // LINE-first enrollment intentionally keeps the LINE parent identity. Its
+    // verified Gmail has a Google-sub index but need not have an email index.
+    // Resolve that existing binding only when all three current indices agree.
+    const candidates=modern.filter(row=>typeof row.googleSub==="string"&&row.googleSub&&row.rowKey===googleKey(row.googleSub));
+    if(candidates.length!==1)return null;
+    const index=candidates[0],parent=String(index.parentEmail||"").trim().toLowerCase(),sub=index.googleSub,userId=index.lineUserId;
+    if(!parent||parent!==index.parentEmail||!/^U[0-9a-f]{32}$/i.test(userId||""))return null;
+    const matches=row=>row&&row.partitionKey===partitionKey&&(!row.schoolId||row.schoolId===partitionKey)&&
+      row.botUserId===channel.botUserId&&row.lineUserId===userId&&row.parentEmail===parent&&row.googleSub===sub&&row.googleEmail===address;
+    const keys=new Set([googleKey(sub),lineKey(channel.botUserId,userId),emailKey(parent),...(index.parentAlias?[emailKey(index.parentAlias)]:[])]);
+    const contact=contactKey(index.parentAlias||parent);
+    for(const row of modern){
+      if(row.rowKey===contact){
+        if(row.partitionKey!==partitionKey||row.schoolId&&row.schoolId!==partitionKey||row.googleSub!==sub||row.googleEmail!==address||
+          row.botUserId&&row.botUserId!==channel.botUserId||row.linkedParentEmail&&row.linkedParentEmail!==parent||
+          row.lineUserId&&row.lineUserId!==userId||row.parentEmail&&row.parentEmail!==parent)return null;
+      }else if(!keys.has(row.rowKey)||!matches(row))return null;
+    }
+    if(!matches(index))return null;
+    const [identity,parentIndex]=await Promise.all([
+      read(partitionKey,lineKey(channel.botUserId,userId)),read(partitionKey,emailKey(parent))
+    ]);
+    if(!matches(identity)||identity.rowKey!==lineKey(channel.botUserId,userId)||!matches(parentIndex)||parentIndex.rowKey!==emailKey(parent))return null;
+    return {...identity,verifiedGoogleEmail:address};
+  }
   if(!["","production"].includes(String(process.env.LAB_ENVIRONMENT||"").trim().toLowerCase())||
     partitionKey!==defaultTenantId()||channel.configured!==true||channel.acceptsLegacy!==true||!channel.accessToken)return null;
   try{
     // A modern Google index, including an explicit unlink marker, must never
     // be silently revived from the older binding table.
-    const safe=address.replaceAll("'","''");
-    for await(const row of store().listEntities({queryOptions:{filter:`PartitionKey eq '${partitionKey.replaceAll("'","''")}' and googleEmail eq '${safe}'`}})){
-      if(row.googleEmail===address)return null;
-    }
     const old=TableClient.fromConnectionString(process.env.STORAGE_CONNECTION_STRING,process.env.LINE_ACCOUNT_BINDING_TABLE||"TenantLineAccountBinding");
     const binding=await old.getEntity(partitionKey,"email_"+lineHash(address).slice(0,40));
     const userId=binding.lineUserId;

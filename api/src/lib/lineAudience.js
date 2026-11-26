@@ -63,10 +63,13 @@ export async function resolveLineAudience(schoolId, botUserId, {roles,groups,stu
   const eligible=identities.map((email,index)=>({email,account:resolved[index]})).filter(({email,account})=>{
     if(independentEmails.has(email)||!account)return true;
     const canonical=emailOf(account.parentEmail);
-    // Historical LINE aliases do not grant current parent access. Keep the
-    // entire contact out, including email fallback, unless its primary parent
-    // identity has an approved child in this selected audience.
-    return account.deliveryOnly===true?canonical===email:parentEmails.has(canonical);
+    // A historical alias alone grants no parent access. A current Gmail may
+    // share the same verified LINE binding even when LINE was enrolled first;
+    // this marker is emitted only after the delivery resolver verifies all
+    // current Google, LINE and canonical email indexes. Student approval above
+    // remains mandatory for that Gmail and the selected school/group.
+    const verifiedGoogle=account.googleSub&&emailOf(account.verifiedGoogleEmail)===email;
+    return account.deliveryOnly===true?canonical===email:parentEmails.has(canonical)||verifiedGoogle;
   });
   const accounts=eligible.map(({account})=>account);
   const recipients=new Map();

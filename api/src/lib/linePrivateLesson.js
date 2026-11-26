@@ -102,8 +102,8 @@ export async function receivePrivateLessonReview(channel,userId,text,{cards=fals
   try{
     const db=await reviewTable(),record=await db.getEntity(scope(schoolId,botUserId),match[1].toUpperCase());
     if(record.userId!==userId||Date.now()>=record.expiresAt)return respond(expired);
-    const currentAccount=await getTenantLineRecipient(schoolId,record.email,botUserId);
-    if(currentAccount?.lineUserId!==userId)return respond(expired);
+    const currentAccount=typeof getTenantLineDeliveryRecipient==="function"?await getTenantLineDeliveryRecipient(schoolId,record.email,channel):await getTenantLineRecipient(schoolId,record.email,botUserId);
+    if(currentAccount?.deliveryOnly||currentAccount?.lineUserId!==userId)return respond(expired);
     const mappings=await getMappedStudentsByEmail(record.email,schoolId);
     const canonical=await Promise.all(mappings.map(row=>getStudentAliasInfo(row.studentId,schoolId)));
     const ownedStudentIndex=canonical.findIndex(info=>String(info.canonicalStudentId)===record.studentId);

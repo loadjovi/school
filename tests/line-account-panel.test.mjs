@@ -45,6 +45,14 @@ test('personal binding construction does no work and authorized entry reads only
   assert.match(h.host.textContent,/已連結 測試家長/);assert.doesNotMatch(h.host.textContent,/收費|帳戶範本/);
  }
 });
+test('same-school Gmail account binding is shared across roles while school rights remain separate',async()=>{
+ for(const role of ['admin','parent','privateTeacher']){
+  const h=fixture({role});await h.panel.load();
+  assert.match(h.host.textContent,/同一學校、同一個 Gmail 的 LINE 綁定可在管理員、老師與家長身分間共用/);
+  assert.match(h.host.textContent,/不需各自重綁.*權限仍依學校名冊與核准的學生關係判定/);
+  assert.equal(h.calls.length,1);assert.equal(h.calls[0].method,'GET');assert.equal(h.changes.length,0);
+ }
+});
 test('an unsupported role or missing account capability cannot start account requests or mutations',async()=>{
  for(const options of [{role:'teacherUnknown'},{capability:false}]){const h=fixture(options);await h.panel.load();assert.equal(h.calls.length,0);assert.match(h.host.textContent,/尚未開啟|已授權的身分/);assert.equal(h.button('使用 LINE 授權並綁定'),undefined)}
 });

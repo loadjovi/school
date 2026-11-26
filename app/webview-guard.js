@@ -141,7 +141,7 @@
       "/teacher-navigation.js?v=20261002-teacher-types-home-priorities-20261119",
       "/training-attendance.js?v=20261102-activity-boundary",
       "/comprehensive-support.js?v=20261002-save-confirm",
-      "/private-lesson-confirmation.js?v=20261122-practice-goal-progress",
+      "/private-lesson-confirmation.js?v=20261126-private-lesson-delivery",
       "/teacher-line-account.js?v=20261126-teacher-auth-return-readback"
     ];
     if(["unassigned","contextDenied"].includes(role))return [
@@ -153,7 +153,7 @@
       "/parent-activity-notice.js?v=20261016-new-activity-alert-parent-tasks",
       "/uniform-payment-state.js?v=20261121-payment-resolution-owner",
       "/practice-timer.js?v=20261004-manual4h",
-      "/private-lesson-confirmation.js?v=20261122-practice-goal-progress",
+      "/private-lesson-confirmation.js?v=20261126-private-lesson-delivery",
       "/parent-semester-attendance.js?v=20261003-practice20",
       "/parent-home-summary.js?v=20261103-tshirt-size-reminder-payment-resolution-owner-20261121-parent-friend-reminder-20261125",
       "/parent-uniform-payment-notice.js?v=20261121-payment-resolution-owner",

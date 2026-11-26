@@ -98,6 +98,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
    actions.append(button('確認綁定',()=>run('confirm',{action:'confirm-link',confirmationId:pending.confirmationId})),button('取消',()=>run('cancel',{action:'cancel-link',confirmationId:pending.confirmationId}),true));host.append(actions);return;
   }
   host.append(make('p',(line.bound?'已連結 '+(line.lineDisplayName||'LINE'):'連結自己的 LINE，方便登入與接收通知。')+(line.googleLinked?' · 已連結 Gmail':'')));
+  host.append(make('p','同一學校、同一個 Gmail 的 LINE 綁定可在管理員、老師與家長身分間共用，不需各自重綁；各身分權限仍依學校名冊與核准的學生關係判定。'));
   if(line.bound){
    const friendship=make('div');friendship.className='notice';
    const result=line.friendStatus==='friend'?'已確認為好友':line.friendStatus==='not_friend'?'需確認好友狀態':'尚未取得確認結果';
