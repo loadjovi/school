@@ -187,6 +187,12 @@ app.http("tenantLineLoginStart", {
       code_challenge: createHash("sha256").update(txn.verifier).digest("base64url"),
       code_challenge_method: "S256", bot_prompt: "aggressive"
     });
+    if (returnToTeacher && google?.sub) {
+      // Keep the verified Gmail browser and OAuth state cookie together on
+      // mobile. LINE app auto-login may return in a different browser context.
+      // Ordinary LINE login and LINE-origin friendship checks retain auto-login.
+      url.searchParams.set("disable_auto_login", "true");
+    }
     const cookies = [txn.cookie, ...(input.mode === "friendship" ? [] : [clearTenantLineLinkConfirmation()])];
     if (returnToTeacher || returnToParent || friendshipOptions?.friendshipInitiator === "google") {
       // iOS may return from LINE in a new browser tab without sessionStorage.

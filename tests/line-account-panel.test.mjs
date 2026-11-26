@@ -17,14 +17,16 @@ const bound={configured:true,bound:true,googleLinked:true,authProvider:'google',
 const unbound={configured:true,bound:false,googleLinked:false,authProvider:'google',lineDisplayName:''};
 function fixture({line=bound,role='admin',capability=true,returnTo='account',onChanged=async()=>{},apiOverride,google=false,token='token-a',roleContext='schoolAdmin'}={}){
  const host=new Element();host.connected=true;const calls=[],navigation=[],changes=[],storage=new Map([['school_context_id','school-a'],['role_context',roleContext],['google_id_token',token]]);let current={...line},confirmed=true,googleConfig;
+ const me={role,authProvider:line.authProvider,identityId:'teacher-sub',email:'teacher@example.test',schoolId:'school-a',capabilities:{lineAccount:capability}};
  const events={},documentEvents={};
  const document={head:new Element('head'),visibilityState:'visible',createElement:tag=>new Element(tag),addEventListener:(type,fn)=>documentEvents[type]=fn,removeEventListener:(type,fn)=>{if(documentEvents[type]===fn)delete documentEvents[type]}};document.head.connected=true;
  const window={addEventListener:(type,fn)=>events[type]=fn,removeEventListener:(type,fn)=>{if(events[type]===fn)delete events[type]},confirm:()=>confirmed,...(google?{google:{accounts:{id:{initialize:config=>{googleConfig=config},renderButton:node=>node.append(new Element('google-button'))}}}}:{})};
  const factory=runInNewContext(source+';createLineAccountPanel',{window,document,sessionStorage:{getItem:key=>storage.get(key)||''},location:{assign:url=>navigation.push(url)},navigator:{userAgent:'Test Chrome'},URL,Set,Promise});
  const api=async(path,options)=>{
-  const body=options?.body?JSON.parse(options.body):undefined;calls.push({path,method:options?.method||'GET',body});
+  const body=options?.body?JSON.parse(options.body):undefined;calls.push({path,method:options?.method||'GET',body,...(path==='/api/me'?{options}:{})});
   if(apiOverride){const response=await apiOverride(path,options,body);if(response!==undefined)return response}
   if(path==='/api/config')return {googleClientId:'google-client'};
+  if(path==='/api/me')return {...me,authProvider:'google'};
   if(path.includes('/tenant-login/'))return {url:'https://access.line.me/oauth2/v2.1/authorize?state=test'};
   if(!options?.method||options.method==='GET')return {...current};
   if(options.method==='DELETE'){current={...unbound};return {configured:true,bound:false}}
@@ -34,9 +36,9 @@ function fixture({line=bound,role='admin',capability=true,returnTo='account',onC
   if(body?.action==='cancel-link')current={...unbound};
   return {...current};
  };
- const panel=factory({host,api,me:{role,schoolId:'school-a',capabilities:{lineAccount:capability}},returnTo,navigate:url=>navigation.push(url),onChanged:async change=>{changes.push(change.action);await onChanged(change)}});
+ const panel=factory({host,api,me,returnTo,navigate:url=>navigation.push(url),onChanged:async change=>{changes.push(change.action);await onChanged(change)}});
  const button=text=>nodes(host).find(n=>n.tag==='button'&&n.ownText===text);
- return {host,panel,calls,navigation,changes,storage,events,documentEvents,document,button,click:async text=>{const node=button(text);assert.ok(node,'button '+text);return node.handlers.click()},setConfirmed:value=>confirmed=value,googleConfig:()=>googleConfig,setLine:value=>current=value};
+ return {host,panel,me,calls,navigation,changes,storage,events,documentEvents,document,button,click:async text=>{const node=button(text);assert.ok(node,'button '+text);return node.handlers.click()},setConfirmed:value=>confirmed=value,googleConfig:()=>googleConfig,setLine:value=>current=value};
 }
 test('personal binding construction does no work and authorized entry reads only its own account',async()=>{
  for(const role of ['admin','parent','privateTeacher']){
@@ -58,7 +60,7 @@ test('an unsupported role or missing account capability cannot start account req
 });
 test('OAuth starts only on action and requests the fixed notification-center destination when selected',async()=>{
  for(const returnTo of ['account','notification-center','teacher-account','parent-account']){
-  const h=fixture({line:unbound,returnTo});await h.panel.load();await h.click('使用 LINE 授權並綁定');
+  const h=fixture({line:unbound,returnTo,role:returnTo==='teacher-account'?'teacher':'admin'});await h.panel.load();await h.click('使用 LINE 授權並綁定');
   const call=h.calls.find(x=>x.method==='POST');assert.equal(call.path,'/api/line/tenant-login/school-a/start');
   assert.deepEqual(call.body,returnTo!=='account'?{mode:'link',returnTo}:{mode:'link'});
   assert.deepEqual(h.navigation,['https://access.line.me/oauth2/v2.1/authorize?state=test']);
@@ -79,8 +81,8 @@ test('bound accounts show the saved official friendship result and time separate
 });
 test('friendship recheck starts only for a bound account and preserves Gmail role returns without relinking',async()=>{
  for(const returnTo of ['account','notification-center','teacher-account','parent-account']){
-  const h=fixture({line:bound,returnTo});await h.panel.load();const before=[...h.storage];await h.click('重新確認好友');
-  assert.deepEqual(h.calls.map(call=>call.method),['GET','POST']);assert.equal(h.calls[1].path,'/api/line/tenant-login/school-a/start');
+  const h=fixture({line:bound,returnTo,role:returnTo==='teacher-account'?'teacher':'admin'});await h.panel.load();const before=[...h.storage];await h.click('重新確認好友');
+  assert.deepEqual(h.calls.map(call=>call.method),returnTo==='teacher-account'?['GET','POST','GET']:['GET','POST']);assert.equal(h.calls[1].path,'/api/line/tenant-login/school-a/start');
   assert.deepEqual(h.calls[1].body,returnTo==='account'?{mode:'friendship'}:{mode:'friendship',returnTo});assert.deepEqual([...h.storage],before);
   assert.equal(h.button('確認綁定'),undefined);assert.deepEqual(h.changes,[]);assert.equal(h.navigation.length,1);
  }
@@ -241,7 +243,7 @@ test('the embedded teacher account reads the pending Gmail pair, confirms explic
  const elements=Object.fromEntries(['siteName','roleTitle','roleIntro','status','lineBinding'].map(id=>{const node=new Element();node.connected=true;return [id,node]}));
  const calls=[],messages=[],navigation=[],storage=new Map([['school_context_id','school-a'],['role_context','teacher'],['google_id_token','teacher-google-token']]);
  let account={...unbound,pendingLink:{confirmationId:'teacher-confirm',googleEmail:'teacher@example.test',lineDisplayName:'Wen'}};
- const profile={authProvider:'google',role:'teacher',schoolId:'school-a',capabilities:{lineAccount:true}};
+ const profile={authProvider:'google',role:'teacher',schoolId:'school-a',identityId:'teacher-sub',email:'teacher@example.test',capabilities:{lineAccount:true}};
  const scope={document:{body:{classList:{add(){}}},documentElement:{hasAttribute:()=>true},getElementById:id=>elements[id]||null,createElement:tag=>new Element(tag),addEventListener(){}},
   window:{addEventListener(){},parent:{postMessage:(data,origin)=>messages.push({data,origin}),location:{assign:url=>navigation.push(url)}}},
   location:{origin:'https://school-a.example.test',hash:'',search:'?embedded=teacher&schoolId=school-a&line_link=confirm',pathname:'/line-account.html'},history:{replaceState(){}},
@@ -259,7 +261,7 @@ test('the embedded teacher account reads the pending Gmail pair, confirms explic
  assert.match(elements.lineBinding.textContent,/已完成此校 Gmail 與 LINE 綁定/);assert.equal(messages[0].data.type,'teacher-line-account-changed');
  assert.equal(messages[0].origin,scope.location.origin);assert.equal(calls.some(call=>/projects|templates/.test(call.url)),false);
  account=unbound;await scope.standaloneLoad();await nodes(elements.lineBinding).find(node=>node.ownText==='使用 LINE 授權並綁定').handlers.click();
- assert.deepEqual(calls.at(-1).body,{mode:'link',returnTo:'teacher-account'});assert.equal(storage.get('teacher_line_account_return'),'school-a');assert.equal(navigation.length,1);
+ assert.deepEqual(calls.findLast(call=>call.url.includes('/tenant-login/')).body,{mode:'link',returnTo:'teacher-account'});assert.equal(calls.at(-1).url,'/api/me');assert.equal(storage.get('teacher_line_account_return'),'school-a');assert.equal(navigation.length,1);
 });
 
 function standaloneFixture({parentReturn=false}={}){
@@ -339,4 +341,38 @@ test('a stale standalone profile response cannot overwrite the restored account 
  assert.equal(h.elements.siteName.textContent,'乙校');assert.match(h.elements.lineBinding.textContent,/乙校 LINE/);
  resolve({role:'parent',schoolId:'school-a',systemName:'過期甲校',capabilities:{lineAccount:true}});await pending;
  assert.equal(h.elements.siteName.textContent,'乙校');assert.doesNotMatch(h.elements.lineBinding.textContent,/過期甲校/);assert.equal(h.calls.filter(call=>call.url==='/api/line/school-account').length,1);
+});
+
+test('teacher Gmail link and friendship starts prove the exact saved cookie before navigating',async()=>{
+ for(const line of [unbound,bound]){
+  const h=fixture({line,role:'teacher',returnTo:'teacher-account',roleContext:'teacher'});await h.panel.load();
+  await h.click(line.bound?'重新確認好友':'使用 LINE 授權並綁定');
+  assert.equal(h.navigation.length,1);const check=h.calls.find(call=>call.path==='/api/me');assert.ok(check);assert.equal(check.method,'GET');assert.equal(check.options.credentials,'same-origin');assert.equal(check.options.cache,'no-store');
+  assert.deepEqual({...check.options.headers},{'X-Google-ID-Token':'cookie-session','X-School-Id':'school-a','X-Role-Context':'teacher'});
+  assert.equal(h.calls.filter(call=>call.method==='POST').length,1);assert.match(h.host.textContent,/首次綁定返回後/);
+ }
+});
+
+test('teacher panel preflight failures preserve visible binding and never switch account or navigate',async()=>{
+ const teacher={authProvider:'google',role:'teacher',schoolId:'school-a',identityId:'teacher-sub',email:'teacher@example.test'};
+ const variants=[null,{...teacher,authProvider:'line'},{...teacher,identityId:'other-sub'},{...teacher,email:'other@example.test'},{...teacher,schoolId:'school-b'},{...teacher,role:'parent'},{...teacher,role:'contextDenied'},()=>{throw Error('401 SECRET')},()=>{throw Error('network SECRET')}];
+ for(const profile of variants){
+  const h=fixture({line:unbound,role:'teacher',returnTo:'teacher-account',roleContext:'teacher',apiOverride:path=>path==='/api/me'?(typeof profile==='function'?profile():profile):undefined});await h.panel.load();const before=[...h.storage];
+  await h.click('使用 LINE 授權並綁定');assert.equal(h.navigation.length,0);assert.deepEqual([...h.storage],before);assert.equal(h.changes.length,0);
+  assert.match(h.host.textContent,/未能保留這個 Gmail/);assert.match(h.host.textContent,/同一個 Safari 或 Chrome/);assert.match(h.host.textContent,/連結自己的 LINE/);assert.doesNotMatch(h.host.textContent,/SECRET/);assert.ok(h.button('使用 LINE 授權並綁定'));
+ }
+});
+
+test('teacher panel rejects a late cookie proof after context change, profile change or destruction',async()=>{
+ for(const change of [h=>h.storage.set('school_context_id','school-b'),h=>h.storage.set('google_id_token','new-token'),h=>h.me.identityId='another-sub',h=>h.me.email='another@example.test',h=>h.me.role='parent',h=>h.panel.destroy()]){
+  let release;const h=fixture({line:unbound,role:'teacher',returnTo:'teacher-account',roleContext:'teacher',apiOverride:path=>path==='/api/me'?new Promise(resolve=>release=resolve):undefined});
+  await h.panel.load();const action=h.click('使用 LINE 授權並綁定');await new Promise(setImmediate);assert.equal(typeof release,'function');change(h);release({authProvider:'google',role:'teacher',schoolId:'school-a',identityId:'teacher-sub',email:'teacher@example.test'});await action;
+  assert.equal(h.navigation.length,0);assert.equal(h.changes.length,0);
+ }
+});
+
+test('teacher cookie preflight does not change ordinary parent, admin or LINE-origin friendship flows',async()=>{
+ for(const options of [{line:unbound,role:'parent',returnTo:'parent-account'},{line:unbound,role:'admin',returnTo:'notification-center'},{line:{...bound,authProvider:'line'},role:'teacher',returnTo:'teacher-account'}]){
+  const h=fixture(options);await h.panel.load();await h.click(options.line.bound?'重新確認好友':'使用 LINE 授權並綁定');assert.equal(h.navigation.length,1);assert.equal(h.calls.some(call=>call.path==='/api/me'),false);
+ }
 });

@@ -8,14 +8,14 @@ const read=path=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
 const strip=source=>source.replace(/^import\s+[\s\S]*?;\r?\n/gm,"").replace(/^export /gm,"");
 const esc=value=>String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[c]);
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
-function screen({role="privateTeacher",configured=true,reply={configured:true,bound:false,authProvider:"google"},search="",loader=false,legacyRedirect=false,storageEntries=[]}={}){
- const state={me:{role,schoolId:"school-a",identityId:"teacher-sub",email:"teacher@example.invalid",capabilities:{lineAccount:configured}},page:"teacherHome"};
- let html="";const calls=[],assigned=[],events={},storage=new Map(storageEntries),app={innerHTML:""},frame={contentWindow:{},style:{}};
+function screen({role="privateTeacher",configured=true,reply={configured:true,bound:false,authProvider:"google"},readback,search="",loader=false,legacyRedirect=false,storageEntries=[]}={}){
+ const state={me:{role,authProvider:"google",schoolId:"school-a",identityId:"teacher-sub",email:"teacher@example.invalid",capabilities:{lineAccount:configured}},page:"teacherHome"};
+ let html="";const calls=[],readbacks=[],assigned=[],events={},storage=new Map(storageEntries),app={innerHTML:""},frame={contentWindow:{},style:{}};
  const document={visibilityState:"visible",getElementById:id=>id==="app"?app:id==="teacherLineAccountFrame"&&app.innerHTML.includes("teacherLineAccountFrame")?frame:id==="teacherLineAccount"&&html?{remove(){html=""}}:null,querySelector:()=>({insertAdjacentHTML(_,value){html+=value}}),addEventListener(name,fn){events[name]=fn}};
  const window={__roleLoaderActive:loader,__roleModulesReady:!loader,addEventListener(name,fn){events[name]=fn}};
- const context={state,document,window,URL,URLSearchParams,history:{replaceState(){}},sessionStorage:{getItem:key=>storage.get(key)||"",setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},location:{search,pathname:"/",hash:"",origin:"https://school-a.example.invalid",assign:url=>assigned.push(url)},shell:content=>"<header>老師身分選單</header>"+content,esc,render(){html="";if(legacyRedirect)state.page="private"},api:async(path,options)=>{calls.push({path,options});return typeof reply==="function"?reply(path,options):reply}};
+ const context={state,document,window,URL,URLSearchParams,history:{replaceState(){}},sessionStorage:{getItem:key=>storage.get(key)||"",setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},location:{search,pathname:"/",hash:"",origin:"https://school-a.example.invalid",assign:url=>assigned.push(url)},shell:content=>"<header>老師身分選單</header>"+content,esc,render(){html="";if(legacyRedirect)state.page="private"},api:async(path,options)=>{calls.push({path,options});return typeof reply==="function"?reply(path,options):reply},fetch:async(path,options)=>{readbacks.push({path,options});return readback?readback(path,options):{ok:true,json:async()=>({...state.me})}}};
  runInNewContext(read("app/teacher-line-account.js"),context);
- return {state,window,context,calls,assigned,events,storage,app,frame,html:()=>html};
+ return {state,window,context,calls,readbacks,assigned,events,storage,app,frame,html:()=>html};
 }
 
 test("unbound authorized teachers see a Gmail-specific binding entry and start verified LINE OAuth",async()=>{
@@ -29,6 +29,10 @@ test("unbound authorized teachers see a Gmail-specific binding entry and start v
  assert.deepEqual(JSON.parse(h.calls[1].options.body),{mode:"link",returnTo:"teacher-account"});
  assert.equal(h.assigned.length,1);
  assert.equal(h.storage.get("teacher_line_account_return"),"school-a");
+ assert.equal(h.readbacks.length,1);assert.equal(h.readbacks[0].path,'/api/me');
+ assert.equal(h.readbacks[0].options.credentials,'same-origin');assert.equal(h.readbacks[0].options.cache,'no-store');
+ assert.deepEqual({...h.readbacks[0].options.headers},{'X-Google-ID-Token':'cookie-session','X-School-Id':'school-a','X-Role-Context':'teacher'});
+ assert.match(h.html(),/目前瀏覽器/);assert.match(h.html(),/確認綁定/);
 });
 
 test("teacher callback opens only the same-school account frame and keeps the teacher shell",async()=>{
@@ -58,6 +62,48 @@ test("a late teacher OAuth response cannot write return hints or navigate after 
   let release;const h=screen({reply:async(_path,options)=>options?new Promise(resolve=>{release=resolve}):{configured:true,bound:false,authProvider:'google'}});
   await settle();const request=h.window.teacherLineAccount.bind();change(h);release({url:'https://access.line.me/oauth2/v2.1/authorize?state=stale'});await request;
   assert.equal(h.assigned.length,0);assert.equal(h.storage.has('teacher_line_account_return'),false);assert.equal(h.calls.filter(call=>call.options?.method==='POST').length,1);
+ }
+});
+
+test('teacher binding stays on the Gmail teaching page when its cookie cannot prove the same account',async()=>{
+ const teacher={authProvider:'google',role:'privateTeacher',schoolId:'school-a',identityId:'teacher-sub',email:'teacher@example.invalid'};
+ const cases=[
+  {ok:false,status:401,json:async()=>{throw Error('401 response must not be read')}},
+  {ok:true,json:async()=>null},
+  ...[{...teacher,authProvider:'line'},{...teacher,identityId:'other-sub'},{...teacher,email:'other@example.invalid'},{...teacher,schoolId:'school-b'},{...teacher,role:'parent'},{...teacher,role:'contextDenied'}].map(profile=>({ok:true,json:async()=>profile})),
+  ()=>{throw Error('network detail SECRET')},
+  {ok:true,json:async()=>{throw Error('malformed detail SECRET')}}
+ ];
+ for(const response of cases){
+  const h=screen({reply:async(_path,options)=>options?{url:'https://access.line.me/oauth2/v2.1/authorize?state=teacher'}:{configured:true,bound:false,authProvider:'google'},readback:typeof response==='function'?response:async()=>response});
+  const initial=h.state.me;await settle();await h.window.teacherLineAccount.bind();
+  assert.equal(h.assigned.length,0);assert.equal(h.storage.has('teacher_line_account_return'),false);assert.equal(h.state.me,initial);assert.equal(h.state.page,'teacherHome');
+  assert.match(h.html(),/尚未完成 Gmail 與 LINE 綁定/);assert.match(h.html(),/未能保留這個 Gmail/);assert.match(h.html(),/同一個 Safari 或 Chrome/);assert.doesNotMatch(h.html(),/SECRET|學生姓名|送出綁定申請/);
+  assert.equal(h.readbacks.length,1);assert.equal(h.calls.filter(call=>call.options?.method==='POST').length,1);
+ }
+});
+
+test('teacher binding requires a nonempty captured Google identity and Gmail without opening OAuth',async()=>{
+ for(const field of ['identityId','email']){
+  const h=screen();await settle();h.state.me[field]='';await h.window.teacherLineAccount.bind();await settle();
+  assert.equal(h.assigned.length,0);assert.equal(h.readbacks.length,0);assert.equal(h.calls.some(call=>call.options?.method==='POST'),false);
+ }
+});
+
+test('a teacher cookie preflight may resolve or parse late without navigating a switched or signed-out identity',async()=>{
+ for(const phase of ['response','json'])for(const change of [h=>h.state.me=null,h=>h.state.me.identityId='other-sub',h=>h.state.me.email='other@example.invalid',h=>h.storage.set('school_context_id','school-b'),h=>h.storage.set('google_id_token','new-token')]){
+  let release;
+  const original={authProvider:'google',role:'privateTeacher',schoolId:'school-a',identityId:'teacher-sub',email:'teacher@example.invalid'};
+  const h=screen({reply:async(_path,options)=>options?{url:'https://access.line.me/oauth2/v2.1/authorize?state=teacher'}:{configured:true,bound:false,authProvider:'google'},readback:()=>phase==='response'?new Promise(resolve=>release=()=>resolve({ok:true,json:async()=>original})):Promise.resolve({ok:true,json:()=>new Promise(resolve=>release=()=>resolve(original))})});
+  await settle();const pending=h.window.teacherLineAccount.bind();await settle();assert.equal(typeof release,'function');change(h);release();await pending;
+  assert.equal(h.assigned.length,0);assert.equal(h.storage.has('teacher_line_account_return'),false);
+ }
+});
+
+test('teacher cookie proof accepts only normalized matching Gmail and a current authorized teaching role',async()=>{
+ for(const role of ['teacher','sectionTeacher','ensembleTeacher','comprehensiveTeacher','privateTeacher']){
+  const h=screen({readback:async()=>({ok:true,json:async()=>({authProvider:'google',schoolId:'school-a',role,identityId:'teacher-sub',email:' Teacher@Example.Invalid '})}),reply:async(_path,options)=>options?{url:'https://access.line.me/oauth2/v2.1/authorize?state=teacher'}:{configured:true,bound:false,authProvider:'google'}});
+  await settle();await h.window.teacherLineAccount.bind();assert.equal(h.assigned.length,1);assert.equal(h.readbacks.length,1);
  }
 });
 test("teacher friendship callbacks stay in the teacher shell and forward only known check results",()=>{

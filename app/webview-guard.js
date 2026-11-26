@@ -142,7 +142,7 @@
       "/training-attendance.js?v=20261102-activity-boundary",
       "/comprehensive-support.js?v=20261002-save-confirm",
       "/private-lesson-confirmation.js?v=20261126-private-lesson-delivery",
-      "/teacher-line-account.js?v=20261126-teacher-auth-return-readback"
+      "/teacher-line-account.js?v=20261127-teacher-browser-binding"
     ];
     if(["unassigned","contextDenied"].includes(role))return [
       "/school-access.js?v=20261027-school-followup",

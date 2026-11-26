@@ -37,7 +37,7 @@
     if(!state.me.capabilities?.lineAccount||account?.configured===false){
       content='<div class="notice">此校尚未開啟 LINE 綁定，請聯絡學校管理員設定。</div>';
     }else if(error){
-      content=`<div class="notice" role="alert">${esc(error)}</div><button type="button" class="secondary" onclick="teacherLineAccount.refresh()">重新確認綁定狀態</button>`;
+      content=`${account&&!account.bound&&!account.pendingLink?`<div class="notice"><b>尚未完成 Gmail 與 LINE 綁定</b><br>Gmail：${esc(state.me.email||"")}</div>`:""}<div class="notice" role="alert">${esc(error)}</div><button type="button" class="secondary" onclick="teacherLineAccount.refresh()">重新確認綁定狀態</button>`;
     }else if(loading||!account){
       content='<div class="notice" role="status">正在確認 LINE 綁定狀態…</div>';
     }else if(account.pendingLink){
@@ -45,7 +45,7 @@
     }else if(account.bound&&account.googleLinked){
       content=`<div class="notice"><b>✅ LINE 已綁定</b><br>LINE 名稱：${esc(account.lineDisplayName||"未提供名稱")}<br>Gmail：${esc(state.me.email||"")}</div><p class="muted">請維持加入此校官方帳號好友，以接收家長的個課改期、停課及確認通知。收到通知後，可進入平台回應與處理。</p><button type="button" class="secondary" onclick="teacherLineAccount.open()">管理 LINE 綁定</button>`;
     }else{
-      content=`<div class="notice"><b>尚未完成 Gmail 與 LINE 綁定</b><br>Gmail：${esc(state.me.email||"")}</div><p class="muted">請使用自己的 LINE 帳號授權，再核對 Gmail 與 LINE 名稱完成綁定。完成後可接收家長的個課狀態通知，並回平台處理。</p>${account.authProvider==="google"?`<button type="button" class="primary" onclick="teacherLineAccount.bind()" ${busy?"disabled":""}>${busy?"正在開啟 LINE 授權…":"綁定我的 LINE 帳號"}</button>`:`<button type="button" class="primary" onclick="teacherLineAccount.open()">連結我的 Gmail 與 LINE</button>`}`;
+      content=`<div class="notice"><b>尚未完成 Gmail 與 LINE 綁定</b><br>Gmail：${esc(state.me.email||"")}</div><p class="muted">綁定會在目前瀏覽器中繼續。請使用自己的 LINE 帳號授權，返回後核對 Gmail 與 LINE 名稱，再按「確認綁定」。完成後可接收家長的個課狀態通知，並回平台處理。</p>${account.authProvider==="google"?`<button type="button" class="primary" onclick="teacherLineAccount.bind()" ${busy?"disabled":""}>${busy?"正在開啟 LINE 授權…":"綁定我的 LINE 帳號"}</button>`:`<button type="button" class="primary" onclick="teacherLineAccount.open()">連結我的 Gmail 與 LINE</button>`}`;
     }
     main.insertAdjacentHTML(state.page==="teacherHome"?"beforeend":"afterbegin",`<section id="teacherLineAccount" class="card" aria-labelledby="teacherLineAccountTitle" style="overflow-wrap:anywhere"><h2 id="teacherLineAccountTitle">🔔 老師 LINE 通知</h2>${content}${account&&!error&&!loading?'<button type="button" class="secondary" style="margin-top:8px" onclick="teacherLineAccount.refresh()">更新綁定狀態</button>':""}</section>`);
   }
@@ -76,11 +76,28 @@
     async bind(){
       if(!teacher()||busy||loading||!account?.configured||account.bound||account.pendingLink||account.authProvider!=="google")return;
       const key=identity(),schoolId=state.me.schoolId;
+      const expectedId=String(state.me.identityId||"").trim(),expectedEmail=String(state.me.email||"").trim().toLowerCase();
+      const sessionError="目前瀏覽器未能保留這個 Gmail 登入，尚未開啟 LINE 授權。請在同一個 Safari 或 Chrome 重新登入原 Gmail 後再綁定。";
       busy=true;error="";mount();
       try{
+        if(!expectedId||!expectedEmail)throw Error(sessionError);
         const {url}=await api("/api/line/tenant-login/"+encodeURIComponent(schoolId)+"/start",{method:"POST",body:JSON.stringify({mode:"link",returnTo:"teacher-account"})});
+        if(key!==identity())return;
         const target=new URL(url);
         if(target.origin!=="https://access.line.me"||target.pathname!=="/oauth2/v2.1/authorize"||target.username||target.password)throw Error("LINE 授權網址不正確，請重試。");
+        // The callback deliberately uses the HttpOnly Gmail cookie rather than
+        // a token left in a previous tab. Prove that exact cookie identity is
+        // usable before leaving this page; do not fall back to a LINE session.
+        let response,profile;
+        try{
+          response=await fetch("/api/me",{credentials:"same-origin",cache:"no-store",headers:{"X-Google-ID-Token":"cookie-session","X-School-Id":schoolId,"X-Role-Context":"teacher"}});
+          if(key!==identity())return;
+          if(!response.ok)throw Error(sessionError);
+          profile=await response.json();
+        }catch{if(key!==identity())return;throw Error(sessionError)}
+        if(key!==identity())return;
+        if(profile?.authProvider!=="google"||profile.schoolId!==schoolId||!roles.has(profile.role)||
+          String(profile.identityId||"").trim()!==expectedId||String(profile.email||"").trim().toLowerCase()!==expectedEmail)throw Error(sessionError);
         if(key===identity()){
           sessionStorage.setItem("teacher_line_account_return",schoolId);
           sessionStorage.removeItem("parent_line_account_return");
