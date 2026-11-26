@@ -77,11 +77,11 @@ function credentials(schoolId, legacy = false) {
   };
 }
 
-export async function resolveTenantLineChannel(schoolId) {
+export async function resolveTenantLineChannel(schoolId, {allowLegacyBotLookup = true} = {}) {
   const id = tenantSchoolPartition(schoolId);
   const [tenant, row] = await Promise.all([getTenantDirectory(id), read(table(), schoolRow(id))]);
   const channel=resolveChannel(id,tenant,row);
-  if(channel.legacy&&channel.configured&&!channel.botUserId){
+  if(allowLegacyBotLookup&&channel.legacy&&channel.configured&&!channel.botUserId){
     // Preserve the existing default-school Messaging API independently of OAuth.
     // The token is verified read-only; no channel or binding records are created.
     const botUserId=await verifiedLegacyBot(channel.accessToken);

@@ -79,7 +79,8 @@ function fixture(){
    json:(data,status=200)=>({data,status}),isPrivateOnlyTeacher:()=>false,activityStudentId:row=>row.studentId,
    listActivityRange:async(kind,school)=>{assert.deepEqual([kind,school],["privateLesson",schoolId]);return [...records.values()]},
    listStudentMaster:async()=>[{rowKey:"student1",studentName:"測試學生",status:"active"}],
-   listTeacherDirectory:async()=>[{rowKey:mother,teacherName:"測試老師",status:"active"}],getTeacherProfile:async()=>null
+   listTeacherDirectory:async()=>[{rowKey:mother,teacherName:"測試老師",status:"active"}],getTeacherProfile:async()=>null,
+   teacherLineBindingStatuses:async(_school,emails)=>new Map(emails.map(email=>[email,{status:"unpaired"}]))
   });
   return directoryHandler({method:"GET",query:new URLSearchParams()});
  }

@@ -4,6 +4,7 @@ import { sendTeacherAccessEnabledEmail } from "../lib/email.js";
 import { listTeacherDirectory, saveTeacherDirectory, getTeacherProfile, saveTeacherProfile, listStudentMaster, listActivityRange, activityStudentId, getTenantDirectory } from "../lib/storage.js";
 import { isPrivateOnlyTeacher } from "../lib/teacherAccountType.js";
 import { privateLessonFollowupResponse } from "../lib/adminPrivateLessonFollowup.js";
+import { teacherLineBindingStatuses } from "../lib/teacherLineBindingStatus.js";
 
 function clean(v,max=120){return String(v||"").trim().slice(0,max)}
 function normalizeEmail(v){return clean(v,200).toLowerCase()}
@@ -53,7 +54,7 @@ app.http("teacherDirectory",{
     if(access.role!=="admin")return json({error:"Forbidden"},403);
     if(request.method==="GET"){
       if(request.query?.get("view")==="private-followup")return privateLessonFollowupResponse(request,schoolId);
-      const [lessons,masters]=await Promise.all([listActivityRange("privateLesson",schoolId),listStudentMaster("",schoolId)]);
+      const [lessons,masters,teachers]=await Promise.all([listActivityRange("privateLesson",schoolId),listStudentMaster("",schoolId),listTeacherDirectory(schoolId)]);
       const masterMap=new Map(masters.map(row=>[String(row.rowKey),row])),reviewStudentCache=new Map();
       const ratingMap=new Map();
       for(const e of lessons){
@@ -66,8 +67,8 @@ app.http("teacherDirectory",{
         ratingMap.set(email,old);
       }
       for(const v of ratingMap.values())v.reviews.sort((a,b)=>String(b.ratedAt||b.lessonDate).localeCompare(String(a.ratedAt||a.lessonDate)));
-      const items=[];
-      for(const t of await listTeacherDirectory(schoolId)){
+      const items=[],lineBindings=await teacherLineBindingStatuses(schoolId,teachers.map(t=>t.rowKey));
+      for(const t of teachers){
         const p=await getTeacherProfile(t.rowKey,schoolId);
         const sectionAssignments=p?parse(p.sectionAssignments,[]):[],ensembleGroups=p?parse(p.ensembleGroups,[]):[],privateStudentIds=p?parse(p.privateStudentIds,[]):[],comprehensiveEnabled=p?.comprehensiveEnabled===true;
         const privateOnly=isPrivateOnlyTeacher(t);
@@ -79,7 +80,7 @@ app.http("teacherDirectory",{
           recentReviews.push({...review,...student,studentName:student.studentName||review.studentName});
         }
         items.push({email:t.rowKey,teacherName:t.teacherName||"",status:t.status||"active",updatedAt:t.updatedAt||null,lastLoginAt:t.lastLoginAt||null,sectionAssignments,ensembleGroups,comprehensiveEnabled,privateStudentIds,privateOnly,accountTypeUnspecified:typeof t.privateOnly!=="boolean",
-          ratingAverage,ratingCount:r.ratingCount,fiveStarCount:r.fiveStarCount,recentReviews});
+          ratingAverage,ratingCount:r.ratingCount,fiveStarCount:r.fiveStarCount,recentReviews,lineBinding:lineBindings.get(normalizeEmail(t.rowKey))});
       }
       const students=masters.filter(row=>row.status==="active").map(studentView);
       return {...json({items,students}),headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"}};

@@ -23,6 +23,7 @@ test("school admin sees explicit account type and can restrict an existing gener
   const handlers={},directory=[{rowKey:"roy@example.org",teacherName:"Roy",status:"active"}],saved=[];
   const student={rowKey:"student-1",studentName:"學生甲",status:"active"};
   const context={app:{http:(name,config)=>{handlers[name]=config.handler}},getTenantContext:async()=>({access:{role:"admin",email:"admin@example.org"},schoolId:"school-a"}),json:(body,status=200)=>({status,jsonBody:body}),isPrivateOnlyTeacher,listActivityRange:async()=>[],listTeacherDirectory:async()=>directory,getTeacherProfile:async()=>({sectionAssignments:"[]",ensembleGroups:"[]",privateStudentIds:'["student-1"]',comprehensiveEnabled:false}),listStudentMaster:async()=>[student],saveTeacherDirectory:async(email,data)=>{saved.push({email,...data});return {rowKey:email,...data}},saveTeacherProfile:async(email,data)=>{saved.push({email,profile:data})},getTenantDirectory:async()=>null,sendTeacherAccessEnabledEmail:async()=>({status:"sent"}),process:{env:{}},URL};
+  context.teacherLineBindingStatuses=async(_school,emails)=>new Map(emails.map(email=>[email,{status:"unpaired"}]));
   const source=readFileSync(new URL("../src/functions/teacherDirectory.js",import.meta.url),"utf8");
   runInNewContext(source.slice(source.indexOf("function clean(")),context);
   const get=await handlers.teacherDirectory({method:"GET"});

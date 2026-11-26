@@ -114,7 +114,7 @@
       "/student-change-admin.js?v=20261102-student-workflow",
       "/parent-link-admin.js?v=20261125-binding-status-only",
       "/teacher-settings.js?v=20261002-teacher-types",
-      "/teacher-admin.js?v=20261122-admin-quick-workspace",
+      "/teacher-admin.js?v=20261127-admin-teacher-line-binding",
       "/batch-upgrade.js?v=20261102-student-workflow",
       "/roster-import.js?v=20261102-student-workflow",
       "/attendance-support.js?v=20261124-attendance-report-layout",

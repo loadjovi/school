@@ -12,6 +12,7 @@ function harness(lessons,role="admin"){
   listActivityRange:async(...args)=>{calls.push(["lessons",...args]);return lessons},listStudentMaster:async(...args)=>{calls.push(["students",...args]);return masters},listTeacherDirectory:async schoolId=>{calls.push(["teachers",schoolId]);return [{rowKey:"teacher@example.org",teacherName:"老師甲",status:"active"}]},getTeacherProfile:async()=>null,activityStudentId:r=>r.studentId||String(r.partitionKey||"").split("|student|")[1],
   getStudentAliasInfo:async(id,schoolId)=>{calls.push(["alias",id,schoolId]);return {canonicalStudentId:id==="SH-OLD"?"111001":id}},
   saveTeacherDirectory:async()=>{throw Error("GET must not write")},saveTeacherProfile:async()=>{throw Error("GET must not write")},console,URL};
+ context.teacherLineBindingStatuses=async(_school,emails)=>new Map(emails.map(email=>[email,{status:"unpaired"}]));
  runInNewContext(directorySource,context);
  return {calls,get:()=>handlers.teacherDirectory({method:"GET",query:new URLSearchParams({schoolId:"school-b"})})};
 }
