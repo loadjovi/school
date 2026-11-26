@@ -1,10 +1,11 @@
-import {getStudentAliasInfo,normalizeProfile} from "./auth.js";
+import {normalizeProfile} from "./auth.js";
 import {getTeacherProfile,listStudentMaster,listTeacherDirectory,listTenantAdmins,listUserStudentMappings} from "./storage.js";
 import {financeAssignments} from "./financeAccess.js";
 import {financeRecipients} from "./financeNoticeRules.mjs";
 import {teacherCourseAccess} from "./teacherAccountType.js";
 import {getTenantLineDeliveryRecipient} from "./tenantLineAccounts.js";
 import {resolveTenantLineChannel} from "./lineTenantConfig.js";
+import {getApprovedParentStudent} from "./parentLineApprovalNotice.js";
 
 export const lineAudienceRoles = ["parent","teacher","staff","finance"];
 const normalized = text => String(text||"").trim().normalize("NFC");
@@ -22,14 +23,18 @@ export function lineAudienceGroups(students) {
 export async function resolveLineAudience(schoolId, botUserId, {roles,groups,students}) {
   const teamMembers=students.filter(row=>!groups.length||groups.includes(normalized(row.groupName)));
   const ids=new Set(teamMembers.map(studentId).filter(Boolean));
-  const emails=new Set();
-  const include = rows => rows.map(emailOf).filter(Boolean).forEach(email=>emails.add(email));
+  const parentEmails=new Set(),independentEmails=new Set();
+  const include = (rows,emails=independentEmails) => rows.map(emailOf).filter(Boolean).forEach(email=>emails.add(email));
   if(roles.includes("parent")){
     const mappings=await listUserStudentMappings("active",schoolId);
-    for(const mapping of mappings){
-      if(!mapping.studentId||!mapping.parentEmail)continue;
-      const alias=await getStudentAliasInfo(mapping.studentId,schoolId);
-      if(ids.has(String(alias.canonicalStudentId||mapping.studentId)))include([mapping.parentEmail]);
+    const candidates=mappings.filter(mapping=>{
+      const id=String(mapping.studentId||"");
+      return /^\d{6}$/.test(id)&&ids.has(id)&&mapping.parentEmail;
+    });
+    for(let index=0;index<candidates.length;index+=10){
+      const batch=candidates.slice(index,index+10);
+      const proofs=await Promise.all(batch.map(mapping=>getApprovedParentStudent(schoolId,mapping.parentEmail,String(mapping.studentId))));
+      batch.forEach((mapping,offset)=>{if(proofs[offset])include([mapping.parentEmail],parentEmails)});
     }
   }
   if(roles.includes("teacher")){
@@ -53,17 +58,27 @@ export async function resolveLineAudience(schoolId, botUserId, {roles,groups,stu
   }
   const channel=await resolveTenantLineChannel(schoolId);
   const trusted=channel.schoolId===schoolId&&channel.botUserId===botUserId&&botUserId&&(channel.configured===true||channel.loginConfigured===true);
-  const identities=[...emails],accounts=await Promise.all(identities.map(email=>trusted?getTenantLineDeliveryRecipient(schoolId,email,channel):null));
+  const identities=[...new Set([...parentEmails,...independentEmails])];
+  const resolved=await Promise.all(identities.map(email=>trusted?getTenantLineDeliveryRecipient(schoolId,email,channel):null));
+  const eligible=identities.map((email,index)=>({email,account:resolved[index]})).filter(({email,account})=>{
+    if(independentEmails.has(email)||!account)return true;
+    const canonical=emailOf(account.parentEmail);
+    // Historical LINE aliases do not grant current parent access. Keep the
+    // entire contact out, including email fallback, unless its primary parent
+    // identity has an approved child in this selected audience.
+    return account.deliveryOnly===true?canonical===email:parentEmails.has(canonical);
+  });
+  const accounts=eligible.map(({account})=>account);
   const recipients=new Map();
   accounts.forEach((account,index)=>{
     const userId=account?.lineUserId;if(!/^U[0-9a-f]{32}$/i.test(userId||"")||recipients.has(userId))return;
-    const contact=account.googleEmail||identities[index];
+    const contact=account.googleEmail||eligible[index].email;
     recipients.set(userId,{userId,name:String(account.displayName||(!String(contact).endsWith("@line.invalid")&&contact)||"LINE 登入帳號").slice(0,80)});
   });
   return {
     targets:[...recipients.keys()].sort(),recipients:[...recipients.values()].sort((a,b)=>a.userId.localeCompare(b.userId)),
     unbound:accounts.filter(account=>!/^U[0-9a-f]{32}$/i.test(account?.lineUserId||"")).length,
-    matched:emails.size,
-    contacts:identities.map((email,index)=>({email,userId:/^U[0-9a-f]{32}$/i.test(accounts[index]?.lineUserId||"")?accounts[index].lineUserId:""}))
+    matched:eligible.length,
+    contacts:eligible.map(({email,account})=>({email,userId:/^U[0-9a-f]{32}$/i.test(account?.lineUserId||"")?account.lineUserId:""}))
   };
 }

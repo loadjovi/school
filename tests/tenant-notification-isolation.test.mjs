@@ -256,20 +256,20 @@ test("uniform cancellation sends the stored reason only to the original applican
 });
 
 test("announcement previews support a new group and deduplicate households and roles",async()=>{
-  const students=[{rowKey:"student-a",groupName:"新團"},{rowKey:"student-b",groupName:"新團"},{rowKey:"student-c",groupName:"A"}];
+  const students=[{rowKey:"100001",groupName:"新團"},{rowKey:"100002",groupName:"新團"},{rowKey:"100003",groupName:"A"}];
   const target="U"+"a".repeat(32);
   const audience=load("lineAudience.js",{
     resolveTenantLineChannel:async school=>({schoolId:school,botUserId:"bot-one",configured:true}),
     listUserStudentMappings:async schoolStatus=>{
       assert.equal(schoolStatus,"active");
-      return [{studentId:"student-a",parentEmail:"same@example.test"},{studentId:"student-b",parentEmail:"same@example.test"},{studentId:"student-c",parentEmail:"other@example.test"}];
+      return [{studentId:"100001",parentEmail:"same@example.test"},{studentId:"100002",parentEmail:"same@example.test"},{studentId:"100003",parentEmail:"other@example.test"}];
     },
-    getStudentAliasInfo:async(id,school)=>{assert.equal(school,"sacred-heart");return {canonicalStudentId:id}},
+    getApprovedParentStudent:async(school,email,id)=>{assert.equal(school,"sacred-heart");assert.equal(email,"same@example.test");return {studentId:id}},
     listTenantAdmins:async()=>[{role:"schoolAdmin",status:"active",partitionKey:"same@example.test"}],
     getTenantLineDeliveryRecipient:async(school,email,channel)=>{
       const bot=channel.botUserId;
       assert.deepEqual([school,email,bot],["sacred-heart","same@example.test","bot-one"]);
-      return {lineUserId:target};
+      return {lineUserId:target,parentEmail:email};
     }
   },"{lineAudienceGroups,resolveLineAudience}");
   assert.ok(audience.lineAudienceGroups(students).includes("新團"));

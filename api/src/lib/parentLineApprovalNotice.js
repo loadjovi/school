@@ -97,6 +97,13 @@ async function approvalProof(schoolId, parentEmail, studentId, allowStatic = fal
   } else version = "mapping:" + String(mapping.approvedAt || mapping.createdAt || "legacy-active");
   return {studentId, studentName: String(master.studentName).trim().slice(0, 120), version};
 }
+
+// Read-only eligibility for dynamic parent audiences. Static or inferred student
+// aliases cannot create a relationship for a manual announcement.
+export async function getApprovedParentStudent(schoolId, parentEmail, studentId) {
+  return approvalProof(schoolId, email(parentEmail), String(studentId || "").trim(), false);
+}
+
 async function intentProof(schoolId, account, intent) {
   const canonicalEmail = email(account.parentEmail);
   if (intent.parentEmail !== canonicalEmail) return null;

@@ -71,10 +71,10 @@ test("manual and registered-payment audiences count verified legacy recipients o
  const audience=load("api/src/lib/lineAudience.js",{
   resolveTenantLineChannel:async school=>{resolves.push(school);return h.channel},
   getTenantLineDeliveryRecipient:h.api.getTenantLineDeliveryRecipient,
-  listUserStudentMappings:async()=>[{studentId:"one",parentEmail:google.email},{studentId:"one",parentEmail:google.email}],
-  getStudentAliasInfo:async id=>({canonicalStudentId:id})
+  listUserStudentMappings:async()=>[{studentId:"100001",parentEmail:google.email},{studentId:"100001",parentEmail:google.email}],
+  getApprovedParentStudent:async(school,email,id)=>{assert.equal(school,"sacred-heart");assert.equal(email,google.email);return {studentId:id}}
  },";resolveLineAudience");
- const students=[{rowKey:"one",groupName:"A"}],preview=await audience("sacred-heart",botId,{roles:["parent"],groups:["A"],students});
+ const students=[{rowKey:"100001",groupName:"A"}],preview=await audience("sacred-heart",botId,{roles:["parent"],groups:["A"],students});
  assert.equal(resolves.length,1);assert.equal(preview.matched,1);assert.equal(preview.unbound,0);
  assert.deepEqual([...preview.targets],[userId]);assert.equal(preview.contacts[0].userId,userId);
  assert.equal(await h.api.getTenantLineRecipient("sacred-heart",google.email,botId),null);

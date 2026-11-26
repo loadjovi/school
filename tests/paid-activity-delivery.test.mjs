@@ -11,13 +11,13 @@ const activity={module:"yearEndDinner",id:"dinner",enabled:true,title:"測試餐
 const schedule=run("api/src/lib/paidActivitySchedule.js",{isPaidActivityOpen:(a,n)=>!!a?.enabled&&(!a.closeAt||Date.parse(a.closeAt)>n),collectingTrip:()=>false},"({queuePaidActivityResend,paidActivityNoticeSummary})");
 
 function sender(){
- const calls=[],lookups=[],mappings=[{studentId:"a",parentEmail:"dad@test.invalid"},{studentId:"old-a",parentEmail:"mom@test.invalid"},{studentId:"b",parentEmail:"dad@test.invalid"}];
- const students=[{rowKey:"a",groupName:"A 團"},{rowKey:"b",groupName:"新團"}];
+ const calls=[],lookups=[],mappings=[{studentId:"100001",parentEmail:"dad@test.invalid"},{studentId:"100001",parentEmail:"mom@test.invalid"},{studentId:"100002",parentEmail:"dad@test.invalid"}];
+ const students=[{rowKey:"100001",groupName:"A 團"},{rowKey:"100002",groupName:"新團"}];
  const audience=run("api/src/lib/lineAudience.js",{
   resolveTenantLineChannel:async school=>({schoolId:school,botUserId:bot,configured:true}),
   listUserStudentMappings:async(status,school)=>{assert.equal(status,"active");assert.equal(school,"school-a");return mappings},
-  getStudentAliasInfo:async(id,school)=>{assert.equal(school,"school-a");return {canonicalStudentId:id==="old-a"?"a":id}},
-  getTenantLineDeliveryRecipient:async(school,email,channel)=>{const botId=channel.botUserId;assert.deepEqual([school,botId],["school-a",bot]);lookups.push(email);return {lineUserId:email.startsWith("dad")?user(1):user(2)}}
+  getApprovedParentStudent:async(school,_email,id)=>{assert.equal(school,"school-a");return {studentId:id}},
+  getTenantLineDeliveryRecipient:async(school,email,channel)=>{const botId=channel.botUserId;assert.deepEqual([school,botId],["school-a",bot]);lookups.push(email);return {parentEmail:email,lineUserId:email.startsWith("dad")?user(1):user(2)}}
  },"({resolveLineAudience})");
  const context={console,URL,process:{env:{}},workflowLineEnabled:()=>true,
   workflowLineRetryKey:(...parts)=>parts.join("/"),resolveTenantLineChannel:async school=>{assert.equal(school,"school-a");return {schoolId:school,loginConfigured:true,botUserId:bot,accessToken:"test-school-token",appOrigin:"https://school.invalid"}},
