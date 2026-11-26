@@ -80,5 +80,5 @@ test("a failed approval request never claims approval or a successful notificati
 test("fresh page loads request the updated approval UI module",()=>{
   const loader=read("app/webview-guard.js"),html=read("app/index.html");
   assert.match(loader,/\/student-number-support\.js\?v=20261126-approval-notice-channel/);
-  assert.match(html,/<script src="\/webview-guard\.js\?v=[^"]*20261126-approval-notice-channel" defer>/);
+  assert.match(html,/<script src="\/webview-guard\.js\?v=[^"]*20261126-approval-notice-channel[^\"]*" defer>/);
 });

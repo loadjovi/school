@@ -373,6 +373,12 @@ async function renderLineLogin(){
         if(!current())return;
         // This is an explicit login choice. A successful login callback selects
         // the LINE session; it must not resume an earlier Gmail pairing screen.
+        // Clean this history entry too: Safari can return to this original tab
+        // instead of the callback tab, where its old query would force Gmail.
+        const clean=new URL(location.href);
+        for(const name of ["teacherLineAccount","parentLineAccount","line_link","line_error","line_friend","google_redirect","line_session"])clean.searchParams.delete(name);
+        clean.searchParams.set("schoolId",teacherSchool);
+        history.replaceState({},"",clean.pathname+clean.search+clean.hash);
         for(const key of ["teacher_line_account_return","parent_line_account_return","line_staff_entry"])sessionStorage.removeItem(key);
         navigating=true;location.assign(target.href);
       }catch(error){if(current())status.textContent=error.message||"LINE 登入暫時無法使用，請稍後再試。"}
@@ -474,7 +480,9 @@ function googleAccountExternalEntry(){
   return "/?"+query;
 }
 async function renderLogin(error=""){
-  document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>家長、老師與管理員共用入口</p>${error?`<div class="error">${esc(error)}</div>`:""}<div id="googleBtn" style="display:flex;justify-content:center;margin-top:18px"></div><div id="tenantLineSignIn"></div><div class="notice" style="margin-top:16px">${adminFriendAccountEntry()?"請使用原本的管理員 Gmail 登入，繼續確認官方帳號好友狀態。":teacherLineAccountEntry()?"老師首次綁定請使用名冊中已建檔的 Gmail；完成綁定後，請使用上方的 LINE 登入按鈕。":parentLineAccountEntry()?"已核准的學生關係會沿用原 Gmail，LINE 綁定不需重填學生姓名或學號。":"家長第一次登入若尚未綁定學生，可填寫學生資料送交管理員確認。"}</div></div></div>`;
+  const recoverySchool=teacherLineAccountEntry();
+  const recovery=error&&recoverySchool?`<a class="secondary" href="/login-reset.html?schoolId=${encodeURIComponent(recoverySchool)}" style="display:block;text-align:center;text-decoration:none;margin-top:16px">重新開始登入</a><p class="muted">清除這台瀏覽器的舊登入後，再選 Gmail 或 LINE；已完成的帳號綁定會保留。</p>`:"";
+  document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>家長、老師與管理員共用入口</p>${error?`<div class="error">${esc(error)}</div>`:""}<div id="googleBtn" style="display:flex;justify-content:center;margin-top:18px"></div><div id="tenantLineSignIn"></div>${recovery}<div class="notice" style="margin-top:16px">${adminFriendAccountEntry()?"請使用原本的管理員 Gmail 登入，繼續確認官方帳號好友狀態。":teacherLineAccountEntry()?"老師首次綁定請使用名冊中已建檔的 Gmail；完成綁定後，請使用上方的 LINE 登入按鈕。":parentLineAccountEntry()?"已核准的學生關係會沿用原 Gmail，LINE 綁定不需重填學生姓名或學號。":"家長第一次登入若尚未綁定學生，可填寫學生資料送交管理員確認。"}</div></div></div>`;
   renderLineLogin();
   if(window.__lineEmbedded){
     const external=googleAccountExternalEntry();
