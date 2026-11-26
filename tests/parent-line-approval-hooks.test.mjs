@@ -12,11 +12,11 @@ const google = {sub: "approved-google", email: "approved@example.test"};
 const missing = statusCode => Object.assign(new Error(), {statusCode});
 const plain = value => JSON.parse(JSON.stringify(value));
 
-function registrations({role = "admin", lineResult = {status: "accepted"}, lineError = false, emailError = false, failCommit = false} = {}) {
+function registrations({role = "admin", authProvider = "google", applicationAuthProvider = "", parentEmail = google.email, lineResult = {status: "accepted"}, lineError = false, emailError = false, mailResult = {status: "sent", messageId: "email-receipt"}, failCommit = false} = {}) {
   let handler, sequence = 0;
   const events = [], notices = [], emails = [], rows = new Map();
-  const initial = {partitionKey: schoolId, rowKey: "registration-a", schoolId, status: "pending", parentEmail: google.email,
-    parentName: "核准家長", relationship: "母親", studentName: "正式學生", studentNo: "112001", matchedStudentId: "112001"};
+  const initial = {partitionKey: schoolId, rowKey: "registration-a", schoolId, status: "pending", parentEmail,
+    parentName: "核准家長", relationship: "母親", studentName: "正式學生", studentNo: "112001", matchedStudentId: "112001", applicationAuthProvider};
   rows.set("tenantRegistrations|" + schoolId + "|registration-a", initial);
   const key = (name, partition, row) => [name, partition, row].join("|");
   const db = name => ({
@@ -35,7 +35,7 @@ function registrations({role = "admin", lineResult = {status: "accepted"}, lineE
     grade: "四年級", groupName: "A", instrument: "小提琴", schoolYear: "115"};
   runInNewContext(strip(read("api/src/functions/studentRegistration.js")), {
     app: {http: (_name, options) => handler = options.handler}, json: (data, status = 200) => ({data, status}),
-    getTenantContext: async () => ({schoolId, access: {role, email: role === "admin" ? "admin@example.test" : google.email, displayName: "家長", sub: google.sub}, tenant: {schoolName: "學校甲"}}),
+    getTenantContext: async () => ({schoolId, access: {role, authProvider, email: role === "admin" ? "admin@example.test" : google.email, displayName: "家長", sub: google.sub}, tenant: {schoolName: "學校甲"}}),
     ensureTenantTables: async () => {}, table: db, rowKey: prefix => prefix + "-" + (++sequence),
     tenantSchoolPartition: value => value, tenantParentPartition: (school, parent) => school + ":" + parent,
     tenantStudentPartition: (school, student) => school + ":" + student,
@@ -43,10 +43,10 @@ function registrations({role = "admin", lineResult = {status: "accepted"}, lineE
     listRegistrations: async () => [...rows.values()].filter(row => row.rowKey === "registration-a"),
     getRegistrationsByEmail: async () => [],
     reconcileParentLineMenus: async () => {events.push("menu"); return {status: "synced"};},
-    sendParentApprovalEmail: async value => {emails.push(plain(value)); events.push("email"); if (emailError) throw new Error("Email unavailable"); return {status: "sent", messageId: "email-receipt"};},
+    sendParentApprovalEmail: async value => {emails.push(plain(value)); events.push("email"); if (emailError) throw new Error("Email unavailable"); return mailResult;},
     notifyParentLineApproval: async (...args) => {
       const saved = rows.get(key("tenantRegistrations", schoolId, "registration-a"));
-      const mapping = rows.get(key("tenantUserStudentMap", schoolId + ":" + google.email, "112001"));
+      const mapping = rows.get(key("tenantUserStudentMap", schoolId + ":" + parentEmail, "112001"));
       assert.equal(saved.status, "approved", "notification must follow committed approval");
       assert.equal(mapping.status, "active", "notification must follow active relationship mapping");
       notices.push(plain(args)); events.push("line"); if (lineError) throw new Error("LINE unavailable"); return lineResult;
@@ -57,30 +57,119 @@ function registrations({role = "admin", lineResult = {status: "accepted"}, lineE
   return {request, events, notices, emails, rows};
 }
 
-test("approving an existing student queues only that parent's same-school LINE receipt after both approval writes commit", async () => {
-  const h = registrations(), result = await h.request();
+test("approving an existing student uses the durable LINE receipt after both approval writes commit", async () => {
+  const h = registrations({emailError: true}), result = await h.request();
   assert.equal(result.status, 200); assert.equal(result.data.status, "approved"); assert.equal(h.notices.length, 1);
   const [school, payload] = h.notices[0];
   assert.equal(school, schoolId); assert.equal(payload.parentEmail, google.email); assert.equal(payload.studentId, "112001");
   assert.ok(h.events.indexOf("line") > h.events.indexOf("tenantUserStudentMap:active"));
   assert.ok(h.events.indexOf("line") > h.events.indexOf("tenantRegistrations:approved"));
   assert.equal(result.data.lineNotification.status, "accepted");
-  assert.equal(result.data.notification.status, "sent"); assert.equal(result.data.notification.messageId, "email-receipt");
+  assert.equal(result.data.notification.channel, "line"); assert.equal(result.data.notification.status, "accepted");
+  assert.equal(result.data.notification.error, ""); assert.equal(result.data.notification.messageId, "");
+  assert.ok(result.data.notification.sentAt); assert.equal(h.emails.length, 0, "an accepted LINE receipt must not be replaced by an unrelated Email failure");
   assert.equal((await h.request()).status, 409); assert.equal(h.notices.length, 1, "a repeated completed approval must not queue another receipt");
 });
 
-test("LINE failures after approval do not roll back the relationship or replace the independent email result", async () => {
-  for (const options of [{lineResult: {status: "pending_friend"}}, {lineError: true}]) {
-    const h = registrations(options), result = await h.request();
-    assert.equal(result.status, 200); assert.equal(result.data.status, "approved"); assert.equal(h.notices.length, 1);
+test("LINE-native applicants retain each real receipt outcome without attempting an impossible Email", async t => {
+  const parentEmail = "line-00000000-0000-4000-8000-000000000001@line.invalid";
+  for (const status of ["accepted", "partial", "pending_friend", "pending", "unconfirmed", "failed", "ineligible", "not_bound", "not_configured", "environment_suppressed"]) {
+    await t.test(status, async () => {
+      const h = registrations({parentEmail, lineResult: {status}, emailError: true}), result = await h.request();
+      assert.equal(result.status, 200); assert.equal(result.data.status, "approved");
+      assert.equal(result.data.lineNotification.status, status); assert.equal(result.data.notification.status, status);
+      assert.equal(result.data.notification.channel, "line"); assert.equal(h.notices.length, 1); assert.equal(h.emails.length, 0);
+      assert.equal(h.notices[0][1].parentEmail, parentEmail);
+      assert.equal(Boolean(result.data.notification.sentAt), ["accepted", "partial"].includes(status));
+      const saved = h.rows.get("tenantRegistrations|school-a|registration-a");
+      assert.equal(saved.status, "approved"); assert.equal(saved.notificationChannel, "line"); assert.equal(saved.notificationStatus, status);
+      assert.equal(h.rows.get("tenantUserStudentMap|school-a:" + parentEmail + "|112001").status, "active");
+      if (["failed", "ineligible", "not_bound", "not_configured", "environment_suppressed"].includes(status)) {
+        assert.match(result.data.notification.error, /LINE/); assert.doesNotMatch(result.data.notification.error, /Email|mail/);
+      }
+      const read = await h.request("GET");
+      assert.equal(read.data.items[0].notificationChannel, "line"); assert.equal(read.data.items[0].notificationStatus, status);
+      assert.equal(read.data.items[0].notificationSentAt, result.data.notification.sentAt);
+      assert.equal(h.notices.length, 1, "a GET only reads the saved notification outcome"); assert.equal(h.emails.length, 0);
+    });
+  }
+  const h = registrations({parentEmail, lineError: true, emailError: true}), result = await h.request();
+  assert.equal(result.data.notification.channel, "line"); assert.equal(result.data.notification.status, "pending");
+  assert.equal(result.data.notification.sentAt, null); assert.equal(h.emails.length, 0);
+});
+
+test("Gmail-linked LINE receipt outcomes stay authoritative while pending friendship or delivery never falls back", async t => {
+  for (const status of ["accepted", "partial", "pending_friend", "pending", "unconfirmed", "failed", "ineligible"]) {
+    await t.test(status, async () => {
+      const h = registrations({lineResult: {status}, emailError: true}), result = await h.request();
+      assert.equal(result.data.status, "approved"); assert.equal(result.data.notification.channel, "line");
+      assert.equal(result.data.notification.status, status); assert.equal(h.emails.length, 0);
+      assert.equal(h.rows.get("tenantUserStudentMap|school-a:" + google.email + "|112001").status, "active");
+    });
+  }
+  for (const options of [{lineError: true}, {lineResult: null}]) {
+    const h = registrations({...options, emailError: true}), result = await h.request();
+    assert.equal(result.data.notification.channel, "line"); assert.equal(result.data.notification.status, "pending");
+    assert.equal(result.data.notification.sentAt, null); assert.equal(h.emails.length, 0);
+  }
+});
+
+test("real Gmail applicants without an available LINE route keep the existing Email outcome and saved channel", async t => {
+  for (const status of ["not_bound", "not_configured", "environment_suppressed"]) {
+    await t.test(status, async () => {
+      const h = registrations({lineResult: {status}}), result = await h.request();
+      assert.equal(result.data.status, "approved"); assert.equal(result.data.lineNotification.status, status);
+      assert.equal(result.data.notification.channel, "email"); assert.equal(result.data.notification.status, "sent");
+      assert.equal(result.data.notification.messageId, "email-receipt"); assert.equal(result.data.notification.error, "");
+      assert.ok(result.data.notification.sentAt); assert.equal(h.emails.length, 1); assert.equal(h.notices.length, 1);
+      assert.equal(h.emails[0].recipient, google.email); assert.equal(h.emails[0].schoolId, schoolId);
+      assert.equal(h.emails[0].notificationId, "parent-approval:registration-a");
+      const read = await h.request("GET");
+      assert.equal(read.data.items[0].notificationChannel, "email"); assert.equal(read.data.items[0].notificationStatus, "sent");
+      assert.equal(h.emails.length, 1, "GET must never repeat the fallback Email");
+    });
+  }
+  for (const options of [{emailError: true}, {mailResult: {status: "not_configured"}}, {mailResult: {status: "failed", rawStatus: "mail_denied"}}]) {
+    const h = registrations({...options, lineResult: {status: "not_bound"}}), result = await h.request();
+    assert.equal(result.data.status, "approved"); assert.equal(result.data.notification.channel, "email");
+    assert.equal(result.data.notification.status, options.mailResult?.status || "failed");
+    assert.equal(result.data.notification.sentAt, null); assert.ok(result.data.notification.error);
     assert.equal(h.rows.get("tenantRegistrations|school-a|registration-a").status, "approved");
     assert.equal(h.rows.get("tenantUserStudentMap|school-a:" + google.email + "|112001").status, "active");
-    assert.equal(result.data.notification.status, "sent"); assert.equal(result.data.notification.error, "");
-    assert.equal(result.data.lineNotification.status, options.lineError ? "pending" : "pending_friend");
   }
-  const h = registrations({emailError: true}), result = await h.request();
-  assert.equal(result.data.status, "approved"); assert.equal(result.data.notification.status, "failed");
-  assert.equal(result.data.lineNotification.status, "accepted"); assert.equal(h.notices.length, 1);
+});
+
+test("a recorded LINE-origin application stays on LINE after pairing Gmail even if its current delivery setup is unavailable", async t => {
+  for (const status of ["not_bound", "not_configured", "environment_suppressed"]) {
+    await t.test(status, async () => {
+      const h = registrations({applicationAuthProvider: "line", lineResult: {status}, emailError: true}), result = await h.request();
+      assert.equal(result.data.notification.channel, "line"); assert.equal(result.data.notification.status, status);
+      assert.equal(h.notices[0][1].parentEmail, google.email); assert.equal(h.emails.length, 0);
+      assert.match(result.data.notification.error, /LINE/);
+    });
+  }
+});
+
+test("new applications persist the trusted login provider while ignoring client-supplied notification origins", async t => {
+  for (const authProvider of ["line", "google", undefined]) {
+    await t.test(String(authProvider || "legacy Google"), async () => {
+      const h = registrations({role: "unassigned", authProvider}), result = await h.request("POST", {
+        studentName: "正式學生", studentNo: "112001", consent: true,
+        applicationAuthProvider: authProvider === "line" ? "google" : "line", notificationChannel: "line"
+      });
+      assert.equal(result.status, 201);
+      const saved = [...h.rows.values()].find(row => row.rowKey === result.data.registration.registrationId);
+      assert.equal(saved.applicationAuthProvider, authProvider === "line" ? "line" : "google");
+      assert.equal(saved.status, "pending"); assert.equal(saved.notificationChannel, undefined);
+      assert.equal(h.notices.length, 0); assert.equal(h.emails.length, 0);
+    });
+  }
+});
+
+test("registration reads preserve empty channel for older records without inventing a delivery result", async () => {
+  const h = registrations(), result = await h.request("GET");
+  assert.equal(result.data.items[0].notificationChannel, ""); assert.equal(result.data.items[0].notificationStatus, "");
+  assert.equal(result.data.items[0].notificationSentAt, null); assert.equal(h.notices.length, 0); assert.equal(h.emails.length, 0);
 });
 
 test("reads, pending submissions, rejection and failed approval commits never trigger a parent LINE receipt", async () => {

@@ -110,7 +110,7 @@
     const role=String(state?.me?.role||""),cap=state?.me?.capabilities||{};
     if(role==="admin")return [
       "/roster-support.js",
-      "/student-number-support.js?v=20261121-line-first-notice-labels",
+      "/student-number-support.js?v=20261126-approval-notice-channel",
       "/student-change-admin.js?v=20261102-student-workflow",
       "/parent-link-admin.js?v=20261125-binding-status-only",
       "/teacher-settings.js?v=20261002-teacher-types",

@@ -23,7 +23,7 @@ function view(e){
     studentName:e.studentName,studentNo:e.studentNo||e.matchedStudentId||"",grade:e.grade,groupName:e.groupName,instrument:e.instrument,
     schoolYear:e.schoolYear||"",status:e.status,studentId:e.studentId||null,createdAt:e.createdAt,
     reviewedAt:e.reviewedAt||null,reviewedBy:e.reviewedBy||null,note:e.note||"",
-    notificationStatus:e.notificationStatus||"",notificationSentAt:e.notificationSentAt||null,notificationError:e.notificationError||""
+    notificationChannel:e.notificationChannel||"",notificationStatus:e.notificationStatus||"",notificationSentAt:e.notificationSentAt||null,notificationError:e.notificationError||""
   };
 }
 
@@ -87,7 +87,7 @@ app.http("studentRegistration",{
       const grade=clean(matched.grade,20),groupName=clean(matched.groupName,10),instrument=clean(matched.instrument,20),schoolYear=clean(matched.schoolYear,20);
       await ensureTenantTables();
       const registrationId=rowKey("reg");
-      const entity={partitionKey:tenantSchoolPartition(schoolId),rowKey:registrationId,schoolId,parentEmail:access.email,parentName,relationship,studentName,studentNo,grade,groupName,instrument,schoolYear,status:"pending",consent:true,createdAt:new Date().toISOString(),googleSub:access.sub||"",matchedStudentId:String(matched.rowKey||"")};
+      const entity={partitionKey:tenantSchoolPartition(schoolId),rowKey:registrationId,schoolId,parentEmail:access.email,parentName,relationship,studentName,studentNo,grade,groupName,instrument,schoolYear,status:"pending",consent:true,createdAt:new Date().toISOString(),googleSub:access.sub||"",applicationAuthProvider:access.authProvider==="line"?"line":"google",matchedStudentId:String(matched.rowKey||"")};
       await table("tenantRegistrations").createEntity(entity);
       return json({ok:true,registration:view(entity)},201);
     }
@@ -150,26 +150,38 @@ app.http("studentRegistration",{
     catch { lineNotification={status:"pending"}; }
     const menuSync=await reconcileParentLineMenus(schoolId,[reg.parentEmail]);
     let notification;
-    try{
-      notification=await sendParentApprovalEmail({schoolId,schoolName:context.tenant?.systemName||context.tenant?.schoolName,
-        recipient:reg.parentEmail,parentName:reg.parentName,studentName,grade,groupName,instrument,
-        notificationId:"parent-approval:"+registrationId,
-        // Reuse the durable LINE receipt; the existing LINE-first mail route
-        // must not send another generic LINE approval notification.
-        lineSender:async()=>lineNotification
-      });
-    }catch(e){
-      notification={status:"failed",error:String(e?.message||e||"email_send_failed").slice(0,500)};
+    // The durable receipt alone authorizes and sends the LINE approval card.
+    // A LINE-native identity has no deliverable email address. A bound receipt
+    // (including pending friendship/uncertain delivery) must keep its own result
+    // instead of being replaced by an unrelated Email fallback failure.
+    const lineApplicant=reg.applicationAuthProvider==="line"||String(reg.parentEmail||"").trim().toLowerCase().endsWith("@line.invalid");
+    const lineUnavailable=["not_bound","not_configured","environment_suppressed"].includes(lineNotification?.status);
+    if(lineApplicant||!lineUnavailable){
+      notification={...lineNotification,channel:"line",status:lineNotification?.status||"pending"};
+    }else{
+      try{
+        const mail=await sendParentApprovalEmail({schoolId,schoolName:context.tenant?.systemName||context.tenant?.schoolName,
+          recipient:reg.parentEmail,parentName:reg.parentName,studentName,grade,groupName,instrument,
+          notificationId:"parent-approval:"+registrationId,
+          // Reuse the receipt outcome; never send a second generic LINE card.
+          lineSender:async()=>lineNotification
+        });
+        notification={...mail,channel:mail?.channel==="line"?"line":"email"};
+      }catch(e){
+        notification={channel:"email",status:"failed",error:String(e?.message||e||"email_send_failed").slice(0,500)};
+      }
     }
     const notificationNow=new Date().toISOString();
+    reg.notificationChannel=notification.channel;
     reg.notificationStatus=notification?.status||"failed";
-    reg.notificationSentAt=notification?.status==="sent"?notificationNow:"";
-    reg.notificationError=notification?.status==="failed"?String(notification?.error||notification?.rawStatus||"寄送失敗").slice(0,500):notification?.status==="not_configured"?"Email 環境變數未設定":"";
+    reg.notificationSentAt=["sent","accepted","partial"].includes(reg.notificationStatus)?notificationNow:"";
+    const lineErrors={failed:"LINE 通知發送失敗",not_configured:"本校 LINE 通知尚未完成設定",not_bound:"尚無可用的 LINE 收件綁定",ineligible:"LINE 帳號與核准家長關係需重新核對",environment_suppressed:"此環境未對外發送 LINE 通知"};
+    reg.notificationError=reg.notificationChannel==="line"?(lineErrors[reg.notificationStatus]||""):notification?.status==="failed"?String(notification?.error||notification?.rawStatus||"Email 寄送失敗").slice(0,500):notification?.status==="not_configured"?"Email 環境變數未設定":"";
     reg.notificationMessageId=String(notification?.messageId||"").slice(0,200);
     await regClient.updateEntity(reg,"Merge");
 
     return json({ok:true,status:"approved",studentId,linkedExisting:true,menuSync,lineNotification,notification:{
-      status:reg.notificationStatus,sentAt:reg.notificationSentAt||null,error:reg.notificationError||"",messageId:reg.notificationMessageId||""
+      channel:reg.notificationChannel,status:reg.notificationStatus,sentAt:reg.notificationSentAt||null,error:reg.notificationError||"",messageId:reg.notificationMessageId||""
     }});
   }
 });

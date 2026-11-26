@@ -12,7 +12,7 @@ const schoolPartition = id => id, parentPartition = (id, email) => id + ":" + em
 const clone = value => JSON.parse(JSON.stringify(value));
 
 function harness() {
-  const records = new Map(), menuCalls = [], identityReads = [], recipientReads = [], logs = [], emails = [], history = [];
+  const records = new Map(), menuCalls = [], identityReads = [], recipientReads = [], logs = [], emails = [], notices = [], history = [];
   const accounts = new Map(), recipients = new Map(), staff = new Set();
   let sequence = 0, lineFailure = null, channelOverride = null, onRefresh;
   const key = (name, partition, row) => [name, partition, row].join("|");
@@ -52,6 +52,15 @@ function harness() {
     listStudentMaster: async () => [clone(master)], getStudentAliasInfo: async student => ({canonicalStudentId: student}),
     getRegistrationsByEmail: async email => [...records.values()].filter(value => value.parentEmail === email && value.status === "pending"),
     listRegistrations: async () => [...records.entries()].filter(([recordKey]) => recordKey.startsWith("tenantRegistrations|")).map(([, value]) => value),
+    notifyParentLineApproval: async (id, payload) => {
+      assert.equal(id, schoolId); notices.push([id, clone(payload)]);
+      const registration = records.get(key("tenantRegistrations", schoolId, "registration"));
+      assert.equal(registration?.status, "approved", "the durable notice follows the committed approval");
+      assert.ok(mapped(payload.parentEmail).some(row => row.studentId === payload.studentId));
+      const recipient = recipients.get(payload.parentEmail), account = recipient && accounts.get(recipient.lineUserId);
+      return {status: account?.partitionKey === schoolId && account.botUserId === botUserId &&
+        account.parentEmail === payload.parentEmail && recipient.botUserId === botUserId ? "accepted" : "not_bound"};
+    },
     sendParentApprovalEmail: async options => {emails.push(options); return {status: "sent"};},
     reconcileParentLineMenus: helper
   };
@@ -73,7 +82,7 @@ function harness() {
     records.set(key("tenantRegistrations", schoolId, row.rowKey), row); return row;
   }
   const request = (method, body = {}) => ({method, query: new URLSearchParams(), json: async () => body});
-  return {helper, load, request, bind, mapping, registration, mapped, records, key, accounts, recipients, staff, menuCalls, identityReads, recipientReads, logs, emails, history,
+  return {helper, load, request, bind, mapping, registration, mapped, records, key, accounts, recipients, staff, menuCalls, identityReads, recipientReads, logs, emails, notices, history,
     setFailure: value => lineFailure = value, setChannel: value => channelOverride = value, onRefresh: fn => onRefresh = fn};
 }
 
@@ -84,7 +93,9 @@ test("registration approval automatically applies the parent five-entry menu aft
   assert.equal(result.data.status, "approved"); assert.equal(result.data.menuSync.status, "synced");
   assert.equal(result.data.menuSync.audience, "parent"); assert.equal(result.data.menuSync.areaCount, 5);
   assert.equal(h.menuCalls.length, 1); assert.equal(h.menuCalls[0].approved, 1); assert.equal(h.menuCalls[0].historyCount, 1);
-  assert.equal(h.emails.length, 1); assert.equal(h.identityReads[0][1], botUserId);
+  assert.equal(h.emails.length, 0); assert.equal(h.identityReads[0][1], botUserId);
+  assert.equal(h.notices.length, 1); assert.equal(result.data.notification.channel, "line");
+  assert.equal(result.data.notification.status, "accepted");
 });
 
 test("approval before LINE pairing remains approved and requires no fake recipient or extra role assignment", async () => {
@@ -92,6 +103,9 @@ test("approval before LINE pairing remains approved and requires no fake recipie
   const result = await h.load("api/src/functions/studentRegistration.js")(h.request("PATCH", {registrationId: "registration", action: "approve", studentId: "100001"}));
   assert.equal(result.data.status, "approved"); assert.equal(result.data.menuSync.status, "not_bound");
   assert.equal(h.mapped(oldEmail).length, 1); assert.equal(h.menuCalls.length, 0); assert.equal(h.accounts.size, 0);
+  assert.equal(h.notices.length, 1); assert.equal(result.data.lineNotification.status, "not_bound");
+  assert.equal(h.emails.length, 1); assert.equal(h.emails[0].recipient, oldEmail);
+  assert.equal(result.data.notification.channel, "email"); assert.equal(result.data.notification.status, "sent");
 });
 
 test("transient LINE failure is retried using a fresh canonical account and never rolls back an approved student", async () => {
@@ -99,7 +113,9 @@ test("transient LINE failure is retried using a fresh canonical account and neve
   h.setFailure(Object.assign(Error("private-line-provider-response"), {status: 503}));
   const result = await h.load("api/src/functions/studentRegistration.js")(h.request("PATCH", {registrationId: "registration", action: "approve", studentId: "100001"}));
   assert.equal(result.data.status, "approved"); assert.equal(result.data.menuSync.status, "pending");
-  assert.equal(h.mapped(oldEmail).length, 1); assert.equal(h.emails.length, 1);
+  assert.equal(h.mapped(oldEmail).length, 1); assert.equal(h.emails.length, 0);
+  assert.equal(h.notices.length, 1); assert.equal(result.data.notification.channel, "line");
+  assert.equal(result.data.notification.status, "accepted");
   assert.equal(h.menuCalls.length, 2); assert.equal(h.identityReads.length, 2);
   assert.doesNotMatch(JSON.stringify({result, logs: h.logs}), /private-line-provider-response/);
 });
