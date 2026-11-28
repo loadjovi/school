@@ -187,7 +187,7 @@ app.http("tenantLineLoginStart", {
       code_challenge: createHash("sha256").update(txn.verifier).digest("base64url"),
       code_challenge_method: "S256", bot_prompt: "aggressive"
     });
-    if (returnToTeacher && google?.sub) {
+    if ((returnToTeacher || returnToParent) && google?.sub) {
       // Keep the verified Gmail browser and OAuth state cookie together on
       // mobile. LINE app auto-login may return in a different browser context.
       // Ordinary LINE login and LINE-origin friendship checks retain auto-login.

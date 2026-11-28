@@ -21,6 +21,7 @@
     <p id="activityReturnHint" class="muted" hidden>從活動設定進入；發送後可返回原活動繼續編輯。</p>
     <section class="card"><h1>📣 LINE 通知中心</h1><p>通知家長、老師、學校幹部，或活動志工群組。</p></section>
     <nav class="line-center-tabs" aria-label="LINE 通知功能"><button type="button" id="lineSendTab" data-line-center-tab="send" aria-controls="lineSendPanel" aria-selected="true">發送通知</button><button type="button" id="lineSettingsTab" data-line-center-tab="settings" aria-controls="lineSettingsPanel" aria-selected="false" disabled>群組與通知設定</button><button type="button" id="lineAccountTab" data-line-center-tab="account" aria-controls="lineAccountPanel" aria-selected="false" disabled>我的 LINE 綁定</button></nav>
+    <div class="notice" id="lineCenterAccess"><span id="lineCenterAccessMessage" role="status">正在驗證本校管理員身分…</span> <button type="button" class="secondary" id="lineCenterRetry" hidden>重新驗證</button></div>
     <div id="lineSendPanel">
     <form class="card" id="announcement">
       <fieldset><legend>1．選擇通知對象</legend>
@@ -65,6 +66,6 @@
     <section class="card" id="lineSettingsPanel" hidden aria-labelledby="lineSettingsTab"><p id="lineSettingsAuthStatus" role="status">正在驗證管理員身分…</p></section>
     <section class="card" id="lineAccountPanel" hidden aria-labelledby="lineAccountTab"><p role="status">選擇「我的 LINE 綁定」後查看狀態。</p></section>
   </main>
-  <script type="module" src="/line-announcement.js?v=20261127-teacher-browser-binding"></script>
+  <script type="module" src="/line-announcement.js?v=20261128-mobile-line-recovery"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-import {createLineAccountPanel} from "./line-account-panel.js?v=20261127-teacher-browser-binding";
+import {createLineAccountPanel} from "./line-account-panel.js?v=20261128-mobile-line-recovery";
 import {createLineNotificationSettings} from "./line-notification-settings.js?v=20261123-notification-settings";
 const $=id=>document.getElementById(id),form=$("announcement"),status=$("result"),preview=$("preview"),send=$("send");
 let centerAdminReady=false,centerTab="send",accountPanel=null,accountReturnHandled=false,centerVersion=0;
@@ -50,10 +50,14 @@ async function request(body){
     ...(body?{body:JSON.stringify(body)}:{})});
   const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"LINE 通知中心暫時不可用");return data;
 }
+function centerRequestContext(){
+  const storedSchool=sessionStorage.getItem("school_context_id"),storedRole=sessionStorage.getItem("role_context"),embedded=embeddedCenterSchool();
+  return {school:storedSchool||embedded,role:storedRole||(embedded?"schoolAdmin":"")};
+}
 async function centerApi(path,options={}){
-  const token=sessionStorage.getItem("google_id_token"),school=sessionStorage.getItem("school_context_id"),role=sessionStorage.getItem("role_context");
+  const token=sessionStorage.getItem("google_id_token"),{school,role}=centerRequestContext();
   const response=await fetch(path,{...options,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(school?{"X-School-Id":school}:{}),...(role?{"X-Role-Context":role}:{}),...(options.headers||{})}});
-  const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"LINE 設定暫時無法讀取");return data;
+  const data=await response.json().catch(()=>({}));if(!response.ok)throw Object.assign(Error(data.error||"LINE 設定暫時無法讀取"),{status:response.status});return data;
 }
 const groupSettings=createLineNotificationSettings({host:$("lineSettingsPanel"),api:centerApi,onChanged:async()=>{revision++;clearPreview();await loadOptions()}});
 async function selectCenterTab(tab){
@@ -70,20 +74,46 @@ async function selectCenterTab(tab){
     if(["line_link","line_error","line_friend"].some(name=>params.has(name))){for(const name of ["line_link","line_error","line_friend"])params.delete(name);params.set("tab","account");history.replaceState({},"",location.pathname+"?"+params)}
   }
 }
+function embeddedCenterSchool(){
+  const params=new URLSearchParams(location.search),school=params.get('workspaceSchool')||'';
+  return params.get('embedded')==='school'&&params.get('workspaceService')==='line'&&params.getAll('workspaceSchool').length===1&&/^[a-z0-9-]{2,60}$/.test(school)?school:'';
+}
 function centerIdentityScope(){try{return ['school_context_id','role_context','google_id_token'].map(key=>sessionStorage.getItem(key)||'').join('|')}catch{return ''}}
 async function initializeCenter(){
   const version=++centerVersion,scope=centerIdentityScope();
   const current=()=>version===centerVersion&&scope===centerIdentityScope();
+  const setAccess=(message,retry=false)=>{
+    $("lineCenterAccess").hidden=!message;
+    $("lineCenterAccessMessage").textContent=message;
+    $("lineCenterRetry").hidden=!retry;
+  };
+  setAccess("正在驗證本校管理員身分…");
+  centerAdminReady=false;$("lineSettingsTab").disabled=true;$("lineAccountTab").disabled=true;
+  groupSettings.setActive(false);accountPanel?.destroy();accountPanel=null;
+  $("lineSettingsPanel").hidden=true;$("lineAccountPanel").hidden=true;$("lineSendPanel").hidden=false;
+  for(const button of document.querySelectorAll("[data-line-center-tab]"))button.setAttribute("aria-selected",String(button.dataset.lineCenterTab==="send"));
   const options=loadOptions().catch(error=>{if(current())status.textContent=error.message});
   try{
-    const me=await centerApi("/api/me");if(!current())return;if(me.role!=="admin")throw Error("僅限本校管理員使用群組與通知設定");
+    const expectedSchool=embeddedCenterSchool()||sessionStorage.getItem('school_context_id')||'';
+    const me=await centerApi("/api/me");
+    if(version!==centerVersion)return;
+    if(!current()){setAccess("登入身分已切換，請重新驗證本校管理員身分。（LC-CONTEXT）",true);return;}
+    if(me.role!=="admin"||!me.schoolId||expectedSchool&&me.schoolId!==expectedSchool)throw Object.assign(Error("僅限本校管理員使用群組與通知設定"),{status:403});
+    setAccess("");
     accountPanel?.destroy();accountReturnHandled=false;
     accountPanel=createLineAccountPanel({host:$("lineAccountPanel"),api:centerApi,me,returnTo:"notification-center",navigate:url=>{if(window.parent!==window)window.parent.location.assign(url);else location.assign(url)},onChanged:async()=>{revision++;clearPreview();try{await loadOptions()}catch{}}});
     centerAdminReady=true;$("lineSettingsTab").disabled=false;$("lineAccountTab").disabled=false;
     const params=new URLSearchParams(location.search);const tab=["line_link","line_error","line_friend"].some(name=>params.has(name))?"account":params.get("tab")||centerTab;if(["settings","account"].includes(tab))await selectCenterTab(tab);
-  }catch(error){if(current()){$("lineSettingsAuthStatus").textContent=error.message;status.textContent=error.message}}
+  }catch(error){if(version===centerVersion){
+    const message=!current()?"登入身分已切換，請重新驗證本校管理員身分。（LC-CONTEXT）":
+      error.status===401?"登入已失效，請先回平台重新登入，再回來驗證。（LC-401）":
+      error.status===403?"僅限本校管理員使用群組與通知設定，請確認目前選擇的學校與身分。（LC-403）":
+      "暫時無法驗證管理員身分，請重新驗證。（LC-READ）";
+    $("lineSettingsAuthStatus").textContent=message;setAccess(message,true);
+  }}
   await options;
 }
+$("lineCenterRetry").addEventListener("click",()=>{void initializeCenter()});
 $("lineSendTab").addEventListener("click",()=>selectCenterTab("send"));
 $("lineSettingsTab").addEventListener("click",()=>selectCenterTab("settings"));
 $("lineAccountTab").addEventListener("click",()=>selectCenterTab("account"));

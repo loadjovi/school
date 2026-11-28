@@ -146,9 +146,9 @@ function homeFixture({provider='line',role='unassigned',schoolId='school-a',stud
  return {context,state,appNode,requests,render:()=>context.render()};
 }
 
-test('an unassigned LINE account sees neutral recovery without a student or guardian form until the parent option is explicitly selected',async()=>{
+test('an unassigned LINE account sees neutral recovery without a student or guardian form until first-time registration is explicitly selected',async()=>{
  const h=homeFixture(),original=JSON.stringify(h.state.me);h.render();const html=h.appNode.innerHTML;
- assert.match(html,/連結既有平台帳號/);assert.match(html,/我是老師.*原 Gmail/);assert.match(html,/我是家長.*申請綁定學生/);
+ assert.match(html,/連結既有平台帳號/);assert.match(html,/已建檔老師.*原 Gmail/);assert.match(html,/首次申請家長資格.*申請綁定學生/);
  assert.doesNotMatch(html,/id="rName"|id="rStudentNo"|id="rConsent"|type="checkbox"|送出綁定申請/);assert.equal(h.requests.length,0);
  const href=html.match(/href="([^"]*teacherLineAccount[^"]*)"/);assert.ok(href);const target=new URL(href[1].replaceAll('&amp;','&'),'https://school.example.invalid');
  assert.equal(target.origin,'https://school.example.invalid');assert.equal(target.searchParams.get('teacherLineAccount'),'school-a');assert.equal(target.searchParams.get('openExternalBrowser'),'1');

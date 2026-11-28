@@ -60,7 +60,7 @@ test('an unsupported role or missing account capability cannot start account req
 });
 test('OAuth starts only on action and requests the fixed notification-center destination when selected',async()=>{
  for(const returnTo of ['account','notification-center','teacher-account','parent-account']){
-  const h=fixture({line:unbound,returnTo,role:returnTo==='teacher-account'?'teacher':'admin'});await h.panel.load();await h.click('使用 LINE 授權並綁定');
+  const h=fixture({line:unbound,returnTo,role:returnTo==='teacher-account'?'teacher':returnTo==='parent-account'?'parent':'admin'});await h.panel.load();await h.click('使用 LINE 授權並綁定');
   const call=h.calls.find(x=>x.method==='POST');assert.equal(call.path,'/api/line/tenant-login/school-a/start');
   assert.deepEqual(call.body,returnTo!=='account'?{mode:'link',returnTo}:{mode:'link'});
   assert.deepEqual(h.navigation,['https://access.line.me/oauth2/v2.1/authorize?state=test']);
@@ -81,8 +81,8 @@ test('bound accounts show the saved official friendship result and time separate
 });
 test('friendship recheck starts only for a bound account and preserves Gmail role returns without relinking',async()=>{
  for(const returnTo of ['account','notification-center','teacher-account','parent-account']){
-  const h=fixture({line:bound,returnTo,role:returnTo==='teacher-account'?'teacher':'admin'});await h.panel.load();const before=[...h.storage];await h.click('重新確認好友');
-  assert.deepEqual(h.calls.map(call=>call.method),returnTo==='teacher-account'?['GET','POST','GET']:['GET','POST']);assert.equal(h.calls[1].path,'/api/line/tenant-login/school-a/start');
+  const h=fixture({line:bound,returnTo,role:returnTo==='teacher-account'?'teacher':returnTo==='parent-account'?'parent':'admin'});await h.panel.load();const before=[...h.storage];await h.click('重新確認好友');
+  assert.deepEqual(h.calls.map(call=>call.method),['teacher-account','parent-account'].includes(returnTo)?['GET','POST','GET']:['GET','POST']);assert.equal(h.calls[1].path,'/api/line/tenant-login/school-a/start');
   assert.deepEqual(h.calls[1].body,returnTo==='account'?{mode:'friendship'}:{mode:'friendship',returnTo});assert.deepEqual([...h.storage],before);
   assert.equal(h.button('確認綁定'),undefined);assert.deepEqual(h.changes,[]);assert.equal(h.navigation.length,1);
  }
@@ -267,7 +267,7 @@ test('the embedded teacher account reads the pending Gmail pair, confirms explic
 function standaloneFixture({parentReturn=false}={}){
  const elements=Object.fromEntries(['siteName','roleTitle','roleIntro','status','lineBinding'].map(id=>{const node=new Element();node.connected=true;return [id,node]}));
  const events={},calls=[],navigation=[],storage=new Map([['school_context_id','school-a'],['role_context','parent'],['google_id_token','token-a']]);
- let account={...unbound},profile={authProvider:'google',role:'parent',schoolId:'school-a',systemName:'甲校',capabilities:{lineAccount:true}},override;
+ let account={...unbound},profile={authProvider:'google',role:'parent',schoolId:'school-a',identityId:'parent-sub',email:'parent@example.test',systemName:'甲校',capabilities:{lineAccount:true}},override;
  const scope={document:{documentElement:{hasAttribute:()=>true},visibilityState:'visible',getElementById:id=>elements[id]||null,createElement:tag=>new Element(tag),addEventListener(){}},window:{addEventListener:(type,fn)=>events[type]=fn,removeEventListener:(type,fn)=>{if(events[type]===fn)delete events[type]}},location:{hash:'',search:parentReturn?'?parentLineAccount=school-a&line_link=confirm':'',pathname:'/line-account.html',assign:url=>navigation.push(url)},history:{replaceState(){}},sessionStorage:{getItem:key=>storage.get(key)||'',setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},URLSearchParams,URL,navigator:{userAgent:'Test'},console,
   fetch:async(url,options)=>{calls.push({url,method:options?.method||'GET'});const custom=await override?.(url,options);return {ok:true,json:async()=>custom??(url==='/api/me'?profile:account)}}};
  const feeSource=readFileSync(new URL('../app/fee-collections.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('if(!legacyLineEntry)load();','this.standaloneLoad=load;');
@@ -310,7 +310,8 @@ test('a Gmail parent starts the dedicated parent OAuth path without requesting s
  h.setOverride(async(url,options)=>{if(!url.includes('/tenant-login/'))return;assert.deepEqual(JSON.parse(options.body),{mode:'link',returnTo:'parent-account'});return {url:'https://access.line.me/oauth2/v2.1/authorize?state=parent'}});
  await nodes(h.elements.lineBinding).find(node=>node.ownText==='使用 LINE 授權並綁定').handlers.click();
  assert.equal(h.navigation.length,1);assert.equal(h.storage.get('parent_line_account_return'),'school-a');
- assert.equal(h.calls.at(-1).url,'/api/line/tenant-login/school-a/start');
+ assert.equal(h.calls.at(-2).url,'/api/line/tenant-login/school-a/start');
+ assert.equal(h.calls.at(-1).url,'/api/me');
 });
 
 test('the real LINE-origin account page rechecks friendship without writing Gmail return hints or changing its session',async()=>{
@@ -371,8 +372,17 @@ test('teacher panel rejects a late cookie proof after context change, profile ch
  }
 });
 
-test('teacher cookie preflight does not change ordinary parent, admin or LINE-origin friendship flows',async()=>{
- for(const options of [{line:unbound,role:'parent',returnTo:'parent-account'},{line:unbound,role:'admin',returnTo:'notification-center'},{line:{...bound,authProvider:'line'},role:'teacher',returnTo:'teacher-account'}]){
+test('verified browser preflight does not alter unrelated entry or LINE-origin friendship',async()=>{
+ for(const options of [{line:unbound,role:'parent',returnTo:'account'},{line:unbound,role:'admin',returnTo:'notification-center'},{line:{...bound,authProvider:'line'},role:'teacher',returnTo:'teacher-account'}]){
   const h=fixture(options);await h.panel.load();await h.click(options.line.bound?'重新確認好友':'使用 LINE 授權並綁定');assert.equal(h.navigation.length,1);assert.equal(h.calls.some(call=>call.path==='/api/me'),false);
  }
+});
+
+test('the Gmail parent browser check keeps the approved role and blocks a different identity before navigating',async()=>{
+ const h=fixture({line:unbound,role:'parent',returnTo:'parent-account',roleContext:'parent'});
+ await h.panel.load();await h.click('使用 LINE 授權並綁定');
+ assert.equal(h.calls.at(-1).options.headers['X-Role-Context'],'parent');assert.equal(h.calls.at(-1).options.headers['X-Google-ID-Token'],'cookie-session');assert.equal(h.navigation.length,1);assert.deepEqual(h.changes,[]);
+ const denied=fixture({line:unbound,role:'parent',returnTo:'parent-account',roleContext:'parent',apiOverride:path=>path==='/api/me'?{role:'parent',authProvider:'google',schoolId:'school-a',identityId:'another-sub'}:undefined});
+ await denied.panel.load();await denied.click('使用 LINE 授權並綁定');
+ assert.equal(denied.navigation.length,0);assert.match(denied.host.textContent,/未能保留這個 Gmail/);assert.deepEqual(denied.changes,[]);
 });

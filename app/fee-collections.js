@@ -1,4 +1,4 @@
-import {createLineAccountPanel} from "./line-account-panel.js?v=20261127-teacher-browser-binding";
+import {createLineAccountPanel} from "./line-account-panel.js?v=20261128-mobile-line-recovery";
 import "./payment-resolution.js?v=20261122-single-parent-message";
 const accountOnly=document.documentElement.hasAttribute("data-line-account");
 const requestedParentAccount=new URLSearchParams(location.search).get('parentLineAccount')||'';

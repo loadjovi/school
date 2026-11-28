@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const source=readFileSync(new URL('../app/line-announcement.js',import.meta.url),'utf8');
-function harness({role='admin',optionsError=false,search='?tab=settings'}={}){
+function harness({role='admin',optionsError=false,schoolId='school-a',search='?tab=settings'}={}){
  const calls=[],settingsLoads=[],accountLoads=[],active=[],events={},nodes={},panels=[];
- for(const id of ['lineSendPanel','lineSettingsPanel','lineSendTab','lineSettingsTab','lineSettingsAuthStatus','lineAccountPanel','lineAccountTab'])nodes[id]={hidden:['lineSettingsPanel','lineAccountPanel'].includes(id),disabled:['lineSettingsTab','lineAccountTab'].includes(id),textContent:'',dataset:{lineCenterTab:id==='lineSendTab'?'send':id==='lineAccountTab'?'account':'settings'},attrs:{},setAttribute(k,v){this.attrs[k]=v},addEventListener(k,fn){this[k]=fn}};
- const status={textContent:''};let busy=false;
- const scope={centerAdminReady:false,centerTab:'send',accountPanel:null,accountReturnHandled:false,centerVersion:0,loadingVersion:0,createLineAccountPanel:()=>{const panel={destroyed:false,isBusy:()=>busy,load:async params=>{accountLoads.push(params?.get('line_link')||params?.get('line_friend')||'load');return {configured:true,bound:false}},destroy(){this.destroyed=true}};panels.push(panel);return panel},history:{replaceState(){}},groupSettings:{isBusy:()=>busy,setActive:value=>active.push(value),load:async()=>settingsLoads.push(calls.length)},$:id=>nodes[id],document:{querySelectorAll:()=>[nodes.lineSendTab,nodes.lineSettingsTab,nodes.lineAccountTab]},window:{addEventListener:(type,fn)=>events[type]=fn},location:{search},URLSearchParams,status,
-  centerApi:async path=>{calls.push(path);return {role}},loadOptions:async()=>{if(optionsError)throw Error('尚未啟用公告功能')}};
+ for(const id of ['lineSendPanel','lineSettingsPanel','lineSendTab','lineSettingsTab','lineSettingsAuthStatus','lineCenterAccess','lineCenterAccessMessage','lineCenterRetry','lineAccountPanel','lineAccountTab'])nodes[id]={hidden:['lineSettingsPanel','lineAccountPanel'].includes(id),disabled:['lineSettingsTab','lineAccountTab'].includes(id),textContent:'',dataset:{lineCenterTab:id==='lineSendTab'?'send':id==='lineAccountTab'?'account':'settings'},attrs:{},setAttribute(k,v){this.attrs[k]=v},addEventListener(k,fn){this[k]=fn}};
+ const status={textContent:''},storage=new Map();let busy=false;
+ const scope={centerAdminReady:false,centerTab:'send',accountPanel:null,accountReturnHandled:false,centerVersion:0,loadingVersion:0,createLineAccountPanel:()=>{const panel={destroyed:false,isBusy:()=>busy,load:async params=>{accountLoads.push(params?.get('line_link')||params?.get('line_friend')||'load');return {configured:true,bound:false}},destroy(){this.destroyed=true}};panels.push(panel);return panel},history:{replaceState(){}},groupSettings:{isBusy:()=>busy,setActive:value=>active.push(value),load:async()=>settingsLoads.push(calls.length)},$:id=>nodes[id],document:{querySelectorAll:()=>[nodes.lineSendTab,nodes.lineSettingsTab,nodes.lineAccountTab]},window:{addEventListener:(type,fn)=>events[type]=fn},location:{search},URLSearchParams,status,sessionStorage:{getItem:key=>storage.get(key)||'',set:(key,value)=>storage.set(key,value)},
+  centerApi:async path=>{calls.push(path);return {role,schoolId}},loadOptions:async()=>{if(optionsError)throw Error('尚未啟用公告功能')}};
  const code=source.slice(source.indexOf('async function selectCenterTab('),source.indexOf('function clearPreview()'));
  runInNewContext(code+';this.initialize=initializeCenter;this.select=selectCenterTab',scope);
  return {scope,nodes,status,calls,active,settingsLoads,accountLoads,events,panels,setBusy:value=>busy=value};
@@ -66,4 +66,23 @@ test('a cached notification center cannot restore an account panel after the ret
  h.scope.centerApi=async path=>{h.calls.push(path);return {role:'parent'}};
  h.events.pageshow({persisted:true});await new Promise(setImmediate);
  assert.equal(h.panels.length,1);assert.equal(h.accountLoads.length,1);assert.equal(h.scope.centerAdminReady,false);assert.equal(h.nodes.lineAccountTab.disabled,true);assert.match(h.nodes.lineSettingsAuthStatus.textContent,/僅限本校管理員/);
+});
+
+test('an embedded mismatched school cannot open personal settings',async()=>{
+ const h=harness({schoolId:'school-b',search:'?embedded=school&workspaceService=line&workspaceSchool=school-a&tab=account'});await h.scope.initialize();
+ assert.equal(h.nodes.lineAccountTab.disabled,true);assert.equal(h.panels.length,0);assert.equal(h.nodes.lineCenterRetry.hidden,false);assert.match(h.nodes.lineCenterAccessMessage.textContent,/LC-403/);
+});
+test('session changes leave the tabs locked with a visible retry that uses fresh identity',async()=>{
+ const h=harness({schoolId:'school-a',search:'?embedded=school&workspaceService=line&workspaceSchool=school-a&tab=account'});
+ let release;h.scope.centerApi=()=>new Promise(resolve=>release=resolve);
+ const loading=h.scope.initialize();h.scope.sessionStorage.set('google_id_token','new-context');release({role:'admin',schoolId:'school-a'});await loading;
+ assert.equal(h.nodes.lineAccountTab.disabled,true);assert.equal(h.panels.length,0);assert.match(h.nodes.lineCenterAccessMessage.textContent,/LC-CONTEXT/);
+ h.scope.centerApi=async()=>({role:'admin',schoolId:'school-a'});h.nodes.lineCenterRetry.click();await new Promise(setImmediate);
+ assert.equal(h.nodes.lineAccountTab.disabled,false);assert.equal(h.nodes.lineCenterAccess.hidden,true);assert.deepEqual(h.accountLoads,['load']);
+});
+test('the center distinguishes expiration and request errors without echoing raw error details',async()=>{
+ for(const [status,code] of [[401,'LC-401'],[503,'LC-READ']]){
+  const h=harness();h.scope.centerApi=async()=>{throw Object.assign(Error('PRIVATE DETAIL'),{status})};await h.scope.initialize();
+  assert.equal(h.nodes.lineAccountTab.disabled,true);assert.equal(h.nodes.lineCenterRetry.hidden,false);assert.match(h.nodes.lineCenterAccessMessage.textContent,new RegExp(code));assert.doesNotMatch(h.nodes.lineCenterAccessMessage.textContent,/PRIVATE/);
+ }
 });

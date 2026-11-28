@@ -46,15 +46,15 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
     if(!valid()||version!==generation)return;
     const url=new URL(result.url);
     if(url.origin!=='https://access.line.me'||url.pathname!=='/oauth2/v2.1/authorize'||url.username||url.password)throw Error('LINE 授權網址不正確，請重新開啟此頁。');
-    if(returnTo==='teacher-account'&&line.authProvider==='google'){
+    if(['teacher-account','parent-account'].includes(returnTo)&&line.authProvider==='google'){
      const expectedId=String(me.identityId||'').trim(),expectedEmail=String(me.email||'').trim().toLowerCase();
      const sessionError='目前瀏覽器未能保留這個 Gmail 登入，尚未開啟 LINE 授權。請在同一個 Safari 或 Chrome 重新登入原 Gmail 後再綁定。';
      if(!expectedId||!expectedEmail)throw Error(sessionError);
      let profile;
-     try{profile=await api('/api/me',{credentials:'same-origin',cache:'no-store',headers:{'X-Google-ID-Token':'cookie-session','X-School-Id':me.schoolId,'X-Role-Context':'teacher'}})}
+     try{profile=await api('/api/me',{credentials:'same-origin',cache:'no-store',headers:{'X-Google-ID-Token':'cookie-session','X-School-Id':me.schoolId,'X-Role-Context':returnTo==='parent-account'?'parent':'teacher'}})}
      catch{if(!valid()||version!==generation)return;throw Error(sessionError)}
      if(!valid()||version!==generation)return;
-     if(profile?.authProvider!=='google'||profile.schoolId!==me.schoolId||!teacherRoles.has(profile.role)||
+     if(profile?.authProvider!=='google'||profile.schoolId!==me.schoolId||!(returnTo==='parent-account'?profile.role==='parent':teacherRoles.has(profile.role))||
        String(profile.identityId||'').trim()!==expectedId||String(profile.email||'').trim().toLowerCase()!==expectedEmail)throw Error(sessionError);
     }
     authorizationPending=true;navigate(url.href,{action,authProvider:line.authProvider});return;
@@ -121,7 +121,7 @@ export function createLineAccountPanel({host,api,me,returnTo='account',navigate=
    host.append(friendship);
   }
   if(me.role==='parent'&&line.authProvider==='google')host.append(make('p','此 Gmail 已核准的學生關係會直接沿用，LINE 綁定不需再輸入學生姓名或學號。'));
-  if(returnTo==='teacher-account'&&line.authProvider==='google')host.append(make('p','請在目前瀏覽器完成 LINE 授權。首次綁定返回後，請核對 Gmail 與 LINE 名稱並按「確認綁定」。'));
+  if(['teacher-account','parent-account'].includes(returnTo)&&line.authProvider==='google')host.append(make('p','請在目前瀏覽器完成 LINE 授權。首次綁定返回後，請核對 Gmail 與 LINE 名稱並按「確認綁定」。'));
   const actions=make('div');actions.className='actions';
   if(line.authProvider==='google'&&!line.bound)actions.append(button('使用 LINE 授權並綁定',()=>run('link')));
   host.append(make('p',canSyncMenu()?'選單依同校身分自動判定：尚未綁定平台為預設三宮格，已核准家長啟用 Facebook 後為五格，幹部／啟用中的老師為六宮格。學生資料僅依已核准關係開放；幹部需要時可手動更新選單。':'完成學生核准與 LINE 綁定後，系統會自動啟用家長選單，不需另外同步；啟用 Facebook 後為五格。學生資料僅依已核准關係開放。'));
