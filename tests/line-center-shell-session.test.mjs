@@ -47,3 +47,13 @@ test('the center uses its same-origin shell only when embedded, not in an extern
  const f=runInNewContext(body+';schoolLineWorkspaceTransport',{window,location:{origin},embeddedCenterSchool:()=>school});
  assert.equal(f()('/api/me'),'/api/me');window.parent.location.origin='https://other.test';assert.equal(f(),null);window.parent=window;assert.equal(f(),null);
 });
+
+test('only the authenticated Gmail admin can read the browser cookie proof, never other routes or LINE sessions',async()=>{
+ const h=fixture({token:'verified-test-token'});
+ await h.request('/api/me',{requireBrowserGoogleSession:true});
+ assert.equal(h.calls[0].options.headers['X-Google-ID-Token'],'cookie-session');
+ await h.request('/api/line/school-account',{requireBrowserGoogleSession:true});
+ assert.equal(h.calls[1].options.headers['X-Google-ID-Token'],'verified-test-token');
+ const line=fixture({token:'line-session',provider:'line'});
+ await assert.rejects(line.request('/api/me',{requireBrowserGoogleSession:true}),{status:403});assert.equal(line.calls.length,0);
+});

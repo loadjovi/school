@@ -42,7 +42,7 @@ test("same-school admin link stores a fixed center destination and returns there
  assert.equal(h.transactions[0].args[3].returnTo,"notification-center");
  assert.equal([...h.store.rows.values()][0].returnTo,"notification-center");
  const result=await h.callback(started),url=new URL(result.headers.Location);
- assert.equal(url.origin,origin);assert.equal(url.pathname,"/");assert.equal(url.searchParams.get("adminLineAccount"),"school-a");assert.equal(url.searchParams.has("tab"),false);assert.equal(url.searchParams.get("line_link"),"confirm");
+ assert.equal(url.origin,origin);assert.equal(url.pathname,"/");assert.equal(url.searchParams.get("adminLineAccount"),"school-a");assert.equal(url.searchParams.has("tab"),false);assert.equal(url.searchParams.get("line_link"),"confirm");assert.equal(url.searchParams.get("google_redirect"),"1");
  assert.ok(result.cookies.some(cookie=>cookie.value==="opaque-confirmation"));assert.equal(h.store.rows.size,0);
  assert.equal(result.headers["Cache-Control"],"no-store");assert.equal(result.headers["Referrer-Policy"],"no-referrer");
 });
@@ -100,12 +100,12 @@ test("a verified teacher or parent OAuth return explicitly resumes the credentia
  }
 });
 test("the Google-cookie handoff is never accepted from callback parameters or an invalid OAuth transaction",async()=>{
- for(const [input,role] of [[{mode:"login"},"teacher"],[{mode:"link"},"teacher"],[{mode:"link",returnTo:"notification-center"},"admin"]]){
+ for(const [input,role] of [[{mode:"login"},"teacher"],[{mode:"link"},"teacher"],[{mode:"link"},"admin"]]){
   const h=harness({role}),started=await h.start(input),response=await h.callback(started,{extra:{google_redirect:"1",returnTo:"teacher-account",teacherLineAccount:"school-a"}});
   assert.equal(new URL(response.headers.Location).searchParams.has("google_redirect"),false);
  }
- for(const role of ["teacher","parent"]){
-  const returnTo=role==="teacher"?"teacher-account":"parent-account";
+ for(const role of ["teacher","parent","admin"]){
+  const returnTo=role==="teacher"?"teacher-account":role==="parent"?"parent-account":"notification-center";
   for(const invalid of ["cookie","school","expired","config","purpose","replay"]){
    const h=harness({role}),started=await h.start({mode:"link",returnTo}),options={extra:{google_redirect:"1",returnTo,teacherLineAccount:"school-a",parentLineAccount:"school-a"}};
    if(invalid==="cookie")options.cookie=false;
@@ -296,5 +296,17 @@ test("main bootstrap preserves school account callback errors for the capability
   const histories=[],logins=[];
   const boot=runInNewContext(bootSource+";boot",{adminFriendAccountEntry:()=>"",teacherLineAccountEntry:()=>"",parentLineAccountEntry:()=>"",URLSearchParams,location:{pathname:"/",search},state:{token:""},history:{replaceState:(...args)=>histories.push(args)},renderLogin:message=>logins.push(message)});
   await boot();assert.equal(histories.length,1);assert.equal(logins.length,1);assert.doesNotMatch(histories[0][2],/line_error/);
+ }
+});
+
+test("admin link retains only the exact verified Gmail cookie and still requires explicit final confirmation",async()=>{
+ const credential="synthetic-admin-google",authSessionId=createHash("sha256").update(credential).digest("hex");
+ for(const header of [credential,"other"]){
+  const h=harness({role:"admin",identity:{...google,authSessionId}});
+  const start=await h.start({mode:"link",returnTo:"notification-center"},"school-a",{"x-google-id-token":header});
+  assert.equal(start.cookies.some(c=>c.name==="orchestra_google_id_token"),header===credential);
+  assert.equal(new URL(start.data.url).searchParams.get("disable_auto_login"),"true");
+  const reply=await h.callback(start);
+  assert.equal(new URL(reply.headers.Location).searchParams.get("line_link"),"confirm");assert.deepEqual(h.effects,["account","pending"]);
  }
 });

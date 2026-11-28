@@ -1,4 +1,4 @@
-import {createLineAccountPanel} from "./line-account-panel.js?v=20261128-mobile-line-recovery";
+import {createLineAccountPanel} from "./line-account-panel.js?v=20261128-admin-line-browser";
 import {createLineNotificationSettings} from "./line-notification-settings.js?v=20261123-notification-settings";
 const $=id=>document.getElementById(id),form=$("announcement"),status=$("result"),preview=$("preview"),send=$("send");
 let centerAdminReady=false,centerTab="send",accountPanel=null,accountReturnHandled=false,centerVersion=0;

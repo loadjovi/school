@@ -56,7 +56,7 @@ test("every authorized Gmail teaching role keeps link and friendship authorizati
 test("ordinary LINE login and unrelated Google return scopes retain automatic login",async()=>{
   for(const [role,input] of [
     ["teacher",{mode:"login"}], ["teacher",{mode:"link"}], ["teacher",{mode:"friendship"}],
-    ["admin",{mode:"link",returnTo:"notification-center"}], ["admin",{mode:"friendship",returnTo:"notification-center"}]
+    ["admin",{mode:"link"}], ["admin",{mode:"friendship"}]
   ]){
     const h=fixture({role}),result=await h.start(input);assert.equal(result.status,200);
     assert.equal(new URL(result.data.url).searchParams.has("disable_auto_login"),false);assert.deepEqual(h.effects,[]);
@@ -102,4 +102,14 @@ test("approved Gmail parents keep browser authorization, isolated from non-paren
  }
  const line=fixture({role:'parent',provider:'line'}),res=await line.start({mode:'friendship',returnTo:'parent-account'});
  assert.equal(res.status,200);assert.equal(new URL(res.data.url).searchParams.has('disable_auto_login'),false);
+});
+
+test('verified Gmail administrators use browser authorization without affecting LINE-origin friendship',async()=>{
+ for(const mode of ['link','friendship']){
+  const h=fixture({role:'admin'});const result=await h.start({mode,returnTo:'notification-center'});
+  assert.equal(result.status,200);assert.equal(new URL(result.data.url).searchParams.get('disable_auto_login'),'true');
+  assert.deepEqual(h.effects,[]);
+ }
+ const line=fixture({role:'admin',provider:'line'}),result=await line.start({mode:'friendship',returnTo:'notification-center'});
+ assert.equal(result.status,200);assert.equal(new URL(result.data.url).searchParams.has('disable_auto_login'),false);
 });

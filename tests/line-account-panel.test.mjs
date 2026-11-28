@@ -82,7 +82,7 @@ test('bound accounts show the saved official friendship result and time separate
 test('friendship recheck starts only for a bound account and preserves Gmail role returns without relinking',async()=>{
  for(const returnTo of ['account','notification-center','teacher-account','parent-account']){
   const h=fixture({line:bound,returnTo,role:returnTo==='teacher-account'?'teacher':returnTo==='parent-account'?'parent':'admin'});await h.panel.load();const before=[...h.storage];await h.click('重新確認好友');
-  assert.deepEqual(h.calls.map(call=>call.method),['teacher-account','parent-account'].includes(returnTo)?['GET','POST','GET']:['GET','POST']);assert.equal(h.calls[1].path,'/api/line/tenant-login/school-a/start');
+  assert.deepEqual(h.calls.map(call=>call.method),['teacher-account','parent-account','notification-center'].includes(returnTo)?['GET','POST','GET']:['GET','POST']);assert.equal(h.calls[1].path,'/api/line/tenant-login/school-a/start');
   assert.deepEqual(h.calls[1].body,returnTo==='account'?{mode:'friendship'}:{mode:'friendship',returnTo});assert.deepEqual([...h.storage],before);
   assert.equal(h.button('確認綁定'),undefined);assert.deepEqual(h.changes,[]);assert.equal(h.navigation.length,1);
  }
@@ -373,7 +373,7 @@ test('teacher panel rejects a late cookie proof after context change, profile ch
 });
 
 test('verified browser preflight does not alter unrelated entry or LINE-origin friendship',async()=>{
- for(const options of [{line:unbound,role:'parent',returnTo:'account'},{line:unbound,role:'admin',returnTo:'notification-center'},{line:{...bound,authProvider:'line'},role:'teacher',returnTo:'teacher-account'}]){
+ for(const options of [{line:unbound,role:'parent',returnTo:'account'},{line:unbound,role:'admin',returnTo:'account'},{line:{...bound,authProvider:'line'},role:'teacher',returnTo:'teacher-account'}]){
   const h=fixture(options);await h.panel.load();await h.click(options.line.bound?'重新確認好友':'使用 LINE 授權並綁定');assert.equal(h.navigation.length,1);assert.equal(h.calls.some(call=>call.path==='/api/me'),false);
  }
 });
@@ -385,4 +385,12 @@ test('the Gmail parent browser check keeps the approved role and blocks a differ
  const denied=fixture({line:unbound,role:'parent',returnTo:'parent-account',roleContext:'parent',apiOverride:path=>path==='/api/me'?{role:'parent',authProvider:'google',schoolId:'school-a',identityId:'another-sub'}:undefined});
  await denied.panel.load();await denied.click('使用 LINE 授權並綁定');
  assert.equal(denied.navigation.length,0);assert.match(denied.host.textContent,/未能保留這個 Gmail/);assert.deepEqual(denied.changes,[]);
+});
+
+test('admin Gmail binding requires verified same-school browser proof before starting navigation',async()=>{
+ const h=fixture({role:'admin',line:unbound,returnTo:'notification-center'});
+ await h.panel.load();await h.click('使用 LINE 授權並綁定');
+ assert.equal(h.navigation.length,1);const proof=h.calls.at(-1);assert.equal(proof.path,'/api/me');assert.equal(proof.options.requireBrowserGoogleSession,true);assert.equal(proof.options.headers['X-Role-Context'],'schoolAdmin');
+ const bad=fixture({role:'admin',line:unbound,returnTo:'notification-center',apiOverride:path=>path==='/api/me'?{role:'admin',authProvider:'google',schoolId:'wrong-school'}:undefined});
+ await bad.panel.load();await bad.click('使用 LINE 授權並綁定');assert.equal(bad.navigation.length,0);assert.match(bad.host.textContent,/未能保留這個 Gmail/);
 });

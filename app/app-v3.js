@@ -39,7 +39,7 @@ function logout(reload=true){apiRequestEpoch++;pendingApiGets.clear();state.toke
 function teacherLineAccountEntry(){
   const query=new URLSearchParams(location.search),schoolId=query.get("teacherLineAccount");
   if(/^[a-z0-9-]{2,60}$/.test(schoolId||""))return schoolId;
-  if(/^[a-z0-9-]{2,60}$/.test(query.get("parentLineAccount")||""))return "";
+  if(/^[a-z0-9-]{2,60}$/.test(query.get("parentLineAccount")||"")||/^[a-z0-9-]{2,60}$/.test(query.get("adminLineAccount")||""))return "";
   // A failed app handoff can lose the OAuth state cookie. Retain only the
   // intended screen; the server must still verify the Gmail teaching identity.
   const pending=sessionStorage.getItem("teacher_line_account_return")||"";
@@ -134,15 +134,18 @@ function openParentLineAccount(schoolId){
 }
 function adminFriendAccountEntry(){
   const query=new URLSearchParams(location.search),schoolId=query.get('adminLineAccount');
-  return ['/','/index.html'].includes(location.pathname)&&query.getAll('adminLineAccount').length===1&&/^[a-z0-9-]{2,60}$/.test(schoolId||'')&&query.getAll('line_friend').length===1&&['checked','unavailable','mismatch'].includes(query.get('line_friend'))?schoolId:'';
+  const results=['line_friend','line_link','line_error'].filter(name=>query.has(name));
+  if(!['/','/index.html'].includes(location.pathname)||query.getAll('adminLineAccount').length!==1||!/^[a-z0-9-]{2,60}$/.test(schoolId||'')||results.length!==1||query.getAll(results[0]).length!==1)return '';
+  const allowed={line_friend:['checked','unavailable','mismatch'],line_link:['confirm'],line_error:['configuration','authorization','verification','conflict']};
+  return allowed[results[0]].includes(query.get(results[0]))?schoolId:'';
 }
 async function restoreAdminFriendAccountSession(schoolId){
   const token=state.token,headers={'X-School-Id':schoolId,'X-Role-Context':'schoolAdmin'};
   if(token&&!['line-session','cookie-session'].includes(token))headers['X-Google-ID-Token']=token;
   const response=await fetch('/api/me',{credentials:'same-origin',cache:'no-store',headers});
-  if(!response.ok)throw Error('請使用原本的管理員 Gmail 登入，繼續確認 LINE 好友狀態。');
+  if(!response.ok)throw Error('請使用原本的管理員 Gmail 登入，繼續 LINE 綁定或確認好友狀態。');
   const profile=await response.json();
-  if(profile.authProvider!=='google'||profile.role!=='admin'||profile.schoolId!==schoolId)throw Error('請使用此校已授權的管理員 Gmail 登入，繼續確認 LINE 好友狀態。');
+  if(profile.authProvider!=='google'||profile.role!=='admin'||profile.schoolId!==schoolId)throw Error('請使用此校已授權的管理員 Gmail 登入，繼續 LINE 綁定或確認好友狀態。');
   state.token=token&&!['line-session','cookie-session'].includes(token)?token:'cookie-session';
   sessionStorage.setItem('google_id_token',state.token);sessionStorage.setItem('school_context_id',schoolId);sessionStorage.setItem('role_context','schoolAdmin');
   for(const key of ['teacher_line_account_return','parent_line_account_return','line_staff_entry'])sessionStorage.removeItem(key);
@@ -349,7 +352,7 @@ async function renderLineLogin(){
   const mount=$("tenantLineSignIn");
   if(!mount)return;
   if(adminFriendAccountEntry()){
-    mount.innerHTML='<div class="notice">請使用原本的管理員 Gmail 登入，繼續確認 LINE 好友狀態。原綁定與學校權限會保留。</div>';
+    mount.innerHTML='<div class="notice">請使用原本的管理員 Gmail 登入，繼續 LINE 綁定或確認好友狀態。原綁定與學校權限會保留。</div>';
     return;
   }
   const teacherSchool=teacherLineAccountEntry();
@@ -482,7 +485,7 @@ function googleAccountExternalEntry(){
 async function renderLogin(error=""){
   const recoverySchool=teacherLineAccountEntry();
   const recovery=error&&recoverySchool?`<a class="secondary" href="/login-reset.html?schoolId=${encodeURIComponent(recoverySchool)}" style="display:block;text-align:center;text-decoration:none;margin-top:16px">重新開始登入</a><p class="muted">清除這台瀏覽器的舊登入後，再選 Gmail 或 LINE；已完成的帳號綁定會保留。</p>`:"";
-  document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>家長、老師與管理員共用入口</p>${error?`<div class="error">${esc(error)}</div>`:""}<div id="googleBtn" style="display:flex;justify-content:center;margin-top:18px"></div><div id="tenantLineSignIn"></div>${recovery}<div class="notice" style="margin-top:16px">${adminFriendAccountEntry()?"請使用原本的管理員 Gmail 登入，繼續確認官方帳號好友狀態。":teacherLineAccountEntry()?"老師首次綁定請使用名冊中已建檔的 Gmail；完成綁定後，請使用上方的 LINE 登入按鈕。":parentLineAccountEntry()?"已核准的學生關係會沿用原 Gmail，LINE 綁定不需重填學生姓名或學號。":"家長第一次登入若尚未綁定學生，可填寫學生資料送交管理員確認。"}</div></div></div>`;
+  document.getElementById("app").innerHTML=`<div class="login-wrap"><div class="login-card"><div class="logo">🎻</div><h1>聖心小學弦樂團</h1><p>家長、老師與管理員共用入口</p>${error?`<div class="error">${esc(error)}</div>`:""}<div id="googleBtn" style="display:flex;justify-content:center;margin-top:18px"></div><div id="tenantLineSignIn"></div>${recovery}<div class="notice" style="margin-top:16px">${adminFriendAccountEntry()?"請使用原本的管理員 Gmail 登入，繼續 LINE 綁定或確認好友狀態。":teacherLineAccountEntry()?"老師首次綁定請使用名冊中已建檔的 Gmail；完成綁定後，請使用上方的 LINE 登入按鈕。":parentLineAccountEntry()?"已核准的學生關係會沿用原 Gmail，LINE 綁定不需重填學生姓名或學號。":"家長第一次登入若尚未綁定學生，可填寫學生資料送交管理員確認。"}</div></div></div>`;
   renderLineLogin();
   if(window.__lineEmbedded){
     const external=googleAccountExternalEntry();

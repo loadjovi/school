@@ -198,7 +198,9 @@
     path==='/api/line/school-account'?['GET','POST','DELETE']:
     path==='/api/line/tenant-login/'+school+'/start'?['POST']:[];
   if(!allowed.includes(method)||options.body!==undefined&&(method==='GET'||typeof options.body!=='string'))return deny(403);
-  const headers={'Content-Type':'application/json','X-Google-ID-Token':token,'X-School-Id':school,'X-Role-Context':'schoolAdmin'};
+  const browserGoogleProof=path==='/api/me'&&method==='GET'&&options.requireBrowserGoogleSession===true;
+  if(browserGoogleProof&&(state.me.authProvider!=='google'||token==='line-session'))return deny(403);
+  const headers={'Content-Type':'application/json','X-Google-ID-Token':browserGoogleProof?'cookie-session':token,'X-School-Id':school,'X-Role-Context':'schoolAdmin'};
   const response=await fetch(path==='/api/me'?'/api/me?includeStudentProfiles=1':path,{method,headers,credentials:'same-origin',cache:'no-store',...(options.body===undefined?{}:{body:options.body})});
   const data=await response.json().catch(()=>({}));
   if(!matches()||!frameUrl||frameWindow.location.origin!==location.origin||frameWindow.location.pathname!==frameUrl.pathname)return deny(403);
@@ -207,7 +209,7 @@
  };
  function serviceEntryUrl(service,href){
   const config=workspaceServices[service];if(!config||!schoolServiceAllowed(service))return null;
-  const url=new URL(config.path,location.origin),query=new URLSearchParams({embedded:'school',workspaceService:service,workspaceSchool:state.me.schoolId,v:'20261128-admin-line-session'});
+  const url=new URL(config.path,location.origin),query=new URLSearchParams({embedded:'school',workspaceService:service,workspaceSchool:state.me.schoolId,v:'20261128-admin-line-browser'});
   if(href){
    let source;try{source=new URL(href,location.origin)}catch{return null}
    if(source.origin!==location.origin||source.pathname!==config.path)return null;

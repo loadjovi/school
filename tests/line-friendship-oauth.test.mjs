@@ -209,7 +209,7 @@ test("Google-origin checks preserve fixed role destinations and the exact verifi
     const result = await h.callback(started), url = new URL(result.headers.Location);
     assert.equal(url.pathname, marker ? "/" : "/line-account.html");
     if (marker) assert.equal(url.searchParams.get(marker), "school-a");
-    assert.equal(url.searchParams.get("google_redirect"), ["teacher-account", "parent-account"].includes(returnTo) ? "1" : null);
+    assert.equal(url.searchParams.get("google_redirect"), ["teacher-account", "parent-account", "notification-center"].includes(returnTo) ? "1" : null);
     assert.equal(url.searchParams.get("line_friend"), "checked"); assertNoIdentityMutation(h, result);
   }
   for (const candidate of ["unverified-header-token", "cookie-session", "line-session", ""]) {

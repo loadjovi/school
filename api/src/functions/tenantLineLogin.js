@@ -187,14 +187,14 @@ app.http("tenantLineLoginStart", {
       code_challenge: createHash("sha256").update(txn.verifier).digest("base64url"),
       code_challenge_method: "S256", bot_prompt: "aggressive"
     });
-    if ((returnToTeacher || returnToParent) && google?.sub) {
+    if ((returnToTeacher || returnToParent || returnToCenter) && google?.sub) {
       // Keep the verified Gmail browser and OAuth state cookie together on
       // mobile. LINE app auto-login may return in a different browser context.
       // Ordinary LINE login and LINE-origin friendship checks retain auto-login.
       url.searchParams.set("disable_auto_login", "true");
     }
     const cookies = [txn.cookie, ...(input.mode === "friendship" ? [] : [clearTenantLineLinkConfirmation()])];
-    if (returnToTeacher || returnToParent || friendshipOptions?.friendshipInitiator === "google") {
+    if (returnToTeacher || returnToParent || returnToCenter || friendshipOptions?.friendshipInitiator === "google") {
       // iOS may return from LINE in a new browser tab without sessionStorage.
       // Persist only the exact Google credential verified for this transaction;
       // an existing cookie may otherwise have taken precedence over the header.
@@ -236,7 +236,7 @@ app.http("tenantLineLoginCallback", {
       }
       if (googleReturn && txn.returnTo === "teacher-account") {resultUrl.pathname = "/";resultUrl.searchParams.delete("schoolId");resultUrl.searchParams.set("teacherLineAccount", schoolId);}
       if (googleReturn && txn.returnTo === "parent-account") {resultUrl.pathname = "/";resultUrl.searchParams.delete("schoolId");resultUrl.searchParams.set("parentLineAccount", schoolId);}
-      if (googleReturn && (!txn.purpose || txn.purpose === "friendship") && ["teacher-account", "parent-account"].includes(txn.returnTo)) {
+      if (googleReturn && (!txn.purpose || txn.purpose === "friendship") && ["teacher-account", "parent-account", "notification-center"].includes(txn.returnTo)) {
         // The verified start preserved this Gmail credential in an HttpOnly
         // cookie. A resumed tab may still hold an older raw token; let the
         // existing first-boot handoff select the cookie for this fixed return.

@@ -48,3 +48,14 @@ test('a Gmail retry verifies the intended administrator identity before loading 
  const retry=runInNewContext('('+body+')',{state,sessionStorage:{setItem(){}},adminFriendAccountEntry:()=> 'school-a',teacherLineAccountEntry:()=> '',parentLineAccountEntry:()=> '',restoreAdminFriendAccountSession:async sid=>{calls.push(sid);throw Error('請使用此校管理員 Gmail')},loadProfile:()=>calls.push('student-registration'),renderLogin:message=>calls.push(message)});
  await retry({credential:'new-google-token'});assert.deepEqual(calls,['school-a','請使用此校管理員 Gmail']);assert.equal(state.me,null);
 });
+
+test('admin authorization results beat stale parent and teacher intents and recheck original school admin',async()=>{
+ for(const result of ['line_link=confirm','line_error=authorization','line_error=verification','line_error=conflict','line_error=configuration']){
+  const h=fixture({search:'?adminLineAccount=school-a&'+result,pending:true});
+  await h.boot();assert.equal(h.requests.length,1);assert.equal(h.profiles.length,1);assert.equal(h.storage.get('role_context'),'schoolAdmin');
+ }
+ for(const result of ['line_link=confirm&line_friend=checked','line_error=bogus','line_link=confirm&line_link=confirm']){
+  const h=fixture({search:'?adminLineAccount=school-a&'+result});
+  assert.equal(h.context.adminFriendAccountEntry(),'');
+ }
+});
