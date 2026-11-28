@@ -43,10 +43,20 @@ function updateSummary(){
   if(includesStaff())parts.push(schoolGroupLabel(staffGroupKey()));
   $("audienceSummary").textContent="本次通知："+parts.join("；另通知");
 }
+function schoolLineWorkspaceTransport(){
+  if(!embeddedCenterSchool()||window.parent===window)return null;
+  try{
+    if(window.parent.location.origin===location.origin&&typeof window.parent.schoolLineWorkspaceRequest==='function')
+      return (path,options)=>window.parent.schoolLineWorkspaceRequest(window,path,options);
+  }catch{}
+  return null;
+}
 async function request(body){
+  const embedded=schoolLineWorkspaceTransport();
+  if(embedded)return embedded("/api/line/announcements",body?{method:"POST",body:JSON.stringify(body)}:{method:"GET"});
   const token=sessionStorage.getItem("google_id_token"),school=sessionStorage.getItem("school_context_id"),role=sessionStorage.getItem("role_context");
   const response=await fetch("/api/line/announcements",{credentials:"same-origin",method:body?"POST":"GET",cache:"no-store",
-    headers:{"Content-Type":"application/json",...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(school?{"X-School-Id":school}:{}),...(role?{"X-Role-Context":role}:{})},
+    headers:{"Content-Type":"application/json",...(token?{"X-Google-ID-Token":token}:{}),...(school?{"X-School-Id":school}:{}),...(role?{"X-Role-Context":role}:{})},
     ...(body?{body:JSON.stringify(body)}:{})});
   const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||"LINE 通知中心暫時不可用");return data;
 }
@@ -55,8 +65,10 @@ function centerRequestContext(){
   return {school:storedSchool||embedded,role:storedRole||(embedded?"schoolAdmin":"")};
 }
 async function centerApi(path,options={}){
+  const embedded=schoolLineWorkspaceTransport();
+  if(embedded)return embedded(path,options);
   const token=sessionStorage.getItem("google_id_token"),{school,role}=centerRequestContext();
-  const response=await fetch(path,{...options,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...(token&&token!=="cookie-session"?{"X-Google-ID-Token":token}:{}),...(school?{"X-School-Id":school}:{}),...(role?{"X-Role-Context":role}:{}),...(options.headers||{})}});
+  const response=await fetch(path,{...options,credentials:"same-origin",cache:"no-store",headers:{"Content-Type":"application/json",...(token?{"X-Google-ID-Token":token}:{}),...(school?{"X-School-Id":school}:{}),...(role?{"X-Role-Context":role}:{}),...(options.headers||{})}});
   const data=await response.json().catch(()=>({}));if(!response.ok)throw Object.assign(Error(data.error||"LINE 設定暫時無法讀取"),{status:response.status});return data;
 }
 const groupSettings=createLineNotificationSettings({host:$("lineSettingsPanel"),api:centerApi,onChanged:async()=>{revision++;clearPreview();await loadOptions()}});

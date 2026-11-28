@@ -178,9 +178,36 @@
   const capabilities=state.me?.capabilities||{};
   return state.me?.role==='admin'&&(service==='finance'?capabilities.financeVerifier===true:service==='fees'?!!capabilities.feeCollections:service==='line'?!!(capabilities.lineRoleMenus||capabilities.lineAccount):false);
  }
+ // Make LINE requests with the same credential as the verified top-level shell.
+ // Never pass a credential into the embedded page or accept caller-supplied headers.
+ window.schoolLineWorkspaceRequest=async function(frameWindow,path,options={}){
+  const frame=document.getElementById(workspaceServices.line.frameId);
+  const school=state.me?.schoolId,token=state.token,scope=scopeKey();
+  const storedSchool=sessionStorage.getItem('school_context_id'),storedRole=sessionStorage.getItem('role_context');
+  const matches=()=>frame&&frame.contentWindow===frameWindow&&document.getElementById(workspaceServices.line.frameId)===frame&&frame.dataset.workspaceScope===scope&&scopeKey()===scope&&state.token===token&&state.me?.schoolId===school&&schoolServiceAllowed('line')&&sessionStorage.getItem('school_context_id')===storedSchool&&sessionStorage.getItem('role_context')===storedRole;
+  const deny=status=>{throw Object.assign(Error('無法驗證本校 LINE 通知中心'),{status})};
+  if(!matches()||!/^[a-z0-9-]{2,60}$/.test(school||'')||storedSchool&&storedSchool!==school||storedRole&&storedRole!=='schoolAdmin')return deny(403);
+  let frameUrl;
+  try{frameUrl=new URL(frameWindow.location.href)}catch{return deny(403)}
+  if(frameUrl.origin!==location.origin||frameUrl.pathname!==workspaceServices.line.path||frameUrl.searchParams.get('workspaceSchool')!==school)return deny(403);
+  if(!token)return deny(401);
+  const method=options.method||'GET';
+  const allowed=path==='/api/me'||path==='/api/config'?['GET']:
+    path==='/api/line/announcements'?['GET','POST']:
+    path==='/api/line/settings'?['GET','POST','PATCH','DELETE']:
+    path==='/api/line/school-account'?['GET','POST','DELETE']:
+    path==='/api/line/tenant-login/'+school+'/start'?['POST']:[];
+  if(!allowed.includes(method)||options.body!==undefined&&(method==='GET'||typeof options.body!=='string'))return deny(403);
+  const headers={'Content-Type':'application/json','X-Google-ID-Token':token,'X-School-Id':school,'X-Role-Context':'schoolAdmin'};
+  const response=await fetch(path==='/api/me'?'/api/me?includeStudentProfiles=1':path,{method,headers,credentials:'same-origin',cache:'no-store',...(options.body===undefined?{}:{body:options.body})});
+  const data=await response.json().catch(()=>({}));
+  if(!matches()||!frameUrl||frameWindow.location.origin!==location.origin||frameWindow.location.pathname!==frameUrl.pathname)return deny(403);
+  if(!response.ok)throw Object.assign(Error(data.error||'LINE 通知中心暫時無法使用'),{status:response.status});
+  return data;
+ };
  function serviceEntryUrl(service,href){
   const config=workspaceServices[service];if(!config||!schoolServiceAllowed(service))return null;
-  const url=new URL(config.path,location.origin),query=new URLSearchParams({embedded:'school',workspaceService:service,workspaceSchool:state.me.schoolId,v:'20261128-mobile-line-recovery'});
+  const url=new URL(config.path,location.origin),query=new URLSearchParams({embedded:'school',workspaceService:service,workspaceSchool:state.me.schoolId,v:'20261128-admin-line-session'});
   if(href){
    let source;try{source=new URL(href,location.origin)}catch{return null}
    if(source.origin!==location.origin||source.pathname!==config.path)return null;
